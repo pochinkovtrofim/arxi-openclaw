@@ -687,7 +687,10 @@ describe("gateway agent handler", () => {
   });
 
   it("admits non-image attachments through the programmatic agent media pipeline", async () => {
-    primeMainAgentRun();
+    mocks.loadConfigReturn = { tools: { media: { audio: { enabled: false } } } };
+    primeMainAgentRun({
+      cfg: mocks.loadConfigReturn,
+    });
 
     await invokeAgent(
       {
