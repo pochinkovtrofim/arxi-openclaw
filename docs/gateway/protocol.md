@@ -183,8 +183,8 @@ reports the negotiated role and the current socket's effective authorization
 scopes even when no device token is issued (shape above). `deviceToken`, when
 present, is the primary reusable credential for the same device and role.
 `policy.attachments` is optional (older gateways omit it) and advertises
-the decoded-size ceilings chat attachments face on `chat.send`, `sessions.send`,
-and session-creation initial turns:
+the decoded-size ceilings attachments face on `agent`, `chat.send`,
+`sessions.send`, and session-creation initial turns:
 
 | Field           | Meaning                                                                                             |
 | --------------- | --------------------------------------------------------------------------------------------------- |
