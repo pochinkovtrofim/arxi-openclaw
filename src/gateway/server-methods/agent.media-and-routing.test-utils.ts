@@ -686,6 +686,40 @@ describe("gateway agent handler", () => {
     expectStringFieldContains(error, "message", "does not accept image inputs");
   });
 
+  it("admits non-image attachments through the programmatic agent media pipeline", async () => {
+    primeMainAgentRun();
+
+    await invokeAgent(
+      {
+        message: "[Telegram attachment]",
+        agentId: "main",
+        sessionKey: "agent:main:main",
+        idempotencyKey: "test-agent-audio-attachment",
+        attachments: [
+          {
+            type: "audio",
+            mimeType: "audio/wav",
+            fileName: "voice.wav",
+            content: Buffer.from(
+              "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=",
+              "base64",
+            ).toString("base64"),
+          },
+        ],
+      },
+      { reqId: "test-agent-audio-attachment" },
+    );
+
+    const call = await waitForAgentCommandCall<{
+      media?: Array<{ contentType?: string; kind?: string; url?: string }>;
+      message?: string;
+    }>();
+    expect(call.message).toContain("[media attached: media://");
+    expect(call.media).toEqual([
+      expect.objectContaining({ contentType: "audio/wav", kind: "audio" }),
+    ]);
+  });
+
   it("rejects provider and model overrides for write-scoped callers", async () => {
     primeMainAgentRun();
     mocks.agentCommand.mockClear();

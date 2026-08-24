@@ -223,7 +223,7 @@ export async function prepareAgentContentPhase(params: {
         maxBytes: resolveChatAttachmentMaxBytes(params.cfg),
         log: params.context.logGateway,
         supportsInlineImages,
-        acceptNonImage: false,
+        acceptNonImage: true,
       });
       message = parsed.message.trim();
       images = parsed.images;
