@@ -42,6 +42,7 @@ import {
   resolveSessionModelRef,
 } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
+import { applyAgentAudioUnderstanding } from "./agent-audio-understanding.js";
 import type { AgentTurnContext } from "./types.js";
 
 type ExplicitRecipientSession = Awaited<
@@ -86,6 +87,7 @@ export async function prepareAgentContentPhase(params: {
   knownAgents: string[];
 }): Promise<AgentContentPhaseResult | undefined> {
   const transcriptInputText = (params.request.message ?? "").trim();
+  let effectiveTranscriptInputText = transcriptInputText;
   let message = params.isRawModelRun
     ? transcriptInputText
     : annotateInterSessionPromptText(transcriptInputText, params.inputProvenance);
@@ -244,10 +246,31 @@ export async function prepareAgentContentPhase(params: {
     }
   }
 
+  if (media.length > 0) {
+    try {
+      const understood = await applyAgentAudioUnderstanding({
+        cfg: params.cfg,
+        agentId,
+        sessionKey: requestedSessionKey,
+        channel: recipientChannel,
+        message,
+        media,
+      });
+      if (understood.applied) {
+        message = understood.message;
+        effectiveTranscriptInputText = understood.message;
+      }
+    } catch (err) {
+      params.context.logGateway.warn(
+        `agent audio understanding failed, proceeding with native attachment: ${formatForLog(err)}`,
+      );
+    }
+  }
+
   return {
     agentId,
     requestedSessionKey,
-    effectiveTranscriptInputText: transcriptInputText,
+    effectiveTranscriptInputText,
     message,
     images,
     imageOrder,
