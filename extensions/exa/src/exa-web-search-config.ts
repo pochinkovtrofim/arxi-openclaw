@@ -1,5 +1,5 @@
 // Exa provider configuration shared by the lightweight schema and runtime.
-export const EXA_MAX_CONFIGURABLE_SEARCH_COUNT = 10;
+export const EXA_MAX_CONFIGURABLE_SEARCH_COUNT = 100;
 
 export type ExaWebSearchConfig = {
   apiKey?: string;

@@ -17,16 +17,18 @@ const loadExaWebSearchRuntime = createLazyRuntimeModule(
   () => import("./exa-web-search-provider.runtime.js"),
 );
 
-function createExaSearchSchema(maxSearchCount: number) {
+function createExaSearchSchema(maxSearchCount: number, strictLocalBroker: boolean) {
   return {
     type: "object",
     properties: {
-      query: {
-        type: "string",
-        minLength: 1,
-        maxLength: MAX_QUERY_CHARACTERS,
-        description: "Search query string.",
-      },
+      query: strictLocalBroker
+        ? {
+            type: "string",
+            minLength: 1,
+            maxLength: MAX_QUERY_CHARACTERS,
+            description: "Search query string.",
+          }
+        : { type: "string", description: "Search query string." },
       count: {
         type: "integer",
         description: `Number of results to return (1-${maxSearchCount}).`,
@@ -55,53 +57,74 @@ function createExaSearchSchema(maxSearchCount: number) {
       contents: {
         type: "object",
         properties: {
-          highlights: {
-            anyOf: [
-              { type: "boolean" },
-              {
-                type: "object",
-                properties: {
-                  maxCharacters: { type: "integer", minimum: 1, maximum: MAX_HIGHLIGHT_CHARACTERS },
-                  query: { type: "string", maxLength: MAX_CONTENT_QUERY_CHARACTERS },
-                  numSentences: { type: "integer", minimum: 1, maximum: MAX_HIGHLIGHT_SENTENCES },
-                  highlightsPerUrl: {
-                    type: "integer",
-                    minimum: 1,
-                    maximum: MAX_HIGHLIGHTS_PER_URL,
+          highlights: strictLocalBroker
+            ? {
+                anyOf: [
+                  { type: "boolean" },
+                  {
+                    type: "object",
+                    properties: {
+                      maxCharacters: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: MAX_HIGHLIGHT_CHARACTERS,
+                      },
+                      query: { type: "string", maxLength: MAX_CONTENT_QUERY_CHARACTERS },
+                      numSentences: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: MAX_HIGHLIGHT_SENTENCES,
+                      },
+                      highlightsPerUrl: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: MAX_HIGHLIGHTS_PER_URL,
+                      },
+                    },
+                    additionalProperties: false,
                   },
-                },
-                additionalProperties: false,
+                ],
+                description:
+                  "Highlights config: true, or an object with maxCharacters, query, numSentences, or highlightsPerUrl.",
+              }
+            : {
+                description:
+                  "Highlights config: true, or an object with maxCharacters, query, numSentences, or highlightsPerUrl.",
               },
-            ],
-            description:
-              "Highlights config: true, or an object with maxCharacters, query, numSentences, or highlightsPerUrl.",
-          },
-          text: {
-            anyOf: [
-              { type: "boolean" },
-              {
-                type: "object",
-                properties: {
-                  maxCharacters: { type: "integer", minimum: 1, maximum: MAX_TEXT_CHARACTERS },
-                },
-                additionalProperties: false,
-              },
-            ],
-            description: "Text config: true, or an object with maxCharacters.",
-          },
-          summary: {
-            anyOf: [
-              { type: "boolean" },
-              {
-                type: "object",
-                properties: {
-                  query: { type: "string", maxLength: MAX_CONTENT_QUERY_CHARACTERS },
-                },
-                additionalProperties: false,
-              },
-            ],
-            description: "Summary config: true, or an object with query.",
-          },
+          text: strictLocalBroker
+            ? {
+                anyOf: [
+                  { type: "boolean" },
+                  {
+                    type: "object",
+                    properties: {
+                      maxCharacters: {
+                        type: "integer",
+                        minimum: 1,
+                        maximum: MAX_TEXT_CHARACTERS,
+                      },
+                    },
+                    additionalProperties: false,
+                  },
+                ],
+                description: "Text config: true, or an object with maxCharacters.",
+              }
+            : { description: "Text config: true, or an object with maxCharacters." },
+          summary: strictLocalBroker
+            ? {
+                anyOf: [
+                  { type: "boolean" },
+                  {
+                    type: "object",
+                    properties: {
+                      query: { type: "string", maxLength: MAX_CONTENT_QUERY_CHARACTERS },
+                    },
+                    additionalProperties: false,
+                  },
+                ],
+                description: "Summary config: true, or an object with query.",
+              }
+            : { description: "Summary config: true, or an object with query." },
         },
         additionalProperties: false,
       },
@@ -113,17 +136,21 @@ function createExaSearchSchema(maxSearchCount: number) {
 export function createExaWebSearchProvider(): WebSearchProviderPlugin {
   return {
     ...createExaWebSearchProviderBase(),
-    createTool: (ctx) => ({
-      description:
-        "Search the web using Exa AI. Supports neural or keyword search, publication date filters, and optional highlights or text extraction.",
-      parameters: createExaSearchSchema(
-        resolveExaMaxSearchCount(readExaWebSearchConfig(ctx.config as Record<string, unknown>)),
-      ),
-      execute: async (args, context) => {
-        context?.signal?.throwIfAborted();
-        const { executeExaWebSearchProviderTool } = await loadExaWebSearchRuntime();
-        return await executeExaWebSearchProviderTool(ctx, args, context?.signal);
-      },
-    }),
+    createTool: (ctx) => {
+      const exaConfig = readExaWebSearchConfig(ctx.config as Record<string, unknown>);
+      return {
+        description:
+          "Search the web using Exa AI. Supports neural or keyword search, publication date filters, and optional highlights or text extraction.",
+        parameters: createExaSearchSchema(
+          resolveExaMaxSearchCount(exaConfig),
+          typeof exaConfig.localBaseUrl === "string" && exaConfig.localBaseUrl.trim() !== "",
+        ),
+        execute: async (args, context) => {
+          context?.signal?.throwIfAborted();
+          const { executeExaWebSearchProviderTool } = await loadExaWebSearchRuntime();
+          return await executeExaWebSearchProviderTool(ctx, args, context?.signal);
+        },
+      };
+    },
   };
 }

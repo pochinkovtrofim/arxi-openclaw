@@ -238,6 +238,7 @@ function resolveExaSearchCount(value: unknown, fallback: number, maximum: number
 
 function parseExaContents(
   rawContents: unknown,
+  strictLocalBroker = false,
 ): { value?: ExaContentsArgs } | { error: string; message: string; docs: string } {
   if (rawContents === undefined) {
     return { value: undefined };
@@ -280,7 +281,7 @@ function parseExaContents(
     const maxCharacters = parsePositiveInteger(obj.maxCharacters);
     if (
       "maxCharacters" in obj &&
-      (maxCharacters === undefined || maxCharacters > MAX_TEXT_CHARACTERS)
+      (maxCharacters === undefined || (strictLocalBroker && maxCharacters > MAX_TEXT_CHARACTERS))
     ) {
       return invalidContentsPayload(
         `contents.text.maxCharacters must be an integer from 1 to ${MAX_TEXT_CHARACTERS}.`,
@@ -312,7 +313,8 @@ function parseExaContents(
     const highlightsPerUrl = parsePositiveInteger(obj.highlightsPerUrl);
     if (
       "maxCharacters" in obj &&
-      (maxCharacters === undefined || maxCharacters > MAX_HIGHLIGHT_CHARACTERS)
+      (maxCharacters === undefined ||
+        (strictLocalBroker && maxCharacters > MAX_HIGHLIGHT_CHARACTERS))
     ) {
       return invalidContentsPayload(
         `contents.highlights.maxCharacters must be an integer from 1 to ${MAX_HIGHLIGHT_CHARACTERS}.`,
@@ -320,7 +322,7 @@ function parseExaContents(
     }
     if (
       "numSentences" in obj &&
-      (numSentences === undefined || numSentences > MAX_HIGHLIGHT_SENTENCES)
+      (numSentences === undefined || (strictLocalBroker && numSentences > MAX_HIGHLIGHT_SENTENCES))
     ) {
       return invalidContentsPayload(
         `contents.highlights.numSentences must be an integer from 1 to ${MAX_HIGHLIGHT_SENTENCES}.`,
@@ -328,7 +330,8 @@ function parseExaContents(
     }
     if (
       "highlightsPerUrl" in obj &&
-      (highlightsPerUrl === undefined || highlightsPerUrl > MAX_HIGHLIGHTS_PER_URL)
+      (highlightsPerUrl === undefined ||
+        (strictLocalBroker && highlightsPerUrl > MAX_HIGHLIGHTS_PER_URL))
     ) {
       return invalidContentsPayload(
         `contents.highlights.highlightsPerUrl must be an integer from 1 to ${MAX_HIGHLIGHTS_PER_URL}.`,
@@ -336,7 +339,8 @@ function parseExaContents(
     }
     if (
       "query" in obj &&
-      (typeof obj.query !== "string" || unicodeLength(obj.query) > MAX_CONTENT_QUERY_CHARACTERS)
+      (typeof obj.query !== "string" ||
+        (strictLocalBroker && unicodeLength(obj.query) > MAX_CONTENT_QUERY_CHARACTERS))
     ) {
       return invalidContentsPayload(
         `contents.highlights.query must be a string of at most ${MAX_CONTENT_QUERY_CHARACTERS} characters.`,
@@ -369,7 +373,8 @@ function parseExaContents(
     }
     if (
       "query" in obj &&
-      (typeof obj.query !== "string" || unicodeLength(obj.query) > MAX_CONTENT_QUERY_CHARACTERS)
+      (typeof obj.query !== "string" ||
+        (strictLocalBroker && unicodeLength(obj.query) > MAX_CONTENT_QUERY_CHARACTERS))
     ) {
       return invalidContentsPayload(
         `contents.summary.query must be a string of at most ${MAX_CONTENT_QUERY_CHARACTERS} characters.`,
@@ -560,7 +565,11 @@ export async function executeExaWebSearchProviderTool(
 
   const query = readStringParam(params, "query", { required: true });
   const rawType = readStringParam(params, "type");
-  if (rawType && !EXA_SEARCH_TYPES.includes(rawType as ExaSearchType)) {
+  if (
+    endpointMode === "loopback" &&
+    rawType &&
+    !EXA_SEARCH_TYPES.includes(rawType as ExaSearchType)
+  ) {
     return {
       error: "invalid_type",
       message: `type must be one of ${EXA_SEARCH_TYPES.join(", ")}.`,
@@ -570,7 +579,7 @@ export async function executeExaWebSearchProviderTool(
   const type: ExaSearchType = EXA_SEARCH_TYPES.includes(rawType as ExaSearchType)
     ? (rawType as ExaSearchType)
     : "auto";
-  if (unicodeLength(query) > MAX_QUERY_CHARACTERS) {
+  if (endpointMode === "loopback" && unicodeLength(query) > MAX_QUERY_CHARACTERS) {
     return {
       error: "invalid_query",
       message: `query must contain at most ${MAX_QUERY_CHARACTERS} characters.`,
@@ -617,7 +626,7 @@ export async function executeExaWebSearchProviderTool(
   }
   const { dateAfter, dateBefore } = parsedDateRange;
 
-  const parsedContents = parseExaContents(params.contents);
+  const parsedContents = parseExaContents(params.contents, endpointMode === "loopback");
   if (isErrorPayload(parsedContents)) {
     return parsedContents;
   }

@@ -46,7 +46,7 @@ openclaw gateway restart
           webSearch: {
             apiKey: "exa-...", // optional if EXA_API_KEY is set
             baseUrl: "https://api.exa.ai", // optional; OpenClaw appends /search
-            maxResults: 10, // optional exposed tool cap (1-10)
+            maxResults: 10, // optional exposed tool cap (1-100; default 100)
           },
         },
       },
@@ -87,7 +87,7 @@ Search query.
 </ParamField>
 
 <ParamField path="count" type="number" default="5">
-Results to return (1-10 by default, or the lower configured `maxResults`).
+Results to return (1-100, or the lower configured `maxResults`).
 </ParamField>
 
 <ParamField path="type" type="'auto' | 'neural' | 'fast' | 'deep' | 'deep-reasoning' | 'instant'">
@@ -151,7 +151,7 @@ response when available.
 
 ## Notes
 
-- `count` accepts up to the configured `maxResults` cap (10 by default).
+- `count` accepts up to the configured `maxResults` cap (100 by default).
 - Results are cached for 15 minutes by default. Configure the shared
   `tools.web.search.cacheTtlMinutes` (minutes) and
   `tools.web.search.timeoutSeconds` (default 30s) to change caching and

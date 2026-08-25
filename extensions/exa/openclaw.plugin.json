@@ -28,7 +28,7 @@
     },
     "webSearch.maxResults": {
       "label": "Exa Maximum Results",
-      "help": "Maximum result count exposed by the Exa tool (1-10)."
+      "help": "Maximum result count exposed by the Exa tool (1-100)."
     }
   },
   "contracts": {
@@ -54,7 +54,7 @@
           "maxResults": {
             "type": "integer",
             "minimum": 1,
-            "maximum": 10
+            "maximum": 100
           }
         }
       }

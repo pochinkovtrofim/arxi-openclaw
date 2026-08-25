@@ -447,13 +447,68 @@ describe("exa web search provider", () => {
     });
   });
 
+  it("preserves upstream Exa limits outside explicit local broker mode", async () => {
+    const provider = createExaWebSearchProvider();
+    const tool = provider.createTool({
+      config: {
+        plugins: { entries: { exa: { config: { webSearch: { apiKey: "exa-secret" } } } } },
+      },
+      searchConfig: {},
+    });
+    if (!tool) {
+      throw new Error("Expected tool definition");
+    }
+    const parameters = tool.parameters as {
+      properties?: {
+        query?: { maxLength?: number };
+        count?: { maximum?: number };
+        contents?: { properties?: { text?: { anyOf?: unknown } } };
+      };
+    };
+    expect(parameters.properties?.count?.maximum).toBe(100);
+    expect(parameters.properties?.query?.maxLength).toBeUndefined();
+    expect(parameters.properties?.contents?.properties?.text?.anyOf).toBeUndefined();
+    expect(testing.parseExaContents({ text: { maxCharacters: 20_001 } })).toEqual({
+      value: { text: { maxCharacters: 20_001 } },
+    });
+    expect(testing.parseExaContents({ text: { maxCharacters: 20_001 } }, true)).toEqual({
+      error: "invalid_contents",
+      message: "contents.text.maxCharacters must be an integer from 1 to 20000.",
+      docs: "https://docs.openclaw.ai/tools/web",
+    });
+
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response('{"results":[]}', {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    try {
+      await expect(
+        tool.execute({ query: "upstream behavior", count: 100, type: "future-mode" }),
+      ).resolves.toMatchObject({ provider: "exa" });
+      const body = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+      expect(body).toMatchObject({ numResults: 100, type: "auto" });
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("aligns the advertised and enforced Exa result cap", async () => {
     const provider = createExaWebSearchProvider();
     const tool = provider.createTool({
       config: {
         plugins: {
           entries: {
-            exa: { config: { webSearch: { apiKey: "exa-secret", maxResults: 7 } } },
+            exa: {
+              config: {
+                webSearch: {
+                  apiKey: "exa-secret",
+                  localBaseUrl: "http://127.0.0.1:18081",
+                  maxResults: 7,
+                },
+              },
+            },
           },
         },
       },
@@ -467,10 +522,14 @@ describe("exa web search provider", () => {
       properties?: {
         count?: { maximum?: number };
         type?: { enum?: string[] };
+        query?: { maxLength?: number };
+        contents?: { properties?: { text?: { anyOf?: unknown } } };
       };
     };
 
     expect(parameters.properties?.count?.maximum).toBe(7);
+    expect(parameters.properties?.query?.maxLength).toBe(4096);
+    expect(parameters.properties?.contents?.properties?.text?.anyOf).toBeDefined();
     expect(parameters.properties?.type?.enum).toEqual([
       "auto",
       "neural",
