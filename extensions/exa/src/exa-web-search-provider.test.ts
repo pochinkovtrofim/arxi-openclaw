@@ -1,4 +1,5 @@
 // Exa tests cover exa web search provider plugin behavior.
+import { createServer } from "node:http";
 import { describe, expect, it, vi } from "vitest";
 import { testing } from "../test-api.js";
 import { createExaWebSearchProvider as createContractExaWebSearchProvider } from "../web-search-contract-api.js";
@@ -201,6 +202,143 @@ describe("exa web search provider", () => {
     });
   });
 
+  it("uses the exact Arxi loopback endpoint without changing normal Exa endpoints", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ results: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const previousProxy = process.env.HTTP_PROXY;
+    process.env.HTTP_PROXY = "http://127.0.0.1:9";
+    try {
+      const tool = createExaWebSearchProvider().createTool({
+        config: {
+          plugins: {
+            entries: {
+              exa: {
+                config: {
+                  webSearch: {
+                    apiKey: "arxi-host-exa-v1",
+                    baseUrl: "http://127.0.0.1:18080",
+                  },
+                },
+              },
+            },
+          },
+        },
+        searchConfig: {},
+      });
+      if (!tool) {
+        throw new Error("Expected tool definition");
+      }
+      await tool.execute({ query: "recent result" });
+      expect(fetchMock).toHaveBeenCalledWith(
+        "http://127.0.0.1:18080/search",
+        expect.objectContaining({ method: "POST" }),
+      );
+    } finally {
+      fetchMock.mockRestore();
+      if (previousProxy === undefined) {
+        delete process.env.HTTP_PROXY;
+      } else {
+        process.env.HTTP_PROXY = previousProxy;
+      }
+    }
+  });
+
+  it.sequential("executes a real bounded loopback search with the marker credential", async () => {
+    let requestBody = "";
+    let marker = "";
+    const server = createServer((request, response) => {
+      marker = String(request.headers["x-api-key"] ?? "");
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        requestBody += chunk;
+      });
+      request.on("end", () => {
+        response.setHeader("content-type", "application/json");
+        response.end(
+          JSON.stringify({
+            results: [
+              {
+                title: "Recent result",
+                url: "https://example.test/recent",
+                highlights: ["current fact"],
+              },
+            ],
+          }),
+        );
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(18080, "127.0.0.1", resolve);
+    });
+    try {
+      const tool = createExaWebSearchProvider().createTool({
+        config: {
+          plugins: {
+            entries: {
+              exa: {
+                config: {
+                  webSearch: {
+                    apiKey: "arxi-host-exa-v1",
+                    baseUrl: "http://127.0.0.1:18080",
+                  },
+                },
+              },
+            },
+          },
+        },
+        searchConfig: { cacheTtlMinutes: 0 },
+      });
+      if (!tool) {
+        throw new Error("Expected tool definition");
+      }
+      const result = await tool.execute({ query: "latest fact", count: 3 });
+      expect(marker).toBe("arxi-host-exa-v1");
+      expect(JSON.parse(requestBody)).toMatchObject({ query: "latest fact", numResults: 3 });
+      expect(result).toMatchObject({
+        results: [expect.objectContaining({ url: "https://example.test/recent" })],
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error) {
+            reject(error);
+          } else {
+            resolve();
+          }
+        });
+      });
+    }
+  });
+
+  it("does not widen the Arxi loopback seam to another port", async () => {
+    const tool = createExaWebSearchProvider().createTool({
+      config: {
+        plugins: {
+          entries: {
+            exa: {
+              config: {
+                webSearch: {
+                  apiKey: "arxi-host-exa-v1",
+                  baseUrl: "http://127.0.0.1:18081",
+                },
+              },
+            },
+          },
+        },
+      },
+      searchConfig: { cacheTtlMinutes: 0 },
+    });
+    if (!tool) {
+      throw new Error("Expected tool definition");
+    }
+    await expect(tool.execute({ query: "wrong local endpoint" })).rejects.toThrow();
+  });
+
   it("partitions Exa cache keys by resolved endpoint", () => {
     const base = {
       type: "auto" as const,
@@ -277,6 +415,33 @@ describe("exa web search provider", () => {
           highlightsPerUrl: 2,
         },
         summary: { query: "launch details" },
+      },
+    });
+  });
+
+  it("keeps uncapped content values owned by the pinned provider", () => {
+    const query = "q".repeat(5000);
+    expect(
+      testing.parseExaContents({
+        text: { maxCharacters: 100001 },
+        highlights: {
+          maxCharacters: 100001,
+          query,
+          numSentences: 101,
+          highlightsPerUrl: 101,
+        },
+        summary: { query },
+      }),
+    ).toEqual({
+      value: {
+        text: { maxCharacters: 100001 },
+        highlights: {
+          maxCharacters: 100001,
+          query,
+          numSentences: 101,
+          highlightsPerUrl: 101,
+        },
+        summary: { query },
       },
     });
   });

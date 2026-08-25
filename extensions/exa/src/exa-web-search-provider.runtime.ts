@@ -16,6 +16,7 @@ import {
   resolveSearchTimeoutSeconds,
   resolveSiteName,
   type SearchConfigRecord,
+  withArxiExaWebSearchEndpoint,
   withTrustedWebSearchEndpoint,
   wrapWebContent,
   writeCachedSearchPayload,
@@ -27,6 +28,7 @@ import {
 } from "openclaw/plugin-sdk/string-coerce-runtime";
 
 const EXA_SEARCH_ENDPOINT = "https://api.exa.ai/search";
+const ARXI_EXA_SEARCH_ENDPOINT = "http://127.0.0.1:18080/search";
 const EXA_SEARCH_TYPES = ["auto", "neural", "fast", "deep", "deep-reasoning", "instant"] as const;
 const EXA_FRESHNESS_VALUES = ["day", "week", "month", "year"] as const;
 const EXA_MAX_SEARCH_COUNT = 100;
@@ -410,7 +412,11 @@ async function runExaSearch(params: {
     body.endPublishedDate = params.dateBefore;
   }
 
-  return withTrustedWebSearchEndpoint(
+  const withEndpoint =
+    params.endpoint === ARXI_EXA_SEARCH_ENDPOINT
+      ? withArxiExaWebSearchEndpoint
+      : withTrustedWebSearchEndpoint;
+  return withEndpoint(
     {
       url: params.endpoint,
       timeoutSeconds: params.timeoutSeconds,

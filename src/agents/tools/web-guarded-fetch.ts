@@ -13,6 +13,7 @@ import {
 } from "../../infra/net/fetch-guard.js";
 import {
   ssrfPolicyFromHttpBaseUrlFakeIpHostnameAllowlist,
+  ssrfPolicyFromHttpBaseUrlAllowedOrigin,
   type SsrFPolicy,
 } from "../../infra/net/ssrf.js";
 import { readPositiveIntegerParam } from "./common.js";
@@ -90,6 +91,26 @@ export async function withTrustedWebToolsEndpoint<T>(
       policy: trustedPolicy,
       useEnvProxy: true,
     },
+    run,
+  );
+}
+
+const ARXI_EXA_SEARCH_URL = "http://127.0.0.1:18080/search";
+
+/** Runs only the Arxi Exa route without trusting proxies or redirects. */
+export async function withArxiExaWebToolsEndpoint<T>(
+  params: WebToolEndpointFetchOptions,
+  run: (result: { response: Response; finalUrl: string }) => Promise<T>,
+): Promise<T> {
+  if (params.url !== ARXI_EXA_SEARCH_URL) {
+    throw new Error("Arxi Exa endpoint must match its literal loopback route");
+  }
+  const policy = ssrfPolicyFromHttpBaseUrlAllowedOrigin(ARXI_EXA_SEARCH_URL);
+  if (!policy) {
+    throw new Error("Arxi Exa endpoint origin is invalid");
+  }
+  return await withWebToolsNetworkGuard(
+    { ...params, maxRedirects: 0, policy: { ...policy, hostnameAllowlist: ["127.0.0.1"] } },
     run,
   );
 }

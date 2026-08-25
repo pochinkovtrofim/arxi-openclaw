@@ -4,6 +4,7 @@ import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coerci
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchWithSsrFGuard, GUARDED_FETCH_MODE } from "../../infra/net/fetch-guard.js";
 import {
+  withArxiExaWebToolsEndpoint,
   withSelfHostedWebToolsEndpoint,
   withStrictWebToolsEndpoint,
   withTrustedWebToolsEndpoint,
@@ -80,6 +81,38 @@ describe("web-guarded-fetch", () => {
     expect(policy?.allowRfc2544BenchmarkRange).toBe(true);
     expect(policy?.allowIpv6UniqueLocalRange).toBe(true);
     expect(call?.mode).toBe(GUARDED_FETCH_MODE.TRUSTED_ENV_PROXY);
+  });
+
+  it("pins an exact origin without trusting environment proxies", async () => {
+    vi.mocked(fetchWithSsrFGuard).mockResolvedValue({
+      response: new Response("ok", { status: 200 }),
+      finalUrl: "http://127.0.0.1:18080/search",
+      release: async () => {},
+    });
+
+    await withArxiExaWebToolsEndpoint(
+      { url: "http://127.0.0.1:18080/search" },
+      async () => undefined,
+    );
+
+    const call = firstFetchCall();
+    expect(call.policy).toEqual({
+      allowedOrigins: ["http://127.0.0.1:18080"],
+      hostnameAllowlist: ["127.0.0.1"],
+    });
+    expect(call.maxRedirects).toBe(0);
+    expect(call.mode).toBe(GUARDED_FETCH_MODE.STRICT);
+  });
+
+  it.each([
+    "http://127.0.0.1:18081/search",
+    "http://127.0.0.1:18080/other",
+    "http://localhost:18080/search",
+  ])("rejects non-literal Arxi Exa routes: %s", async (url) => {
+    await expect(withArxiExaWebToolsEndpoint({ url }, async () => undefined)).rejects.toThrow(
+      "literal loopback route",
+    );
+    expect(fetchWithSsrFGuard).not.toHaveBeenCalled();
   });
 
   it("keeps strict endpoint policy unchanged", async () => {
