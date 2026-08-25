@@ -58,6 +58,20 @@ function receipt(messageId: string, kind: "text" | "media") {
   };
 }
 
+function receiptMany(messageIds: string[], kind: "text" | "media") {
+  if (messageIds.length === 0) {
+    throw new Error("Arxi outbound receipt is empty");
+  }
+  return {
+    messageId: messageIds[0],
+    visibleReplySent: true,
+    receipt: createMessageReceiptFromOutboundResults({
+      results: messageIds.map((messageId) => ({ channel: CHANNEL_ID, messageId })),
+      kind,
+    }),
+  };
+}
+
 export async function sendText(ctx: ChannelMessageSendTextContext) {
   owner(ctx.to);
   const id = actionId(ctx.deliveryQueueId);
@@ -92,13 +106,14 @@ function mediaKind(contentType: string, audioAsVoice?: boolean) {
   }
   return 6;
 }
-export async function sendMedia(ctx: ChannelMessageSendMediaContext) {
-  owner(ctx.to);
-  const id = actionId(ctx.deliveryQueueId);
-  if (!ctx.mediaUrl) {
+async function submitMediaAction(
+  ctx: ChannelMessageSendMediaContext | ChannelMessageSendPayloadContext,
+  params: { id: string; mediaUrl: string; text: string },
+) {
+  if (!params.mediaUrl) {
     throw new Error("Arxi media URL is required");
   }
-  const media = await loadOutboundMediaFromUrl(ctx.mediaUrl, {
+  const media = await loadOutboundMediaFromUrl(params.mediaUrl, {
     maxBytes: 8 * 1024 * 1024,
     mediaAccess: ctx.mediaAccess,
     mediaLocalRoots: ctx.mediaLocalRoots,
@@ -106,15 +121,14 @@ export async function sendMedia(ctx: ChannelMessageSendMediaContext) {
   });
   const name = media.fileName?.trim() || "attachment";
   const contentType = media.contentType?.trim() || "application/octet-stream";
-  await ctx.onPlatformSendDispatch?.();
-  const uploaded = await uploadActionFile(id, name, contentType, media.buffer);
+  const uploaded = await uploadActionFile(params.id, name, contentType, media.buffer);
   await submitAction({
     version: 2,
-    action_id: id,
+    action_id: params.id,
     source_run_id: sourceRun(ctx.sourceRunId),
     kind: 3,
     payload: {
-      caption: ctx.text,
+      caption: params.text,
       format: 1,
       name,
       media_type: contentType,
@@ -124,16 +138,44 @@ export async function sendMedia(ctx: ChannelMessageSendMediaContext) {
       reply_to_message_id: replyId(ctx.replyToId),
     },
   });
+}
+
+export async function sendMedia(ctx: ChannelMessageSendMediaContext) {
+  owner(ctx.to);
+  const id = actionId(ctx.deliveryQueueId);
+  await ctx.onPlatformSendDispatch?.();
+  await submitMediaAction(ctx, { id, mediaUrl: ctx.mediaUrl, text: ctx.text });
   const result = receipt(id, "media");
   await ctx.onDeliveryResult?.(result);
   return result;
 }
 
 async function sendPayload(ctx: ChannelMessageSendPayloadContext) {
-  const mediaUrl = ctx.mediaUrl ?? ctx.payload.mediaUrl ?? ctx.payload.mediaUrls?.[0];
-  return mediaUrl
-    ? await sendMedia({ ...ctx, mediaUrl })
-    : await sendText({ ...ctx, text: ctx.payload.text ?? ctx.text });
+  owner(ctx.to);
+  const baseId = actionId(ctx.deliveryQueueId);
+  const mediaUrls = [ctx.mediaUrl, ctx.payload.mediaUrl, ...(ctx.payload.mediaUrls ?? [])]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  if (mediaUrls.length === 0) {
+    return await sendText({ ...ctx, text: ctx.payload.text ?? ctx.text });
+  }
+  await ctx.onPlatformSendDispatch?.();
+  const ids: string[] = [];
+  for (const [index, mediaUrl] of mediaUrls.entries()) {
+    const id =
+      index === 0
+        ? baseId
+        : `media:${createHash("sha256").update(`${baseId}\0${index}`).digest("hex")}`;
+    await submitMediaAction(ctx, {
+      id,
+      mediaUrl,
+      text: index === 0 ? (ctx.payload.text ?? ctx.text) : "",
+    });
+    ids.push(id);
+  }
+  const result = receiptMany(ids, "media");
+  await ctx.onDeliveryResult?.(result);
+  return result;
 }
 
 async function reconcile(ctx: ChannelMessageUnknownSendContext) {
@@ -144,19 +186,24 @@ async function reconcile(ctx: ChannelMessageUnknownSendContext) {
     }
     const id = actionId(ctx.queueId);
     const text = payload.text ?? "";
-    if (payload.mediaUrl) {
-      await sendMedia({
+    const mediaUrls = [payload.mediaUrl, ...(payload.mediaUrls ?? [])].filter(
+      (value): value is string => typeof value === "string" && value.trim().length > 0,
+    );
+    let result;
+    if (mediaUrls.length > 0) {
+      result = await sendPayload({
         ...ctx,
+        payload,
         mediaUrl: payload.mediaUrl,
         text,
         deliveryQueueId: id,
       });
     } else {
-      await sendText({ ...ctx, text, deliveryQueueId: id });
+      result = await sendText({ ...ctx, text, deliveryQueueId: id });
     }
     return {
       status: "sent" as const,
-      ...receipt(id, payload.mediaUrl ? "media" : "text"),
+      ...result,
     };
   } catch (error) {
     return {
@@ -182,7 +229,7 @@ export const arxiMessageAdapter = defineChannelMessageAdapter({
       reconcileUnknownSend: true,
     },
     automaticUnknownSendReconciliation: true,
-    reconcileUnknownSendKinds: { text: true, media: true },
+    reconcileUnknownSendKinds: { text: true, media: true, payload: true },
     reconcileUnknownSend: reconcile,
   },
   send: { text: sendText, media: sendMedia, payload: sendPayload },

@@ -12,7 +12,6 @@ import { saveMediaBuffer } from "openclaw/plugin-sdk/media-store";
 import type { PluginRuntime } from "openclaw/plugin-sdk/runtime-store";
 import type { ArxiInboundEvent } from "./bridge.js";
 import { readInboundFile } from "./bridge.js";
-import { sendMedia, sendText } from "./outbound.js";
 
 export type StoredArxiInbound = ArxiInboundEvent & {
   media: Array<{ path: string; contentType?: string }>;
@@ -85,12 +84,15 @@ export async function dispatchArxiInbound(params: {
   const media = await toInboundMediaFactsWithMetadata(params.event.media);
   const reply = objectRecord(first.reply) ? first.reply : undefined;
   const forward = objectRecord(first.forward) ? first.forward : undefined;
+  const quote = reply && objectRecord(reply.quote) ? reply.quote : undefined;
   const structured = messages.map((message) => ({
     label: "Telegram message context",
     payload: {
       update_id: message.update_id,
       message_id: message.message_id,
       entities: message.entities,
+      reply: message.reply,
+      forward: message.forward,
       context: message.context,
       attachment_ids: message.attachment_ids,
     },
@@ -128,9 +130,15 @@ export async function dispatchArxiInbound(params: {
       quote: reply
         ? {
             id: typeof reply.message_id === "number" ? String(reply.message_id) : "",
-            body: typeof reply.body === "string" ? reply.body : undefined,
+            body:
+              typeof quote?.text === "string"
+                ? quote.text
+                : typeof reply.body === "string"
+                  ? reply.body
+                  : undefined,
             sender: typeof reply.sender_name === "string" ? reply.sender_name : undefined,
-            isQuote: true,
+            isExternal: reply.external === true,
+            isQuote: quote !== undefined,
           }
         : undefined,
       forwarded: forward
@@ -144,7 +152,6 @@ export async function dispatchArxiInbound(params: {
       channelStructuredContext: structured,
     } satisfies NonNullable<Parameters<typeof buildChannelInboundEventContext>[0]["supplemental"]>,
   });
-  let sequence = 0;
   await params.runtime.channel.inbound.dispatch({
     cfg: params.cfg,
     channel: "arxi",
@@ -152,33 +159,12 @@ export async function dispatchArxiInbound(params: {
     route: { agentId: route.agentId, dmScope: route.dmScope, sessionKey: route.sessionKey },
     ctxPayload,
     delivery: {
-      deliver: async (payload: unknown, info?: { kind?: string }) => {
-        const replyPayload = objectRecord(payload) ? payload : undefined;
-        const visibleText = typeof replyPayload?.text === "string" ? replyPayload.text : "";
-        const urls = [
-          replyPayload?.mediaUrl,
-          ...(Array.isArray(replyPayload?.mediaUrls) ? replyPayload.mediaUrls : []),
-        ].filter((value): value is string => typeof value === "string" && value.length > 0);
-        if (urls.length > 0 && info?.kind && info.kind !== "final") {
-          return;
+      durable: (_payload, info) => (info.kind === "final" ? { to: "owner" } : false),
+      deliver: async (_payload, info) => {
+        if (info.kind === "final") {
+          throw new Error("Arxi durable final delivery is unavailable");
         }
-        if (!visibleText.trim() && urls.length === 0) {
-          return;
-        }
-        for (const mediaUrl of urls) {
-          const id = `reply:${params.event.event_id}:${sequence++}`;
-          await sendMedia({
-            cfg: params.cfg,
-            to: "owner",
-            text: visibleText,
-            mediaUrl,
-            deliveryQueueId: id,
-          });
-        }
-        if (urls.length === 0) {
-          const id = `reply:${params.event.event_id}:${sequence++}`;
-          await sendText({ cfg: params.cfg, to: "owner", text: visibleText, deliveryQueueId: id });
-        }
+        return { visibleReplySent: false };
       },
       onError: (error: unknown) => {
         throw error;
