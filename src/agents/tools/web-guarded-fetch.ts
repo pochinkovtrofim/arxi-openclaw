@@ -12,6 +12,7 @@ import {
   withTrustedEnvProxyGuardedFetchMode,
 } from "../../infra/net/fetch-guard.js";
 import {
+  ssrfPolicyFromHttpBaseUrlAllowedOrigin,
   ssrfPolicyFromHttpBaseUrlFakeIpHostnameAllowlist,
   type SsrFPolicy,
 } from "../../infra/net/ssrf.js";
@@ -104,6 +105,48 @@ export async function withSelfHostedWebToolsEndpoint<T>(
       ...params,
       policy: WEB_TOOLS_SELF_HOSTED_NETWORK_SSRF_POLICY,
       useEnvProxy: true,
+    },
+    run,
+  );
+}
+
+/**
+ * Runs a fetch to one exact literal loopback origin. Unlike the general
+ * self-hosted mode, redirects and alternate private/public hosts remain
+ * blocked. This is intended for provider brokers bound inside the same host.
+ */
+export async function withLoopbackWebToolsEndpoint<T>(
+  params: WebToolEndpointFetchOptions,
+  run: (result: { response: Response; finalUrl: string }) => Promise<T>,
+): Promise<T> {
+  let parsed: URL;
+  try {
+    parsed = new URL(params.url);
+  } catch {
+    throw new Error("Loopback web tool endpoint must be a valid URL.");
+  }
+  if (
+    parsed.protocol !== "http:" ||
+    (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "[::1]") ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.port === ""
+  ) {
+    throw new Error("Loopback web tool endpoint must use an explicit http:// loopback origin.");
+  }
+  const originPolicy = ssrfPolicyFromHttpBaseUrlAllowedOrigin(parsed.toString());
+  if (!originPolicy) {
+    throw new Error("Loopback web tool endpoint origin is invalid.");
+  }
+  return await withWebToolsNetworkGuard(
+    {
+      ...params,
+      maxRedirects: 0,
+      policy: {
+        ...originPolicy,
+        hostnameAllowlist: [parsed.hostname],
+      },
+      useEnvProxy: false,
     },
     run,
   );

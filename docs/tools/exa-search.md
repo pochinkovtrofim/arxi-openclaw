@@ -46,6 +46,7 @@ openclaw gateway restart
           webSearch: {
             apiKey: "exa-...", // optional if EXA_API_KEY is set
             baseUrl: "https://api.exa.ai", // optional; OpenClaw appends /search
+            maxResults: 10, // optional exposed tool cap (1-10)
           },
         },
       },
@@ -73,6 +74,12 @@ normalizes bare hosts by prepending `https://` and appends `/search` unless
 the path already ends there. The resolved endpoint is part of the search
 cache key, so results from different endpoints are never shared.
 
+For a provider broker on the same host, use `localBaseUrl` instead of
+`baseUrl`. It accepts only an explicit literal `http://127.0.0.1:<port>` or
+`http://[::1]:<port>` origin, ignores environment proxies, and does not permit
+redirects or alternate hosts. `baseUrl` and `localBaseUrl` are mutually
+exclusive.
+
 ## Tool parameters
 
 <ParamField path="query" type="string" required>
@@ -80,7 +87,7 @@ Search query.
 </ParamField>
 
 <ParamField path="count" type="number" default="5">
-Results to return (1-100, subject to Exa search-type limits).
+Results to return (1-10 by default, or the lower configured `maxResults`).
 </ParamField>
 
 <ParamField path="type" type="'auto' | 'neural' | 'fast' | 'deep' | 'deep-reasoning' | 'instant'">
@@ -119,11 +126,11 @@ await web_search({
 });
 ```
 
-| Contents option | Type                                                                  | Description            |
-| --------------- | --------------------------------------------------------------------- | ---------------------- |
-| `text`          | `boolean \| { maxCharacters }`                                        | Extract full page text |
-| `highlights`    | `boolean \| { maxCharacters, query, numSentences, highlightsPerUrl }` | Extract key sentences  |
-| `summary`       | `boolean \| { query }`                                                | AI-generated summary   |
+| Contents option | Type                                                                  | Description                                                                  |
+| --------------- | --------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `text`          | `boolean \| { maxCharacters }`                                        | Extract text; `maxCharacters` is capped at 20,000                            |
+| `highlights`    | `boolean \| { maxCharacters, query, numSentences, highlightsPerUrl }` | Extract key sentences; controls are bounded to 4,000 characters and 10 items |
+| `summary`       | `boolean \| { query }`                                                | AI-generated summary                                                         |
 
 If `contents` is omitted, Exa defaults to `{ highlights: true }` so results
 include key-sentence excerpts. Result descriptions resolve from highlights
@@ -144,7 +151,7 @@ response when available.
 
 ## Notes
 
-- `count` accepts up to 100, subject to Exa search-type limits.
+- `count` accepts up to the configured `maxResults` cap (10 by default).
 - Results are cached for 15 minutes by default. Configure the shared
   `tools.web.search.cacheTtlMinutes` (minutes) and
   `tools.web.search.timeoutSeconds` (default 30s) to change caching and

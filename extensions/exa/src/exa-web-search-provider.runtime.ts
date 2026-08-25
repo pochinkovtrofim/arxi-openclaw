@@ -16,6 +16,7 @@ import {
   resolveSearchTimeoutSeconds,
   resolveSiteName,
   type SearchConfigRecord,
+  withLoopbackWebSearchEndpoint,
   withTrustedWebSearchEndpoint,
   wrapWebContent,
   writeCachedSearchPayload,
@@ -25,21 +26,25 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { type ExaWebSearchConfig, resolveExaMaxSearchCount } from "./exa-web-search-config.js";
 
 const EXA_SEARCH_ENDPOINT = "https://api.exa.ai/search";
 const EXA_SEARCH_TYPES = ["auto", "neural", "fast", "deep", "deep-reasoning", "instant"] as const;
 const EXA_FRESHNESS_VALUES = ["day", "week", "month", "year"] as const;
-const EXA_MAX_SEARCH_COUNT = 100;
+const MAX_QUERY_CHARACTERS = 4096;
+const MAX_CONTENT_QUERY_CHARACTERS = 4096;
+const MAX_TEXT_CHARACTERS = 20_000;
+const MAX_HIGHLIGHT_CHARACTERS = 4_000;
+const MAX_HIGHLIGHT_SENTENCES = 10;
+const MAX_HIGHLIGHTS_PER_URL = 10;
 const EXA_ERROR_BODY_LIMIT_BYTES = 8 * 1024;
 // Exa search responses are untrusted external bodies. Cap the success JSON the
 // same way other bundled providers do (16 MiB) so a misbehaving or hostile
 // endpoint cannot stream an unbounded body into memory before we parse it.
 const EXA_SEARCH_JSON_MAX_BYTES = 16 * 1024 * 1024;
 
-type ExaConfig = {
-  apiKey?: string;
-  baseUrl?: string;
-};
+type ExaConfig = ExaWebSearchConfig;
+type ExaEndpointMode = "loopback" | "strict";
 
 type ExaSearchType = (typeof EXA_SEARCH_TYPES)[number];
 type ExaFreshness = (typeof EXA_FRESHNESS_VALUES)[number];
@@ -127,10 +132,38 @@ function invalidBaseUrlPayload(value: string) {
 
 function resolveExaSearchEndpoint(
   exa?: ExaConfig,
-): { endpoint: string } | { error: string; message: string; docs: string } {
+): { endpoint: string; mode: ExaEndpointMode } | { error: string; message: string; docs: string } {
+  const localConfigured = normalizeOptionalString(exa?.localBaseUrl);
   const configured = normalizeOptionalString(exa?.baseUrl);
+  if (configured && localConfigured) {
+    return invalidBaseUrlPayload("baseUrl and localBaseUrl are mutually exclusive");
+  }
+  if (localConfigured) {
+    let parsed: URL;
+    try {
+      parsed = new URL(localConfigured);
+    } catch {
+      return invalidBaseUrlPayload(localConfigured);
+    }
+    if (
+      parsed.protocol !== "http:" ||
+      (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "[::1]") ||
+      parsed.port === "" ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.search !== "" ||
+      parsed.hash !== ""
+    ) {
+      return invalidBaseUrlPayload(localConfigured);
+    }
+    const pathname = parsed.pathname.replace(/\/+$/, "");
+    parsed.pathname = pathname.endsWith("/search")
+      ? pathname
+      : `${pathname === "" ? "" : pathname}/search`;
+    return { endpoint: parsed.toString(), mode: "loopback" };
+  }
   if (!configured) {
-    return { endpoint: EXA_SEARCH_ENDPOINT };
+    return { endpoint: EXA_SEARCH_ENDPOINT, mode: "strict" };
   }
 
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(configured) && !/^https?:\/\//i.test(configured)) {
@@ -152,7 +185,7 @@ function resolveExaSearchEndpoint(
     ? pathname
     : `${pathname === "" ? "" : pathname}/search`;
   parsed.hash = "";
-  return { endpoint: parsed.toString() };
+  return { endpoint: parsed.toString(), mode: "strict" };
 }
 
 function resolveExaDescription(result: ExaSearchResult): string {
@@ -177,6 +210,10 @@ function parsePositiveInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
+function unicodeLength(value: string): number {
+  return Array.from(value).length;
+}
+
 function invalidContentsPayload(message: string) {
   return {
     error: "invalid_contents",
@@ -191,12 +228,12 @@ function isErrorPayload(value: unknown): value is { error: string; message: stri
   );
 }
 
-function resolveExaSearchCount(value: unknown, fallback: number): number {
+function resolveExaSearchCount(value: unknown, fallback: number, maximum: number): number {
   const parsed = parseStrictPositiveInteger(value);
   if (parsed === undefined) {
     return fallback;
   }
-  return Math.min(EXA_MAX_SEARCH_COUNT, parsed);
+  return Math.min(maximum, parsed);
 }
 
 function parseExaContents(
@@ -240,12 +277,16 @@ function parseExaContents(
         );
       }
     }
-    if ("maxCharacters" in obj && parsePositiveInteger(obj.maxCharacters) === undefined) {
-      return invalidContentsPayload("contents.text.maxCharacters must be a positive integer.");
+    const maxCharacters = parsePositiveInteger(obj.maxCharacters);
+    if (
+      "maxCharacters" in obj &&
+      (maxCharacters === undefined || maxCharacters > MAX_TEXT_CHARACTERS)
+    ) {
+      return invalidContentsPayload(
+        `contents.text.maxCharacters must be an integer from 1 to ${MAX_TEXT_CHARACTERS}.`,
+      );
     }
-    return parsePositiveInteger(obj.maxCharacters)
-      ? { maxCharacters: parsePositiveInteger(obj.maxCharacters) }
-      : {};
+    return maxCharacters ? { maxCharacters } : {};
   };
 
   const parseHighlights = (
@@ -266,33 +307,46 @@ function parseExaContents(
         );
       }
     }
-    if ("maxCharacters" in obj && parsePositiveInteger(obj.maxCharacters) === undefined) {
+    const maxCharacters = parsePositiveInteger(obj.maxCharacters);
+    const numSentences = parsePositiveInteger(obj.numSentences);
+    const highlightsPerUrl = parsePositiveInteger(obj.highlightsPerUrl);
+    if (
+      "maxCharacters" in obj &&
+      (maxCharacters === undefined || maxCharacters > MAX_HIGHLIGHT_CHARACTERS)
+    ) {
       return invalidContentsPayload(
-        "contents.highlights.maxCharacters must be a positive integer.",
+        `contents.highlights.maxCharacters must be an integer from 1 to ${MAX_HIGHLIGHT_CHARACTERS}.`,
       );
     }
-    if ("numSentences" in obj && parsePositiveInteger(obj.numSentences) === undefined) {
-      return invalidContentsPayload("contents.highlights.numSentences must be a positive integer.");
-    }
-    if ("highlightsPerUrl" in obj && parsePositiveInteger(obj.highlightsPerUrl) === undefined) {
+    if (
+      "numSentences" in obj &&
+      (numSentences === undefined || numSentences > MAX_HIGHLIGHT_SENTENCES)
+    ) {
       return invalidContentsPayload(
-        "contents.highlights.highlightsPerUrl must be a positive integer.",
+        `contents.highlights.numSentences must be an integer from 1 to ${MAX_HIGHLIGHT_SENTENCES}.`,
       );
     }
-    if ("query" in obj && typeof obj.query !== "string") {
-      return invalidContentsPayload("contents.highlights.query must be a string.");
+    if (
+      "highlightsPerUrl" in obj &&
+      (highlightsPerUrl === undefined || highlightsPerUrl > MAX_HIGHLIGHTS_PER_URL)
+    ) {
+      return invalidContentsPayload(
+        `contents.highlights.highlightsPerUrl must be an integer from 1 to ${MAX_HIGHLIGHTS_PER_URL}.`,
+      );
+    }
+    if (
+      "query" in obj &&
+      (typeof obj.query !== "string" || unicodeLength(obj.query) > MAX_CONTENT_QUERY_CHARACTERS)
+    ) {
+      return invalidContentsPayload(
+        `contents.highlights.query must be a string of at most ${MAX_CONTENT_QUERY_CHARACTERS} characters.`,
+      );
     }
     return {
-      ...(parsePositiveInteger(obj.maxCharacters)
-        ? { maxCharacters: parsePositiveInteger(obj.maxCharacters) }
-        : {}),
+      ...(maxCharacters ? { maxCharacters } : {}),
       ...(typeof obj.query === "string" ? { query: obj.query } : {}),
-      ...(parsePositiveInteger(obj.numSentences)
-        ? { numSentences: parsePositiveInteger(obj.numSentences) }
-        : {}),
-      ...(parsePositiveInteger(obj.highlightsPerUrl)
-        ? { highlightsPerUrl: parsePositiveInteger(obj.highlightsPerUrl) }
-        : {}),
+      ...(numSentences ? { numSentences } : {}),
+      ...(highlightsPerUrl ? { highlightsPerUrl } : {}),
     };
   };
 
@@ -313,8 +367,13 @@ function parseExaContents(
         );
       }
     }
-    if ("query" in obj && typeof obj.query !== "string") {
-      return invalidContentsPayload("contents.summary.query must be a string.");
+    if (
+      "query" in obj &&
+      (typeof obj.query !== "string" || unicodeLength(obj.query) > MAX_CONTENT_QUERY_CHARACTERS)
+    ) {
+      return invalidContentsPayload(
+        `contents.summary.query must be a string of at most ${MAX_CONTENT_QUERY_CHARACTERS} characters.`,
+      );
     }
     return typeof obj.query === "string" ? { query: obj.query } : {};
   };
@@ -384,6 +443,7 @@ function resolveFreshnessStartDate(freshness: ExaFreshness): string {
 async function runExaSearch(params: {
   apiKey: string;
   endpoint: string;
+  endpointMode: ExaEndpointMode;
   query: string;
   count: number;
   freshness?: ExaFreshness;
@@ -410,13 +470,18 @@ async function runExaSearch(params: {
     body.endPublishedDate = params.dateBefore;
   }
 
-  return withTrustedWebSearchEndpoint(
+  const withEndpoint =
+    params.endpointMode === "loopback"
+      ? withLoopbackWebSearchEndpoint
+      : withTrustedWebSearchEndpoint;
+  return withEndpoint(
     {
       url: params.endpoint,
       timeoutSeconds: params.timeoutSeconds,
       signal: params.signal,
       init: {
         method: "POST",
+        redirect: "error",
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
@@ -491,16 +556,32 @@ export async function executeExaWebSearchProviderTool(
     return endpointResult;
   }
   const endpoint = endpointResult.endpoint;
+  const endpointMode = endpointResult.mode;
 
   const query = readStringParam(params, "query", { required: true });
   const rawType = readStringParam(params, "type");
+  if (rawType && !EXA_SEARCH_TYPES.includes(rawType as ExaSearchType)) {
+    return {
+      error: "invalid_type",
+      message: `type must be one of ${EXA_SEARCH_TYPES.join(", ")}.`,
+      docs: "https://docs.openclaw.ai/tools/web",
+    };
+  }
   const type: ExaSearchType = EXA_SEARCH_TYPES.includes(rawType as ExaSearchType)
     ? (rawType as ExaSearchType)
     : "auto";
+  if (unicodeLength(query) > MAX_QUERY_CHARACTERS) {
+    return {
+      error: "invalid_query",
+      message: `query must contain at most ${MAX_QUERY_CHARACTERS} characters.`,
+      docs: "https://docs.openclaw.ai/tools/web",
+    };
+  }
+  const maxSearchCount = resolveExaMaxSearchCount(exaConfig);
   const count =
     readPositiveIntegerParam(params, "count", {
-      max: EXA_MAX_SEARCH_COUNT,
-      message: `count must be an integer from 1 to ${EXA_MAX_SEARCH_COUNT}.`,
+      max: maxSearchCount,
+      message: `count must be an integer from 1 to ${maxSearchCount}.`,
     }) ??
     searchConfig?.maxResults ??
     undefined;
@@ -545,7 +626,7 @@ export async function executeExaWebSearchProviderTool(
       ? parsedContents.value
       : undefined;
 
-  const resolvedCount = resolveExaSearchCount(count, DEFAULT_SEARCH_COUNT);
+  const resolvedCount = resolveExaSearchCount(count, DEFAULT_SEARCH_COUNT, maxSearchCount);
   const cacheKey = buildExaCacheKey({
     endpoint,
     type,
@@ -565,6 +646,7 @@ export async function executeExaWebSearchProviderTool(
   const results = await runExaSearch({
     apiKey,
     endpoint,
+    endpointMode,
     query,
     count: resolvedCount,
     freshness,

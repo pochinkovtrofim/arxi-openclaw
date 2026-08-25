@@ -36,6 +36,7 @@ export {
   resolveSiteName,
   postTrustedWebToolsJson,
   throwWebSearchApiError,
+  withLoopbackWebSearchEndpoint,
   withSelfHostedWebSearchEndpoint,
   withTrustedWebSearchEndpoint,
   writeCachedSearchPayload,
@@ -52,6 +53,7 @@ export {
 export type { SearchConfigRecord } from "../agents/tools/web-search-provider-common.js";
 export { resolveWebSearchProviderCredential } from "../agents/tools/web-search-provider-credentials.js";
 export {
+  withLoopbackWebToolsEndpoint,
   withSelfHostedWebToolsEndpoint,
   withTrustedWebToolsEndpoint,
 } from "../agents/tools/web-guarded-fetch.js";

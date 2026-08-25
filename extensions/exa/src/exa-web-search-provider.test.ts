@@ -1,3 +1,4 @@
+import { createServer } from "node:http";
 // Exa tests cover exa web search provider plugin behavior.
 import { describe, expect, it, vi } from "vitest";
 import { testing } from "../test-api.js";
@@ -186,12 +187,15 @@ describe("exa web search provider", () => {
   it("resolves Exa search base URL overrides", () => {
     expect(testing.resolveExaSearchEndpoint()).toEqual({
       endpoint: "https://api.exa.ai/search",
+      mode: "strict",
     });
     expect(testing.resolveExaSearchEndpoint({ baseUrl: "https://proxy.example/exa" })).toEqual({
       endpoint: "https://proxy.example/exa/search",
+      mode: "strict",
     });
     expect(testing.resolveExaSearchEndpoint({ baseUrl: "proxy.example/exa/search/" })).toEqual({
       endpoint: "https://proxy.example/exa/search",
+      mode: "strict",
     });
     expect(testing.resolveExaSearchEndpoint({ baseUrl: "ftp://proxy.example/exa" })).toEqual({
       docs: "https://docs.openclaw.ai/tools/exa-search",
@@ -199,6 +203,156 @@ describe("exa web search provider", () => {
       message:
         "plugins.entries.exa.config.webSearch.baseUrl must be a valid http(s) URL. Got: ftp://proxy.example/exa",
     });
+  });
+
+  it("uses only an explicit literal loopback origin for local Exa brokers", async () => {
+    let receivedPath = "";
+    let receivedBody = "";
+    const local = createServer((request, response) => {
+      receivedPath = request.url ?? "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => {
+        receivedBody += chunk;
+      });
+      request.on("end", () => {
+        response.setHeader("content-type", "application/json");
+        response.end('{"results":[]}');
+      });
+    });
+    await new Promise<void>((resolve, reject) => {
+      local.once("error", reject);
+      local.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const address = local.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Expected TCP test listener");
+      }
+      const tool = createExaWebSearchProvider().createTool({
+        config: {
+          plugins: {
+            entries: {
+              exa: {
+                config: {
+                  webSearch: {
+                    apiKey: "local-broker-marker",
+                    localBaseUrl: `http://127.0.0.1:${address.port}`,
+                    maxResults: 10,
+                  },
+                },
+              },
+            },
+          },
+        },
+        searchConfig: {},
+      });
+      if (!tool) {
+        throw new Error("Expected Exa tool");
+      }
+      await expect(
+        tool.execute({
+          query: "current result",
+          count: 10,
+          type: "deep-reasoning",
+          date_after: "2026-08-01",
+          date_before: "2026-08-25",
+          contents: {
+            text: { maxCharacters: 20_000 },
+            highlights: {
+              maxCharacters: 4_000,
+              query: "current evidence",
+              numSentences: 10,
+              highlightsPerUrl: 10,
+            },
+            summary: { query: "short finding" },
+          },
+        }),
+      ).resolves.toMatchObject({ provider: "exa" });
+      expect(receivedPath).toBe("/search");
+      expect(JSON.parse(receivedBody)).toEqual({
+        query: "current result",
+        numResults: 10,
+        type: "deep-reasoning",
+        contents: {
+          text: { maxCharacters: 20_000 },
+          highlights: {
+            maxCharacters: 4_000,
+            query: "current evidence",
+            numSentences: 10,
+            highlightsPerUrl: 10,
+          },
+          summary: { query: "short finding" },
+        },
+        startPublishedDate: "2026-08-01",
+        endPublishedDate: "2026-08-25",
+      });
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        local.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+
+    for (const localBaseUrl of [
+      "http://localhost:18081",
+      "http://10.0.0.1:18081",
+      "https://127.0.0.1:18081",
+      "http://127.0.0.1",
+    ]) {
+      expect(testing.resolveExaSearchEndpoint({ localBaseUrl })).toMatchObject({
+        error: "invalid_base_url",
+      });
+    }
+  });
+
+  it("does not follow even same-origin local broker redirects", async () => {
+    let movedRequests = 0;
+    const local = createServer((request, response) => {
+      if (request.url === "/moved") {
+        movedRequests += 1;
+        response.setHeader("content-type", "application/json");
+        response.end('{"results":[]}');
+        return;
+      }
+      response.statusCode = 302;
+      response.setHeader("location", "/moved");
+      response.end();
+    });
+    await new Promise<void>((resolve, reject) => {
+      local.once("error", reject);
+      local.listen(0, "127.0.0.1", resolve);
+    });
+    try {
+      const address = local.address();
+      if (!address || typeof address === "string") {
+        throw new Error("Expected TCP test listener");
+      }
+      const tool = createExaWebSearchProvider().createTool({
+        config: {
+          plugins: {
+            entries: {
+              exa: {
+                config: {
+                  webSearch: {
+                    apiKey: "local-broker-marker",
+                    localBaseUrl: `http://127.0.0.1:${address.port}`,
+                  },
+                },
+              },
+            },
+          },
+        },
+        searchConfig: {},
+      });
+      if (!tool) {
+        throw new Error("Expected Exa tool");
+      }
+      await expect(tool.execute({ query: "redirect attempt" })).rejects.toThrow(/redirect/i);
+      expect(movedRequests).toBe(0);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        local.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
   });
 
   it("partitions Exa cache keys by resolved endpoint", () => {
@@ -288,16 +442,20 @@ describe("exa web search provider", () => {
       }),
     ).toEqual({
       error: "invalid_contents",
-      message: "contents.highlights.numSentences must be a positive integer.",
+      message: "contents.highlights.numSentences must be an integer from 1 to 10.",
       docs: "https://docs.openclaw.ai/tools/web",
     });
   });
 
-  it("exposes newer documented Exa search types and count limits", () => {
+  it("aligns the advertised and enforced Exa result cap", async () => {
     const provider = createExaWebSearchProvider();
     const tool = provider.createTool({
       config: {
-        plugins: { entries: { exa: { config: { webSearch: { apiKey: "exa-secret" } } } } },
+        plugins: {
+          entries: {
+            exa: { config: { webSearch: { apiKey: "exa-secret", maxResults: 7 } } },
+          },
+        },
       },
       searchConfig: {},
     });
@@ -312,7 +470,7 @@ describe("exa web search provider", () => {
       };
     };
 
-    expect(parameters.properties?.count?.maximum).toBe(100);
+    expect(parameters.properties?.count?.maximum).toBe(7);
     expect(parameters.properties?.type?.enum).toEqual([
       "auto",
       "neural",
@@ -321,12 +479,15 @@ describe("exa web search provider", () => {
       "deep-reasoning",
       "instant",
     ]);
-    expect(testing.resolveExaSearchCount(80, 10)).toBe(80);
-    expect(testing.resolveExaSearchCount(120, 10)).toBe(100);
-    expect(testing.resolveExaSearchCount("+05", 10)).toBe(5);
-    expect(testing.resolveExaSearchCount("0x10", 10)).toBe(10);
-    expect(testing.resolveExaSearchCount("1e2", 10)).toBe(10);
-    expect(testing.resolveExaSearchCount(1.5, 10)).toBe(10);
+    expect(testing.resolveExaSearchCount(7, 5, 7)).toBe(7);
+    expect(testing.resolveExaSearchCount(8, 5, 7)).toBe(7);
+    expect(testing.resolveExaSearchCount("+05", 5, 7)).toBe(5);
+    expect(testing.resolveExaSearchCount("0x10", 5, 7)).toBe(5);
+    expect(testing.resolveExaSearchCount("1e2", 5, 7)).toBe(5);
+    expect(testing.resolveExaSearchCount(1.5, 5, 7)).toBe(5);
+    await expect(tool.execute({ query: "too many", count: 8 })).rejects.toThrow(
+      "count must be an integer from 1 to 7",
+    );
   });
 
   it("returns validation errors for conflicting time filters", async () => {

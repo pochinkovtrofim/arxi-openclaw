@@ -22,7 +22,7 @@ import type { CacheEntry } from "./web-shared.js";
 
 type WebGuardedFetchModule = Pick<
   typeof import("./web-guarded-fetch.js"),
-  "withSelfHostedWebToolsEndpoint" | "withTrustedWebToolsEndpoint"
+  "withLoopbackWebToolsEndpoint" | "withSelfHostedWebToolsEndpoint" | "withTrustedWebToolsEndpoint"
 >;
 
 const webGuardedFetchLoader = createLazyImportLoader<WebGuardedFetchModule>(
@@ -39,6 +39,12 @@ async function loadSelfHostedWebToolsEndpoint(): Promise<
   WebGuardedFetchModule["withSelfHostedWebToolsEndpoint"]
 > {
   return (await webGuardedFetchLoader.load()).withSelfHostedWebToolsEndpoint;
+}
+
+async function loadLoopbackWebToolsEndpoint(): Promise<
+  WebGuardedFetchModule["withLoopbackWebToolsEndpoint"]
+> {
+  return (await webGuardedFetchLoader.load()).withLoopbackWebToolsEndpoint;
 }
 
 export type SearchConfigRecord = (NonNullable<OpenClawConfig["tools"]>["web"] extends infer Web
@@ -119,6 +125,27 @@ export async function withSelfHostedWebSearchEndpoint<T>(
 ): Promise<T> {
   const withSelfHostedWebToolsEndpoint = await loadSelfHostedWebToolsEndpoint();
   return withSelfHostedWebToolsEndpoint(
+    {
+      url: params.url,
+      init: params.init,
+      timeoutSeconds: params.timeoutSeconds,
+      signal: params.signal,
+    },
+    async ({ response }) => run(response),
+  );
+}
+
+export async function withLoopbackWebSearchEndpoint<T>(
+  params: {
+    url: string;
+    timeoutSeconds: number;
+    init: RequestInit;
+    signal?: AbortSignal;
+  },
+  run: (response: Response) => Promise<T>,
+): Promise<T> {
+  const withLoopbackWebToolsEndpoint = await loadLoopbackWebToolsEndpoint();
+  return withLoopbackWebToolsEndpoint(
     {
       url: params.url,
       init: params.init,

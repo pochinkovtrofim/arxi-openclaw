@@ -21,6 +21,14 @@
     "webSearch.baseUrl": {
       "label": "Exa Search Base URL",
       "help": "Optional Exa Search API base URL override. OpenClaw appends /search when the URL does not already end there."
+    },
+    "webSearch.localBaseUrl": {
+      "label": "Exa Local Broker URL",
+      "help": "Optional literal loopback HTTP endpoint. Redirects and alternate hosts remain blocked."
+    },
+    "webSearch.maxResults": {
+      "label": "Exa Maximum Results",
+      "help": "Maximum result count exposed by the Exa tool (1-10)."
     }
   },
   "contracts": {
@@ -39,6 +47,14 @@
           },
           "baseUrl": {
             "type": "string"
+          },
+          "localBaseUrl": {
+            "type": "string"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
           }
         }
       }
