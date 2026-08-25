@@ -108,7 +108,7 @@ function mediaKind(contentType: string, audioAsVoice?: boolean) {
 }
 async function submitMediaAction(
   ctx: ChannelMessageSendMediaContext | ChannelMessageSendPayloadContext,
-  params: { id: string; mediaUrl: string; text: string },
+  params: { id: string; mediaUrl: string; text: string; replyToId?: string | number | null },
 ) {
   if (!params.mediaUrl) {
     throw new Error("Arxi media URL is required");
@@ -135,7 +135,7 @@ async function submitMediaAction(
       size_bytes: uploaded.size_bytes,
       sha256: uploaded.sha256,
       media_kind: mediaKind(contentType, ctx.audioAsVoice),
-      reply_to_message_id: replyId(ctx.replyToId),
+      reply_to_message_id: replyId(params.replyToId ?? ctx.replyToId),
     },
   });
 }
@@ -150,12 +150,11 @@ export async function sendMedia(ctx: ChannelMessageSendMediaContext) {
   return result;
 }
 
-async function sendPayload(ctx: ChannelMessageSendPayloadContext) {
-  owner(ctx.to);
-  const baseId = actionId(ctx.deliveryQueueId);
-  const mediaUrls = [ctx.mediaUrl, ctx.payload.mediaUrl, ...(ctx.payload.mediaUrls ?? [])]
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-    .filter((value, index, values) => values.indexOf(value) === index);
+async function sendPayloadMedia(
+  ctx: ChannelMessageSendPayloadContext,
+  baseId: string,
+  mediaUrls: readonly string[],
+) {
   if (mediaUrls.length === 0) {
     return await sendText({ ...ctx, text: ctx.payload.text ?? ctx.text });
   }
@@ -178,28 +177,79 @@ async function sendPayload(ctx: ChannelMessageSendPayloadContext) {
   return result;
 }
 
-async function reconcile(ctx: ChannelMessageUnknownSendContext) {
-  try {
-    const payload = ctx.payloads?.[0];
-    if (!payload) {
-      throw new Error("missing payload");
-    }
-    const id = actionId(ctx.queueId);
-    const text = payload.text ?? "";
-    const mediaUrls = [payload.mediaUrl, ...(payload.mediaUrls ?? [])].filter(
-      (value): value is string => typeof value === "string" && value.trim().length > 0,
+async function sendPayload(ctx: ChannelMessageSendPayloadContext) {
+  owner(ctx.to);
+  const baseId = actionId(ctx.deliveryQueueId);
+  const mediaUrls = [ctx.mediaUrl, ctx.payload.mediaUrl, ...(ctx.payload.mediaUrls ?? [])]
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .filter((value, index, values) => values.indexOf(value) === index);
+  return await sendPayloadMedia(ctx, baseId, mediaUrls);
+}
+
+class ArxiReconciliationTopologyError extends Error {}
+
+function effectiveReplyId(ctx: ChannelMessageUnknownSendContext) {
+  if (ctx.effectiveReplyToId !== undefined) {
+    return ctx.effectiveReplyToId;
+  }
+  return ctx.replyToMode === "off" ? undefined : ctx.replyToId;
+}
+
+function reconciliationPlan(ctx: ChannelMessageUnknownSendContext) {
+  if (ctx.payloads.length !== 1 || (ctx.renderedBatchPlan?.items.length ?? 1) !== 1) {
+    throw new ArxiReconciliationTopologyError(
+      "Arxi reconciliation requires exactly one durable payload",
     );
+  }
+  const payload = ctx.payloads[0];
+  const rendered = ctx.renderedBatchPlan?.items[0];
+  if (!payload || (rendered && rendered.index !== 0)) {
+    throw new ArxiReconciliationTopologyError("Arxi durable payload topology is invalid");
+  }
+  if (rendered?.hasInteractive || rendered?.hasChannelData || rendered?.presentationBlockCount) {
+    throw new ArxiReconciliationTopologyError(
+      "Arxi reconciliation does not support structured durable payloads",
+    );
+  }
+  return {
+    text: rendered?.text ?? payload.text ?? "",
+    mediaUrls: rendered
+      ? [...rendered.mediaUrls]
+      : [payload.mediaUrl, ...(payload.mediaUrls ?? [])].filter(
+          (value): value is string => typeof value === "string" && value.trim().length > 0,
+        ),
+    audioAsVoice: rendered?.audioAsVoice ?? payload.audioAsVoice,
+    replyToId: effectiveReplyId(ctx),
+  };
+}
+
+export async function reconcile(ctx: ChannelMessageUnknownSendContext) {
+  try {
+    const plan = reconciliationPlan(ctx);
+    const id = actionId(ctx.queueId);
     let result;
-    if (mediaUrls.length > 0) {
-      result = await sendPayload({
+    if (plan.mediaUrls.length > 0) {
+      const sendContext = {
         ...ctx,
-        payload,
-        mediaUrl: payload.mediaUrl,
-        text,
+        payload: {
+          text: plan.text,
+          mediaUrls: plan.mediaUrls,
+          audioAsVoice: plan.audioAsVoice,
+        },
+        text: plan.text,
+        replyToId: plan.replyToId,
+        audioAsVoice: plan.audioAsVoice,
+        deliveryQueueId: id,
+      };
+      owner(sendContext.to);
+      result = await sendPayloadMedia(sendContext, id, plan.mediaUrls);
+    } else {
+      result = await sendText({
+        ...ctx,
+        text: plan.text,
+        replyToId: plan.replyToId,
         deliveryQueueId: id,
       });
-    } else {
-      result = await sendText({ ...ctx, text, deliveryQueueId: id });
     }
     return {
       status: "sent" as const,
@@ -212,7 +262,10 @@ async function reconcile(ctx: ChannelMessageUnknownSendContext) {
         error instanceof ArxiBridgeError && error.status === 409
           ? "Arxi action id conflicts with durable payload"
           : "Arxi action replay unavailable",
-      retryable: !(error instanceof ArxiBridgeError && error.status === 409),
+      retryable:
+        error instanceof ArxiBridgeError
+          ? error.status !== 409
+          : !(error instanceof ArxiReconciliationTopologyError),
     };
   }
 }
