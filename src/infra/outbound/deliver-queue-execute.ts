@@ -191,10 +191,13 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
   };
   const wrappedParams: DeliverOutboundPayloadsParams = {
     ...params,
-    // Core narrows this stable queue identity by source payload before channel
-    // adapters split a payload into physical sends. It is correlation only;
-    // providers without an idempotency key still have at-least-once delivery.
-    deliveryQueueId: platformQueueId,
+    // Telegram's local Arxi Bot API transport needs the stable queue identity
+    // for every payload; the adapter narrows it before provider I/O. Preserve
+    // the existing single-payload reconciliation contract for other channels.
+    ...(params.channel === "telegram" ||
+    (exactReconciliationRequired && params.payloads.length === 1)
+      ? { deliveryQueueId: platformQueueId }
+      : { deliveryQueueId: undefined }),
     requiredUnknownSendReconciliation: exactReconciliationRequired,
     onPlatformSendStart: async (route, sourceIndex) => {
       params.abortSignal?.throwIfAborted();

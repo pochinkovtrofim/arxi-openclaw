@@ -964,7 +964,7 @@ describe("deliverOutboundPayloads", () => {
     expect(beforeParams?.kind).toBe("text");
     expect(beforeParams?.to).toBe("!room:example");
     expect(beforeParams?.text).toBe("hello");
-    expect(beforeParams?.deliveryQueueId).toBe("queue-1:payload:0");
+    expect(beforeParams?.deliveryQueueId).toBe("queue-1");
     expect(queueMocks.markDeliveryPlatformSendDispatched).toHaveBeenCalledWith(
       "queue-1",
       undefined,
@@ -1369,7 +1369,7 @@ describe("deliverOutboundPayloads", () => {
     );
   });
 
-  it("narrows one durable delivery id to stable per-payload send identities", async () => {
+  it("does not assign one durable delivery id to multiple non-Telegram payload sends", async () => {
     const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
       messageId: "message-adapter-1",
       receipt: createMessageReceiptFromOutboundResults({
@@ -1389,35 +1389,39 @@ describe("deliverOutboundPayloads", () => {
     });
 
     expect(messageSendText).toHaveBeenCalledTimes(2);
+    for (const [ctx] of messageSendText.mock.calls) {
+      expect(ctx.deliveryQueueId).toBeUndefined();
+    }
+  });
+
+  it("narrows Telegram's durable queue identity to each payload", async () => {
+    const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
+      messageId: "telegram-message",
+      receipt: createMessageReceiptFromOutboundResults({
+        results: [{ channel: "telegram", messageId: "telegram-message" }],
+        kind: "text",
+      }),
+    }));
+    setTestPlugin({
+      id: "telegram",
+      message: {
+        durableFinal: { capabilities: { text: true } },
+        send: { text: messageSendText },
+      },
+    });
+
+    await deliverOutboundPayloads({
+      cfg: {},
+      channel: "telegram",
+      to: "123",
+      payloads: [{ text: "first" }, { text: "second" }],
+      queuePolicy: "required",
+    });
+
     expect(messageSendText.mock.calls.map(([ctx]) => ctx.deliveryQueueId)).toEqual([
       "mock-queue-id:payload:0",
       "mock-queue-id:payload:1",
     ]);
-  });
-
-  it("passes one queued payload its stable id without claiming provider reconciliation", async () => {
-    const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
-      messageId: "message-adapter-1",
-      receipt: createMessageReceiptFromOutboundResults({
-        results: [{ channel: "matrix", messageId: "message-adapter-1" }],
-        kind: "text",
-      }),
-    }));
-    setMatrixMessageAdapter({
-      id: "matrix",
-      durableFinal: { capabilities: { text: true } },
-      send: { text: messageSendText },
-    });
-
-    await deliverMatrix({ queuePolicy: "best_effort" });
-
-    expect(messageSendText).toHaveBeenCalledWith(
-      expect.objectContaining({ deliveryQueueId: "mock-queue-id:payload:0" }),
-    );
-    expect(requireMockCallArg(queueMocks.enqueueDelivery, "enqueueDelivery")).toHaveProperty(
-      "requireUnknownSendReconciliation",
-      undefined,
-    );
   });
 
   it("automatically enables provider reconciliation for one supported prepared payload", async () => {
@@ -1449,14 +1453,14 @@ describe("deliverOutboundPayloads", () => {
     });
     expect(messageSendText).toHaveBeenCalledWith(
       expect.objectContaining({
-        deliveryQueueId: "mock-queue-id:payload:0",
+        deliveryQueueId: "mock-queue-id",
         deliveryPartIndex: 0,
         deliveryPartCount: 1,
       }),
     );
   });
 
-  it("carries distinct correlation identities for ordinary multi-payload delivery", async () => {
+  it("leaves ordinary non-Telegram multi-payload delivery on the existing fail-closed path", async () => {
     const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
       messageId: "message-adapter-1",
       receipt: createMessageReceiptFromOutboundResults({
@@ -1482,8 +1486,8 @@ describe("deliverOutboundPayloads", () => {
 
     expect(messageSendText).toHaveBeenCalledTimes(2);
     expect(messageSendText.mock.calls.map(([ctx]) => ctx.deliveryQueueId)).toEqual([
-      "mock-queue-id:payload:0",
-      "mock-queue-id:payload:1",
+      undefined,
+      undefined,
     ]);
   });
 

@@ -487,7 +487,7 @@ export function resolveTelegramApiContext(opts: {
         } catch (error) {
           const status =
             error && typeof error === "object" && "error_code" in error
-              ? (error as { error_code?: unknown }).error_code
+              ? error.error_code
               : undefined;
           if (status === 400 || status === 403) {
             throw new PlatformMessageNotDispatchedError(formatErrorMessage(error), {
