@@ -1099,6 +1099,7 @@ describe("sendMessageTelegram", () => {
       deliveryPartIndex: 3,
       deliveryPartCount: 4,
       sourceRunId: "run-1",
+      sourceProviderUpdateId: "71001",
     });
 
     const middleware = botConfigUseSpy.mock.calls.at(1)?.[0] as Transformer | undefined;
@@ -1119,6 +1120,7 @@ describe("sendMessageTelegram", () => {
         part_count: 4,
         request_index: 0,
         source_run_id: "run-1",
+        source_update_id: "71001",
       },
       {
         version: 1,
@@ -1127,6 +1129,7 @@ describe("sendMessageTelegram", () => {
         part_count: 4,
         request_index: 1,
         source_run_id: "run-1",
+        source_update_id: "71001",
       },
     ]);
 

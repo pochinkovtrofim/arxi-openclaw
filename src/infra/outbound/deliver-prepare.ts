@@ -260,6 +260,9 @@ export async function prepareOutboundPayloadBatch(
     ...((params.runId ?? params.replyPayloadSendingHook?.runId)
       ? { runId: params.runId ?? params.replyPayloadSendingHook?.runId }
       : {}),
+    ...(params.sourceProviderUpdateId
+      ? { sourceProviderUpdateId: params.sourceProviderUpdateId }
+      : {}),
     ...(params.replyPayloadSendingHook?.kind
       ? { replyKind: params.replyPayloadSendingHook.kind }
       : {}),

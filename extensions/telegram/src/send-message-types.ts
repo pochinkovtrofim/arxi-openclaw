@@ -59,6 +59,8 @@ export type TelegramSendOpts = {
   deliveryPartCount?: number;
   /** @internal Exact originating run retained for host-side latency correlation. */
   sourceRunId?: string;
+  /** @internal Exact inbound Telegram update retained for host-side correlation. */
+  sourceProviderUpdateId?: string;
 };
 
 export type TelegramApiCallOpts = Pick<
@@ -74,6 +76,7 @@ export type TelegramApiCallOpts = Pick<
   | "deliveryPartIndex"
   | "deliveryPartCount"
   | "sourceRunId"
+  | "sourceProviderUpdateId"
 >;
 
 export type TelegramThreadedSendOpts = TelegramApiCallOpts &

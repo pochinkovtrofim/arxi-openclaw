@@ -831,6 +831,7 @@ describe("deliverOutboundPayloads", () => {
 
     await deliverMatrix({
       runId: "run-exact",
+      sourceProviderUpdateId: "71001",
       replyPayloadSendingHook: {
         kind: "final",
         runId: "run-exact",
@@ -839,7 +840,10 @@ describe("deliverOutboundPayloads", () => {
     });
 
     expect(messageSendText).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceRunId: "run-exact" }),
+      expect.objectContaining({
+        sourceRunId: "run-exact",
+        sourceProviderUpdateId: "71001",
+      }),
     );
   });
 

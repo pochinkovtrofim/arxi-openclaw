@@ -88,6 +88,7 @@ async function resolveTelegramSendContext(params: {
   deliveryPartIndex?: number;
   deliveryPartCount?: number;
   sourceRunId?: string;
+  sourceProviderUpdateId?: string;
   resolveSend: ResolveTelegramSendFn;
 }): Promise<{
   send: TelegramSendFn;
@@ -109,6 +110,7 @@ async function resolveTelegramSendContext(params: {
     deliveryPartIndex?: number;
     deliveryPartCount?: number;
     sourceRunId?: string;
+    sourceProviderUpdateId?: string;
   };
 }> {
   const send = await params.resolveSend(params.deps);
@@ -136,6 +138,7 @@ async function resolveTelegramSendContext(params: {
       deliveryPartIndex: params.deliveryPartIndex,
       deliveryPartCount: params.deliveryPartCount,
       sourceRunId: params.sourceRunId,
+      sourceProviderUpdateId: params.sourceProviderUpdateId,
       ...(params.formatting?.parseMode === "HTML" ? { textMode: "html" as const } : {}),
       tableMode: params.formatting?.tableMode,
     },
@@ -431,6 +434,7 @@ export async function sendTelegramPayloadMessages(params: {
       deliveryQueueId: params.baseOpts.deliveryQueueId,
       ...nextDeliveryPart(),
       sourceRunId: params.baseOpts.sourceRunId,
+      sourceProviderUpdateId: params.baseOpts.sourceProviderUpdateId,
       verbose: false,
     });
     if (!reactionResult.ok) {

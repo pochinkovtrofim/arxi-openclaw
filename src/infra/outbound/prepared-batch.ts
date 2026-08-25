@@ -39,6 +39,7 @@ export type PreparedOutboundBatch = {
   /** True only when accepted payloads already passed post-policy channel normalization. */
   channelNormalized?: true;
   runId?: string;
+  sourceProviderUpdateId?: string;
   replyKind?: ReplyDispatchKind;
   executionIdentityToken?: ExecutionIdentityAdmissionToken;
   entries: PreparedOutboundBatchEntry[];

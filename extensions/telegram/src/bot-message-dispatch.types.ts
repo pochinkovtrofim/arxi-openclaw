@@ -1,5 +1,6 @@
 import type { Bot } from "grammy";
 import type { Message } from "grammy/types";
+import type { DurableInboundReplyDeliveryParams } from "openclaw/plugin-sdk/channel-inbound";
 import type {
   AgentPlanStep,
   ChannelProgressDraftLine,
@@ -219,6 +220,7 @@ export type TelegramDispatchTurn = TelegramDispatchTurnConfig &
   TelegramProgressStateSlice &
   TelegramDeliveryStateSlice &
   TelegramReplyStateSlice & {
+    executionIdentityToken?: DurableInboundReplyDeliveryParams["executionIdentityToken"];
     queuedFinal: boolean;
     agentRunFailed?: boolean;
     noVisibleReplyFallbackEligible: boolean;

@@ -445,6 +445,7 @@ export function resolveTelegramApiContext(opts: {
   deliveryPartIndex?: number;
   deliveryPartCount?: number;
   sourceRunId?: string;
+  sourceProviderUpdateId?: string;
 }): TelegramApiContext {
   const cfg = requireRuntimeConfig(opts.cfg, "Telegram API context");
   const account = resolveTelegramAccount({
@@ -469,6 +470,7 @@ export function resolveTelegramApiContext(opts: {
       const partIndex = opts.deliveryPartIndex ?? 0;
       const partCount = opts.deliveryPartCount ?? 1;
       const sourceRunId = opts.sourceRunId;
+      const sourceProviderUpdateId = opts.sourceProviderUpdateId;
       let requestIndex = 0;
       bot.api.config.use(async (prev, method, payload, signal) => {
         const marked = {
@@ -480,6 +482,7 @@ export function resolveTelegramApiContext(opts: {
             part_count: partCount,
             request_index: requestIndex++,
             ...(sourceRunId ? { source_run_id: sourceRunId } : {}),
+            ...(sourceProviderUpdateId ? { source_update_id: sourceProviderUpdateId } : {}),
           }),
         };
         try {

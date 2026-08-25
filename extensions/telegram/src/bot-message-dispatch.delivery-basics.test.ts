@@ -49,6 +49,13 @@ describeTelegramDispatch("dispatchTelegramMessage delivery-basics", () => {
   });
 
   it("queues final Telegram replies through outbound delivery when available", async () => {
+    const executionIdentityToken = {
+      tokenVersion: 1 as const,
+      contextId: "context-71001",
+      executionId: "execution-71001",
+      runId: "run-71001",
+      createdAt: 1,
+    };
     deliverInboundReplyWithMessageSendContext.mockResolvedValue({
       status: "handled_visible",
       delivery: {
@@ -56,10 +63,13 @@ describeTelegramDispatch("dispatchTelegramMessage delivery-basics", () => {
         visibleReplySent: true,
       },
     });
-    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
-      await dispatcherOptions.deliver({ text: "Hello queued" }, { kind: "final" });
-      return { queuedFinal: true };
-    });
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(
+      async ({ dispatcherOptions, replyOptions }) => {
+        replyOptions?.onAgentRunStart?.("run-71001", executionIdentityToken);
+        await dispatcherOptions.deliver({ text: "Hello queued" }, { kind: "final" });
+        return { queuedFinal: true };
+      },
+    );
 
     await dispatchWithContext({
       context: createContext({
@@ -69,6 +79,7 @@ describeTelegramDispatch("dispatchTelegramMessage delivery-basics", () => {
           SenderId: "42",
           SenderName: "Alice",
           SenderUsername: "alice",
+          ProviderUpdateId: "71001",
         } as unknown as TelegramMessageContext["ctxPayload"],
       }),
       streamMode: "off",
@@ -83,6 +94,8 @@ describeTelegramDispatch("dispatchTelegramMessage delivery-basics", () => {
       replyToMode: "first",
       threadId: 777,
       agentId: "default",
+      executionIdentityToken,
+      sourceProviderUpdateId: "71001",
     });
     expectRecordFields(outbound.payload, { text: "Hello queued" });
     expectRecordFields(outbound.formatting, { textLimit: 4096, tableMode: "preserve" });

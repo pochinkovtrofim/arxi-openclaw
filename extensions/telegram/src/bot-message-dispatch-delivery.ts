@@ -271,6 +271,8 @@ export async function sendPayload(
       ctxPayload: turn.context.ctxPayload,
       payload: effectivePayload,
       info: { kind: "final" },
+      executionIdentityToken: turn.executionIdentityToken,
+      sourceProviderUpdateId: turn.context.ctxPayload.ProviderUpdateId,
       replyToMode: effectiveReplyToMode,
       threadId: turn.context.threadSpec.id,
       formatting: {

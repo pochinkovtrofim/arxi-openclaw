@@ -189,6 +189,8 @@ export type ChannelMessageSendTextContext<TConfig = OpenClawConfig> = {
   gatewayClientScopes?: readonly string[];
   /** @internal Exact originating run retained through durable delivery and recovery. */
   sourceRunId?: string;
+  /** @internal Exact originating provider update retained through durable recovery. */
+  sourceProviderUpdateId?: string;
   /** @internal Opaque durable queue identity; it does not imply provider idempotency. */
   deliveryQueueId?: string;
   /** @internal Stable platform-send index within one durable payload. */
@@ -299,6 +301,8 @@ export type ChannelMessageUnknownSendContext<TConfig = OpenClawConfig> = {
   retryCount: number;
   /** Exact useful final-answer run retained in durable prepared custody. */
   sourceRunId?: string;
+  /** Exact inbound provider update retained in durable prepared custody. */
+  sourceProviderUpdateId?: string;
   platformSendStartedAt?: number;
   /** Canonical reply target persisted after hooks and before platform I/O. */
   effectiveReplyToId?: string | null;

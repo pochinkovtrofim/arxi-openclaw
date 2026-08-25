@@ -43,6 +43,8 @@ export type ChannelOutboundContext = {
   gatewayClientScopes?: readonly string[];
   /** @internal Exact originating run retained through durable delivery and recovery. */
   sourceRunId?: string;
+  /** @internal Exact originating provider update retained through durable recovery. */
+  sourceProviderUpdateId?: string;
   /** @internal Opaque durable queue identity; it does not imply provider idempotency. */
   deliveryQueueId?: string;
   /** @internal Stable platform-send index within one durable payload. */

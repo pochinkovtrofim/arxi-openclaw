@@ -163,6 +163,8 @@ export type DeliverOutboundPayloadsCoreParams = {
   payloads: ReplyPayload[];
   /** Admitted run correlation copied into the prepared durable batch. */
   runId?: string;
+  /** Exact provider update that originated an inbound durable reply. */
+  sourceProviderUpdateId?: string;
   /** @internal Exact admitted execution provenance copied into durable custody. */
   executionIdentityToken?: ExecutionIdentityAdmissionToken;
   /** @internal Canonical post-policy batch used by queue recovery and physical delivery. */

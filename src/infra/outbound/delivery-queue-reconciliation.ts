@@ -46,6 +46,9 @@ export function buildUnknownSendContext(params: {
     enqueuedAt: entry.enqueuedAt,
     retryCount: entry.retryCount,
     ...(sourceRunId ? { sourceRunId } : {}),
+    ...(sourceRunId && entry.preparedBatch?.sourceProviderUpdateId
+      ? { sourceProviderUpdateId: entry.preparedBatch.sourceProviderUpdateId }
+      : {}),
     ...(entry.platformSendStartedAt !== undefined
       ? { platformSendStartedAt: entry.platformSendStartedAt }
       : {}),

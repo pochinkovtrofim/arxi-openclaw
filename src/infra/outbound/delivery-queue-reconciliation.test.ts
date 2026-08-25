@@ -5,6 +5,7 @@ import { createUnmodifiedPreparedOutboundBatch } from "./prepared-batch.js";
 function entry(payload: { text: string; isStatusNotice?: boolean }) {
   const preparedBatch = createUnmodifiedPreparedOutboundBatch([payload]);
   preparedBatch.runId = "run-exact";
+  preparedBatch.sourceProviderUpdateId = "71001";
   preparedBatch.replyKind = "final";
   return {
     id: "queue-1",
@@ -21,7 +22,7 @@ describe("unknown-send source correlation", () => {
     const payload = { text: "useful answer" };
     expect(
       buildUnknownSendContext({ entry: entry(payload), payloads: [payload], cfg: {} }),
-    ).toMatchObject({ sourceRunId: "run-exact" });
+    ).toMatchObject({ sourceRunId: "run-exact", sourceProviderUpdateId: "71001" });
   });
 
   it("does not classify a status notice as a useful result", () => {
@@ -29,5 +30,8 @@ describe("unknown-send source correlation", () => {
     expect(
       buildUnknownSendContext({ entry: entry(payload), payloads: [payload], cfg: {} }),
     ).not.toHaveProperty("sourceRunId");
+    expect(
+      buildUnknownSendContext({ entry: entry(payload), payloads: [payload], cfg: {} }),
+    ).not.toHaveProperty("sourceProviderUpdateId");
   });
 });

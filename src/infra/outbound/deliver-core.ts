@@ -338,10 +338,12 @@ export async function deliverOutboundPayloadsCore(
       params.onPayload?.(payloadSummary);
       const replyToResolution = resolveCurrentReplyTo(effectivePayload);
       const sourceRunId = usefulFinalSourceRunId(preparedBatch, effectivePayload);
+      const sourceProviderUpdateId = sourceRunId ? preparedBatch.sourceProviderUpdateId : undefined;
       const sendOverrides: OutboundMessageSendOverrides = {
         replyToId: replyToResolution.replyToId,
         replyToIdSource: replyToResolution.source,
         ...(sourceRunId ? { sourceRunId } : {}),
+        ...(sourceProviderUpdateId ? { sourceProviderUpdateId } : {}),
         ...(channel === "telegram" && params.deliveryQueueId
           ? { deliveryQueueId: `${params.deliveryQueueId}:payload:${payloadIndex}` }
           : {}),

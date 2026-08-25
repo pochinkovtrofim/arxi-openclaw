@@ -125,6 +125,7 @@ describe("durable inbound reply delivery", () => {
       info: { kind: "final" },
       payload: { text: "final" },
       executionIdentityToken,
+      sourceProviderUpdateId: "71001",
       ctxPayload: ctxPayload({
         OriginatingTo: "chat-1",
       }),
@@ -140,6 +141,7 @@ describe("durable inbound reply delivery", () => {
     expect(latestSendDurableMessageBatchRequest()).toMatchObject({
       runId: "run-exact",
       executionIdentityToken,
+      sourceProviderUpdateId: "71001",
     });
     expect(latestSendDurableMessageBatchRequest().requireUnknownSendReconciliation).toBeUndefined();
   });

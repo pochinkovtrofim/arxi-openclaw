@@ -139,6 +139,9 @@ export async function runTelegramDispatchTurn(turn: Turn) {
             onSkip: (payload, info) => handleReplySkip(turn, payload, info),
           },
           replyOptions: {
+            onAgentRunStart: (_runId, executionIdentityToken) => {
+              turn.executionIdentityToken = executionIdentityToken;
+            },
             skillFilter: context.skillFilter,
             disableBlockStreaming: turn.disableBlockStreaming,
             abortSignal: turn.turnAdoptionLifecycle?.abortSignal,

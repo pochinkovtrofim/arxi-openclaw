@@ -31,6 +31,7 @@ export type DurableInboundReplyDeliveryOptions = Pick<
 > & {
   to?: string | null;
   replyToId?: string | null;
+  sourceProviderUpdateId?: string;
   requiredCapabilities?: DurableFinalDeliveryRequirements;
 };
 
@@ -220,6 +221,9 @@ export async function deliverInboundReplyWithMessageSendContextCore(
           runId: params.executionIdentityToken.runId,
           executionIdentityToken: params.executionIdentityToken,
         }
+      : {}),
+    ...(params.sourceProviderUpdateId
+      ? { sourceProviderUpdateId: params.sourceProviderUpdateId }
       : {}),
     threadId,
     replyToId,
