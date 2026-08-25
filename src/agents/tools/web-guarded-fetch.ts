@@ -13,6 +13,7 @@ import {
 } from "../../infra/net/fetch-guard.js";
 import {
   ssrfPolicyFromHttpBaseUrlFakeIpHostnameAllowlist,
+  ssrfPolicyFromHttpBaseUrlAllowedOrigin,
   type SsrFPolicy,
 } from "../../infra/net/ssrf.js";
 import { readPositiveIntegerParam } from "./common.js";
@@ -90,6 +91,36 @@ export async function withTrustedWebToolsEndpoint<T>(
       policy: trustedPolicy,
       useEnvProxy: true,
     },
+    run,
+  );
+}
+
+/** Runs a fetch to one literal loopback origin without trusting proxies or redirects. */
+export async function withLoopbackWebToolsEndpoint<T>(
+  params: WebToolEndpointFetchOptions,
+  run: (result: { response: Response; finalUrl: string }) => Promise<T>,
+): Promise<T> {
+  let parsed: URL;
+  try {
+    parsed = new URL(params.url);
+  } catch {
+    throw new Error("Loopback web tools endpoint must be a valid URL");
+  }
+  if (
+    parsed.protocol !== "http:" ||
+    (parsed.hostname !== "127.0.0.1" && parsed.hostname !== "[::1]") ||
+    parsed.username !== "" ||
+    parsed.password !== "" ||
+    parsed.port === ""
+  ) {
+    throw new Error("Loopback web tools endpoint must use an explicit HTTP loopback origin");
+  }
+  const policy = ssrfPolicyFromHttpBaseUrlAllowedOrigin(parsed.toString());
+  if (!policy) {
+    throw new Error("Loopback web tools endpoint origin is invalid");
+  }
+  return await withWebToolsNetworkGuard(
+    { ...params, maxRedirects: 0, policy: { ...policy, hostnameAllowlist: [parsed.hostname] } },
     run,
   );
 }
