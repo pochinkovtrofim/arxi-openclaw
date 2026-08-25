@@ -124,6 +124,14 @@ describe("telegram channel message adapter", () => {
         forceDocument: false,
         quoteText: undefined,
         buttons: undefined,
+        tableMode: undefined,
+        sourceRunId: undefined,
+        sourceProviderUpdateId: undefined,
+        deliveryQueueId: undefined,
+        deliveryPartIndex: 0,
+        deliveryPartCount: 1,
+        onDeliveryResult: undefined,
+        onPlatformSendDispatch: undefined,
       });
       expect(result.receipt.primaryPlatformMessageId).toBe("tg-payload-1");
       expect(result.receipt.platformMessageIds).toEqual(["tg-payload-1", "tg-payload-2"]);
@@ -193,6 +201,14 @@ describe("telegram channel message adapter", () => {
           quoteText: undefined,
           mediaUrl: "https://example.com/a.png",
           buttons: undefined,
+          tableMode: undefined,
+          sourceRunId: undefined,
+          sourceProviderUpdateId: undefined,
+          deliveryQueueId: undefined,
+          deliveryPartIndex: 0,
+          deliveryPartCount: 2,
+          onDeliveryResult: undefined,
+          onPlatformSendDispatch: undefined,
         },
       ]);
       expect(batchCalls[1]).toEqual([
@@ -213,6 +229,14 @@ describe("telegram channel message adapter", () => {
           forceDocument: false,
           quoteText: undefined,
           mediaUrl: "https://example.com/b.png",
+          tableMode: undefined,
+          sourceRunId: undefined,
+          sourceProviderUpdateId: undefined,
+          deliveryQueueId: undefined,
+          deliveryPartIndex: 1,
+          deliveryPartCount: 2,
+          onDeliveryResult: undefined,
+          onPlatformSendDispatch: undefined,
         },
       ]);
     };
