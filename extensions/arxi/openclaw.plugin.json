@@ -1,0 +1,6 @@
+{
+  "id": "arxi",
+  "activation": { "onStartup": true },
+  "channels": ["arxi"],
+  "configSchema": { "type": "object", "additionalProperties": false, "properties": {} }
+}

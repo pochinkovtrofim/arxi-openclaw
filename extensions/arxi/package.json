@@ -1,0 +1,14 @@
+{
+  "name": "@openclaw/arxi",
+  "version": "2026.8.1",
+  "private": true,
+  "description": "Arxi private owner channel",
+  "type": "module",
+  "exports": { ".": "./index.ts", "./api.js": "./api.ts" },
+  "devDependencies": { "@openclaw/plugin-sdk": "workspace:*" },
+  "openclaw": {
+    "extensions": ["./index.ts"],
+    "channel": { "id": "arxi", "label": "Arxi", "selectionLabel": "Arxi", "docsPath": "/channels/arxi", "blurb": "Private owner channel through the Arxi host boundary.", "exposure": { "configured": false, "setup": false, "docs": false } },
+    "build": { "openclawVersion": "2026.8.1", "bundledDist": true }
+  }
+}
