@@ -84,6 +84,10 @@ async function resolveTelegramSendContext(params: {
     NonNullable<ChannelOutboundAdapter["sendText"]>
   >[0]["onDeliveryResult"];
   onPlatformSendDispatch?: () => Promise<void>;
+  deliveryQueueId?: string;
+  deliveryPartIndex?: number;
+  deliveryPartCount?: number;
+  sourceRunId?: string;
   resolveSend: ResolveTelegramSendFn;
 }): Promise<{
   send: TelegramSendFn;
@@ -101,6 +105,10 @@ async function resolveTelegramSendContext(params: {
     gatewayClientScopes?: readonly string[];
     onDeliveryResult?: TelegramSendOpts["onDeliveryResult"];
     onPlatformSendDispatch?: TelegramSendOpts["onPlatformSendDispatch"];
+    deliveryQueueId?: string;
+    deliveryPartIndex?: number;
+    deliveryPartCount?: number;
+    sourceRunId?: string;
   };
 }> {
   const send = await params.resolveSend(params.deps);
@@ -124,6 +132,10 @@ async function resolveTelegramSendContext(params: {
           }
         : undefined,
       onPlatformSendDispatch: params.onPlatformSendDispatch,
+      deliveryQueueId: params.deliveryQueueId,
+      deliveryPartIndex: params.deliveryPartIndex,
+      deliveryPartCount: params.deliveryPartCount,
+      sourceRunId: params.sourceRunId,
       ...(params.formatting?.parseMode === "HTML" ? { textMode: "html" as const } : {}),
       tableMode: params.formatting?.tableMode,
     },
@@ -333,6 +345,21 @@ export async function sendTelegramPayloadMessages(params: {
     interactive: payload.interactive,
   });
   const replyToMessageId = params.baseOpts.replyToMessageId;
+  const contentPartCount = payload.location
+    ? text.trim()
+      ? 2
+      : 1
+    : mediaUrls.length > 0
+      ? mediaUrls.length
+      : reactionEmoji && !text && !buttons?.length
+        ? 0
+        : 1;
+  const deliveryPartCount = contentPartCount + (reactionEmoji ? 1 : 0);
+  let deliveryPartIndex = 0;
+  const nextDeliveryPart = () => ({
+    deliveryPartIndex: deliveryPartIndex++,
+    deliveryPartCount,
+  });
   const promptContextSource = resolveTelegramPromptContextSource(params.payload);
   const projectionCursor = promptContextSource
     ? createTelegramPromptContextProjectionCursor(promptContextSource)
@@ -362,6 +389,7 @@ export async function sendTelegramPayloadMessages(params: {
       // the location's native reply, quote, or buttons.
       await params.send(params.to, text, {
         ...params.baseOpts,
+        ...nextDeliveryPart(),
         replyToMessageId: undefined,
         replyToIdSource: undefined,
         replyToMode: undefined,
@@ -369,6 +397,7 @@ export async function sendTelegramPayloadMessages(params: {
     }
     return await params.sendLocation(params.to, payload.location, {
       ...params.baseOpts,
+      ...nextDeliveryPart(),
       ...projectionOptions(true),
       buttons,
       quoteText,
@@ -399,6 +428,9 @@ export async function sendTelegramPayloadMessages(params: {
       cfg: params.baseOpts.cfg,
       accountId: params.baseOpts.accountId,
       gatewayClientScopes: params.baseOpts.gatewayClientScopes,
+      deliveryQueueId: params.baseOpts.deliveryQueueId,
+      ...nextDeliveryPart(),
+      sourceRunId: params.baseOpts.sourceRunId,
       verbose: false,
     });
     if (!reactionResult.ok) {
@@ -417,6 +449,7 @@ export async function sendTelegramPayloadMessages(params: {
     sendNoMedia: async () =>
       await params.send(params.to, text, {
         ...payloadOpts,
+        ...nextDeliveryPart(),
         ...projectionOptions(true),
         buttons,
       }),
@@ -428,6 +461,7 @@ export async function sendTelegramPayloadMessages(params: {
       implicitReplyTargetAvailable = false;
       return await params.send(params.to, textLocal, {
         ...mediaPayloadOpts,
+        ...nextDeliveryPart(),
         ...projectionOptions(index === mediaUrls.length - 1),
         mediaUrl,
         ...(isFirst ? { buttons } : {}),
@@ -629,6 +663,7 @@ export function createTelegramOutboundAdapter(
       isAnonymous,
       gatewayClientScopes,
       onPlatformSendDispatch,
+      deliveryQueueId,
     }) => {
       const outboundTo = normalizeTelegramOutboundTarget(to);
       const { sendPollTelegram } = await loadSendModule();
@@ -640,6 +675,7 @@ export function createTelegramOutboundAdapter(
         isAnonymous: isAnonymous ?? undefined,
         gatewayClientScopes,
         onPlatformSendDispatch,
+        deliveryQueueId,
       });
     },
   };

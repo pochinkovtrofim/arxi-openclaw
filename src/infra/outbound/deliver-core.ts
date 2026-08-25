@@ -342,6 +342,9 @@ export async function deliverOutboundPayloadsCore(
         replyToId: replyToResolution.replyToId,
         replyToIdSource: replyToResolution.source,
         ...(sourceRunId ? { sourceRunId } : {}),
+        ...(params.deliveryQueueId
+          ? { deliveryQueueId: `${params.deliveryQueueId}:payload:${payloadIndex}` }
+          : {}),
         ...(preparedTarget.threadId != null ? { threadId: preparedTarget.threadId } : {}),
         ...(effectivePayload.audioAsVoice === true ? { audioAsVoice: true } : {}),
         ...(params.forceDocument !== undefined ? { forceDocument: params.forceDocument } : {}),

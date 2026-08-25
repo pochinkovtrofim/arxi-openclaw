@@ -964,7 +964,7 @@ describe("deliverOutboundPayloads", () => {
     expect(beforeParams?.kind).toBe("text");
     expect(beforeParams?.to).toBe("!room:example");
     expect(beforeParams?.text).toBe("hello");
-    expect(beforeParams?.deliveryQueueId).toBe("queue-1");
+    expect(beforeParams?.deliveryQueueId).toBe("queue-1:payload:0");
     expect(queueMocks.markDeliveryPlatformSendDispatched).toHaveBeenCalledWith(
       "queue-1",
       undefined,
@@ -1369,7 +1369,7 @@ describe("deliverOutboundPayloads", () => {
     );
   });
 
-  it("does not assign one durable delivery id to multiple payload sends", async () => {
+  it("narrows one durable delivery id to stable per-payload send identities", async () => {
     const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
       messageId: "message-adapter-1",
       receipt: createMessageReceiptFromOutboundResults({
@@ -1389,9 +1389,35 @@ describe("deliverOutboundPayloads", () => {
     });
 
     expect(messageSendText).toHaveBeenCalledTimes(2);
-    for (const [ctx] of messageSendText.mock.calls) {
-      expect(ctx.deliveryQueueId).toBeUndefined();
-    }
+    expect(messageSendText.mock.calls.map(([ctx]) => ctx.deliveryQueueId)).toEqual([
+      "mock-queue-id:payload:0",
+      "mock-queue-id:payload:1",
+    ]);
+  });
+
+  it("passes one queued payload its stable id without claiming provider reconciliation", async () => {
+    const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
+      messageId: "message-adapter-1",
+      receipt: createMessageReceiptFromOutboundResults({
+        results: [{ channel: "matrix", messageId: "message-adapter-1" }],
+        kind: "text",
+      }),
+    }));
+    setMatrixMessageAdapter({
+      id: "matrix",
+      durableFinal: { capabilities: { text: true } },
+      send: { text: messageSendText },
+    });
+
+    await deliverMatrix({ queuePolicy: "best_effort" });
+
+    expect(messageSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ deliveryQueueId: "mock-queue-id:payload:0" }),
+    );
+    expect(requireMockCallArg(queueMocks.enqueueDelivery, "enqueueDelivery")).toHaveProperty(
+      "requireUnknownSendReconciliation",
+      undefined,
+    );
   });
 
   it("automatically enables provider reconciliation for one supported prepared payload", async () => {
@@ -1423,14 +1449,14 @@ describe("deliverOutboundPayloads", () => {
     });
     expect(messageSendText).toHaveBeenCalledWith(
       expect.objectContaining({
-        deliveryQueueId: "mock-queue-id",
+        deliveryQueueId: "mock-queue-id:payload:0",
         deliveryPartIndex: 0,
         deliveryPartCount: 1,
       }),
     );
   });
 
-  it("leaves ordinary multi-payload delivery on the existing fail-closed path", async () => {
+  it("carries distinct correlation identities for ordinary multi-payload delivery", async () => {
     const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
       messageId: "message-adapter-1",
       receipt: createMessageReceiptFromOutboundResults({
@@ -1456,8 +1482,8 @@ describe("deliverOutboundPayloads", () => {
 
     expect(messageSendText).toHaveBeenCalledTimes(2);
     expect(messageSendText.mock.calls.map(([ctx]) => ctx.deliveryQueueId)).toEqual([
-      undefined,
-      undefined,
+      "mock-queue-id:payload:0",
+      "mock-queue-id:payload:1",
     ]);
   });
 

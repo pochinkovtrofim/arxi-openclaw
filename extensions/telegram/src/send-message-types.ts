@@ -51,11 +51,29 @@ export type TelegramSendOpts = {
   onDeliveryResult?: (result: TelegramSendResult) => Promise<void> | void;
   /** @internal Refresh durable custody immediately before Telegram Bot API I/O. */
   onPlatformSendDispatch?: () => Promise<void>;
+  /** @internal Host-transport identity; emitted only for Arxi's exact local Bot API root. */
+  deliveryQueueId?: string;
+  /** @internal Stable physical part within one durable OpenClaw delivery. */
+  deliveryPartIndex?: number;
+  /** @internal Exact physical part count retained with the durable delivery. */
+  deliveryPartCount?: number;
+  /** @internal Exact originating run retained for host-side latency correlation. */
+  sourceRunId?: string;
 };
 
 export type TelegramApiCallOpts = Pick<
   TelegramSendOpts,
-  "cfg" | "token" | "accountId" | "verbose" | "api" | "retry" | "gatewayClientScopes"
+  | "cfg"
+  | "token"
+  | "accountId"
+  | "verbose"
+  | "api"
+  | "retry"
+  | "gatewayClientScopes"
+  | "deliveryQueueId"
+  | "deliveryPartIndex"
+  | "deliveryPartCount"
+  | "sourceRunId"
 >;
 
 export type TelegramThreadedSendOpts = TelegramApiCallOpts &

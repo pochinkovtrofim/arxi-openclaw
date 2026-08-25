@@ -598,6 +598,7 @@ export async function sendPoll(params: MessagePollParams): Promise<MessagePollRe
       sessionKey: params.sessionKey,
       inboundEventKind: params.inboundEventKind,
       onPlatformSendDispatch: params.onPlatformSendDispatch,
+      deliveryQueueId: params.idempotencyKey,
     });
 
     return buildMessagePollResult({

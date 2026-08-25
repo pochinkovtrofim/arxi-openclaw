@@ -18,6 +18,8 @@ export type OutboundMessageSendOverrides = ReplyToOverride & {
   formatting?: OutboundDeliveryFormattingOptions;
   /** Exact useful final-answer run retained through durable delivery and recovery. */
   sourceRunId?: string;
+  /** Stable queue identity narrowed to this payload within a durable batch. */
+  deliveryQueueId?: string;
   /** Stable zero-based platform-send index within one durable payload. */
   deliveryPartIndex?: number;
   /** Exact platform-send count for this payload. */

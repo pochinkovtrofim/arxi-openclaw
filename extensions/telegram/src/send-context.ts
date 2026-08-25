@@ -1,6 +1,9 @@
 import { type ApiClientOptions, Bot, HttpError } from "grammy";
 import { isDiagnosticFlagEnabled } from "openclaw/plugin-sdk/diagnostic-runtime";
-import { formatUncaughtError } from "openclaw/plugin-sdk/error-runtime";
+import {
+  formatUncaughtError,
+  PlatformMessageNotDispatchedError,
+} from "openclaw/plugin-sdk/error-runtime";
 import { redactSensitiveText } from "openclaw/plugin-sdk/logging-core";
 import { parseStrictInteger } from "openclaw/plugin-sdk/number-runtime";
 import { createChannelApiRetryRunner, type RetryConfig } from "openclaw/plugin-sdk/retry-runtime";
@@ -438,6 +441,10 @@ export function resolveTelegramApiContext(opts: {
   accountId?: string;
   api?: TelegramApiOverride;
   cfg: OpenClawConfig;
+  deliveryQueueId?: string;
+  deliveryPartIndex?: number;
+  deliveryPartCount?: number;
+  sourceRunId?: string;
 }): TelegramApiContext {
   const cfg = requireRuntimeConfig(opts.cfg, "Telegram API context");
   const account = resolveTelegramAccount({
@@ -456,6 +463,42 @@ export function resolveTelegramApiContext(opts: {
     clientOptionsLease = client.lease?.();
     const bot = new Bot(token, client.clientOptions ? { client: client.clientOptions } : undefined);
     bot.api.config.use(getOrCreateAccountThrottler(token));
+    const apiRoot = account.config.apiRoot?.trim().replace(/\/+$/, "");
+    if (apiRoot === "http://127.0.0.1:18080/telegram" && opts.deliveryQueueId) {
+      const queueId = opts.deliveryQueueId;
+      const partIndex = opts.deliveryPartIndex ?? 0;
+      const partCount = opts.deliveryPartCount ?? 1;
+      const sourceRunId = opts.sourceRunId;
+      let requestIndex = 0;
+      bot.api.config.use(async (prev, method, payload, signal) => {
+        const marked = {
+          ...payload,
+          arxi_delivery: JSON.stringify({
+            version: 1,
+            queue_id: queueId,
+            part_index: partIndex,
+            part_count: partCount,
+            request_index: requestIndex++,
+            ...(sourceRunId ? { source_run_id: sourceRunId } : {}),
+          }),
+        };
+        try {
+          return await prev(method, marked, signal);
+        } catch (error) {
+          const status =
+            error && typeof error === "object" && "error_code" in error
+              ? (error as { error_code?: unknown }).error_code
+              : undefined;
+          if (status === 400 || status === 403) {
+            throw new PlatformMessageNotDispatchedError(formatErrorMessage(error), {
+              cause: error,
+              retryable: false,
+            });
+          }
+          throw error;
+        }
+      });
+    }
     api = bot.api;
   }
   return {

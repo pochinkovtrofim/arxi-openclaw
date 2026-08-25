@@ -490,6 +490,8 @@ export async function handleTelegramAction(
           remove,
           accountId: accountId ?? undefined,
           gatewayClientScopes: options?.gatewayClientScopes,
+          deliveryQueueId:
+            typeof params.idempotencyKey === "string" ? params.idempotencyKey : undefined,
         },
       );
     } catch (err) {
@@ -729,6 +731,8 @@ export async function handleTelegramAction(
         isAnonymous: isAnonymous ?? undefined,
         silent: silent ?? undefined,
         gatewayClientScopes: options?.gatewayClientScopes,
+        deliveryQueueId:
+          typeof params.idempotencyKey === "string" ? params.idempotencyKey : undefined,
       },
     );
     notifyVisibleOutboundSuccess(to, messageThreadId);
@@ -909,6 +913,8 @@ export async function handleTelegramAction(
       replyToMessageId: replyToMessageId ?? undefined,
       messageThreadId: messageThreadId ?? undefined,
       gatewayClientScopes: options?.gatewayClientScopes,
+      deliveryQueueId:
+        typeof params.idempotencyKey === "string" ? params.idempotencyKey : undefined,
     });
     notifyVisibleOutboundSuccess(to, messageThreadId);
     return jsonResult({

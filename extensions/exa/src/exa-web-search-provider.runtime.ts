@@ -26,12 +26,13 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { ARXI_EXA_SEARCH_ENDPOINT } from "./exa-web-search-provider.shared.js";
 
 const EXA_SEARCH_ENDPOINT = "https://api.exa.ai/search";
-const ARXI_EXA_SEARCH_ENDPOINT = "http://127.0.0.1:18080/search";
 const EXA_SEARCH_TYPES = ["auto", "neural", "fast", "deep", "deep-reasoning", "instant"] as const;
 const EXA_FRESHNESS_VALUES = ["day", "week", "month", "year"] as const;
 const EXA_MAX_SEARCH_COUNT = 100;
+const ARXI_MAX_SEARCH_COUNT = 10;
 const EXA_ERROR_BODY_LIMIT_BYTES = 8 * 1024;
 // Exa search responses are untrusted external bodies. Cap the success JSON the
 // same way other bundled providers do (16 MiB) so a misbehaving or hostile
@@ -503,10 +504,12 @@ export async function executeExaWebSearchProviderTool(
   const type: ExaSearchType = EXA_SEARCH_TYPES.includes(rawType as ExaSearchType)
     ? (rawType as ExaSearchType)
     : "auto";
+  const maxSearchCount =
+    endpoint === ARXI_EXA_SEARCH_ENDPOINT ? ARXI_MAX_SEARCH_COUNT : EXA_MAX_SEARCH_COUNT;
   const count =
     readPositiveIntegerParam(params, "count", {
-      max: EXA_MAX_SEARCH_COUNT,
-      message: `count must be an integer from 1 to ${EXA_MAX_SEARCH_COUNT}.`,
+      max: maxSearchCount,
+      message: `count must be an integer from 1 to ${maxSearchCount}.`,
     }) ??
     searchConfig?.maxResults ??
     undefined;

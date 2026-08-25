@@ -348,6 +348,7 @@ describe("sendPoll channel normalization", () => {
       threadId: "thread-1",
       silent: true,
       isAnonymous: false,
+      idempotencyKey: "direct-poll-1",
     });
 
     expect(callGatewayMock).not.toHaveBeenCalled();
@@ -372,6 +373,7 @@ describe("sendPoll channel normalization", () => {
       threadId: "thread-1",
       silent: true,
       isAnonymous: false,
+      deliveryQueueId: "direct-poll-1",
     });
   });
 

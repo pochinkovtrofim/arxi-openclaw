@@ -296,6 +296,11 @@ describe("exa web search provider", () => {
       if (!tool) {
         throw new Error("Expected tool definition");
       }
+      const parameters = tool.parameters as { properties?: { count?: { maximum?: number } } };
+      expect(parameters.properties?.count?.maximum).toBe(10);
+      await expect(tool.execute({ query: "too many", count: 11 })).rejects.toThrow(
+        "count must be an integer from 1 to 10",
+      );
       const result = await tool.execute({ query: "latest fact", count: 3 });
       expect(marker).toBe("arxi-host-exa-v1");
       expect(JSON.parse(requestBody)).toMatchObject({ query: "latest fact", numResults: 3 });

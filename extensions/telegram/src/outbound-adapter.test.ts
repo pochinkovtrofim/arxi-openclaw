@@ -342,6 +342,10 @@ describe("telegramOutbound", () => {
       verbose: false,
       accountId: undefined,
       gatewayClientScopes: undefined,
+      deliveryQueueId: undefined,
+      deliveryPartIndex: 0,
+      deliveryPartCount: 1,
+      sourceRunId: undefined,
     });
     expect(sendMessageTelegramMock).not.toHaveBeenCalled();
     expect(result).toEqual({
@@ -604,6 +608,10 @@ describe("telegramOutbound", () => {
         silent: undefined,
         isAnonymous: undefined,
         gatewayClientScopes: undefined,
+        deliveryQueueId: undefined,
+        deliveryPartIndex: undefined,
+        deliveryPartCount: undefined,
+        sourceRunId: undefined,
       },
     );
   });

@@ -286,6 +286,7 @@ function createPluginHandler(
     threadId: overrides && "threadId" in overrides ? overrides.threadId : baseCtx.threadId,
     audioAsVoice: overrides?.audioAsVoice,
     sourceRunId: overrides?.sourceRunId,
+    deliveryQueueId: overrides?.deliveryQueueId ?? baseCtx.deliveryQueueId,
     deliveryPartIndex: overrides?.deliveryPartIndex,
     deliveryPartCount: overrides?.deliveryPartCount,
     preparedMessageId:

@@ -1,6 +1,6 @@
 // Telegram tests cover send plugin behavior.
 import fs from "node:fs";
-import type { Bot } from "grammy";
+import { GrammyError, type ApiCallFn, type Bot, type Transformer } from "grammy";
 import { isChannelPartialDeliveryError } from "openclaw/plugin-sdk/channel-inbound";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { PluginStateSyncKeyedStore } from "openclaw/plugin-sdk/plugin-state-runtime";
@@ -1086,6 +1086,85 @@ describe("sendMessageTelegram", () => {
 
     const [middleware] = firstMockCall(botConfigUseSpy, "bot config use call");
     expect(middleware).toBeTypeOf("function");
+  });
+
+  it("adds stable Arxi delivery identity only for the exact local Bot API", async () => {
+    const cfg = { channels: { telegram: { apiRoot: "http://127.0.0.1:18080/telegram" } } };
+    botApi.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: "123" } });
+
+    await sendMessageTelegram("123", "hi", {
+      cfg,
+      token: "tok",
+      deliveryQueueId: "queue-1",
+      deliveryPartIndex: 3,
+      deliveryPartCount: 4,
+      sourceRunId: "run-1",
+    });
+
+    const middleware = botConfigUseSpy.mock.calls.at(1)?.[0] as Transformer | undefined;
+    expect(middleware).toBeTypeOf("function");
+    const captured: Array<Record<string, unknown>> = [];
+    const next = vi.fn(async (_method, payload) => {
+      captured.push(payload as Record<string, unknown>);
+      return { ok: true as const, result: true };
+    });
+    await middleware!(next as ApiCallFn, "sendMessage", { chat_id: 123, text: "one" });
+    await middleware!(next as ApiCallFn, "sendMessage", { chat_id: 123, text: "two" });
+
+    expect(captured.map(({ arxi_delivery }) => JSON.parse(String(arxi_delivery)))).toEqual([
+      {
+        version: 1,
+        queue_id: "queue-1",
+        part_index: 3,
+        part_count: 4,
+        request_index: 0,
+        source_run_id: "run-1",
+      },
+      {
+        version: 1,
+        queue_id: "queue-1",
+        part_index: 3,
+        part_count: 4,
+        request_index: 1,
+        source_run_id: "run-1",
+      },
+    ]);
+
+    botConfigUseSpy.mockClear();
+    await sendMessageTelegram("123", "direct", {
+      cfg: { channels: { telegram: { apiRoot: "https://api.telegram.org" } } },
+      token: "tok",
+      deliveryQueueId: "queue-direct",
+    });
+    expect(botConfigUseSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("classifies only definitive local content rejection as a permanent no-send", async () => {
+    const cfg = { channels: { telegram: { apiRoot: "http://127.0.0.1:18080/telegram" } } };
+    botApi.sendMessage.mockResolvedValue({ message_id: 1, chat: { id: "123" } });
+    await sendMessageTelegram("123", "hi", { cfg, token: "tok", deliveryQueueId: "queue-1" });
+    const middleware = botConfigUseSpy.mock.calls.at(1)?.[0] as Transformer | undefined;
+    expect(middleware).toBeTypeOf("function");
+    const rejected = (status: number) =>
+      new GrammyError(
+        "Call to 'sendMessage' failed",
+        { ok: false, error_code: status, description: "rejected" },
+        "sendMessage",
+        { chat_id: 123 },
+      );
+
+    await expect(
+      middleware!(async () => await Promise.reject(rejected(400)), "sendMessage", {
+        chat_id: 123,
+        text: "bad",
+      }),
+    ).rejects.toMatchObject({ name: "PlatformMessageNotDispatchedError", retryable: false });
+    await expect(
+      middleware!(async () => await Promise.reject(rejected(401)), "sendMessage", {
+        chat_id: 123,
+        text: "retain",
+      }),
+    ).rejects.not.toBeInstanceOf(PlatformMessageNotDispatchedError);
   });
 
   it("records sent text messages into the Telegram prompt context cache", async () => {

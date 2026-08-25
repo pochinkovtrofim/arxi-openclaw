@@ -858,6 +858,7 @@ export type ChannelPollContext = Pick<
   | "isAnonymous"
   | "gatewayClientScopes"
   | "onPlatformSendDispatch"
+  | "deliveryQueueId"
 > & {
   content?: string;
   /** Trusted originating turn context for channel-owned delivery correlation. */

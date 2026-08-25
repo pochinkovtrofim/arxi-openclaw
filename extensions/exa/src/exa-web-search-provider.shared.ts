@@ -4,6 +4,8 @@ import { createWebSearchProviderContractFields } from "openclaw/plugin-sdk/provi
 const EXA_CREDENTIAL_PATH = "plugins.entries.exa.config.webSearch.apiKey";
 const EXA_ONBOARDING_SCOPES: Array<"text-inference"> = ["text-inference"];
 
+export const ARXI_EXA_SEARCH_ENDPOINT = "http://127.0.0.1:18080/search";
+
 export function createExaWebSearchProviderBase() {
   return {
     id: "exa",

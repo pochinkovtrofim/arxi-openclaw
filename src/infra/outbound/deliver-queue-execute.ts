@@ -191,11 +191,10 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
   };
   const wrappedParams: DeliverOutboundPayloadsParams = {
     ...params,
-    // A provider marker can represent the whole durable intent only when one payload owns it.
-    // Adapters must narrow further when one payload can fan out into multiple platform sends.
-    ...(exactReconciliationRequired && params.payloads.length === 1
-      ? { deliveryQueueId: platformQueueId }
-      : { deliveryQueueId: undefined }),
+    // Core narrows this stable queue identity by source payload before channel
+    // adapters split a payload into physical sends. It is correlation only;
+    // providers without an idempotency key still have at-least-once delivery.
+    deliveryQueueId: platformQueueId,
     requiredUnknownSendReconciliation: exactReconciliationRequired,
     onPlatformSendStart: async (route, sourceIndex) => {
       params.abortSignal?.throwIfAborted();

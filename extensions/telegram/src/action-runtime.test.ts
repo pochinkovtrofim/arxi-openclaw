@@ -285,6 +285,7 @@ describe("handleTelegramAction", () => {
     chatId: "123",
     messageId: "456",
     emoji: "✅",
+    idempotencyKey: "reaction-456",
   } as const;
 
   function reactionConfig(reactionLevel: "minimal" | "extensive" | "off" | "ack"): OpenClawConfig {
@@ -342,6 +343,7 @@ describe("handleTelegramAction", () => {
     const options = requireRecord(call[3], "reaction add options");
     expect(options.token).toBe("tok");
     expect(options.remove).toBe(false);
+    expect(options.deliveryQueueId).toBe("reaction-456");
   }
 
   beforeEach(async () => {
@@ -717,13 +719,16 @@ describe("handleTelegramAction", () => {
         action: "sendSticker",
         to: "123",
         fileId: "sticker",
+        idempotencyKey: "sticker-1",
       },
       cfg,
     );
     const call = mockCall(sendStickerTelegram, 0, "send sticker");
     expect(call[0]).toBe("123");
     expect(call[1]).toBe("sticker");
-    expect(requireRecord(call[2], "send sticker options").token).toBe("tok");
+    const options = requireRecord(call[2], "send sticker options");
+    expect(options.token).toBe("tok");
+    expect(options.deliveryQueueId).toBe("sticker-1");
   });
 
   it("accepts shared sticker action aliases", async () => {
@@ -1350,6 +1355,7 @@ describe("handleTelegramAction", () => {
         durationSeconds: 60,
         isAnonymous: false,
         silent: true,
+        idempotencyKey: "poll-ready",
       },
       telegramConfig(),
     );
@@ -1366,6 +1372,7 @@ describe("handleTelegramAction", () => {
     expect(options.token).toBe("tok");
     expect(options.isAnonymous).toBe(false);
     expect(options.silent).toBe(true);
+    expect(options.deliveryQueueId).toBe("poll-ready");
     const details = resultDetails(result);
     expect(details.ok).toBe(true);
     expect(details.messageId).toBe("790");
