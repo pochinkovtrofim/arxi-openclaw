@@ -321,6 +321,7 @@
   "state-paths",
   "target-resolver-runtime",
   "telegram-account",
+  "telegram-runtime",
   "text-autolink-runtime",
   "text-utility-runtime",
   "widget-html",

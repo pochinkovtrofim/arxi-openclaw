@@ -1441,6 +1441,10 @@
       "types": "./dist/plugin-sdk/telegram-account.d.ts",
       "default": "./dist/plugin-sdk/telegram-account.js"
     },
+    "./plugin-sdk/telegram-runtime": {
+      "types": "./dist/plugin-sdk/telegram-runtime.d.ts",
+      "default": "./dist/plugin-sdk/telegram-runtime.js"
+    },
     "./plugin-sdk/text-autolink-runtime": {
       "default": "./dist/plugin-sdk/text-autolink-runtime.js"
     },

@@ -110,7 +110,11 @@ export const deprecatedBarrelPluginSdkEntrypoints = pluginSdkSubpaths.filter((en
 );
 
 /** Supported SDK facades backed by bundled plugins until generic contracts replace them. */
-export const supportedBundledFacadeSdkEntrypoints = ["discord", "telegram-account"] as const;
+export const supportedBundledFacadeSdkEntrypoints = [
+  "discord",
+  "telegram-account",
+  "telegram-runtime",
+] as const;
 
 /** Plugin-owned surfaces intentionally public and documented for third-party plugins. */
 export const publicPluginOwnedSdkEntrypoints = ["memory-core-host-engine-foundation"] as const;

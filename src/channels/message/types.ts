@@ -307,6 +307,8 @@ export type ChannelMessageUnknownSendContext<TConfig = OpenClawConfig> = {
   replyToId?: string | null;
   replyToMode?: ReplyToMode;
   threadId?: string | number | null;
+  /** Exact durable document-delivery intent used to reconstruct media actions. */
+  forceDocument?: boolean;
   silent?: boolean;
 };
 

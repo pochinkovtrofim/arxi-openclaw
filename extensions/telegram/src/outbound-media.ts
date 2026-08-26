@@ -1,16 +1,18 @@
 import { InputFile } from "grammy";
 import type { MarkdownTableMode } from "openclaw/plugin-sdk/config-contracts";
-import { extensionForMime, type MediaKind } from "openclaw/plugin-sdk/media-mime";
+import type { MediaKind } from "openclaw/plugin-sdk/media-mime";
 import { isGifMedia, kindFromMime } from "openclaw/plugin-sdk/media-runtime";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { formatErrorMessage } from "openclaw/plugin-sdk/ssrf-runtime";
 import type { loadWebMedia } from "openclaw/plugin-sdk/web-media";
-import { resolveTelegramPlainCaption, splitTelegramCaption } from "./caption.js";
-import { renderTelegramHtmlText, telegramHtmlToPlainTextFallback } from "./format.js";
 import type { TelegramOutboundPromptContextMessage } from "./outbound-message-context.js";
 import { isTelegramEmptyContentError, isTelegramHtmlParseError } from "./rich-plain-fallback.js";
 import type { TelegramApi } from "./send-context.js";
 import { isTelegramPhotoLimitError } from "./send-error-predicates.js";
+import {
+  planTelegramCaption,
+  resolveTelegramOutboundMediaFilename,
+} from "./telegram-runtime-planning.js";
 import { resolveTelegramVoiceSend } from "./voice.js";
 
 type TelegramLoadedMedia = Awaited<ReturnType<typeof loadWebMedia>>;
@@ -43,36 +45,6 @@ export type TelegramOutboundMediaSender<T = TelegramOutboundPromptContextMessage
   send: (effectiveParams: Record<string, unknown>) => Promise<T>;
 };
 
-function resolveTelegramOutboundMediaFilename(params: {
-  fileName?: string;
-  contentType?: string;
-  kind?: MediaKind;
-  isGif: boolean;
-}): string {
-  if (params.fileName) {
-    return params.fileName;
-  }
-  if (params.isGif) {
-    return "animation.gif";
-  }
-
-  // Telegram receives only the multipart filename, so preserve the detected
-  // MIME extension instead of labeling every anonymous upload as another format.
-  const basename =
-    params.kind === "image" || params.kind === "video" || params.kind === "audio"
-      ? params.kind
-      : "file";
-  const defaultExtension =
-    params.kind === "image"
-      ? ".jpg"
-      : params.kind === "video"
-        ? ".mp4"
-        : params.kind === "audio"
-          ? ".ogg"
-          : ".bin";
-  return `${basename}${extensionForMime(params.contentType) ?? defaultExtension}`;
-}
-
 export function prepareTelegramOutboundMedia(params: {
   media: TelegramLoadedMedia;
   text?: string;
@@ -99,21 +71,15 @@ export function prepareTelegramOutboundMedia(params: {
     kind,
     isGif,
   });
-  const text = params.text;
-  const trimmedText = text?.trim();
-  const renderedCaption =
-    !isVideoNote && trimmedText
-      ? params.preparedHtml === true && params.textMode === "html"
-        ? trimmedText
-        : renderTelegramHtmlText(trimmedText, {
-            textMode: params.textMode ?? "markdown",
-            tableMode: params.tableMode,
-          })
-      : undefined;
-  const { caption, followUpText } = isVideoNote
-    ? { caption: undefined, followUpText: trimmedText ? text : undefined }
-    : splitTelegramCaption(text, renderedCaption);
-  const htmlCaption = caption ? renderedCaption : undefined;
+  const textMode = params.textMode ?? "markdown";
+  const captionPlan = isVideoNote
+    ? { followUpText: params.text?.trim() ? params.text : undefined }
+    : planTelegramCaption({
+        text: params.text,
+        textMode,
+        tableMode: params.tableMode,
+        preparedHtml: params.preparedHtml,
+      });
 
   return {
     kind,
@@ -122,13 +88,10 @@ export function prepareTelegramOutboundMedia(params: {
     isVideoNote,
     fileName,
     file: new InputFile(params.media.buffer, fileName),
-    caption,
-    htmlCaption,
-    plainCaption: resolveTelegramPlainCaption(
-      caption && params.textMode === "html" ? telegramHtmlToPlainTextFallback(caption) : caption,
-      htmlCaption,
-    ),
-    followUpText,
+    caption: captionPlan.caption,
+    htmlCaption: captionPlan.htmlCaption,
+    plainCaption: captionPlan.plainCaption,
+    followUpText: captionPlan.followUpText,
   };
 }
 

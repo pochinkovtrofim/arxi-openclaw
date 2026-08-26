@@ -6,7 +6,6 @@ import {
 import { createMessageReceiptFromOutboundResults } from "openclaw/plugin-sdk/channel-outbound";
 import { isSingleUseReplyToMode } from "openclaw/plugin-sdk/reply-reference";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
-import { formatErrorMessage } from "openclaw/plugin-sdk/ssrf-runtime";
 import { renderTelegramHtmlText } from "./format.js";
 import { buildInlineKeyboard } from "./inline-keyboard.js";
 import {
@@ -45,10 +44,8 @@ import {
   resolveMarkdownTableMode,
 } from "./send.runtime.js";
 import { recordSentMessage } from "./sent-message-cache.js";
+import { shouldSendTelegramImageAsPhoto } from "./telegram-runtime-planning.js";
 import { resolveTelegramBotUserIdFromToken } from "./token-fingerprint.js";
-
-const MAX_TELEGRAM_PHOTO_DIMENSION_SUM = 10_000;
-const MAX_TELEGRAM_PHOTO_ASPECT_RATIO = 20;
 
 export async function sendMessageTelegram(
   to: string,
@@ -184,39 +181,6 @@ async function sendMessageTelegramWithContext(
     useRichMessages,
   });
 
-  async function shouldSendTelegramImageAsPhoto(buffer: Buffer): Promise<boolean> {
-    try {
-      const metadata = await getImageMetadata(buffer);
-      const width = metadata?.width;
-      const height = metadata?.height;
-
-      if (typeof width !== "number" || typeof height !== "number") {
-        sendLogger.warn("Photo dimensions are unavailable. Sending as document instead.");
-        return false;
-      }
-
-      const shorterSide = Math.min(width, height);
-      const longerSide = Math.max(width, height);
-      const isValidPhoto =
-        width + height <= MAX_TELEGRAM_PHOTO_DIMENSION_SUM &&
-        shorterSide > 0 &&
-        longerSide <= shorterSide * MAX_TELEGRAM_PHOTO_ASPECT_RATIO;
-
-      if (!isValidPhoto) {
-        sendLogger.warn(
-          `Photo dimensions (${width}x${height}) are not valid for Telegram photos. Sending as document instead.`,
-        );
-        return false;
-      }
-      return true;
-    } catch (err) {
-      sendLogger.warn(
-        `Failed to validate photo dimensions: ${formatErrorMessage(err)}. Sending as document instead.`,
-      );
-      return false;
-    }
-  }
-
   if (mediaUrl) {
     const media = await loadWebMedia(
       mediaUrl,
@@ -239,7 +203,11 @@ async function sendMessageTelegramWithContext(
     const sendImageAsPhoto =
       mediaPlan.deliveryKind !== "image" ||
       mediaPlan.isGif ||
-      (await shouldSendTelegramImageAsPhoto(media.buffer));
+      (await shouldSendTelegramImageAsPhoto(
+        media.buffer,
+        (message) => sendLogger.warn(message),
+        getImageMetadata,
+      ));
     const { sender: mediaSender, documentSender } = resolveTelegramOutboundMediaSenders({
       api,
       chatId,
