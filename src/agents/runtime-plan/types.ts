@@ -239,6 +239,7 @@ type AgentRuntimeReplyPayload = {
   };
   mediaUrl?: string;
   mediaUrls?: string[];
+  mediaFileNames?: Array<string | undefined>;
   attachments?: Array<{
     type?: "image" | "audio" | "video" | "file";
     path?: string;
