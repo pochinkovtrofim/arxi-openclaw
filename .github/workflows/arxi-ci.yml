@@ -1,0 +1,125 @@
+name: Arxi fork gate
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arxi-fork-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  NODE_VERSION: "24.x"
+  OPENCLAW_VITEST_MAX_WORKERS: "2"
+
+jobs:
+  runtime-contract:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Setup production Node toolchain
+        uses: ./.github/actions/setup-node-env
+        with:
+          cache-mode: restore
+          node-version: ${{ env.NODE_VERSION }}
+          install-bun: "false"
+
+      - name: Resolve exact change base
+        env:
+          EVENT_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before || '' }}
+        run: |
+          set -euo pipefail
+          base="$EVENT_BASE"
+          if [[ ! "$base" =~ ^[0-9a-f]{40}$ || "$base" =~ ^0+$ ]]; then
+            base="$(git rev-parse HEAD^)"
+          fi
+          git fetch --no-tags --depth=1 origin "$base"
+          echo "ARXI_DIFF_BASE=$base" >> "$GITHUB_ENV"
+
+      - name: Format and lint changed Arxi-owned source
+        run: |
+          set -euo pipefail
+          mapfile -d '' formatted < <(
+            git diff --name-only -z "$ARXI_DIFF_BASE" HEAD -- \
+              'extensions/telegram/**' \
+              'extensions/codex/**' \
+              'src/agents/runtime-plan/**' \
+              'src/auto-reply/**' \
+              'src/channels/**' \
+              'src/infra/outbound/**' \
+              'src/plugin-sdk/**' \
+              'scripts/plugin-sdk-surface-report.mts' \
+              'package.json' \
+              'config/assertion-safety-baseline.txt' |
+              while IFS= read -r -d '' path; do
+                case "$path" in
+                  *.js|*.mjs|*.ts|*.mts|*.json|*.jsonc) printf '%s\0' "$path" ;;
+                esac
+              done
+          )
+          if (( ${#formatted[@]} > 0 )); then
+            pnpm format:check "${formatted[@]}"
+          fi
+          mapfile -d '' linted < <(
+            printf '%s\0' "${formatted[@]}" |
+              while IFS= read -r -d '' path; do
+                case "$path" in *.js|*.mjs|*.ts|*.mts) printf '%s\0' "$path" ;; esac
+              done
+          )
+          if (( ${#linted[@]} > 0 )); then
+            node scripts/run-oxlint.mjs "${linted[@]}"
+          fi
+          pnpm check:assertion-safety
+          pnpm plugin-sdk:surface:check
+
+      - name: Validate Arxi workflow contract
+        run: pnpm check:workflows
+
+      - name: Test fork seams consumed by Arxi
+        run: >-
+          pnpm test
+          extensions/telegram/src/external-context-projection.test.ts
+          src/auto-reply/reply-payload.test.ts
+          src/infra/outbound/delivery-queue-media-spool.test.ts
+          src/infra/outbound/delivery-queue-reconciliation.test.ts
+          src/infra/outbound/message-plan.test.ts
+          src/infra/outbound/payloads.test.ts
+
+      - name: Build exact Linux runtime surface
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: pnpm build
+
+      - name: Verify the public Telegram planning seam
+        run: |
+          set -euo pipefail
+          test -f dist/extensions/telegram/transport-plan-api.js
+          test -f dist/extensions/telegram/transport-plan-api.d.ts
+          node --input-type=module <<'EOF'
+          import {
+            planTelegramPhotoDocumentDelivery,
+            planTelegramTextDeliveryPages,
+            projectTelegramExternalMessageContext,
+          } from "./dist/extensions/telegram/transport-plan-api.js";
+          for (const exported of [
+            planTelegramPhotoDocumentDelivery,
+            planTelegramTextDeliveryPages,
+            projectTelegramExternalMessageContext,
+          ]) {
+            if (typeof exported !== "function") process.exit(1);
+          }
+          EOF
