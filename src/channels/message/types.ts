@@ -207,6 +207,8 @@ export type ChannelMessageSendTextContext<TConfig = OpenClawConfig> = {
 export type ChannelMessageSendMediaContext<TConfig = OpenClawConfig> =
   ChannelMessageSendTextContext<TConfig> & {
     mediaUrl: string;
+    /** Immutable original filename retained when durable delivery rewrites mediaUrl. */
+    mediaFileName?: string;
     mediaAccess?: OutboundMediaAccess;
     mediaLocalRoots?: readonly string[];
     mediaReadFile?: (filePath: string) => Promise<Buffer>;
