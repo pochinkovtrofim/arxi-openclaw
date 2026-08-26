@@ -26,6 +26,6 @@ The exact GitHub-disabled set is recorded in `ARXI_DISABLED_WORKFLOWS.md`.
 Product user scenarios are accepted only through the composed platform: the
 platform's focused Go boundary tests, ops artifact/golden/deployment checks,
 and the real production Telegram + ChatGPT canary. A future fork change that
-adds a shipped Arxi seam must classify that path and add its direct check here;
-unknown changes under production source roots fail closed. It must not re-enable
-the upstream full matrix by default.
+adds a shipped Arxi seam must add its exact files and direct behavior check here;
+the narrow shipped-file allowlist fails closed for every other change under a
+production source root. It must not re-enable the upstream full matrix by default.

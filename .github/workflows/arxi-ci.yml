@@ -89,11 +89,51 @@ jobs:
       - name: Reject unclassified production changes
         run: |
           set -euo pipefail
+          declare -A shipped_files=()
+          while IFS= read -r path; do
+            shipped_files["$path"]=1
+          done <<'EOF'
+          extensions/telegram/src/bot-message-context.session.ts
+          extensions/telegram/src/bot/body-helpers.ts
+          extensions/telegram/src/bot/helpers.ts
+          extensions/telegram/src/external-context-projection.test.ts
+          extensions/telegram/src/external-context-projection.ts
+          extensions/telegram/src/outbound-media.ts
+          extensions/telegram/src/rich-plain-fallback.ts
+          extensions/telegram/src/send-error-predicates.ts
+          extensions/telegram/src/send-message.ts
+          extensions/telegram/src/telegram-context-rendering.ts
+          extensions/telegram/src/telegram-runtime-planning.ts
+          extensions/telegram/transport-plan-api.ts
+          src/agents/runtime-plan/types.ts
+          src/auto-reply/reply-payload.test.ts
+          src/auto-reply/reply-payload.ts
+          src/channels/message/types.ts
+          src/infra/outbound/deliver-channel.ts
+          src/infra/outbound/deliver-core.ts
+          src/infra/outbound/delivery-queue-media-spool.test.ts
+          src/infra/outbound/delivery-queue-media-spool.ts
+          src/infra/outbound/delivery-queue-reconciliation.test.ts
+          src/infra/outbound/delivery-queue-reconciliation.ts
+          src/infra/outbound/message-plan.test.ts
+          src/infra/outbound/message-plan.ts
+          src/infra/outbound/payloads.test.ts
+          src/infra/outbound/payloads.ts
+          src/plugin-sdk/media-mime.ts
+          scripts/plugin-sdk-surface-report.mts
+          package.json
+          pnpm-lock.yaml
+          pnpm-workspace.yaml
+          tsconfig.core.json
+          tsconfig.extensions.json
+          tsconfig.extensions.projects.json
+          EOF
           failed=false
           while IFS= read -r -d '' path; do
+            if [[ -n "${shipped_files[$path]:-}" ]]; then
+              continue
+            fi
             case "$path" in
-              extensions/telegram/**|extensions/codex/**|src/agents/runtime-plan/**|src/auto-reply/**|src/channels/**|src/infra/outbound/**|src/plugin-sdk/**|scripts/plugin-sdk-surface-report.mts|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig.core.json|tsconfig.extensions.json|tsconfig.extensions.projects.json)
-                ;;
               src/**|extensions/**|packages/**|config/**|scripts/**|tsconfig*.json)
                 echo "unclassified shipped source: $path" >&2
                 failed=true
