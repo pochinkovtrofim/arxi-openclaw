@@ -15,6 +15,8 @@ export type OutboundMessageSendOverrides = ReplyToOverride & {
   threadId?: string | number | null;
   audioAsVoice?: boolean;
   forceDocument?: boolean;
+  /** Immutable original filename for the media unit, independent of queue spool paths. */
+  mediaFileName?: string;
   formatting?: OutboundDeliveryFormattingOptions;
   /** Exact useful final-answer run retained through durable delivery and recovery. */
   sourceRunId?: string;
@@ -191,6 +193,7 @@ export function planOutboundTextMessageUnits(params: {
 export function planOutboundMediaMessageUnits(params: {
   caption: string;
   mediaUrls: readonly string[];
+  mediaFileNames?: ReadonlyArray<string | undefined>;
   overrides: OutboundMessageSendOverrides;
   consumeReplyTo?: PlanReplyToConsumption;
 }): OutboundMessageUnit[] {
@@ -201,6 +204,7 @@ export function planOutboundMediaMessageUnits(params: {
     ...(index === 0 ? { caption: params.caption } : {}),
     overrides: {
       ...withPlannedReplyTo(params.overrides, params.consumeReplyTo),
+      ...(params.mediaFileNames?.[index] ? { mediaFileName: params.mediaFileNames[index] } : {}),
       deliveryPartIndex: index,
       deliveryPartCount,
     },

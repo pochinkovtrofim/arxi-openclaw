@@ -815,6 +815,15 @@ describe("summarizeOutboundPayloadForTransport", () => {
     expect(summary.audioAsVoice).toBe(true);
   });
 
+  it("retains immutable media filenames in the transport summary", () => {
+    const summary = summarizeOutboundPayloadForTransport({
+      mediaUrl: "/opaque/queue/92c8",
+      mediaFileNames: ["owner report.pdf"],
+    });
+
+    expect(summary.mediaFileNames).toEqual(["owner report.pdf"]);
+  });
+
   it("strips unsupported citation control markers from hook-only spoken text", () => {
     const summary = summarizeOutboundPayloadForTransport({
       mediaUrl: "/tmp/reply.opus",

@@ -70,6 +70,7 @@ describe("outbound message planning", () => {
     const units = planOutboundMediaMessageUnits({
       caption: "caption",
       mediaUrls: ["https://example.com/1.png", "https://example.com/2.png"],
+      mediaFileNames: ["owner chart.png", "details.pdf"],
       overrides: { replyToId: reply.replyToId, replyToIdSource: reply.source },
       consumeReplyTo: (overrides) =>
         policy.applyReplyToConsumption(overrides, {
@@ -87,12 +88,13 @@ describe("outbound message planning", () => {
               unit.overrides.replyToId,
               unit.overrides.deliveryPartIndex,
               unit.overrides.deliveryPartCount,
+              unit.overrides.mediaFileName,
             ]
           : [unit.kind],
       ),
     ).toEqual([
-      ["media", "caption", "https://example.com/1.png", "reply-1", 0, 2],
-      ["media", undefined, "https://example.com/2.png", undefined, 1, 2],
+      ["media", "caption", "https://example.com/1.png", "reply-1", 0, 2, "owner chart.png"],
+      ["media", undefined, "https://example.com/2.png", undefined, 1, 2, "details.pdf"],
     ]);
   });
 

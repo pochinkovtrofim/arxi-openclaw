@@ -244,8 +244,28 @@ describe("staging", () => {
     const staged = result.payloads[0]?.mediaUrl as string;
     expect(path.dirname(staged)).toBe(spoolRoot);
     expect(await fs.readFile(staged, "utf8")).toBe("opus-bytes");
+    expect(result.payloads[0]?.mediaFileNames).toEqual(["voice.ogg"]);
     expect(livePayload.mediaUrl).toBe(source);
     expect(result.artifacts).toEqual([staged]);
+  });
+
+  it("retains an explicit original filename while replacing the source with an opaque spool path", async () => {
+    const source = path.join(sourceDir, "temporary-result.bin");
+    await fs.writeFile(source, "report-bytes");
+
+    const result = await stageQueuePayloadMedia({
+      payloads: [{ mediaUrl: source, mediaFileNames: ["Quarterly Report.pdf"] }],
+      mediaAccess: mediaAccessFor([sourceDir]),
+      maxBytes: 1024 * 1024,
+      stateDir,
+    });
+
+    expect(result.status).toBe("staged");
+    if (result.status !== "staged") {
+      return;
+    }
+    expect(path.basename(String(result.payloads[0]?.mediaUrl))).not.toBe("Quarterly Report.pdf");
+    expect(result.payloads[0]?.mediaFileNames).toEqual(["Quarterly Report.pdf"]);
   });
 
   it("leaves replayable remote media untouched without creating the spool", async () => {
@@ -369,6 +389,7 @@ describe("staging", () => {
     expect(result.payloads[0]).toEqual({
       mediaUrl: " ",
       mediaUrls: ["", result.artifacts[0], "  "],
+      mediaFileNames: ["voice.ogg"],
     });
   });
 });

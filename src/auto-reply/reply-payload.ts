@@ -40,6 +40,8 @@ export type ReplyPayload = {
   };
   mediaUrl?: string;
   mediaUrls?: string[];
+  /** Immutable original filenames aligned with mediaUrls across durable queue staging. */
+  mediaFileNames?: Array<string | undefined>;
   /** Prepared metadata aligned with mediaUrls for client-facing history projection. */
   attachments?: ReplyMediaAttachment[];
   /** Internal-only trust signal for gateway webchat local media embedding. */

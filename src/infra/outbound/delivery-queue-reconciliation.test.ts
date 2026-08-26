@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { buildUnknownSendContext } from "./delivery-queue-reconciliation.js";
 import { createUnmodifiedPreparedOutboundBatch } from "./prepared-batch.js";
 
-function entry(payload: { text: string; isStatusNotice?: boolean }) {
+function entry(
+  payload: { text: string; isStatusNotice?: boolean },
+  overrides: { forceDocument?: boolean } = {},
+) {
   const preparedBatch = createUnmodifiedPreparedOutboundBatch([payload]);
   preparedBatch.runId = "run-exact";
   preparedBatch.replyKind = "final";
@@ -13,6 +16,7 @@ function entry(payload: { text: string; isStatusNotice?: boolean }) {
     enqueuedAt: 1,
     retryCount: 1,
     preparedBatch,
+    ...overrides,
   };
 }
 
@@ -29,5 +33,16 @@ describe("unknown-send source correlation", () => {
     expect(
       buildUnknownSendContext({ entry: entry(payload), payloads: [payload], cfg: {} }),
     ).not.toHaveProperty("sourceRunId");
+  });
+
+  it.each([true, false])("retains forceDocument=%s across durable recovery", (forceDocument) => {
+    const payload = { text: "caption" };
+    expect(
+      buildUnknownSendContext({
+        entry: entry(payload, { forceDocument }),
+        payloads: [payload],
+        cfg: {},
+      }),
+    ).toMatchObject({ forceDocument });
   });
 });

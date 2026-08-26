@@ -207,6 +207,8 @@ export type ChannelMessageSendTextContext<TConfig = OpenClawConfig> = {
 export type ChannelMessageSendMediaContext<TConfig = OpenClawConfig> =
   ChannelMessageSendTextContext<TConfig> & {
     mediaUrl: string;
+    /** Immutable original filename retained when durable delivery rewrites mediaUrl. */
+    mediaFileName?: string;
     mediaAccess?: OutboundMediaAccess;
     mediaLocalRoots?: readonly string[];
     mediaReadFile?: (filePath: string) => Promise<Buffer>;
@@ -307,6 +309,8 @@ export type ChannelMessageUnknownSendContext<TConfig = OpenClawConfig> = {
   replyToId?: string | null;
   replyToMode?: ReplyToMode;
   threadId?: string | number | null;
+  /** Exact durable document-delivery intent used to reconstruct media actions. */
+  forceDocument?: boolean;
   silent?: boolean;
 };
 

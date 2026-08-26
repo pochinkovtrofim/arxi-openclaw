@@ -52,6 +52,23 @@ function payloadMediaSources(payload: ReplyPayload): string[] {
   return sources;
 }
 
+function originalMediaFileNames(payload: ReplyPayload): Array<string | undefined> {
+  const sources = payloadMediaSources(payload);
+  return sources.map((source, index) => {
+    const explicit = payload.mediaFileNames?.[index]?.trim();
+    if (explicit) {
+      return explicit;
+    }
+    const attachmentName = payload.attachments?.[index]?.name?.trim();
+    if (attachmentName) {
+      return attachmentName;
+    }
+    const sourcePath = source.split(/[?#]/, 1)[0] ?? source;
+    const name = path.basename(sourcePath).trim();
+    return name || undefined;
+  });
+}
+
 /** Remote and data sources carry their own bytes; only local paths need queue custody. */
 function isSpoolableSource(source: string): boolean {
   return !isPassThroughRemoteMediaSource(source) && !/^data:/i.test(source);
@@ -145,6 +162,7 @@ export async function stageQueuePayloadMedia(params: {
         continue;
       }
       const staged = { ...payload };
+      staged.mediaFileNames = originalMediaFileNames(payload);
       if (isNonEmptyMediaSource(payload.mediaUrl) && isSpoolableSource(payload.mediaUrl)) {
         staged.mediaUrl = await stageSource(payload.mediaUrl);
       }

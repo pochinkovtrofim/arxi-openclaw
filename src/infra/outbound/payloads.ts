@@ -30,6 +30,7 @@ import { stripUnsupportedCitationControlMarkers } from "../../shared/text/citati
 export type NormalizedOutboundPayload = {
   text: string;
   mediaUrls: string[];
+  mediaFileNames?: Array<string | undefined>;
   audioAsVoice?: boolean;
   presentation?: MessagePresentation;
   presentationTextMode?: ReplyPayload["presentationTextMode"];
@@ -315,6 +316,7 @@ export function projectOutboundPayloadPlanForOutbound(
     normalizedPayloads.push({
       text,
       mediaUrls: entry.parts.mediaUrls,
+      ...(payload.mediaFileNames ? { mediaFileNames: payload.mediaFileNames } : {}),
       audioAsVoice: payload.audioAsVoice === true ? true : undefined,
       ...(entry.hasPresentation ? { presentation: payload.presentation } : {}),
       ...(entry.hasPresentation && payload.presentationTextMode
@@ -381,6 +383,7 @@ export function summarizeOutboundPayloadForTransport(
   return {
     text,
     mediaUrls: parts.mediaUrls,
+    ...(payload.mediaFileNames ? { mediaFileNames: payload.mediaFileNames } : {}),
     audioAsVoice: payload.audioAsVoice === true ? true : undefined,
     presentation: payload.presentation,
     ...(payload.presentationTextMode ? { presentationTextMode: payload.presentationTextMode } : {}),

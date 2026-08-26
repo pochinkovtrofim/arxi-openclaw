@@ -523,6 +523,7 @@ export async function deliverOutboundPayloadsCore(
       const beforeCount = results.length;
       const mediaUnits = planOutboundMediaMessageUnits({
         mediaUrls: payloadSummary.mediaUrls,
+        mediaFileNames: payloadSummary.mediaFileNames,
         caption: payloadSummary.text,
         overrides: sendOverrides,
         consumeReplyTo: applySendReplyToConsumption,

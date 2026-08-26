@@ -1490,6 +1490,10 @@
     "./plugin-sdk/llm": {
       "default": "./dist/plugin-sdk/llm.js"
     },
+    "./extensions/telegram/transport-plan-api": {
+      "types": "./dist/extensions/telegram/transport-plan-api.d.ts",
+      "default": "./dist/extensions/telegram/transport-plan-api.js"
+    },
     "./cli-entry": "./openclaw.mjs"
   },
   "scripts": {

@@ -481,6 +481,83 @@ function resolveForwardOrigin(origin: MessageOrigin): TelegramForwardedContext |
   }
 }
 
+function normalizeForwardedOriginDate(origin: Record<string, unknown>): number | undefined {
+  return typeof origin.date === "number" ? origin.date : undefined;
+}
+
+function normalizeForwardedOriginUser(
+  origin: Record<string, unknown>,
+): TelegramForwardedContext | null {
+  if (!isRecord(origin.sender_user) || typeof origin.sender_user.id !== "number") {
+    return null;
+  }
+  const firstName = normalizeOptionalString(origin.sender_user.first_name);
+  const lastName = normalizeOptionalString(origin.sender_user.last_name);
+  const username = normalizeOptionalString(origin.sender_user.username);
+  const name = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const id = String(origin.sender_user.id);
+  const from =
+    (name && username
+      ? `${name} (@${username})`
+      : name || (username ? `@${username}` : undefined)) || `user:${id}`;
+  return {
+    from,
+    date: normalizeForwardedOriginDate(origin),
+    fromType: "user",
+    fromId: id,
+    fromUsername: username,
+    fromTitle: name || undefined,
+  };
+}
+
+function normalizeForwardedOriginChat(
+  origin: Record<string, unknown>,
+  type: "chat" | "channel",
+): TelegramForwardedContext | null {
+  const chat = type === "channel" ? origin.chat : origin.sender_chat;
+  if (!isRecord(chat) || typeof chat.id !== "number") {
+    return null;
+  }
+  const title = normalizeOptionalString(chat.title);
+  const username = normalizeOptionalString(chat.username);
+  const id = String(chat.id);
+  const display = title || (username ? `@${username}` : undefined) || `${type}:${id}`;
+  const signature = normalizeOptionalString(origin.author_signature);
+  return {
+    from: signature ? `${display} (${signature})` : display,
+    date: normalizeForwardedOriginDate(origin),
+    fromType: type,
+    fromId: id,
+    fromUsername: username,
+    fromTitle: title,
+    fromSignature: signature,
+    fromMessageId:
+      type === "channel" && typeof origin.message_id === "number" ? origin.message_id : undefined,
+  };
+}
+
+/** Normalizes an untrusted Bot API forward_origin value without inventing provenance. */
+export function normalizeForwardedOrigin(origin: unknown): TelegramForwardedContext | null {
+  if (!isRecord(origin) || typeof origin.type !== "string") {
+    return null;
+  }
+  switch (origin.type) {
+    case "user":
+      return normalizeForwardedOriginUser(origin);
+    case "hidden_user":
+      return buildForwardedContextFromHiddenName({
+        name: normalizeOptionalString(origin.sender_user_name),
+        date: normalizeForwardedOriginDate(origin),
+        type: "hidden_user",
+      });
+    case "chat":
+    case "channel":
+      return normalizeForwardedOriginChat(origin, origin.type);
+    default:
+      return null;
+  }
+}
+
 export function normalizeForwardedContext(msg: Message): TelegramForwardedContext | null {
   if (!msg.forward_origin) {
     return null;
