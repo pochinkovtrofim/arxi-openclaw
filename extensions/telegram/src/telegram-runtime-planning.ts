@@ -12,7 +12,7 @@ import { renderTelegramHtmlText, telegramHtmlToPlainTextFallback } from "./forma
 const MAX_TELEGRAM_PHOTO_DIMENSION_SUM = 10_000;
 const MAX_TELEGRAM_PHOTO_ASPECT_RATIO = 20;
 
-export type TelegramCaptionPlan = {
+type TelegramCaptionPlan = {
   caption?: string;
   htmlCaption?: string;
   plainCaption?: string;

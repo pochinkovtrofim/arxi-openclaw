@@ -3,13 +3,13 @@ import { timestampMsToIsoString } from "openclaw/plugin-sdk/number-runtime";
 import type { TelegramMediaKind } from "./bot/body-helpers.js";
 import { resolveTelegramPromptMediaPath } from "./prompt-media-path.js";
 
-export type TelegramContextSenderEvidence = {
+type TelegramContextSenderEvidence = {
   displayName?: string;
   stableId?: string;
   username?: string;
 };
 
-export type TelegramContextRenderEntry = {
+type TelegramContextRenderEntry = {
   messageId?: string;
   sender?: string;
   senderId?: string;
@@ -87,10 +87,7 @@ export function isTelegramContextMediaKind(value: string): value is TelegramMedi
 }
 
 /** Canonical Telegram reply-chain projection used by every Telegram ingress boundary. */
-export function formatTelegramReplyContextEntry(
-  entry: TelegramContextRenderEntry,
-  index: number,
-): string {
+function formatTelegramReplyContextEntry(entry: TelegramContextRenderEntry, index: number): string {
   const mediaPath = entry.mediaPath ? resolveTelegramPromptMediaPath(entry.mediaPath) : undefined;
   const sender = entry.sender ?? "unknown sender";
   const labels = [
@@ -107,6 +104,15 @@ export function formatTelegramReplyContextEntry(
   ]
     .filter(Boolean)
     .join("\n");
+  const mediaInput = (() => {
+    if (entry.mediaKind) {
+      return { kind: entry.mediaKind };
+    }
+    const mediaType = entry.mediaType;
+    return mediaType && isTelegramContextMediaKind(mediaType)
+      ? { kind: mediaType }
+      : { contentType: mediaType };
+  })();
   const bodyLines = [
     `[Sender evidence ${formatSenderEvidence({
       displayName: entry.sender,
@@ -118,15 +124,7 @@ export function formatTelegramReplyContextEntry(
       forwardedFrom: entry.forwardedFrom,
       forwardedDate: entry.forwardedDate,
     }),
-    entry.mediaKind || entry.mediaType
-      ? formatMediaPlaceholderText([
-          entry.mediaKind
-            ? { kind: entry.mediaKind }
-            : isTelegramContextMediaKind(entry.mediaType ?? "")
-              ? { kind: entry.mediaType }
-              : { contentType: entry.mediaType },
-        ])
-      : undefined,
+    entry.mediaKind || entry.mediaType ? formatMediaPlaceholderText([mediaInput]) : undefined,
     mediaPath ? `[media_path:${mediaPath}]` : undefined,
     entry.mediaRef ? `[media_ref:${entry.mediaRef}]` : undefined,
   ].filter(Boolean);

@@ -49,11 +49,7 @@ import {
 } from "./body-helpers.js";
 import type { TelegramGetChat, TelegramStreamMode } from "./types.js";
 
-export type {
-  TelegramForwardedContext,
-  TelegramMediaKind,
-  TelegramTextEntity,
-} from "./body-helpers.js";
+export type { TelegramForwardedContext, TelegramTextEntity } from "./body-helpers.js";
 export type { TelegramThreadSpec } from "../thread-spec.js";
 export {
   buildSenderLabel,

@@ -310,8 +310,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: OpenAI-compatible video execution in the existing media-understanding owner.
       // -2: retire the uncalled secret-plan target resolver and its result type.
       // +2: conversation-binding inspection result and runtime inspector.
-      // +15: Telegram planners/normalizers and typed byte classification.
-      4352,
+      // +3: Telegram transport planners and external-context projection.
+      4340,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -401,8 +401,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: OpenAI-compatible video execution in the existing media-understanding owner.
       // -1: retire the uncalled secret-plan target resolver.
       // +1: read-only authoritative conversation-binding inspector.
-      // +6: Telegram planners/normalizers and byte classifier.
-      2584,
+      // +1: Telegram external-context projector.
+      2579,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(

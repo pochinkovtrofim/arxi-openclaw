@@ -2,8 +2,7 @@ import { formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 
 const TELEGRAM_CAPTION_TOO_LONG_RE = /caption is too long/i;
-export const TELEGRAM_PHOTO_DOCUMENT_ERROR_PATTERN =
-  "\\b(?:PHOTO_INVALID_DIMENSIONS|PHOTO_TOO_BIG)\\b";
+const TELEGRAM_PHOTO_DOCUMENT_ERROR_PATTERN = "\\b(?:PHOTO_INVALID_DIMENSIONS|PHOTO_TOO_BIG)\\b";
 const TELEGRAM_VOICE_FORBIDDEN_MARKER = "VOICE_MESSAGES_FORBIDDEN";
 
 function resolveTelegramErrorDescription(error: unknown): string {
