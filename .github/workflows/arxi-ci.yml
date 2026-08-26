@@ -86,8 +86,27 @@ jobs:
           pnpm check:assertion-safety
           pnpm plugin-sdk:surface:check
 
+      - name: Reject unclassified production changes
+        run: |
+          set -euo pipefail
+          failed=false
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              extensions/telegram/**|extensions/codex/**|src/agents/runtime-plan/**|src/auto-reply/**|src/channels/**|src/infra/outbound/**|src/plugin-sdk/**|scripts/plugin-sdk-surface-report.mts|package.json|pnpm-lock.yaml|pnpm-workspace.yaml|tsconfig.core.json|tsconfig.extensions.json|tsconfig.extensions.projects.json)
+                ;;
+              src/**|extensions/**|packages/**|config/**|scripts/**|tsconfig*.json)
+                echo "unclassified shipped source: $path" >&2
+                failed=true
+                ;;
+            esac
+          done < <(git diff --name-only -z "$ARXI_DIFF_BASE" HEAD)
+          test "$failed" = false
+
       - name: Validate Arxi workflow contract
         run: pnpm check:workflows
+
+      - name: Typecheck shipped core and extensions
+        run: pnpm tsgo:core && pnpm tsgo:extensions
 
       - name: Test fork seams consumed by Arxi
         run: >-
