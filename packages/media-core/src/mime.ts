@@ -158,6 +158,7 @@ export function isZipContainerMime(mime: string): boolean {
 // allowlists and byte classification always compare the same value; without
 // this an operator's existing text/yaml allowlist stops matching .yaml files.
 const MIME_SYNONYMS: Record<string, string> = {
+  "application/vnd.ms-asf": "video/x-ms-asf",
   "image/apng": "image/png",
   "text/yaml": "application/yaml",
   "application/x-yaml": "application/yaml",
@@ -197,8 +198,18 @@ async function sniffMime(buffer?: Buffer): Promise<string | undefined> {
   } catch {
     // fall through to manual magic-byte sniffs
   }
-  // Preserve iMessage CAF voice memos; file-type v22 does not detect them.
-  return buffer.toString("ascii", 0, 4) === "caff" ? "audio/x-caf" : undefined;
+  if (buffer.toString("ascii", 0, 4) === "caff") {
+    return "audio/x-caf";
+  }
+  if (buffer.toString("ascii", 0, 5) === "#!AMR") {
+    return "audio/amr";
+  }
+  const head = buffer.toString("ascii", 0, 12);
+  if (head.startsWith("FORM") && ["AIFF", "AIFC"].includes(head.slice(8))) {
+    return "audio/aiff";
+  }
+  const asf = Buffer.from("3026b2758e66cf11a6d900aa0062ce6c", "hex");
+  return buffer.subarray(0, asf.length).equals(asf) ? "video/x-ms-asf" : undefined;
 }
 
 /** Extracts a lowercase extension from a local path or HTTP URL pathname. */

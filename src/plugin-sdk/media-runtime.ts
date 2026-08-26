@@ -68,6 +68,7 @@ export { fetchRemoteMedia, saveRemoteMedia } from "../media/fetch.js";
 export { getAgentScopedMediaLocalRoots } from "../media/local-roots.js";
 export { getMediaDir, saveMediaBuffer } from "../media/store.js";
 export { kindFromMime } from "@openclaw/media-core/mime";
+export { probePlaybackMediaFileDescriptor } from "../media/media-probe.js";
 export {
   MAX_IMAGE_BYTES,
   maxBytesForKind,

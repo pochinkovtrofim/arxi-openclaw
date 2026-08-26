@@ -28,6 +28,7 @@ export type PlaybackMediaProbeResult = MediaProbeResult & {
 
 type MediaProbeOptions = {
   timeoutMs?: number;
+  signal?: AbortSignal;
 };
 
 type MediaFileProbeInput = {

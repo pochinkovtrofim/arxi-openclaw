@@ -8,3 +8,4 @@ export {
   normalizeMimeType,
 } from "@openclaw/media-core/mime";
 export { mediaKindFromMime, type MediaKind } from "@openclaw/media-core/constants";
+export { classifyAttachmentBytes } from "@openclaw/media-core/attachment-classify";

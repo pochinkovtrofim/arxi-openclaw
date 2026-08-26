@@ -197,7 +197,7 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // -1: retire the deprecated messaging-targets subpath.
       // +2: bounded provider streams and read-only SecretRef resolution.
       // +1: read-only authoritative conversation-binding inspection for route-owner plugins.
-      147,
+      148,
       env,
     ),
     publicExports: readPluginSdkSurfaceBudgetEnv(
@@ -309,7 +309,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: OpenAI-compatible video execution in the existing media-understanding owner.
       // -2: retire the uncalled secret-plan target resolver and its result type.
       // +2: conversation-binding inspection result and runtime inspector.
-      4337,
+      // -2: keep Telegram media projection inside its owning canonical inbound builder.
+      4344,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -399,7 +400,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: OpenAI-compatible video execution in the existing media-understanding owner.
       // -1: retire the uncalled secret-plan target resolver.
       // +1: read-only authoritative conversation-binding inspector.
-      2578,
+      // -2: keep Telegram media projection inside its owning canonical inbound builder.
+      2583,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
