@@ -22,7 +22,7 @@ import type { CacheEntry } from "./web-shared.js";
 
 type WebGuardedFetchModule = Pick<
   typeof import("./web-guarded-fetch.js"),
-  "withSelfHostedWebToolsEndpoint" | "withTrustedWebToolsEndpoint"
+  "withArxiExaWebToolsEndpoint" | "withSelfHostedWebToolsEndpoint" | "withTrustedWebToolsEndpoint"
 >;
 
 const webGuardedFetchLoader = createLazyImportLoader<WebGuardedFetchModule>(
@@ -39,6 +39,12 @@ async function loadSelfHostedWebToolsEndpoint(): Promise<
   WebGuardedFetchModule["withSelfHostedWebToolsEndpoint"]
 > {
   return (await webGuardedFetchLoader.load()).withSelfHostedWebToolsEndpoint;
+}
+
+async function loadArxiExaWebToolsEndpoint(): Promise<
+  WebGuardedFetchModule["withArxiExaWebToolsEndpoint"]
+> {
+  return (await webGuardedFetchLoader.load()).withArxiExaWebToolsEndpoint;
 }
 
 export type SearchConfigRecord = (NonNullable<OpenClawConfig["tools"]>["web"] extends infer Web
@@ -106,6 +112,19 @@ export async function withTrustedWebSearchEndpoint<T>(
     },
     async ({ response }) => run(response),
   );
+}
+
+export async function withArxiExaWebSearchEndpoint<T>(
+  params: {
+    url: string;
+    timeoutSeconds: number;
+    init: RequestInit;
+    signal?: AbortSignal;
+  },
+  run: (response: Response) => Promise<T>,
+): Promise<T> {
+  const withArxiExaWebToolsEndpoint = await loadArxiExaWebToolsEndpoint();
+  return withArxiExaWebToolsEndpoint(params, async ({ response }) => run(response));
 }
 
 export async function withSelfHostedWebSearchEndpoint<T>(
