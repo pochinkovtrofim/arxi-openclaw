@@ -1,5 +1,9 @@
 import { formatMediaPlaceholderText } from "openclaw/plugin-sdk/channel-inbound";
 import { normalizeForwardedOrigin } from "./bot/body-helpers.js";
+import {
+  formatTelegramForwardedMessageBody,
+  formatTelegramReplyContext,
+} from "./telegram-context-rendering.js";
 
 type ExternalReplyContext = {
   messageId: string;
@@ -62,10 +66,6 @@ function projectForwardItem(item: ExternalForwardItem): string {
   if (item.forwardOrigin && !forwarded) {
     throw new Error("Telegram external forward origin is invalid");
   }
-  const forwardedAt = forwarded?.date ? new Date(forwarded.date * 1000).toISOString() : undefined;
-  const prefix = forwarded
-    ? `[Forwarded from ${forwarded.from}${forwardedAt ? ` at ${forwardedAt}` : ""}]`
-    : undefined;
   const media = (item.media ?? []).map((entry) => {
     if (
       !entry ||
@@ -83,7 +83,17 @@ function projectForwardItem(item: ExternalForwardItem): string {
     }
     return `[Unsupported Telegram ${entry.kind}: contents unavailable]`;
   });
-  return [`[Telegram message id:${messageId}]`, prefix, text, ...media].filter(Boolean).join("\n");
+  return [
+    `[Telegram message id:${messageId}]`,
+    formatTelegramForwardedMessageBody({
+      body: text,
+      forwardedFrom: forwarded?.from,
+      forwardedDate: forwarded?.date ? forwarded.date * 1000 : undefined,
+    }),
+    ...media,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 /** Projects bounded host-authenticated Telegram facts using Telegram's model-context conventions. */
@@ -104,20 +114,29 @@ export function projectTelegramExternalMessageContext(
     if (!messageId) {
       throw new Error("Telegram external reply context is invalid");
     }
-    const sender = boundedString(reply.sender?.displayName, 1024) ?? "unknown sender";
-    const replyBody =
-      boundedString(reply.quote, 8 * 1024) ?? boundedString(reply.body, 24 * 1024) ?? "";
+    const sender = boundedString(reply.sender?.displayName, 1024);
+    const senderId = boundedString(reply.sender?.id, 256);
+    const senderUsername = boundedString(reply.sender?.username, 1024);
+    const selectedQuote = boundedString(reply.quote, 8 * 1024);
+    const surroundingBody = boundedString(reply.body, 24 * 1024);
     const replyMediaKind = reply.mediaKind
       ? telegramMediaPlaceholderKind(boundedString(reply.mediaKind, 64) ?? "")
       : undefined;
     if (reply.mediaKind && !replyMediaKind) {
       throw new Error("Telegram external reply media kind is invalid");
     }
-    const media = replyMediaKind
-      ? formatMediaPlaceholderText([{ kind: replyMediaKind }])
-      : undefined;
     parts.unshift(
-      `[Replying to ${sender} id:${messageId}]\n${[replyBody, media].filter(Boolean).join("\n")}`,
+      formatTelegramReplyContext([
+        {
+          messageId,
+          sender,
+          senderId: senderId === "0" ? undefined : senderId,
+          senderUsername,
+          selectedQuote,
+          surroundingBody,
+          mediaKind: replyMediaKind,
+        },
+      ]),
     );
   }
   return parts.join("\n\n");

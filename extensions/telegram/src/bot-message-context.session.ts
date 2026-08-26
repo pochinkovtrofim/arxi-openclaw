@@ -18,7 +18,6 @@ import type {
   TelegramTopicConfig,
 } from "openclaw/plugin-sdk/config-contracts";
 import { resolveChannelContextVisibilityMode } from "openclaw/plugin-sdk/context-visibility-runtime";
-import { timestampMsToIsoString } from "openclaw/plugin-sdk/number-runtime";
 import { createChannelHistoryWindow, type HistoryEntry } from "openclaw/plugin-sdk/reply-history";
 import type { ResolvedAgentRoute } from "openclaw/plugin-sdk/routing";
 import { logVerbose, shouldLogVerbose } from "openclaw/plugin-sdk/runtime-env";
@@ -44,7 +43,6 @@ import {
   getTelegramTextParts,
   normalizeForwardedContext,
   resolveTelegramPrimaryMedia,
-  type TelegramMediaKind,
   type TelegramReplyTarget,
   type TelegramThreadSpec,
 } from "./bot/helpers.js";
@@ -63,7 +61,11 @@ import {
   selectTelegramGroupHistoryAfterLastSelf,
 } from "./group-history-window.js";
 import { TELEGRAM_REPLY_CHAIN_MAX_DEPTH, type TelegramReplyChainEntry } from "./message-cache.js";
-import { resolveTelegramPromptMediaPath } from "./prompt-media-path.js";
+import {
+  formatTelegramForwardedMessageBody,
+  formatTelegramReplyContext,
+  isTelegramContextMediaKind,
+} from "./telegram-context-rendering.js";
 import { buildTelegramConversationId } from "./topic-conversation.js";
 
 type TelegramMentionFacts = NonNullable<
@@ -160,59 +162,6 @@ function stripReplyChainForwarded(entry: TelegramReplyChainEntry): TelegramReply
     ...withoutForwarded
   } = entry;
   return withoutForwarded;
-}
-
-function formatTelegramForwardedMessageBody(params: {
-  body: string;
-  forwardedFrom?: string;
-  forwardedDate?: number;
-}): string {
-  const forwardedAt = timestampMsToIsoString(params.forwardedDate);
-  const forwardPrefix = params.forwardedFrom
-    ? `[Forwarded from ${params.forwardedFrom}${forwardedAt ? ` at ${forwardedAt}` : ""}]`
-    : undefined;
-  return [forwardPrefix, params.body].filter(Boolean).join("\n");
-}
-
-function formatReplyChainEntry(entry: TelegramReplyChainEntry, index: number): string {
-  const mediaPath = entry.mediaPath ? resolveTelegramPromptMediaPath(entry.mediaPath) : undefined;
-  const labels = [
-    `${index + 1}. ${entry.sender ?? "unknown sender"}`,
-    entry.messageId ? `id:${entry.messageId}` : undefined,
-    entry.replyToId ? `reply_to:${entry.replyToId}` : undefined,
-    entry.timestamp ? timestampMsToIsoString(entry.timestamp) : undefined,
-  ].filter(Boolean);
-  const bodyLines = [
-    formatTelegramForwardedMessageBody({
-      body: entry.isQuote && entry.body ? `"${entry.body}"` : (entry.body ?? ""),
-      forwardedFrom: entry.forwardedFrom,
-      forwardedDate: entry.forwardedDate,
-    }),
-    entry.mediaKind || entry.mediaType
-      ? formatMediaPlaceholderText([
-          entry.mediaKind
-            ? { kind: entry.mediaKind }
-            : isTelegramMediaKind(entry.mediaType ?? "")
-              ? { kind: entry.mediaType as TelegramMediaKind }
-              : { contentType: entry.mediaType },
-        ])
-      : undefined,
-    mediaPath ? `[media_path:${mediaPath}]` : undefined,
-    entry.mediaRef ? `[media_ref:${entry.mediaRef}]` : undefined,
-  ].filter(Boolean);
-  return `[${labels.join(" ")}]\n${bodyLines.join("\n")}`;
-}
-
-const TELEGRAM_MEDIA_KINDS = new Set<TelegramMediaKind>([
-  "audio",
-  "document",
-  "image",
-  "sticker",
-  "video",
-]);
-
-function isTelegramMediaKind(value: string): value is TelegramMediaKind {
-  return TELEGRAM_MEDIA_KINDS.has(value as TelegramMediaKind);
 }
 
 export async function buildTelegramInboundContextPayload(params: {
@@ -483,11 +432,7 @@ export async function buildTelegramInboundContextPayload(params: {
         forwardedDate: visibleForwardOrigin?.date ? visibleForwardOrigin.date * 1000 : undefined,
       });
   const replySuffix =
-    visibleReplyChain.length > 0
-      ? `\n\n[Reply chain - nearest first]\n${visibleReplyChain
-          .map(formatReplyChainEntry)
-          .join("\n")}\n[/Reply chain]`
-      : "";
+    visibleReplyChain.length > 0 ? `\n\n${formatTelegramReplyContext(visibleReplyChain)}` : "";
   const groupLabel = isGroup ? buildGroupLabel(msg, chatId, resolvedThreadId) : undefined;
   const senderName = buildSenderName(msg);
   const conversationLabel = isGroup
@@ -595,7 +540,7 @@ export async function buildTelegramInboundContextPayload(params: {
           ...(entry.mediaPath ? { path: entry.mediaPath, url: entry.mediaPath } : {}),
           ...(entry.mediaKind ? { kind: entry.mediaKind } : {}),
           ...(entry.mediaType
-            ? isTelegramMediaKind(entry.mediaType)
+            ? isTelegramContextMediaKind(entry.mediaType)
               ? entry.mediaKind
                 ? {}
                 : { kind: entry.mediaType }
