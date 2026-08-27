@@ -22,6 +22,7 @@ type UnknownSendQueueEntry = Pick<
   | "renderedBatchPlan"
   | "reply"
   | "threadId"
+  | "formatting"
   | "forceDocument"
   | "silent"
   | "session"
@@ -56,6 +57,7 @@ export function buildUnknownSendContext(params: {
     ...(entry.reply ? { replyToId: entry.reply.replyToId } : {}),
     ...(entry.reply?.source === "implicit" ? { replyToMode: entry.reply.mode } : {}),
     ...(entry.threadId !== undefined ? { threadId: entry.threadId } : {}),
+    ...(entry.formatting !== undefined ? { formatting: entry.formatting } : {}),
     ...(entry.forceDocument !== undefined ? { forceDocument: entry.forceDocument } : {}),
     ...(entry.silent !== undefined ? { silent: entry.silent } : {}),
   };

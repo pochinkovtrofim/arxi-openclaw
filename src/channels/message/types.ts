@@ -6,6 +6,7 @@
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { ReplyToMode } from "../../config/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OutboundDeliveryFormattingOptions } from "../../infra/outbound/formatting.js";
 import type { OutboundSendDeps } from "../../infra/outbound/send-deps.js";
 import type { OutboundMediaAccess } from "../../media/load-options.js";
 import type { PollInput } from "../../polls.js";
@@ -309,6 +310,8 @@ export type ChannelMessageUnknownSendContext<TConfig = OpenClawConfig> = {
   replyToId?: string | null;
   replyToMode?: ReplyToMode;
   threadId?: string | number | null;
+  /** Exact durable formatting intent used to reconstruct provider payloads. */
+  formatting?: OutboundDeliveryFormattingOptions;
   /** Exact durable document-delivery intent used to reconstruct media actions. */
   forceDocument?: boolean;
   silent?: boolean;
