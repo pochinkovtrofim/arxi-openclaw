@@ -641,6 +641,13 @@ surfaces:
 - `openclaw/plugin-sdk/channel-targets` for target parsing helpers
 - `openclaw/plugin-sdk/channel-outbound` for outbound identity/send delegates
   and typed payload planning
+- `openclaw/extensions/telegram/transport-plan-api` only for an authenticated
+  external Telegram transport that must reproduce the bundled Telegram
+  adapter's exact text pagination, HTML fallback, photo/document selection,
+  caption overflow, and external-message context projection. It exports
+  `planTelegramTextDeliveryPages`, `planTelegramPhotoDocumentDelivery`, and
+  `projectTelegramExternalMessageContext`. This is a Telegram-family seam, not
+  a generic replacement for `openclaw/plugin-sdk/channel-outbound`.
 - `buildThreadAwareOutboundSessionRoute(...)` from
   `openclaw/plugin-sdk/channel-core` when an outbound route should preserve
   an explicit `replyToId`/`threadId` or recover the current `:thread:`
