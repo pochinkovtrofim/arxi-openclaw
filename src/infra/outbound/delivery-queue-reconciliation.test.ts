@@ -55,4 +55,22 @@ describe("unknown-send source correlation", () => {
       }),
     ).toMatchObject({ forceDocument });
   });
+
+  it("retains exact formatting intent across durable recovery", () => {
+    const payload = { text: "<b>useful answer</b>" };
+    const formatting = {
+      textLimit: 4000,
+      maxLinesPerMessage: 24,
+      tableMode: "bullets" as const,
+      chunkMode: "newline" as const,
+      parseMode: "HTML" as const,
+    };
+    expect(
+      buildUnknownSendContext({
+        entry: { ...entry(payload), formatting },
+        payloads: [payload],
+        cfg: {},
+      }),
+    ).toMatchObject({ formatting });
+  });
 });
