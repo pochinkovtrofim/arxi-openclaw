@@ -1,8 +1,25 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ModelProviderConfig } from "../../config/types.models.js";
 import type { Model } from "../../llm/types.js";
-import { appendDiscoveredRows, type RowBuilderContext } from "./list.rows.js";
+import {
+  appendDiscoveredRows,
+  appendPreparedModelCatalogRows,
+  type RowBuilderContext,
+} from "./list.rows.js";
 import type { ModelRow } from "./list.types.js";
+
+const mocks = vi.hoisted(() => ({
+  normalizeProviderResolvedModelWithPlugin: vi.fn((..._args: unknown[]): unknown => undefined),
+  resolveBundledProviderPolicySurface: vi.fn((..._args: unknown[]): unknown => null),
+}));
+
+vi.mock("../../plugins/provider-runtime.js", () => ({
+  normalizeProviderResolvedModelWithPlugin: mocks.normalizeProviderResolvedModelWithPlugin,
+}));
+
+vi.mock("../../plugins/provider-public-artifacts.js", () => ({
+  resolveBundledProviderPolicySurface: mocks.resolveBundledProviderPolicySurface,
+}));
 
 describe("appendDiscoveredRows projection", () => {
   it("does not repeat configured metadata lookup after filtering", async () => {
@@ -75,5 +92,84 @@ describe("appendDiscoveredRows projection", () => {
         available: true,
       }),
     ]);
+  });
+
+  it("normalizes the exact selected physical route before reporting its capabilities", async () => {
+    const platform = {
+      id: "gpt-5.6-sol",
+      name: "GPT-5.6 Sol",
+      provider: "openai",
+      api: "openai-responses" as const,
+      baseUrl: "https://api.openai.com/v1",
+      input: ["text", "image"] as ("text" | "image")[],
+      contextWindow: 1_050_000,
+    };
+    const chatgpt = {
+      ...platform,
+      api: "openai-chatgpt-responses" as const,
+      baseUrl: "https://chatgpt.com/backend-api/codex",
+      input: ["text"] as ("text" | "image")[],
+      contextWindow: 372_000,
+    };
+    const selectedRoute = {
+      api: chatgpt.api,
+      baseUrl: chatgpt.baseUrl,
+      authRequirement: "subscription" as const,
+      requestTransportOverrides: "none" as const,
+    };
+    mocks.resolveBundledProviderPolicySurface.mockReturnValue({
+      projectConfiguredModelRow: vi.fn().mockReturnValueOnce(null).mockReturnValueOnce(undefined),
+    });
+    mocks.normalizeProviderResolvedModelWithPlugin.mockReturnValue({
+      ...chatgpt,
+      input: ["text", "image"],
+    });
+    const rows: ModelRow[] = [];
+
+    await appendPreparedModelCatalogRows({
+      rows,
+      seenKeys: new Set(),
+      catalogSnapshot: {
+        entries: [platform],
+        routeVariants: [platform, chatgpt],
+      },
+      context: {
+        cfg: {},
+        agentDir: "/tmp/openclaw-agent",
+        authIndex: {
+          evaluateModelAuth: () => ({
+            availability: true,
+            routeResolution: {
+              kind: "routes" as const,
+              routes: [selectedRoute] as [typeof selectedRoute],
+            },
+            selectedRoute,
+          }),
+        },
+        configuredByKey: new Map(),
+        discoveredKeys: new Set(),
+        filter: { provider: "openai" },
+        skipRuntimeModelSuppression: true,
+      },
+    });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        key: "openai/gpt-5.6-sol",
+        input: "text+image",
+        contextWindow: 372_000,
+      }),
+    ]);
+    expect(mocks.normalizeProviderResolvedModelWithPlugin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({
+          model: expect.objectContaining({
+            api: "openai-chatgpt-responses",
+            baseUrl: "https://chatgpt.com/backend-api/codex",
+            input: ["text"],
+          }),
+        }),
+      }),
+    );
   });
 });
