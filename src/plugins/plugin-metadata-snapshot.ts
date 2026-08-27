@@ -119,6 +119,18 @@ function indexesMatch(
   );
 }
 
+/** Restores process-local behavior and immutability after a snapshot crosses a worker boundary. */
+export function restorePluginMetadataSnapshot(
+  snapshot: Omit<PluginMetadataSnapshot, "normalizePluginId">,
+): PluginMetadataSnapshot {
+  return freezeSnapshotValue({
+    ...snapshot,
+    normalizePluginId: createPluginRegistryIdNormalizer(snapshot.index, {
+      manifestRegistry: snapshot.manifestRegistry,
+    }),
+  });
+}
+
 function resolvePluginMetadataSnapshotPluginIds(params: {
   index: InstalledPluginIndex;
   params: LoadPluginMetadataSnapshotParams;
@@ -305,7 +317,7 @@ export function loadPluginMetadataSnapshot(
   );
   return measureDiagnosticsTimelineSpanSync(
     "plugins.metadata.freeze",
-    () => freezeSnapshotValue(snapshot),
+    () => restorePluginMetadataSnapshot(snapshot),
     {
       phase: activeTimelineSpan?.phase ?? "startup",
       config: params.config,
@@ -382,7 +394,7 @@ export function resolvePluginMetadataSnapshot(
 
 function loadPluginMetadataSnapshotImpl(
   params: LoadPluginMetadataSnapshotParams,
-): PluginMetadataSnapshot {
+): Omit<PluginMetadataSnapshot, "normalizePluginId"> {
   const totalStartedAt = performance.now();
   const registryStartedAt = performance.now();
   const registryResult = loadPluginRegistrySnapshotWithMetadata({
@@ -413,7 +425,6 @@ function loadPluginMetadataSnapshotImpl(
     includeDisabled: true,
   });
   const manifestRegistryMs = performance.now() - manifestStartedAt;
-  const normalizePluginId = createPluginRegistryIdNormalizer(index, { manifestRegistry });
   const byPluginId = new Map(manifestRegistry.plugins.map((plugin) => [plugin.id, plugin]));
   const ownerMapsStartedAt = performance.now();
   const owners = buildPluginMetadataOwnerMaps(manifestRegistry.plugins);
@@ -438,7 +449,6 @@ function loadPluginMetadataSnapshotImpl(
     plugins: manifestRegistry.plugins,
     diagnostics: manifestRegistry.diagnostics,
     byPluginId,
-    normalizePluginId,
     owners,
     metrics: {
       registrySnapshotMs,
