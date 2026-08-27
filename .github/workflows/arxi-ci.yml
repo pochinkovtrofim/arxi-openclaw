@@ -57,12 +57,17 @@ jobs:
             git diff --name-only -z "$ARXI_DIFF_BASE" HEAD -- \
               'extensions/telegram/**' \
               'extensions/codex/**' \
+              'src/agents/prepared-model-catalog-worker.integration.test.ts' \
+              'src/agents/prepared-model-catalog-worker.ts' \
+              'src/agents/prepared-model-catalog.worker.ts' \
               'src/agents/runtime-plan/**' \
               'src/auto-reply/**' \
               'src/channels/**' \
               'src/commands/models/list.rows.ts' \
               'src/commands/models/list.rows.projection.test.ts' \
               'src/infra/outbound/**' \
+              'src/plugins/plugin-metadata-snapshot.test.ts' \
+              'src/plugins/plugin-metadata-snapshot.ts' \
               'src/plugin-sdk/**' \
               'scripts/plugin-sdk-surface-report.mts' \
               'package.json' \
@@ -107,6 +112,9 @@ jobs:
           extensions/telegram/src/telegram-context-rendering.ts
           extensions/telegram/src/telegram-runtime-planning.ts
           extensions/telegram/transport-plan-api.ts
+          src/agents/prepared-model-catalog-worker.integration.test.ts
+          src/agents/prepared-model-catalog-worker.ts
+          src/agents/prepared-model-catalog.worker.ts
           src/agents/runtime-plan/types.ts
           src/auto-reply/reply-payload.test.ts
           src/auto-reply/reply-payload.ts
@@ -123,6 +131,8 @@ jobs:
           src/infra/outbound/message-plan.ts
           src/infra/outbound/payloads.test.ts
           src/infra/outbound/payloads.ts
+          src/plugins/plugin-metadata-snapshot.test.ts
+          src/plugins/plugin-metadata-snapshot.ts
           src/plugin-sdk/media-mime.ts
           scripts/plugin-sdk-surface-report.mts
           package.json
@@ -156,12 +166,14 @@ jobs:
         run: >-
           pnpm test
           extensions/telegram/src/external-context-projection.test.ts
+          src/agents/prepared-model-catalog-worker.integration.test.ts
           src/auto-reply/reply-payload.test.ts
           src/commands/models/list.rows.projection.test.ts
           src/infra/outbound/delivery-queue-media-spool.test.ts
           src/infra/outbound/delivery-queue-reconciliation.test.ts
           src/infra/outbound/message-plan.test.ts
           src/infra/outbound/payloads.test.ts
+          src/plugins/plugin-metadata-snapshot.test.ts
 
       - name: Build exact Linux runtime surface
         env:

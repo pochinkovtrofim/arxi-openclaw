@@ -24,6 +24,7 @@ export type PreparedModelCatalogWorkerInput = Readonly<{
   input: PreparedModelRuntimeInput;
   authStore: AuthProfileStore;
   providerIds: readonly string[];
+  pluginMetadataSnapshot: Omit<PluginMetadataSnapshot, "normalizePluginId">;
 }>;
 
 export type PreparedModelWorkerRequest =
@@ -130,6 +131,8 @@ export function createPreparedModelCatalogWorkerInput(params: {
   };
   const authStore = cloneAuthProfileStore(params.agentFacts.authStore);
   const providerIds = [...params.agentFacts.providerIds];
+  const { normalizePluginId: _normalizePluginId, ...pluginMetadataSnapshot } =
+    params.pluginMetadataSnapshot;
   return {
     kind: "catalog",
     generationFingerprint: fingerprintPreparedModelCatalogGeneration({
@@ -141,6 +144,7 @@ export function createPreparedModelCatalogWorkerInput(params: {
     input,
     authStore,
     providerIds,
+    pluginMetadataSnapshot,
   };
 }
 
