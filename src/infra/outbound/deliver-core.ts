@@ -41,7 +41,7 @@ import type { NormalizedOutboundPayload } from "./payloads.js";
 import {
   acceptedPreparedOutboundEntries,
   preparedOutboundSuppressionOutcomes,
-  usefulFinalSourceRunId,
+  usefulSourceRunId,
 } from "./prepared-batch.js";
 import { createReplyToDeliveryPolicy } from "./reply-policy.js";
 
@@ -337,7 +337,7 @@ export async function deliverOutboundPayloadsCore(
 
       params.onPayload?.(payloadSummary);
       const replyToResolution = resolveCurrentReplyTo(effectivePayload);
-      const sourceRunId = usefulFinalSourceRunId(preparedBatch, effectivePayload);
+      const sourceRunId = usefulSourceRunId(preparedBatch, effectivePayload);
       const sendOverrides: OutboundMessageSendOverrides = {
         replyToId: replyToResolution.replyToId,
         replyToIdSource: replyToResolution.source,

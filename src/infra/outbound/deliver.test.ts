@@ -843,7 +843,31 @@ describe("deliverOutboundPayloads", () => {
     );
   });
 
-  it("does not label status or error payloads as useful final results", async () => {
+  it("passes the originating run correlation to model-authored media sends", async () => {
+    const messageSendMedia = vi.fn(async (_ctx: ChannelMessageSendMediaContext) => ({
+      messageId: "message-adapter-media-1",
+      receipt: createMessageReceiptFromOutboundResults({
+        results: [{ channel: "matrix", messageId: "message-adapter-media-1" }],
+        kind: "media",
+      }),
+    }));
+    setMatrixMessageAdapter({
+      id: "matrix",
+      durableFinal: { capabilities: { text: true, media: true } },
+      send: { text: vi.fn(), media: messageSendMedia },
+    });
+
+    await deliverMatrix({
+      payloads: [{ text: "artifact", mediaUrl: "https://example.com/artifact.txt" }],
+      runId: "run-media-exact",
+    });
+
+    expect(messageSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceRunId: "run-media-exact" }),
+    );
+  });
+
+  it("does not label non-final text, status, or error payloads as useful results", async () => {
     const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
       messageId: "message-adapter-1",
       receipt: createMessageReceiptFromOutboundResults({
@@ -855,6 +879,11 @@ describe("deliverOutboundPayloads", () => {
       id: "matrix",
       durableFinal: { capabilities: { text: true } },
       send: { text: messageSendText },
+    });
+
+    await deliverMatrix({
+      payloads: [{ text: "intermediate" }],
+      runId: "run-not-useful",
     });
 
     for (const payload of [
@@ -872,7 +901,7 @@ describe("deliverOutboundPayloads", () => {
       });
     }
 
-    expect(messageSendText).toHaveBeenCalledTimes(2);
+    expect(messageSendText).toHaveBeenCalledTimes(3);
     expect(messageSendText.mock.calls.every(([ctx]) => ctx.sourceRunId === undefined)).toBe(true);
   });
 

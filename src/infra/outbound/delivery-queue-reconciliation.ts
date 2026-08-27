@@ -7,7 +7,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../errors.js";
 import { resolveOutboundChannelMessageAdapter } from "./channel-resolution.js";
 import type { QueuedDelivery } from "./delivery-queue-types.js";
-import { usefulFinalSourceRunId } from "./prepared-batch.js";
+import { usefulSourceRunId } from "./prepared-batch.js";
 
 type UnknownSendQueueEntry = Pick<
   QueuedDelivery,
@@ -35,9 +35,7 @@ export function buildUnknownSendContext(params: {
   const { entry } = params;
   const payload = params.payloads.length === 1 ? params.payloads[0] : undefined;
   const sourceRunId =
-    payload && entry.preparedBatch
-      ? usefulFinalSourceRunId(entry.preparedBatch, payload)
-      : undefined;
+    payload && entry.preparedBatch ? usefulSourceRunId(entry.preparedBatch, payload) : undefined;
   return {
     cfg: params.cfg,
     queueId: entry.id,

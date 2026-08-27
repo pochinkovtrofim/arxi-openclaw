@@ -3,12 +3,15 @@ import { buildUnknownSendContext } from "./delivery-queue-reconciliation.js";
 import { createUnmodifiedPreparedOutboundBatch } from "./prepared-batch.js";
 
 function entry(
-  payload: { text: string; isStatusNotice?: boolean },
+  payload: { text: string; mediaUrl?: string; isStatusNotice?: boolean },
   overrides: { forceDocument?: boolean } = {},
+  replyKind: "final" | null = "final",
 ) {
   const preparedBatch = createUnmodifiedPreparedOutboundBatch([payload]);
   preparedBatch.runId = "run-exact";
-  preparedBatch.replyKind = "final";
+  if (replyKind) {
+    preparedBatch.replyKind = replyKind;
+  }
   return {
     id: "queue-1",
     channel: "arxi",
@@ -25,6 +28,13 @@ describe("unknown-send source correlation", () => {
     const payload = { text: "useful answer" };
     expect(
       buildUnknownSendContext({ entry: entry(payload), payloads: [payload], cfg: {} }),
+    ).toMatchObject({ sourceRunId: "run-exact" });
+  });
+
+  it("retains a model-authored media run across durable recovery", () => {
+    const payload = { text: "artifact", mediaUrl: "https://example.com/artifact.txt" };
+    expect(
+      buildUnknownSendContext({ entry: entry(payload, {}, null), payloads: [payload], cfg: {} }),
     ).toMatchObject({ sourceRunId: "run-exact" });
   });
 
