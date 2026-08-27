@@ -60,6 +60,8 @@ jobs:
               'src/agents/runtime-plan/**' \
               'src/auto-reply/**' \
               'src/channels/**' \
+              'src/commands/models/list.rows.ts' \
+              'src/commands/models/list.rows.projection.test.ts' \
               'src/infra/outbound/**' \
               'src/plugin-sdk/**' \
               'scripts/plugin-sdk-surface-report.mts' \
@@ -109,6 +111,8 @@ jobs:
           src/auto-reply/reply-payload.test.ts
           src/auto-reply/reply-payload.ts
           src/channels/message/types.ts
+          src/commands/models/list.rows.projection.test.ts
+          src/commands/models/list.rows.ts
           src/infra/outbound/deliver-channel.ts
           src/infra/outbound/deliver-core.ts
           src/infra/outbound/delivery-queue-media-spool.test.ts
@@ -153,6 +157,7 @@ jobs:
           pnpm test
           extensions/telegram/src/external-context-projection.test.ts
           src/auto-reply/reply-payload.test.ts
+          src/commands/models/list.rows.projection.test.ts
           src/infra/outbound/delivery-queue-media-spool.test.ts
           src/infra/outbound/delivery-queue-reconciliation.test.ts
           src/infra/outbound/message-plan.test.ts

@@ -9,7 +9,8 @@ the composed Arxi platform ships:
 - production type checking for shipped core and extension code;
 - formatting and lint for changed Telegram, Codex, outbound-delivery,
   runtime-plan, channel-contract, and plugin-SDK source;
-- the direct Telegram context and durable outbound tests consumed by Arxi;
+- the direct Telegram context, durable outbound, and active-model catalog
+  projection tests consumed by Arxi;
 - the public Telegram planning export and plugin-SDK/package boundary;
 - dependency and lockfile consistency through the frozen install;
 - workflow validity. Diff-scoped OpenGrep, CodeQL, dependency review, and
