@@ -422,6 +422,12 @@ function resolveCodexModelInput(
   if (modalities.has("image") || modalities.has("vision")) {
     input.add("image");
   }
+  // Codex discovery can publish only the modalities observed by that catalog
+  // surface. It must not erase an exact first-party model capability that the
+  // runtime normalization restores on the selected ChatGPT route.
+  if (fallback?.input?.includes("image")) {
+    input.add("image");
+  }
   if (modalities.has("audio")) {
     input.add("audio");
   }

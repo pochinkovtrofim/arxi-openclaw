@@ -1022,6 +1022,7 @@ describe("buildOpenAIProvider", () => {
           ...["sol", "terra", "luna"].map((tier) => ({
             slug: `gpt-5.6-${tier}`,
             visibility: "list",
+            input_modalities: ["text"],
             supported_reasoning_levels: [
               { effort: "low", description: "low" },
               { effort: "high", description: "high" },
@@ -1048,6 +1049,7 @@ describe("buildOpenAIProvider", () => {
     for (const tier of ["sol", "terra"] as const) {
       expect(provider.models.find((model) => model.id === `gpt-5.6-${tier}`)).toMatchObject({
         reasoning: true,
+        input: ["text", "image"],
         compat: {
           supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max", "ultra"],
         },
@@ -1055,6 +1057,7 @@ describe("buildOpenAIProvider", () => {
     }
     expect(provider.models.find((model) => model.id === "gpt-5.6-luna")).toMatchObject({
       reasoning: true,
+      input: ["text", "image"],
       compat: {
         supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"],
       },
