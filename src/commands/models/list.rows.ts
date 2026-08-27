@@ -260,12 +260,21 @@ async function appendVisibleRow(params: {
       model.provider,
       toModelAuthRef(model, params.routeIndex),
     );
-  const projectedModel = projectListRowModel({
+  const projected = projectListRowModel({
     model,
     evaluation: authEvaluation,
     cfg: params.context.cfg,
     ...(params.routeIndex ? { routeIndex: params.routeIndex } : {}),
   });
+  // Route projection can change a logical OpenAI row from the authored direct
+  // API transport to its selected ChatGPT transport. Normalize that exact
+  // physical route as the runtime does so capability output stays truthful.
+  const projectedModel = params.normalizeWithProviderPlugin
+    ? await normalizeConfiguredProviderListRow({
+        model: projected,
+        context: params.context,
+      })
+    : projected;
   if (!matchesRowFilter(params.context, projectedModel)) {
     return false;
   }
@@ -492,6 +501,7 @@ export async function appendDiscoveredRows(params: {
       seenKeys,
       routeIndex,
       skipSuppression: params.skipSuppression,
+      normalizeWithProviderPlugin: Boolean(params.context.filter.provider),
     });
   }
 
@@ -631,6 +641,7 @@ export async function appendPreparedModelCatalogRows(params: {
       allowAuthAvailabilityOverride: !params.context.discoveredKeys.has(
         modelKey(entry.provider, entry.id),
       ),
+      normalizeWithProviderPlugin: Boolean(params.context.filter.provider),
     });
   }
 }
