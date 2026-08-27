@@ -81,13 +81,16 @@ export function acceptedPreparedOutboundEntries(
   );
 }
 
-/** Exact source run only when the persisted payload is a useful final answer. */
-export function usefulFinalSourceRunId(
+/** Exact source run only for a useful final answer or model-authored media artifact. */
+export function usefulSourceRunId(
   batch: Pick<PreparedOutboundBatch, "replyKind" | "runId">,
   payload: ReplyPayload,
 ): string | undefined {
+  const isUsefulResult =
+    batch.replyKind === "final" ||
+    summarizeOutboundPayloadForTransport(payload).mediaUrls.length > 0;
   if (
-    batch.replyKind !== "final" ||
+    !isUsefulResult ||
     !batch.runId ||
     payload.isError ||
     payload.isReasoning ||

@@ -127,6 +127,7 @@ jobs:
           src/commands/models/list.rows.ts
           src/infra/outbound/deliver-channel.ts
           src/infra/outbound/deliver-core.ts
+          src/infra/outbound/deliver.test.ts
           src/infra/outbound/delivery-queue-media-spool.test.ts
           src/infra/outbound/delivery-queue-media-spool.ts
           src/infra/outbound/delivery-queue-reconciliation.test.ts
@@ -135,6 +136,7 @@ jobs:
           src/infra/outbound/message-plan.ts
           src/infra/outbound/payloads.test.ts
           src/infra/outbound/payloads.ts
+          src/infra/outbound/prepared-batch.ts
           src/plugins/plugin-metadata-snapshot.test.ts
           src/plugins/plugin-metadata-snapshot.ts
           src/plugin-sdk/media-mime.ts
@@ -167,18 +169,20 @@ jobs:
         run: pnpm tsgo:core && pnpm tsgo:extensions
 
       - name: Test fork seams consumed by Arxi
-        run: >-
-          pnpm test
-          extensions/openai/openai-provider.test.ts
-          extensions/telegram/src/external-context-projection.test.ts
-          src/agents/prepared-model-catalog-worker.integration.test.ts
-          src/auto-reply/reply-payload.test.ts
-          src/commands/models/list.rows.projection.test.ts
-          src/infra/outbound/delivery-queue-media-spool.test.ts
-          src/infra/outbound/delivery-queue-reconciliation.test.ts
-          src/infra/outbound/message-plan.test.ts
-          src/infra/outbound/payloads.test.ts
-          src/plugins/plugin-metadata-snapshot.test.ts
+        run: |
+          pnpm test \
+            extensions/openai/openai-provider.test.ts \
+            extensions/telegram/src/external-context-projection.test.ts \
+            src/agents/prepared-model-catalog-worker.integration.test.ts \
+            src/auto-reply/reply-payload.test.ts \
+            src/commands/models/list.rows.projection.test.ts \
+            src/infra/outbound/delivery-queue-media-spool.test.ts \
+            src/infra/outbound/delivery-queue-reconciliation.test.ts \
+            src/infra/outbound/message-plan.test.ts \
+            src/infra/outbound/payloads.test.ts \
+            src/plugins/plugin-metadata-snapshot.test.ts
+          pnpm exec vitest run src/infra/outbound/deliver.test.ts \
+            -t 'passes the originating run correlation to model-authored media sends|does not label non-final text, status, or error payloads as useful results'
 
       - name: Build exact Linux runtime surface
         env:
