@@ -7,6 +7,7 @@ import type { SpawnedRunMetadata } from "../../agents/spawned-context.js";
 import type { PromptMode } from "../../agents/system-prompt.types.js";
 import type { SourceReplyDeliveryMode } from "../../auto-reply/get-reply-options.types.js";
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.public.js";
+import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import type { MediaFact } from "../../media/media-facts.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { PluginHookChannelContext } from "../../plugins/hook-types.js";
@@ -58,6 +59,8 @@ export type AgentRunContext = {
 /** Full trusted option surface for running an agent command. */
 export type AgentCommandOpts = {
   message: string;
+  /** Trusted ingress trace retained across detached Gateway dispatch. */
+  diagnosticTrace?: DiagnosticTraceContext;
   /** User-visible transcript body; defaults to message and excludes runtime-only context. */
   transcriptMessage?: string;
   /** Durable media metadata for the user-visible transcript turn. */

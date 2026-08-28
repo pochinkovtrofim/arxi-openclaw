@@ -270,6 +270,7 @@ export async function dispatchEmbeddedRunAttempt(input: {
     toolsAllow: params.toolsAllow,
   });
   const attemptParams: EmbeddedRunAttemptParams = {
+    diagnosticTrace: params.diagnosticTrace,
     admittedRunContext: params.admittedRunContext,
     startedAtMs: input.runStartedAtMs,
     contextEngineAgentId: runtime.contextEngineAgentId,

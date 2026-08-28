@@ -13,6 +13,10 @@ import type { TranscriptEntryAnchor } from "../../config/sessions/transcript-ent
 import { OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST } from "../../context-engine/host-compat.js";
 import type { ContextEngine } from "../../context-engine/types.js";
 import { resetAgentRunRegistryForTest } from "../../infra/agent-run-registry.js";
+import {
+  getActiveDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { createOpenClawCodingTools } from "../../plugin-sdk/agent-harness.js";
 import { getActivePluginRegistry } from "../../plugins/runtime.js";
 import { mintSecretSentinel } from "../../secrets/sentinel.js";
@@ -540,6 +544,33 @@ function registerTestCompactor(
 }
 
 describe("runAgentHarnessAttempt", () => {
+  it("inherits an explicitly retained ingress trace after detached dispatch", async () => {
+    const ingressTrace: DiagnosticTraceContext = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      traceFlags: "01",
+    };
+    let observedTrace: DiagnosticTraceContext | undefined;
+    registerAgentHarness(
+      {
+        id: "codex",
+        label: "Codex",
+        supports: () => ({ supported: true, priority: 100 }),
+        runAttempt: async () => {
+          observedTrace = getActiveDiagnosticTraceContext();
+          return createAttemptResult("codex");
+        },
+      },
+      { ownerPluginId: "codex" },
+    );
+    const params = createAttemptParams(providerRuntimeConfig("codex", "codex"));
+    Object.assign(params, { diagnosticTrace: ingressTrace });
+
+    await runAgentHarnessAttempt(params);
+
+    expect(observedTrace?.traceId).toBe(ingressTrace.traceId);
+  });
+
   it("uses registry ownership rather than declared harness metadata for approvals", async () => {
     let observedApprovalOwner: string | undefined;
     mockCallGatewayTool.mockImplementationOnce(async () => {

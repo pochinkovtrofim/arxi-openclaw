@@ -692,6 +692,21 @@ describe("CLI attempt execution", () => {
     });
   });
 
+  it("forwards a retained ingress trace to detached embedded execution", async () => {
+    const diagnosticTrace = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      traceFlags: "01",
+    } as const;
+
+    const params = await runOpenClawEmbeddedAttemptForTest({
+      runId: "run-retained-ingress-trace",
+      opts: { diagnosticTrace },
+    });
+
+    expect(params.diagnosticTrace).toEqual(diagnosticTrace);
+  });
+
   async function writeSessionStoreSeed(sessionStore: Record<string, SessionEntry>): Promise<void> {
     for (const [sessionKey, entry] of Object.entries(sessionStore)) {
       await replaceSessionEntry({ sessionKey, storePath }, entry);

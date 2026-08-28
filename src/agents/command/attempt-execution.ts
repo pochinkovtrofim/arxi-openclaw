@@ -1161,6 +1161,7 @@ export function runAgentAttempt(params: {
     ? (continuationTranscriptBody ?? effectivePrompt)
     : continuationTranscriptBody;
   const embeddedRunParams: RunEmbeddedAgentInternalParams = {
+    diagnosticTrace: params.opts.diagnosticTrace,
     preparedRunAdmission: params.preparedRunAdmission,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,

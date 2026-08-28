@@ -548,7 +548,7 @@ async function runAgentHarnessOperation<T>(
   params: EmbeddedRunAttemptParams,
   execute: () => Promise<T>,
 ): Promise<T> {
-  const activeTrace = getActiveDiagnosticTraceContext();
+  const activeTrace = params.diagnosticTrace ?? getActiveDiagnosticTraceContext();
   const harnessTrace = freezeDiagnosticTraceContext(
     activeTrace ? createChildDiagnosticTraceContext(activeTrace) : createDiagnosticTraceContext(),
   );
