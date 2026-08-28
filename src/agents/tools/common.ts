@@ -40,7 +40,11 @@ export type AgentToolWithMeta<TParameters extends TSchema, TResult> = AgentTool<
     params: unknown,
     ctx: { toolCallId?: string; hookContext?: unknown; signal?: AbortSignal },
   ) => unknown;
-  finalizeBeforeToolCallParams?: (params: unknown, preparedParams: unknown) => unknown;
+  finalizeBeforeToolCallParams?: (
+    params: unknown,
+    preparedParams: unknown,
+    ctx?: { toolCallId?: string; hookContext?: unknown; signal?: AbortSignal },
+  ) => unknown;
 };
 
 type ErasedAgentToolExecute = {

@@ -2310,6 +2310,75 @@ describe("resolvePluginTools optional tools", () => {
     }
   });
 
+  it("preserves tool-owned execution preparation across the descriptor cache", async () => {
+    const stateByParams = new WeakMap<object, { owner: boolean; runId?: string }>();
+    const factory = vi.fn((rawContext: unknown) => {
+      const owner = (rawContext as { senderIsOwner?: boolean }).senderIsOwner === true;
+      return {
+        ...makeTool("cached_prepared_tool"),
+        prepareBeforeToolCallParams(rawParams: unknown, execution: { hookContext?: unknown }) {
+          if (rawParams && typeof rawParams === "object") {
+            const hookContext = execution.hookContext as { runId?: string } | undefined;
+            stateByParams.set(rawParams, { owner, runId: hookContext?.runId });
+          }
+          return rawParams;
+        },
+        finalizeBeforeToolCallParams(executeParams: unknown, preparedParams: unknown) {
+          if (
+            executeParams &&
+            typeof executeParams === "object" &&
+            preparedParams &&
+            typeof preparedParams === "object"
+          ) {
+            const state = stateByParams.get(preparedParams);
+            if (state) {
+              stateByParams.set(executeParams, state);
+            }
+          }
+          return executeParams;
+        },
+        async execute(_toolCallId: string, executeParams: unknown) {
+          const state =
+            executeParams && typeof executeParams === "object"
+              ? stateByParams.get(executeParams)
+              : undefined;
+          return { content: [{ type: "text" as const, text: JSON.stringify(state) }] };
+        },
+      };
+    });
+    setRegistry([createNamedToolEntry("cache-prepared", "cached_prepared_tool", { factory })]);
+    const context = { ...createContext(), senderIsOwner: false };
+
+    resolvePluginTools(createResolveToolsParams({ context }));
+    const [cachedTool] = resolvePluginTools(createResolveToolsParams({ context }));
+    expect(factory).toHaveBeenCalledTimes(1);
+
+    const prepared = await cachedTool?.prepareBeforeToolCallParams?.(
+      { action: "record" },
+      {
+        toolCallId: "call-current",
+        hookContext: { runId: "run-current", requester: { senderIsOwner: true } },
+      },
+    );
+    const reconciled = { ...(prepared as Record<string, unknown>) };
+    const finalized = cachedTool?.finalizeBeforeToolCallParams?.(reconciled, prepared);
+
+    await expect(cachedTool?.execute("call", finalized, undefined)).resolves.toEqual({
+      content: [{ type: "text", text: '{"owner":true,"runId":"run-current"}' }],
+    });
+    expect(factory).toHaveBeenCalledTimes(2);
+
+    const nextParams = { action: "record-again" };
+    await cachedTool?.prepareBeforeToolCallParams?.(nextParams, {
+      toolCallId: "call-next",
+      hookContext: { runId: "run-next", requester: { senderIsOwner: false } },
+    });
+    await expect(cachedTool?.execute("call-next", nextParams, undefined)).resolves.toEqual({
+      content: [{ type: "text", text: '{"owner":false,"runId":"run-next"}' }],
+    });
+    expect(factory).toHaveBeenCalledTimes(3);
+  });
+
   it("keeps cached ordinary plugin tools free of network provenance", async () => {
     const factory = vi.fn(() => makeTool("cached_ordinary_tool"));
     setRegistry([

@@ -119,14 +119,25 @@ jobs:
           src/agents/prepared-model-catalog-worker.integration.test.ts
           src/agents/prepared-model-catalog-worker.ts
           src/agents/prepared-model-catalog.worker.ts
+          src/agents/agent-tool-definition-adapter.ts
+          src/agents/agent-tools.before-tool-call.wrapper.ts
           src/agents/runtime-plan/types.ts
+          src/agents/tools/common.ts
+          src/auto-reply/reply/agent-runner-execute.ts
+          src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts
+          src/auto-reply/reply/reply-operation-agent-turn-state.ts
           src/auto-reply/reply-payload.test.ts
           src/auto-reply/reply-payload.ts
           src/channels/message/types.ts
           src/commands/models/list.rows.projection.test.ts
           src/commands/models/list.rows.ts
+          src/infra/heartbeat-runner-delivery.ts
+          src/infra/heartbeat-runner-execution.ts
+          src/infra/heartbeat-runner.structured-delivery.test.ts
           src/infra/outbound/deliver-channel.ts
+          src/infra/outbound/deliver-contracts.ts
           src/infra/outbound/deliver-core.ts
+          src/infra/outbound/deliver-prepare.ts
           src/infra/outbound/deliver.test.ts
           src/infra/outbound/delivery-queue-media-spool.test.ts
           src/infra/outbound/delivery-queue-media-spool.ts
@@ -139,6 +150,8 @@ jobs:
           src/infra/outbound/prepared-batch.ts
           src/plugins/plugin-metadata-snapshot.test.ts
           src/plugins/plugin-metadata-snapshot.ts
+          src/plugins/tools.optional.test.ts
+          src/plugins/tools.ts
           src/plugin-sdk/media-mime.ts
           scripts/plugin-sdk-surface-report.mts
           package.json
@@ -182,7 +195,14 @@ jobs:
             src/infra/outbound/payloads.test.ts \
             src/plugins/plugin-metadata-snapshot.test.ts
           pnpm exec vitest run src/infra/outbound/deliver.test.ts \
-            -t 'passes the originating run correlation to model-authored media sends|does not label non-final text, status, or error payloads as useful results'
+            -t 'passes an explicitly classified durable final run without a reply dispatcher|passes the originating run correlation to model-authored media sends|does not label non-final text, status, or error payloads as useful results'
+          pnpm exec vitest run src/infra/heartbeat-runner.structured-delivery.test.ts \
+            -t 'retains the exact agent run on a useful heartbeat delivery'
+          pnpm exec vitest run src/plugins/tools.optional.test.ts \
+            -t 'preserves tool-owned execution preparation across the descriptor cache'
+          node scripts/run-vitest.mjs run --config test/vitest/vitest.e2e.config.ts \
+            src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts \
+            -t 'records the operation owned by an admitted heartbeat run'
 
       - name: Build exact Linux runtime surface
         env:

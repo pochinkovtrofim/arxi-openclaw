@@ -124,6 +124,9 @@ export function finalizeBeforeToolCallExecutionParams(params: {
   hookParams: unknown;
   adjustedParams: unknown;
   finalizerMode: "adapter" | "wrapped";
+  toolCallId?: string;
+  ctx?: HookContext;
+  signal?: AbortSignal;
 }): unknown {
   const reconciledParams = reconcileCodeModeExecBeforeHookParams({
     owner: { tool: params.tool },
@@ -137,10 +140,16 @@ export function finalizeBeforeToolCallExecutionParams(params: {
   if (!finalize) {
     return reconciledParams;
   }
+  const execution = {
+    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+    ...(params.ctx ? { hookContext: params.ctx } : {}),
+    ...(params.signal ? { signal: params.signal } : {}),
+  };
   if (params.finalizerMode === "adapter") {
-    return finalize(reconciledParams, params.preparedParams);
+    return finalize(reconciledParams, params.preparedParams, execution);
   }
-  return finalize.call(params.tool, reconciledParams, params.preparedParams) ?? reconciledParams;
+  const finalized = finalize.call(params.tool, reconciledParams, params.preparedParams, execution);
+  return finalized ?? reconciledParams;
 }
 
 class BeforeToolCallBlockedError extends Error {
@@ -472,6 +481,9 @@ export function wrapToolWithBeforeToolCallHook(
           hookParams,
           adjustedParams: outcome.params,
           finalizerMode: "wrapped",
+          toolCallId,
+          ctx,
+          signal,
         });
         // Hooks can repair or rewrite arguments; only the final execution
         // shape is safe to validate, after vetoes but before side effects.

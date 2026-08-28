@@ -153,6 +153,7 @@ export function classifyHeartbeatAgentOutcome(params: {
   }
   return {
     kind: "delivery",
+    ...(params.agentRun.runId ? { runId: params.agentRun.runId } : {}),
     normalized,
     hasStructuredReplyContent,
     replyPayload: heartbeatToolResponse ? undefined : replyPayload,
@@ -298,7 +299,7 @@ export async function finalizeHeartbeatOutcome(params: {
     consumeInspectedSystemEvents(params.wake, params.prepared);
     return { status: "ran", durationMs: Date.now() - startedAt };
   }
-  const { hasStructuredReplyContent, mediaUrls, normalized, replyPayload } = outcome;
+  const { hasStructuredReplyContent, mediaUrls, normalized, replyPayload, runId } = outcome;
   // Suppress duplicate heartbeats (same payload) within a short window.
   // This prevents "nagging" when nothing changed but the model repeats the same items.
   const prevHeartbeatText =
@@ -405,6 +406,7 @@ export async function finalizeHeartbeatOutcome(params: {
         mediaUrls,
       }),
     ],
+    ...(runId ? { runId, replyKind: "final" as const } : {}),
     deps: params.opts.deps,
     silent: normalized.silent,
   });

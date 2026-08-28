@@ -6,6 +6,7 @@ import { patchSessionEntryCore } from "../config/sessions/session-accessor.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createOutboundTestPlugin, createTestRegistry } from "../test-utils/channel-plugins.js";
+import { classifyHeartbeatAgentOutcome } from "./heartbeat-runner-delivery.js";
 import { runHeartbeatOnce, type HeartbeatDeps } from "./heartbeat-runner.js";
 import { installHeartbeatRunnerTestRuntime } from "./heartbeat-runner.test-harness.js";
 import {
@@ -18,6 +19,25 @@ installHeartbeatRunnerTestRuntime();
 
 describe("runHeartbeatOnce structured heartbeat delivery", () => {
   const TELEGRAM_GROUP = "-1001234567890";
+
+  it("retains the exact agent run on a useful heartbeat delivery", () => {
+    const outcome = classifyHeartbeatAgentOutcome({
+      agentRun: {
+        kind: "completed",
+        runId: "run-heartbeat-result",
+        heartbeatToolResponse: undefined,
+        heartbeatTerminalToolFailure: undefined,
+        agentRunFailed: false,
+        replyPayload: { text: "A verified result." },
+      },
+      hasRelayableExecCompletion: false,
+      suppressUnmarkedSourceReplies: false,
+      responsePrefix: undefined,
+      ackMaxChars: 300,
+    });
+
+    expect(outcome).toMatchObject({ kind: "delivery", runId: "run-heartbeat-result" });
+  });
 
   function createConfig(tmpDir: string, storePath: string): OpenClawConfig {
     return {
