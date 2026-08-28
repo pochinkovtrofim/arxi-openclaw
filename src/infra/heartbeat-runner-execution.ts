@@ -14,7 +14,10 @@ import {
   resolveHeartbeatToolResponseFromReplyResult,
 } from "../auto-reply/heartbeat-tool-response.js";
 import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS, stripHeartbeatToken } from "../auto-reply/heartbeat.js";
-import { resolveReplyOperationAgentTurn } from "../auto-reply/reply/reply-operation-agent-turn-state.js";
+import {
+  resolveReplyOperationAgentTurn,
+  resolveReplyOperationAgentTurnRunId,
+} from "../auto-reply/reply/reply-operation-agent-turn-state.js";
 import {
   REPLY_OPERATION_RUN_STATE,
   type ReplyOperationRunState,
@@ -664,6 +667,7 @@ export async function invokeHeartbeatAgentRun(
     cfg,
   );
   const agentTurnStatus = resolveReplyOperationAgentTurn(replyOperationRunState);
+  const agentTurnRunId = resolveReplyOperationAgentTurnRunId(replyOperationRunState);
   if (agentTurnStatus === "superseded") {
     return { kind: "preempted" } as const;
   }
@@ -707,6 +711,7 @@ export async function invokeHeartbeatAgentRun(
   }
   return {
     kind: "completed",
+    runId: agentTurnRunId,
     heartbeatToolResponse,
     heartbeatTerminalToolFailure,
     agentRunFailed,

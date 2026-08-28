@@ -4,6 +4,7 @@ import {
   normalizeUniqueStringEntries,
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
+import type { HookContext } from "../agents/agent-tools.before-tool-call.types.js";
 import { compileGlobPatterns, matchesAnyGlobPattern } from "../agents/glob-pattern.js";
 import type { McpCodexToolAnnotations } from "../agents/mcp-codex-tool-approval.js";
 import {
@@ -811,6 +812,118 @@ function createCachedDescriptorPluginTool(params: {
   const { descriptor } = params.descriptor;
   const pluginId = descriptor.owner.kind === "plugin" ? descriptor.owner.pluginId : "";
   const toolName = descriptor.name;
+  const toolsByParams = new WeakMap<object, AnyAgentTool>();
+  const toolsByCallId = new Map<string, AnyAgentTool>();
+  const isHookContext = (value: unknown): value is HookContext => isRecord(value);
+  const bindToolCall = (toolCallId: string | undefined, runtimeTool: AnyAgentTool): void => {
+    if (!toolCallId) {
+      return;
+    }
+    toolsByCallId.set(toolCallId, runtimeTool);
+    while (toolsByCallId.size > 64) {
+      const oldestToolCallId = toolsByCallId.keys().next().value;
+      if (oldestToolCallId === undefined) {
+        break;
+      }
+      toolsByCallId.delete(oldestToolCallId);
+    }
+  };
+  const executionContext = (hookContext?: unknown): OpenClawPluginToolContext => {
+    if (!isHookContext(hookContext)) {
+      return params.ctx;
+    }
+    const current = hookContext;
+    return {
+      ...params.ctx,
+      ...(current.config ? { config: current.config } : {}),
+      ...(current.workspaceDir ? { workspaceDir: current.workspaceDir } : {}),
+      ...(current.agentId ? { agentId: current.agentId } : {}),
+      ...(current.sessionKey ? { sessionKey: current.sessionKey } : {}),
+      ...(current.sessionId ? { sessionId: current.sessionId } : {}),
+      ...(current.turnSourceChannel || current.requester?.channel
+        ? { messageChannel: current.turnSourceChannel ?? current.requester?.channel }
+        : {}),
+      ...(current.turnSourceAccountId || current.requester?.accountId
+        ? { agentAccountId: current.turnSourceAccountId ?? current.requester?.accountId }
+        : {}),
+      ...(current.requester?.senderId ? { requesterSenderId: current.requester.senderId } : {}),
+      // The execution hook is current and host-derived. Missing authority must
+      // fail closed instead of inheriting a cached factory's older owner bit.
+      senderIsOwner: current.requester?.senderIsOwner === true,
+    };
+  };
+  const loadTool = (ctx: OpenClawPluginToolContext = params.ctx): AnyAgentTool => {
+    const loadOptions = buildPluginRuntimeLoadOptions(params.loadContext, {
+      activate: false,
+      toolDiscovery: true,
+      onlyPluginIds: [pluginId],
+      ...(params.runtimeOptions ? { runtimeOptions: params.runtimeOptions } : {}),
+    });
+    const registry = resolvePluginToolRegistry({
+      loadOptions,
+      onlyPluginIds: [pluginId],
+      retainedRegistry: pluginToolDescriptorCacheState.runtimeRegistries.get(params.descriptor),
+      onRetainRegistry: (retainedRegistry) => {
+        pluginToolDescriptorCacheState.runtimeRegistries.set(params.descriptor, retainedRegistry);
+      },
+    });
+    const candidates = registry?.tools.filter((candidate) => candidate.pluginId === pluginId);
+    if (!candidates || candidates.length === 0) {
+      throw new Error(`plugin tool runtime unavailable (${pluginId}): ${toolName}`);
+    }
+    const requestedToolName = normalizeToolPolicyName(toolName);
+    const matchingNamedCandidates: PluginToolRegistration[] = [];
+    const unnamedCandidates: PluginToolRegistration[] = [];
+    for (const candidate of candidates) {
+      if (candidate.names.length === 0) {
+        unnamedCandidates.push(candidate);
+        continue;
+      }
+      if (candidate.names.some((name) => normalizeToolPolicyName(name) === requestedToolName)) {
+        matchingNamedCandidates.push(candidate);
+      }
+    }
+    const resolveCandidateTool = (candidate: PluginToolRegistration): AnyAgentTool | undefined => {
+      const manifestPlugin = resolvePluginMetadataSnapshot({
+        config: params.loadContext.config,
+        workspaceDir: params.loadContext.workspaceDir,
+        env: params.loadContext.env,
+      }).byPluginId.get(pluginId);
+      if (
+        blocksHostRestrictedConversationReadRegistration({
+          entry: candidate,
+          manifestPlugin,
+          ctx,
+        })
+      ) {
+        return undefined;
+      }
+      const resolved = resolvePluginToolFactory(candidate, registry, ctx);
+      const listRaw: unknown[] = Array.isArray(resolved) ? resolved : resolved ? [resolved] : [];
+      for (const toolRaw of listRaw) {
+        const malformedReason = describeMalformedPluginTool(toolRaw);
+        if (malformedReason) {
+          continue;
+        }
+        const runtimeTool = toolRaw as AnyAgentTool;
+        if (normalizeToolPolicyName(readPluginToolName(runtimeTool)) === requestedToolName) {
+          return runtimeTool;
+        }
+      }
+      return undefined;
+    };
+    for (const candidate of [...matchingNamedCandidates, ...unnamedCandidates]) {
+      try {
+        const matchedTool = resolveCandidateTool(candidate);
+        if (matchedTool) {
+          return matchedTool;
+        }
+      } catch {
+        continue;
+      }
+    }
+    throw new Error(`plugin tool runtime missing (${pluginId}): ${toolName}`);
+  };
   const tool: AnyAgentTool = {
     name: descriptor.name,
     label: descriptor.title ?? descriptor.name,
@@ -823,80 +936,42 @@ function createCachedDescriptorPluginTool(params: {
     ...(params.descriptor.resultContentSource
       ? { resultContentSource: params.descriptor.resultContentSource }
       : {}),
-    async execute(toolCallId, executeParams, signal, onUpdate) {
-      const loadOptions = buildPluginRuntimeLoadOptions(params.loadContext, {
-        activate: false,
-        toolDiscovery: true,
-        onlyPluginIds: [pluginId],
-        ...(params.runtimeOptions ? { runtimeOptions: params.runtimeOptions } : {}),
-      });
-      const registry = resolvePluginToolRegistry({
-        loadOptions,
-        onlyPluginIds: [pluginId],
-        retainedRegistry: pluginToolDescriptorCacheState.runtimeRegistries.get(params.descriptor),
-        onRetainRegistry: (retainedRegistry) => {
-          pluginToolDescriptorCacheState.runtimeRegistries.set(params.descriptor, retainedRegistry);
-        },
-      });
-      const candidates = registry?.tools.filter((candidate) => candidate.pluginId === pluginId);
-      if (!candidates || candidates.length === 0) {
-        throw new Error(`plugin tool runtime unavailable (${pluginId}): ${toolName}`);
+    prepareBeforeToolCallParams: async (rawParams, execution) => {
+      const runtimeTool = loadTool(executionContext(execution.hookContext));
+      if (rawParams && typeof rawParams === "object") {
+        toolsByParams.set(rawParams, runtimeTool);
       }
-      const requestedToolName = normalizeToolPolicyName(toolName);
-      const matchingNamedCandidates: PluginToolRegistration[] = [];
-      const unnamedCandidates: PluginToolRegistration[] = [];
-      for (const candidate of candidates) {
-        if (candidate.names.length === 0) {
-          unnamedCandidates.push(candidate);
-          continue;
-        }
-        if (candidate.names.some((name) => normalizeToolPolicyName(name) === requestedToolName)) {
-          matchingNamedCandidates.push(candidate);
-        }
+      bindToolCall(execution.toolCallId, runtimeTool);
+      const prepared =
+        (await runtimeTool.prepareBeforeToolCallParams?.(rawParams, execution)) ?? rawParams;
+      if (prepared && typeof prepared === "object") {
+        toolsByParams.set(prepared, runtimeTool);
       }
-      const resolveCandidateTool = (
-        candidate: PluginToolRegistration,
-      ): AnyAgentTool | undefined => {
-        const manifestPlugin = resolvePluginMetadataSnapshot({
-          config: params.loadContext.config,
-          workspaceDir: params.loadContext.workspaceDir,
-          env: params.loadContext.env,
-        }).byPluginId.get(pluginId);
-        if (
-          blocksHostRestrictedConversationReadRegistration({
-            entry: candidate,
-            manifestPlugin,
-            ctx: params.ctx,
-          })
-        ) {
-          return undefined;
+      return prepared;
+    },
+    finalizeBeforeToolCallParams: (executeParams, preparedParams, execution) =>
+      (() => {
+        const runtimeTool =
+          preparedParams && typeof preparedParams === "object"
+            ? toolsByParams.get(preparedParams)
+            : undefined;
+        const finalized =
+          runtimeTool?.finalizeBeforeToolCallParams?.(executeParams, preparedParams, execution) ??
+          executeParams;
+        if (runtimeTool && finalized && typeof finalized === "object") {
+          toolsByParams.set(finalized, runtimeTool);
         }
-        const resolved = resolvePluginToolFactory(candidate, registry, params.ctx);
-        const listRaw: unknown[] = Array.isArray(resolved) ? resolved : resolved ? [resolved] : [];
-        for (const toolRaw of listRaw) {
-          const malformedReason = describeMalformedPluginTool(toolRaw);
-          if (malformedReason) {
-            continue;
-          }
-          const runtimeTool = toolRaw as AnyAgentTool;
-          if (normalizeToolPolicyName(readPluginToolName(runtimeTool)) === requestedToolName) {
-            return runtimeTool;
-          }
-        }
-        return undefined;
-      };
-      for (const candidate of [...matchingNamedCandidates, ...unnamedCandidates]) {
-        let matchedTool: AnyAgentTool | undefined;
-        try {
-          matchedTool = resolveCandidateTool(candidate);
-        } catch {
-          continue;
-        }
-        if (matchedTool) {
-          return matchedTool.execute(toolCallId, executeParams, signal, onUpdate);
-        }
-      }
-      throw new Error(`plugin tool runtime missing (${pluginId}): ${toolName}`);
+        return finalized;
+      })(),
+    execute: async (toolCallId, executeParams, signal, onUpdate) => {
+      const runtimeTool =
+        (executeParams && typeof executeParams === "object"
+          ? toolsByParams.get(executeParams)
+          : undefined) ??
+        toolsByCallId.get(toolCallId) ??
+        loadTool();
+      toolsByCallId.delete(toolCallId);
+      return await runtimeTool.execute(toolCallId, executeParams, signal, onUpdate);
     },
   };
   if (params.descriptor.displaySummary) {

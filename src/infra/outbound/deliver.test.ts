@@ -843,6 +843,27 @@ describe("deliverOutboundPayloads", () => {
     );
   });
 
+  it("passes an explicitly classified durable final run without a reply dispatcher", async () => {
+    const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
+      messageId: "message-adapter-1",
+      receipt: createMessageReceiptFromOutboundResults({
+        results: [{ channel: "matrix", messageId: "message-adapter-1" }],
+        kind: "text",
+      }),
+    }));
+    setMatrixMessageAdapter({
+      id: "matrix",
+      durableFinal: { capabilities: { text: true } },
+      send: { text: messageSendText },
+    });
+
+    await deliverMatrix({ runId: "run-heartbeat-final", replyKind: "final" });
+
+    expect(messageSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ sourceRunId: "run-heartbeat-final" }),
+    );
+  });
+
   it("passes the originating run correlation to model-authored media sends", async () => {
     const messageSendMedia = vi.fn(async (_ctx: ChannelMessageSendMediaContext) => ({
       messageId: "message-adapter-media-1",

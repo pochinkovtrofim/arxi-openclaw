@@ -466,6 +466,9 @@ export function toToolDefinitions(
                 hookParams,
                 adjustedParams: hookOutcome.params,
                 finalizerMode: "adapter",
+                toolCallId,
+                ctx: hookContext,
+                signal,
               });
               const decision = control ? await control.pause(executeParams) : undefined;
               if (decision && !decision.launch) {

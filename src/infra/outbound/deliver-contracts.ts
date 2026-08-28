@@ -1,4 +1,5 @@
 import type { ExecutionIdentityAdmissionToken } from "../../audit/execution-identity-admission.js";
+import type { ReplyDispatchKind } from "../../auto-reply/reply/reply-dispatcher.types.js";
 // Shared type contracts for outbound planning, queueing, and transport.
 import type { ReplyPayload } from "../../auto-reply/types.js";
 import type { OutboundReplyFacts } from "../../channels/message/types.js";
@@ -163,6 +164,8 @@ export type DeliverOutboundPayloadsCoreParams = {
   payloads: ReplyPayload[];
   /** Admitted run correlation copied into the prepared durable batch. */
   runId?: string;
+  /** Internal classification for useful-result correlation outside a reply dispatcher. */
+  replyKind?: ReplyDispatchKind;
   /** @internal Exact admitted execution provenance copied into durable custody. */
   executionIdentityToken?: ExecutionIdentityAdmissionToken;
   /** @internal Canonical post-policy batch used by queue recovery and physical delivery. */

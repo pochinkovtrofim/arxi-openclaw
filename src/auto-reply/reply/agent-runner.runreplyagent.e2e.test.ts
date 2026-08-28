@@ -43,7 +43,10 @@ import {
   type FollowupRun,
   type QueueSettings,
 } from "./queue.js";
-import { resolveReplyOperationAgentTurn } from "./reply-operation-agent-turn-state.js";
+import {
+  resolveReplyOperationAgentTurn,
+  resolveReplyOperationAgentTurnRunId,
+} from "./reply-operation-agent-turn-state.js";
 import {
   REPLY_OPERATION_RUN_STATE,
   type ReplyOperationRunState,
@@ -1287,6 +1290,9 @@ describe("runReplyAgent heartbeat followup guard", () => {
 
     expect(runState.admission).toEqual({ status: "owned" });
     expect(resolveReplyOperationAgentTurn(runState)).toBe("ok");
+    expect(resolveReplyOperationAgentTurnRunId(runState)).toBe(
+      state.runEmbeddedAgentMock.mock.calls[0]?.[0]?.runId,
+    );
   });
 
   it("records a failed heartbeat turn when a visible reply replaces its synthetic failure", async () => {

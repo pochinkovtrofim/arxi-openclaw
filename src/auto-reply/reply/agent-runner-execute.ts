@@ -411,6 +411,7 @@ export async function executePreparedReplyAgentRun(
         ? runOutcome.outcome.status
         : "failed",
     replyOperation,
+    runOutcome.runId,
   );
   activeSessionEntry = getActiveSessionEntry();
   activeIsNewSession = getActiveIsNewSession();
