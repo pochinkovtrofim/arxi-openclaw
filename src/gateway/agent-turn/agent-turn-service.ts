@@ -9,6 +9,7 @@ import {
 import { mergeSessionEntry, type SessionEntry } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
+import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import { discardPreparedInboundMedia, type OffloadedRef } from "../chat-attachments.js";
 import { errorShapeFromError } from "../error-shape.js";
@@ -40,6 +41,7 @@ type AgentTurnStartRequest = {
   principal: AgentTurnPrincipal | null;
   io: AgentTurnIo;
   onRunObserved?: (runId: string) => void;
+  diagnosticTrace?: DiagnosticTraceContext;
 };
 
 function createAcceptanceRespond(io: AgentTurnIo): RespondFn {
@@ -95,6 +97,7 @@ export function createAgentTurnService(
     principal,
     io,
     onRunObserved,
+    diagnosticTrace,
   }: AgentTurnStartRequest): Promise<void> => {
     if (replayAgentTurnIfCached({ preflight, context, io })) {
       return;
@@ -619,6 +622,7 @@ export function createAgentTurnService(
         sessionEffects,
         skipAgentInitialSessionTouch,
         restoredCronContinuation,
+        diagnosticTrace,
         canUseInternalRuntimeHandoff,
         client: principal,
         context,

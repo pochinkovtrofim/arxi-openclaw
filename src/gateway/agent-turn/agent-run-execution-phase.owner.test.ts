@@ -20,6 +20,7 @@ function createExecution(
   options: {
     aborted?: boolean;
     admissionTrace?: DiagnosticTraceContext;
+    diagnosticTrace?: DiagnosticTraceContext;
     assertContextCurrent?: () => void;
   } = {},
 ) {
@@ -91,6 +92,7 @@ function createExecution(
       preserveUserFacingSessionModelState: false,
       skipAgentInitialSessionTouch: true,
       canUseInternalRuntimeHandoff: false,
+      diagnosticTrace: options.diagnosticTrace,
       client: null,
       context: {
         dedupe: new Map(),
@@ -155,7 +157,7 @@ describe("startAgentRunExecution Gateway ownership", () => {
     expect(execution.runtimeRelease).toHaveBeenCalledOnce();
   });
 
-  it("retains the request trace before entering detached work admission", async () => {
+  it("retains the captured request trace across detached work admission", async () => {
     const ingressTrace: DiagnosticTraceContext = {
       traceId: "11111111111111111111111111111111",
       spanId: "2222222222222222",
@@ -166,14 +168,14 @@ describe("startAgentRunExecution Gateway ownership", () => {
       spanId: "bbbbbbbbbbbbbbbb",
       traceFlags: "01",
     };
-    const execution = createExecution({ admissionTrace });
+    const execution = createExecution({ admissionTrace, diagnosticTrace: ingressTrace });
     let resolveDispatched!: () => void;
     const dispatched = new Promise<void>((resolve) => {
       resolveDispatched = resolve;
     });
     dispatchAgentRunFromGateway.mockImplementationOnce(resolveDispatched);
 
-    runWithDiagnosticTraceContext(ingressTrace, () => startAgentRunExecution(execution.params));
+    runWithDiagnosticTraceContext(admissionTrace, () => startAgentRunExecution(execution.params));
 
     await dispatched;
     const dispatch = dispatchAgentRunFromGateway.mock.calls[0]?.[0];

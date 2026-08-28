@@ -1,4 +1,8 @@
 import { validateAgentParams } from "../../../packages/gateway-protocol/src/index.js";
+import {
+  freezeDiagnosticTraceContext,
+  getActiveDiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { prepareAgentRequestPreflight } from "../agent-turn/agent-request-preflight.js";
 import { createAgentTurnService } from "../agent-turn/agent-turn-service.js";
 import { createAgentTurnIo } from "../agent-turn/io.js";
@@ -14,6 +18,10 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
   client,
   isWebchatConnect,
 }) => {
+  const activeDiagnosticTrace = getActiveDiagnosticTraceContext();
+  const diagnosticTrace = activeDiagnosticTrace
+    ? freezeDiagnosticTraceContext(activeDiagnosticTrace)
+    : undefined;
   const io = createAgentTurnIo(respond);
   if (
     !assertValidParams(params, validateAgentParams, "agent", (ok, payload, error, meta) =>
@@ -37,5 +45,6 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
     principal,
     io,
     onRunObserved,
+    diagnosticTrace,
   });
 };

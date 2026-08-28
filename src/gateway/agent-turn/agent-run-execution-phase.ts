@@ -26,6 +26,7 @@ import { isAbortError } from "../../infra/abort-signal.js";
 import {
   freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
+  type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessageWithCode } from "../../infra/errors.js";
 import type { MediaFact } from "../../media/media-facts.js";
@@ -104,6 +105,7 @@ export function startAgentRunExecution(params: {
   sessionEffects?: "visible" | "internal";
   skipAgentInitialSessionTouch: boolean;
   restoredCronContinuation?: RestoredCronContinuation;
+  diagnosticTrace?: DiagnosticTraceContext;
   canUseInternalRuntimeHandoff: boolean;
   client: AgentTurnPrincipal | null;
   context: AgentTurnContext;
@@ -113,7 +115,7 @@ export function startAgentRunExecution(params: {
     onRecovered?: () => void,
   ) => Promise<boolean>;
 }): void {
-  const activeDiagnosticTrace = getActiveDiagnosticTraceContext();
+  const activeDiagnosticTrace = params.diagnosticTrace ?? getActiveDiagnosticTraceContext();
   const ingressDiagnosticTrace = activeDiagnosticTrace
     ? freezeDiagnosticTraceContext(activeDiagnosticTrace)
     : undefined;
