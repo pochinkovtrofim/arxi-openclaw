@@ -12,6 +12,8 @@ the composed Arxi platform ships:
 - the direct Telegram context, durable outbound, OpenAI capability projection,
   active-model catalog projection, and catalog-worker plugin-metadata tests
   consumed by Arxi;
+- model-authored message-action correlation into the durable owner-channel
+  adapter, including the negative operator-send classification;
 - the public Telegram planning export and plugin-SDK/package boundary;
 - dependency and lockfile consistency through the frozen install;
 - workflow validity. Diff-scoped OpenGrep, CodeQL, dependency review, and
@@ -24,6 +26,8 @@ native macOS/iOS/Linux apps, generic QA Lab, generic agentic/Gateway/CLI,
 Docker, bundle, and workflow-self-test matrices. Those jobs qualify upstream
 products Arxi does not ship and therefore are not evidence for Arxi.
 The exact GitHub-disabled set is recorded in `ARXI_DISABLED_WORKFLOWS.md`.
+The focused source-owned agent-runner E2E skips upstream's private-QA build;
+Arxi neither ships nor uses that artifact, and the test owns its fixtures.
 
 Product user scenarios are accepted only through the composed platform: the
 platform's focused Go boundary tests, ops artifact/golden/deployment checks,

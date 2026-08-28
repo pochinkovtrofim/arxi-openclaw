@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   GatewaySuspendBlockerSchema,
   GatewaySuspendPrepareResultSchema,
+  GatewaySuspendStatusResultSchema,
   validateGatewaySuspendPrepareParams,
 } from "./index.js";
 
@@ -21,6 +22,19 @@ describe("gateway suspension protocol", () => {
         terminalPolicy: "terminate",
       }),
     ).toBe(true);
+    expect(
+      validateGatewaySuspendPrepareParams({
+        requestId: "host-request",
+        terminalPolicy: "preserve",
+        drain: true,
+      }),
+    ).toBe(true);
+    expect(validateGatewaySuspendPrepareParams({ requestId: "host-request", drain: false })).toBe(
+      true,
+    );
+    expect(validateGatewaySuspendPrepareParams({ requestId: "host-request", drain: "true" })).toBe(
+      false,
+    );
     expect(validateGatewaySuspendPrepareParams({ requestId: "   " })).toBe(false);
     expect(
       validateGatewaySuspendPrepareParams({ requestId: "host-request", terminalPolicy: "close" }),
@@ -36,6 +50,41 @@ describe("gateway suspension protocol", () => {
         kind: "terminal-session",
         count: 1,
         message: "1 open terminal session(s)",
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts closed draining prepare results without changing existing result variants", () => {
+    const draining = {
+      status: "draining",
+      suspensionId: "suspension-1",
+      expiresAtMs: 2_000,
+      retryAfterMs: 250,
+      activeCount: 1,
+      blockers: [{ kind: "terminal-session", count: 1, message: "1 open terminal session" }],
+    };
+
+    expect(Value.Check(GatewaySuspendPrepareResultSchema, draining)).toBe(true);
+    expect(Value.Check(GatewaySuspendPrepareResultSchema, { ...draining, unexpected: true })).toBe(
+      false,
+    );
+    expect(
+      Value.Check(GatewaySuspendPrepareResultSchema, {
+        status: "busy",
+        reason: "active-work",
+        retryAfterMs: 250,
+        activeCount: 1,
+        blockers: draining.blockers,
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(GatewaySuspendPrepareResultSchema, {
+        status: "ready",
+        suspensionId: "suspension-1",
+        expiresAtMs: 2_000,
+        activeCount: 0,
+        blockers: [],
+        wakeRequirement: { kind: "external-event-only" },
       }),
     ).toBe(true);
   });
@@ -59,6 +108,32 @@ describe("gateway suspension protocol", () => {
         activeCount: 0,
         blockers: [],
       }),
+    ).toBe(false);
+  });
+
+  it("accepts closed draining status results and requires wake data once ready", () => {
+    const draining = {
+      status: "draining",
+      expiresAtMs: 2_000,
+      retryAfterMs: 250,
+      activeCount: 1,
+      blockers: [{ kind: "terminal-persistence", count: 1, message: "1 pending terminal write" }],
+    };
+
+    expect(Value.Check(GatewaySuspendStatusResultSchema, draining)).toBe(true);
+    expect(Value.Check(GatewaySuspendStatusResultSchema, { ...draining, suspensionId: "id" })).toBe(
+      false,
+    );
+    expect(Value.Check(GatewaySuspendStatusResultSchema, { status: "running" })).toBe(true);
+    expect(
+      Value.Check(GatewaySuspendStatusResultSchema, {
+        status: "ready",
+        expiresAtMs: 2_000,
+        wakeRequirement: { kind: "at", atMs: 3_000 },
+      }),
+    ).toBe(true);
+    expect(
+      Value.Check(GatewaySuspendStatusResultSchema, { status: "ready", expiresAtMs: 2_000 }),
     ).toBe(false);
   });
 });

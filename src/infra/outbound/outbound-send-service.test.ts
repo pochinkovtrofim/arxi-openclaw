@@ -561,6 +561,7 @@ describe("executeSendAction", () => {
         channel: "discord",
         params: { to: "channel:123", presentation },
         runId: "run-presentation-delivery",
+        replyKind: "final",
         dryRun: false,
         mirror: {
           sessionKey: "agent:main:discord:channel:123",
@@ -577,6 +578,7 @@ describe("executeSendAction", () => {
     const sendArgs = expectSingleCallFields(mocks.sendMessage, {
       content: "",
       runId: "run-presentation-delivery",
+      replyKind: "final",
       mirror: {
         sessionKey: "agent:main:discord:channel:123",
         agentId: "main",

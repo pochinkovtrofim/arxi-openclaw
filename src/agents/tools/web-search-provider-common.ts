@@ -8,6 +8,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { normalizeResolvedSecretInputString } from "../../config/types.secrets.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { createProviderErrorTextRedactor } from "../provider-http-errors.js";
 import {
   DEFAULT_CACHE_TTL_MINUTES,
   DEFAULT_TIMEOUT_SECONDS,
@@ -29,17 +30,12 @@ const webGuardedFetchLoader = createLazyImportLoader<WebGuardedFetchModule>(
   () => import("./web-guarded-fetch.js"),
 );
 
-async function loadTrustedWebToolsEndpoint(): Promise<
-  WebGuardedFetchModule["withTrustedWebToolsEndpoint"]
-> {
-  return (await webGuardedFetchLoader.load()).withTrustedWebToolsEndpoint;
-}
-
-async function loadSelfHostedWebToolsEndpoint(): Promise<
-  WebGuardedFetchModule["withSelfHostedWebToolsEndpoint"]
-> {
-  return (await webGuardedFetchLoader.load()).withSelfHostedWebToolsEndpoint;
-}
+type WebSearchEndpointOptions = {
+  url: string;
+  timeoutSeconds: number;
+  init: RequestInit;
+  signal?: AbortSignal;
+};
 
 async function loadArxiExaWebToolsEndpoint(): Promise<
   WebGuardedFetchModule["withArxiExaWebToolsEndpoint"]
@@ -94,24 +90,11 @@ export function readProviderEnvValue(envVars: string[]): string | undefined {
 }
 
 export async function withTrustedWebSearchEndpoint<T>(
-  params: {
-    url: string;
-    timeoutSeconds: number;
-    init: RequestInit;
-    signal?: AbortSignal;
-  },
+  params: WebSearchEndpointOptions,
   run: (response: Response) => Promise<T>,
 ): Promise<T> {
-  const withTrustedWebToolsEndpoint = await loadTrustedWebToolsEndpoint();
-  return withTrustedWebToolsEndpoint(
-    {
-      url: params.url,
-      init: params.init,
-      timeoutSeconds: params.timeoutSeconds,
-      signal: params.signal,
-    },
-    async ({ response }) => run(response),
-  );
+  const { withTrustedWebToolsEndpoint } = await webGuardedFetchLoader.load();
+  return withTrustedWebToolsEndpoint(params, async ({ response }) => run(response));
 }
 
 export async function withArxiExaWebSearchEndpoint<T>(
@@ -128,24 +111,11 @@ export async function withArxiExaWebSearchEndpoint<T>(
 }
 
 export async function withSelfHostedWebSearchEndpoint<T>(
-  params: {
-    url: string;
-    timeoutSeconds: number;
-    init: RequestInit;
-    signal?: AbortSignal;
-  },
+  params: WebSearchEndpointOptions,
   run: (response: Response) => Promise<T>,
 ): Promise<T> {
-  const withSelfHostedWebToolsEndpoint = await loadSelfHostedWebToolsEndpoint();
-  return withSelfHostedWebToolsEndpoint(
-    {
-      url: params.url,
-      init: params.init,
-      timeoutSeconds: params.timeoutSeconds,
-      signal: params.signal,
-    },
-    async ({ response }) => run(response),
-  );
+  const { withSelfHostedWebToolsEndpoint } = await webGuardedFetchLoader.load();
+  return withSelfHostedWebToolsEndpoint(params, async ({ response }) => run(response));
 }
 
 export async function postTrustedWebToolsJson<T>(
@@ -161,41 +131,51 @@ export async function postTrustedWebToolsJson<T>(
   },
   parseResponse: (response: Response) => Promise<T>,
 ): Promise<T> {
-  const withTrustedWebToolsEndpoint = await loadTrustedWebToolsEndpoint();
-  return withTrustedWebToolsEndpoint(
+  const headers = new Headers(params.extraHeaders);
+  headers.set("Accept", "application/json");
+  headers.set("Authorization", `Bearer ${params.apiKey}`);
+  headers.set("Content-Type", "application/json");
+  return withTrustedWebSearchEndpoint(
     {
       url: params.url,
       timeoutSeconds: params.timeoutSeconds,
       signal: params.signal,
       init: {
         method: "POST",
-        headers: {
-          ...params.extraHeaders,
-          Accept: "application/json",
-          Authorization: `Bearer ${params.apiKey}`,
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(params.body),
       },
     },
-    async ({ response }) => {
+    async (response) => {
       if (!response.ok) {
-        const detail = await readResponseText(response, {
-          maxBytes: params.maxErrorBytes ?? 64_000,
+        return await throwWebSearchApiError(response, params.errorLabel, {
+          headers,
+          maxBytes: params.maxErrorBytes,
+          signal: params.signal,
         });
-        throw new Error(
-          `${params.errorLabel} API error (${response.status}): ${detail.text || response.statusText}`,
-        );
       }
       return await parseResponse(response);
     },
   );
 }
 
-export async function throwWebSearchApiError(res: Response, providerLabel: string): Promise<never> {
-  const detailResult = await readResponseText(res, { maxBytes: 64_000 });
-  const detail = detailResult.text;
-  throw new Error(`${providerLabel} API error (${res.status}): ${detail || res.statusText}`);
+export async function throwWebSearchApiError(
+  res: Response,
+  providerLabel: string,
+  request?: { headers: HeadersInit; maxBytes?: number; signal?: AbortSignal },
+): Promise<never> {
+  const detail = await readResponseText(res, { maxBytes: request?.maxBytes ?? 64_000 });
+  // Best-effort error-body reads must not turn caller cancellation into a provider failure.
+  request?.signal?.throwIfAborted();
+  const redact = createProviderErrorTextRedactor({
+    headers: new Headers(request?.headers),
+    defaultAuthHeader: "Authorization",
+    defaultAuthPrefix: "Bearer ",
+  });
+  const message = redact(detail.text || res.statusText, {
+    truncated: Boolean(detail.text) && detail.truncated,
+  });
+  throw new Error(`${providerLabel} API error (${res.status}): ${message}`);
 }
 
 export function resolveSiteName(url: string | undefined): string | undefined {

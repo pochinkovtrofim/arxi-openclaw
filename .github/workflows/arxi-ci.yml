@@ -38,17 +38,22 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           install-bun: "false"
 
-      - name: Resolve exact change base
+      - name: Resolve exact change and qualified upstream bases
         env:
           EVENT_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before || '' }}
         run: |
           set -euo pipefail
-          base="$EVENT_BASE"
-          if [[ ! "$base" =~ ^[0-9a-f]{40}$ || "$base" =~ ^0+$ ]]; then
-            base="$(git rev-parse HEAD^)"
+          change_base="$EVENT_BASE"
+          if [[ ! "$change_base" =~ ^[0-9a-f]{40}$ || "$change_base" =~ ^0+$ ]]; then
+            change_base="$(git rev-parse HEAD^)"
           fi
-          git fetch --no-tags --depth=1 origin "$base"
-          echo "ARXI_DIFF_BASE=$base" >> "$GITHUB_ENV"
+          upstream_base="$(tr -d '[:space:]' < ARXI_UPSTREAM_PIN)"
+          [[ "$upstream_base" =~ ^[0-9a-f]{40}$ ]]
+          git fetch --no-tags --depth=1 origin "$change_base" "$upstream_base"
+          test "$(git cat-file -t "$upstream_base")" = commit
+          git merge-base --is-ancestor "$upstream_base" HEAD
+          echo "ARXI_DIFF_BASE=$change_base" >> "$GITHUB_ENV"
+          echo "ARXI_UPSTREAM_BASE=$upstream_base" >> "$GITHUB_ENV"
 
       - name: Format and lint changed Arxi-owned source
         run: |
@@ -75,6 +80,9 @@ jobs:
               'package.json' \
               'config/assertion-safety-baseline.txt' |
               while IFS= read -r -d '' path; do
+                if git diff --quiet "$ARXI_UPSTREAM_BASE" HEAD -- "$path"; then
+                  continue
+                fi
                 case "$path" in
                   *.js|*.mjs|*.ts|*.mts|*.json|*.jsonc) printf '%s\0' "$path" ;;
                 esac
@@ -134,6 +142,7 @@ jobs:
           src/infra/heartbeat-runner-delivery.ts
           src/infra/heartbeat-runner-execution.ts
           src/infra/heartbeat-runner.structured-delivery.test.ts
+          src/infra/gateway-lifecycle-inventory.test.ts
           src/infra/outbound/deliver-channel.ts
           src/infra/outbound/deliver-contracts.ts
           src/infra/outbound/deliver-core.ts
@@ -145,6 +154,12 @@ jobs:
           src/infra/outbound/delivery-queue-reconciliation.ts
           src/infra/outbound/message-plan.test.ts
           src/infra/outbound/message-plan.ts
+          src/infra/outbound/message-action-send.test.ts
+          src/infra/outbound/message-action-send.ts
+          src/infra/outbound/message.test.ts
+          src/infra/outbound/message.ts
+          src/infra/outbound/outbound-send-service.test.ts
+          src/infra/outbound/outbound-send-service.ts
           src/infra/outbound/payloads.test.ts
           src/infra/outbound/payloads.ts
           src/infra/outbound/prepared-batch.ts
@@ -163,6 +178,9 @@ jobs:
           EOF
           failed=false
           while IFS= read -r -d '' path; do
+            if git diff --quiet "$ARXI_UPSTREAM_BASE" HEAD -- "$path"; then
+              continue
+            fi
             if [[ -n "${shipped_files[$path]:-}" ]]; then
               continue
             fi
@@ -191,7 +209,10 @@ jobs:
             src/commands/models/list.rows.projection.test.ts \
             src/infra/outbound/delivery-queue-media-spool.test.ts \
             src/infra/outbound/delivery-queue-reconciliation.test.ts \
+            src/infra/outbound/message-action-send.test.ts \
+            src/infra/outbound/message.test.ts \
             src/infra/outbound/message-plan.test.ts \
+            src/infra/outbound/outbound-send-service.test.ts \
             src/infra/outbound/payloads.test.ts \
             src/plugins/plugin-metadata-snapshot.test.ts
           pnpm exec vitest run src/infra/outbound/deliver.test.ts \
@@ -200,7 +221,7 @@ jobs:
             -t 'retains the exact agent run on a useful heartbeat delivery'
           pnpm exec vitest run src/plugins/tools.optional.test.ts \
             -t 'preserves tool-owned execution preparation across the descriptor cache'
-          node scripts/run-vitest.mjs run --config test/vitest/vitest.e2e.config.ts \
+          OPENCLAW_E2E_SKIP_BUILD=1 node scripts/run-vitest.mjs run --config test/vitest/vitest.e2e.config.ts \
             src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts \
             -t 'records the operation owned by an admitted heartbeat run'
 

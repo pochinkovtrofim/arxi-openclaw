@@ -27,9 +27,9 @@ import {
 import {
   createPreparedModelCatalogWorker,
   createPreparedModelCatalogWorkerInput,
-  getPreparedModelFullCatalogAuth,
 } from "./prepared-model-catalog-worker.js";
 import {
+  getPreparedModelFullCatalogAuth,
   getPreparedModelRuntimeAuthStore,
   loadPreparedModelRuntimeAuth,
   setPreparedModelRuntimeAuthLoader,

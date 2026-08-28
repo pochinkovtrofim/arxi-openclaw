@@ -2,6 +2,7 @@ import type { ExecutionIdentityAdmissionToken } from "../../audit/execution-iden
 // Outbound message entrypoint resolves channel/target, durable capability
 // requirements, payload plans, gateway fallback, and optional mirroring.
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
+import type { ReplyDispatchKind } from "../../auto-reply/reply/reply-dispatcher.types.js";
 import type { ChatType } from "../../channels/chat-type.js";
 import type { InboundEventKind } from "../../channels/inbound-event/kind.js";
 import { deriveDurableFinalDeliveryRequirementsForBatch } from "../../channels/message/capabilities.js";
@@ -18,6 +19,7 @@ import type { OutboundMediaAccess } from "../../media/load-options.js";
 import type { PollInput } from "../../polls.js";
 import { normalizePollInput } from "../../polls.js";
 import { createLazyRuntimeModule } from "../../shared/lazy-runtime.js";
+import { GATEWAY_CLIENT_NAMES } from "../../utils/message-channel.js";
 import type { DeliveryQueueCompletionRetention } from "../delivery-queue-sqlite.js";
 import { formatErrorMessage } from "../errors.js";
 import { resolveMessageChannelSelection } from "./channel-selection.js";
@@ -65,6 +67,8 @@ type MessageSendParams = {
   requesterSessionKey?: string;
   /** Admitted run correlation retained with durable delivery custody. */
   runId?: string;
+  /** Internal useful-result classification retained with durable delivery custody. */
+  replyKind?: ReplyDispatchKind;
   /** Exact admitted execution provenance retained with durable delivery custody. */
   executionIdentityToken?: ExecutionIdentityAdmissionToken;
   /** Originating account id used for requester-scoped outbound media policy. */
@@ -114,6 +118,8 @@ type MessageSendParams = {
   deliveryCompletion?: DurableDeliveryCompletion;
   /** @internal Retry the same pending producer intent only before platform I/O begins. */
   reusePendingDeliveryIntent?: boolean;
+  /** @internal The caller resends proven-not-sent payloads itself, so recovery must not. */
+  deliveryRetryOwner?: "caller";
   /** @internal Retain completion proof for replay-safe producer intents. */
   completionRetention?: DeliveryQueueCompletionRetention;
   /** @internal Override provider unknown-send reconciliation independently from queue durability. */
@@ -434,6 +440,7 @@ export async function sendMessage(params: MessageSendParams): Promise<MessageSen
       to: resolvedTarget.to,
       session: outboundSession,
       runId: params.runId,
+      replyKind: params.replyKind,
       executionIdentityToken: params.executionIdentityToken,
       accountId: params.accountId,
       conversationReadOrigin: params.conversationReadOrigin,
@@ -455,6 +462,7 @@ export async function sendMessage(params: MessageSendParams): Promise<MessageSen
       deliveryIntentId: params.deliveryIntentId,
       deliveryCompletion: params.deliveryCompletion,
       reusePendingDeliveryIntent: params.reusePendingDeliveryIntent,
+      deliveryRetryOwner: params.deliveryRetryOwner,
       completionRetention: params.completionRetention,
       ...(params.onDeliveryIntent ? { onDeliveryIntent: params.onDeliveryIntent } : {}),
       ...(params.onDeliveryAttempt ? { onDeliveryAttempt: params.onDeliveryAttempt } : {}),
@@ -473,7 +481,9 @@ export async function sendMessage(params: MessageSendParams): Promise<MessageSen
           }
         : undefined,
     });
-    if (!params.bestEffort && (send.status === "failed" || send.status === "partial_failed")) {
+    const shouldThrowFailure =
+      !params.bestEffort && params.gateway?.clientName !== GATEWAY_CLIENT_NAMES.CLI;
+    if (shouldThrowFailure && (send.status === "failed" || send.status === "partial_failed")) {
       throw send.error;
     }
     const results = send.status === "sent" || send.status === "partial_failed" ? send.results : [];

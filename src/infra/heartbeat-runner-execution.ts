@@ -13,7 +13,7 @@ import {
   resolveHeartbeatScratchProposalFromReplyResult,
   resolveHeartbeatToolResponseFromReplyResult,
 } from "../auto-reply/heartbeat-tool-response.js";
-import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS, stripHeartbeatToken } from "../auto-reply/heartbeat.js";
+import { isHeartbeatAcknowledgementText } from "../auto-reply/heartbeat.js";
 import {
   resolveReplyOperationAgentTurn,
   resolveReplyOperationAgentTurnRunId,
@@ -82,7 +82,7 @@ import { resolveHeartbeatVisibility } from "./heartbeat-visibility.js";
 import {
   inferHeartbeatWakeSourceFromReason,
   isConfiguredHeartbeatAgent,
-  isTargetedImmediateUnscheduledWake,
+  isTargetedUnscheduledWake,
 } from "./heartbeat-wake-policy.js";
 import {
   areHeartbeatsEnabled,
@@ -172,7 +172,7 @@ export async function resolveHeartbeatWakeStage(opts: HeartbeatRunOptions) {
     left.jobId.localeCompare(right.jobId),
   );
   const allowsUnscheduledTarget =
-    isTargetedImmediateUnscheduledWake(opts) && isConfiguredHeartbeatAgent(cfg, agentId);
+    isTargetedUnscheduledWake(opts) && isConfiguredHeartbeatAgent(cfg, agentId);
   if (!areHeartbeatsEnabled()) {
     return { kind: "skipped", reason: "disabled" } as const;
   }
@@ -227,6 +227,11 @@ export async function resolveHeartbeatWakeStage(opts: HeartbeatRunOptions) {
 
   const getSize = opts.deps?.getQueueSize ?? getQueueSize;
   if (getSize(CommandLane.Main) > 0) {
+    emitHeartbeatEvent({
+      status: "skipped",
+      reason: HEARTBEAT_SKIP_REQUESTS_IN_FLIGHT,
+      durationMs: Date.now() - startedAt,
+    });
     return { kind: "skipped", reason: HEARTBEAT_SKIP_REQUESTS_IN_FLIGHT } as const;
   }
 
@@ -321,6 +326,11 @@ export async function resolveHeartbeatWakeStage(opts: HeartbeatRunOptions) {
         mainSessionRecovery.view.status === "recoverable")) ||
     hasCurrentRestartRecoveryDelivery
   ) {
+    emitHeartbeatEvent({
+      status: "skipped",
+      reason: HEARTBEAT_SKIP_REQUESTS_IN_FLIGHT,
+      durationMs: Date.now() - startedAt,
+    });
     return { kind: "skipped", reason: HEARTBEAT_SKIP_REQUESTS_IN_FLIGHT } as const;
   }
   const HEARTBEAT_DEFER_WINDOW_MS = 30_000;
@@ -330,16 +340,18 @@ export async function resolveHeartbeatWakeStage(opts: HeartbeatRunOptions) {
       : undefined;
   const pendingFinalDeliveryIsHeartbeatAck =
     typeof pendingFinalDeliveryText === "string" &&
-    stripHeartbeatToken(pendingFinalDeliveryText, {
-      mode: "heartbeat",
-      maxAckChars: DEFAULT_HEARTBEAT_ACK_MAX_CHARS,
-    }).shouldSkip;
+    isHeartbeatAcknowledgementText(pendingFinalDeliveryText);
   if (
     recentSessionEntry?.pendingFinalDelivery !== undefined &&
     !pendingFinalDeliveryIsHeartbeatAck &&
     recentSessionEntry?.updatedAt &&
     startedAt - recentSessionEntry.updatedAt < HEARTBEAT_DEFER_WINDOW_MS
   ) {
+    emitHeartbeatEvent({
+      status: "skipped",
+      reason: HEARTBEAT_SKIP_REQUESTS_IN_FLIGHT,
+      durationMs: Date.now() - startedAt,
+    });
     return { kind: "skipped", reason: HEARTBEAT_SKIP_REQUESTS_IN_FLIGHT } as const;
   }
 
@@ -668,15 +680,14 @@ export async function invokeHeartbeatAgentRun(
   );
   const agentTurnStatus = resolveReplyOperationAgentTurn(replyOperationRunState);
   const agentTurnRunId = resolveReplyOperationAgentTurnRunId(replyOperationRunState);
-  if (agentTurnStatus === "superseded") {
-    return { kind: "preempted" } as const;
+  if (agentTurnStatus === "superseded" || agentTurnStatus === "cancelled") {
+    return { kind: agentTurnStatus === "superseded" ? "preempted" : "cancelled" } as const;
   }
   const heartbeatToolResponse = resolveHeartbeatToolResponseFromReplyResult(replyResult);
   const heartbeatScratchProposal = resolveHeartbeatScratchProposalFromReplyResult(replyResult);
   const heartbeatTerminalToolFailure: HeartbeatTerminalToolFailure | undefined =
     resolveHeartbeatTerminalToolFailure(replyResult);
-  const selectedReplyPayload = resolveHeartbeatReplyPayload(replyResult);
-  const replyPayload = selectedReplyPayload;
+  const replyPayload = resolveHeartbeatReplyPayload(replyResult);
   const agentRunFailed = agentTurnStatus === "failed";
   if (
     heartbeatScratchProposal !== undefined &&
