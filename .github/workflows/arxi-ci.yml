@@ -200,7 +200,8 @@ jobs:
             -t 'retains the exact agent run on a useful heartbeat delivery'
           pnpm exec vitest run src/plugins/tools.optional.test.ts \
             -t 'preserves tool-owned execution preparation across the descriptor cache'
-          pnpm exec vitest run src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts \
+          node scripts/run-vitest.mjs run --config test/vitest/vitest.e2e.config.ts \
+            src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts \
             -t 'records the operation owned by an admitted heartbeat run'
 
       - name: Build exact Linux runtime surface
