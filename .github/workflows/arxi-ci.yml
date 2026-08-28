@@ -127,27 +127,52 @@ jobs:
           extensions/telegram/src/telegram-context-rendering.ts
           extensions/telegram/src/telegram-runtime-planning.ts
           extensions/telegram/transport-plan-api.ts
+          extensions/exa/src/exa-web-search-provider.runtime.ts
+          extensions/exa/src/exa-web-search-provider.test.ts
           extensions/openai/openai-provider.test.ts
           extensions/openai/openai-provider.ts
+          packages/gateway-protocol/src/gateway-suspend.test.ts
+          packages/gateway-protocol/src/public-schema.ts
+          packages/gateway-protocol/src/schema/gateway-suspend.ts
+          packages/gateway-protocol/src/schema/protocol-schema-fragment-transport.ts
           src/agents/prepared-model-catalog-worker.integration.test.ts
           src/agents/prepared-model-catalog-worker.ts
           src/agents/prepared-model-catalog.worker.ts
           src/agents/agent-tool-definition-adapter.ts
           src/agents/agent-tools.before-tool-call.wrapper.ts
+          src/agents/auth-profiles/path-resolve.ts
+          src/agents/auth-profiles/sqlite.ts
           src/agents/runtime-plan/types.ts
           src/agents/tools/common.ts
+          src/agents/tools/web-search-provider-common.ts
           src/auto-reply/reply/agent-runner-execute.ts
           src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts
           src/auto-reply/reply/reply-operation-agent-turn-state.ts
           src/auto-reply/reply-payload.test.ts
           src/auto-reply/reply-payload.ts
           src/channels/message/types.ts
+          src/channels/plugins/outbound.types.ts
+          src/cli/models-cli.test.ts
+          src/cli/models-cli.ts
+          src/commands/doctor-state-integrity.test.ts
+          src/commands/doctor-state-integrity.ts
+          src/commands/models/auth.test.ts
+          src/commands/models/auth.ts
           src/commands/models/list.rows.projection.test.ts
           src/commands/models/list.rows.ts
+          src/commands/onboard-auth.test.ts
+          src/cron/service.ts
+          src/gateway/server-cron-lazy.test.ts
+          src/gateway/server-cron-lazy.ts
+          src/gateway/server-methods.suspension-admission.test.ts
+          src/gateway/server-methods/agent.test-harness.ts
+          src/gateway/server-methods/suspend.ts
           src/infra/heartbeat-runner-delivery.ts
           src/infra/heartbeat-runner-execution.ts
           src/infra/heartbeat-runner.structured-delivery.test.ts
           src/infra/gateway-lifecycle-inventory.test.ts
+          src/infra/gateway-suspend-coordinator.test.ts
+          src/infra/gateway-suspend-coordinator.ts
           src/infra/outbound/deliver-channel.ts
           src/infra/outbound/deliver-contracts.ts
           src/infra/outbound/deliver-core.ts
@@ -173,7 +198,10 @@ jobs:
           src/plugins/tools.optional.test.ts
           src/plugins/tools.ts
           src/plugin-sdk/media-mime.ts
+          config/assertion-safety-baseline.txt
+          scripts/ci-changed-scope.mjs
           scripts/plugin-sdk-surface-report.mts
+          scripts/protocol-gen-swift.ts
           package.json
           pnpm-lock.yaml
           pnpm-workspace.yaml
