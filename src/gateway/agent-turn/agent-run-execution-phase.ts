@@ -23,6 +23,10 @@ import {
 import type { SessionEntry } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { isAbortError } from "../../infra/abort-signal.js";
+import {
+  freezeDiagnosticTraceContext,
+  getActiveDiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessageWithCode } from "../../infra/errors.js";
 import type { MediaFact } from "../../media/media-facts.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
@@ -109,6 +113,10 @@ export function startAgentRunExecution(params: {
     onRecovered?: () => void,
   ) => Promise<boolean>;
 }): void {
+  const activeDiagnosticTrace = getActiveDiagnosticTraceContext();
+  const ingressDiagnosticTrace = activeDiagnosticTrace
+    ? freezeDiagnosticTraceContext(activeDiagnosticTrace)
+    : undefined;
   const { prepared } = params;
   let unpersistedOffloadedRefs = prepared.unpersistedOffloadedRefs;
   let preparedModelRuntimeLease: typeof prepared.preparedModelRuntimeLease | undefined =
@@ -310,6 +318,7 @@ export function startAgentRunExecution(params: {
               accountId: params.delivery.resolvedAccountId,
               threadId: prepared.resolvedThreadId,
               runContext,
+              ...(ingressDiagnosticTrace ? { diagnosticTrace: ingressDiagnosticTrace } : {}),
               ...(prepared.userTurn.bashElevated
                 ? { bashElevated: prepared.userTurn.bashElevated }
                 : {}),

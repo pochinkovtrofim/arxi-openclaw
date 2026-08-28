@@ -3,6 +3,10 @@ import {
   getPreparedModelRuntimeBorrowedSnapshot,
   getPreparedModelRuntimePluginGeneration,
 } from "../../agents/prepared-model-runtime-generation-scope.js";
+import {
+  runWithDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { startAgentRunExecution } from "./agent-run-execution-phase.js";
 
 const dispatchAgentRunFromGateway = vi.hoisted(() => vi.fn());
@@ -12,7 +16,13 @@ vi.mock("./agent-run-dispatch.js", () => ({
   resolveAbortedAgentStopReason: () => "rpc",
 }));
 
-function createExecution(options: { aborted?: boolean; assertContextCurrent?: () => void } = {}) {
+function createExecution(
+  options: {
+    aborted?: boolean;
+    admissionTrace?: DiagnosticTraceContext;
+    assertContextCurrent?: () => void;
+  } = {},
+) {
   const abortCleanup = vi.fn();
   const gatewayRelease = vi.fn();
   let resolveRuntimeReleased!: () => void;
@@ -34,7 +44,10 @@ function createExecution(options: { aborted?: boolean; assertContextCurrent?: ()
       prepared: {
         activeGatewayWorkAdmission: {
           release: gatewayRelease,
-          run: async (run: () => Promise<void>) => await run(),
+          run: async (run: () => Promise<void>) =>
+            options.admissionTrace
+              ? await runWithDiagnosticTraceContext(options.admissionTrace, run)
+              : await run(),
         },
         activeRunAbort: {
           cleanup: abortCleanup,
@@ -140,6 +153,31 @@ describe("startAgentRunExecution Gateway ownership", () => {
     resolveCleanupObserved();
     await expect(borrowedAfterCleanup).resolves.toBeUndefined();
     expect(execution.runtimeRelease).toHaveBeenCalledOnce();
+  });
+
+  it("retains the request trace before entering detached work admission", async () => {
+    const ingressTrace: DiagnosticTraceContext = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      traceFlags: "01",
+    };
+    const admissionTrace: DiagnosticTraceContext = {
+      traceId: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      spanId: "bbbbbbbbbbbbbbbb",
+      traceFlags: "01",
+    };
+    const execution = createExecution({ admissionTrace });
+    let resolveDispatched!: () => void;
+    const dispatched = new Promise<void>((resolve) => {
+      resolveDispatched = resolve;
+    });
+    dispatchAgentRunFromGateway.mockImplementationOnce(resolveDispatched);
+
+    runWithDiagnosticTraceContext(ingressTrace, () => startAgentRunExecution(execution.params));
+
+    await dispatched;
+    const dispatch = dispatchAgentRunFromGateway.mock.calls[0]?.[0];
+    expect(dispatch?.ingressOpts.diagnosticTrace).toEqual(ingressTrace);
   });
 
   it("releases the admitted runtime once when aborted before dispatch", async () => {

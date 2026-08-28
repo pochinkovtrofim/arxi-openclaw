@@ -24,10 +24,6 @@ import { readAgentRunTerminalOutcome } from "../../channels/turn/agent-run-termi
 import { agentCommandFromGatewayIngress } from "../../commands/agent.js";
 import { isAbortError } from "../../infra/abort-signal.js";
 import { clearAgentRunContext } from "../../infra/agent-run-registry.js";
-import {
-  freezeDiagnosticTraceContext,
-  getActiveDiagnosticTraceContext,
-} from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessageWithCode, readErrorName } from "../../infra/errors.js";
 import { defaultRuntime } from "../../runtime.js";
 import { createRunningTaskRun } from "../../tasks/detached-task-runtime.js";
@@ -201,13 +197,6 @@ export function dispatchAgentRunFromGateway(params: {
     params.ingressOpts,
     readAgentRunDispatchExecutionIdentity(params),
   );
-  const activeDiagnosticTrace = getActiveDiagnosticTraceContext();
-  const ingressOptsWithDiagnosticTrace = activeDiagnosticTrace
-    ? {
-        ...ingressOptsWithSpawnFacts,
-        diagnosticTrace: freezeDiagnosticTraceContext(activeDiagnosticTrace),
-      }
-    : ingressOptsWithSpawnFacts;
   const trackedTaskBinding = trackedTask
     ? createExecutionStartedOwnerBinding(
         (admitted: Parameters<NonNullable<AgentCommandOpts["onPostAdmittedRunContext"]>>[0]) => {
@@ -237,14 +226,14 @@ export function dispatchAgentRunFromGateway(params: {
     : undefined;
   const ingressOptsWithTaskBinding = trackedTask
     ? {
-        ...ingressOptsWithDiagnosticTrace,
+        ...ingressOptsWithSpawnFacts,
         onPostAdmittedRunContext: trackedTaskBinding?.onPostAdmission,
         onExecutionStarted: () => {
-          ingressOptsWithDiagnosticTrace.onExecutionStarted?.();
+          ingressOptsWithSpawnFacts.onExecutionStarted?.();
           trackedTaskBinding?.onExecutionStarted();
         },
       }
-    : ingressOptsWithDiagnosticTrace;
+    : ingressOptsWithSpawnFacts;
   const runAgent = () =>
     runWithCanonicalSkillWorkspace(params.canonicalSkillWorkspaceDir, () =>
       agentCommandFromGatewayIngress(
