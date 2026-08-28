@@ -87,24 +87,16 @@ function withPlannedReplyTo(
   return consumeReplyTo ? consumeReplyTo({ ...overrides }) : { ...overrides };
 }
 
-function withChunkedTextFormatting(
-  overrides: OutboundMessageSendOverrides,
-  formatting?: OutboundDeliveryFormattingOptions,
-): OutboundMessageSendOverrides {
-  return formatting
-    ? { ...overrides, formatting: { ...overrides.formatting, ...formatting } }
-    : overrides;
-}
-
 function chunkTextForPlan(params: {
   text: string;
   limit: number;
   chunker: OutboundMessageChunker;
   formatting?: OutboundDeliveryFormattingOptions;
 }): string[] {
-  return params.formatting
+  const chunks = params.formatting
     ? params.chunker(params.text, params.limit, { formatting: params.formatting })
     : params.chunker(params.text, params.limit);
+  return chunks.length === 0 && params.text ? [params.text] : chunks;
 }
 
 /**
@@ -121,28 +113,32 @@ export function planOutboundTextMessageUnits(params: {
   formatting?: OutboundDeliveryFormattingOptions;
   consumeReplyTo?: PlanReplyToConsumption;
 }): OutboundMessageUnit[] {
-  const planTextUnit = (text: string, deliveryPartIndex: number): OutboundMessageUnit => ({
-    kind: "text",
-    text,
-    overrides: {
+  const planTextUnit = (
+    text: string,
+    deliveryPartIndex: number,
+    chunkedTextFormatting?: OutboundDeliveryFormattingOptions,
+  ): OutboundMessageUnit => {
+    const overrides = {
       ...withPlannedReplyTo(params.overrides, params.consumeReplyTo),
       deliveryPartIndex,
-    },
-  });
-  const planChunkedTextUnit = (text: string, deliveryPartIndex: number): OutboundMessageUnit => {
-    const unit = planTextUnit(text, deliveryPartIndex);
+    };
     return {
-      ...unit,
-      overrides: withChunkedTextFormatting(unit.overrides, params.chunkedTextFormatting),
+      kind: "text",
+      text,
+      overrides: chunkedTextFormatting
+        ? { ...overrides, formatting: { ...overrides.formatting, ...chunkedTextFormatting } }
+        : overrides,
     };
   };
 
   const withDeliveryTopology = (units: OutboundMessageUnit[]): OutboundMessageUnit[] => {
     const deliveryPartCount = units.length;
-    return units.map((unit) => ({
-      ...unit,
-      overrides: { ...unit.overrides, deliveryPartCount },
-    }));
+    // These units are planner-owned until return; finalize them in place rather
+    // than cloning every chunk solely to attach the shared fan-out count.
+    for (const unit of units) {
+      unit.overrides.deliveryPartCount = deliveryPartCount;
+    }
+    return units;
   };
 
   if (!params.chunker || params.textLimit === undefined) {
@@ -167,11 +163,8 @@ export function planOutboundTextMessageUnits(params: {
         chunker: params.chunker,
         formatting: params.formatting,
       });
-      if (!chunks.length && blockChunk) {
-        chunks.push(blockChunk);
-      }
       for (const chunk of chunks) {
-        units.push(planChunkedTextUnit(chunk, units.length));
+        units.push(planTextUnit(chunk, units.length, params.chunkedTextFormatting));
       }
     }
     return withDeliveryTopology(units);
@@ -183,7 +176,7 @@ export function planOutboundTextMessageUnits(params: {
       limit: params.textLimit,
       chunker: params.chunker,
       formatting: params.formatting,
-    }).map(planChunkedTextUnit),
+    }).map((chunk, index) => planTextUnit(chunk, index, params.chunkedTextFormatting)),
   );
 }
 

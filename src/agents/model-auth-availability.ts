@@ -19,7 +19,6 @@ import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot
 import { isValidSecretRef } from "../secrets/ref-contract.js";
 import type { PreparedAgentCredentialModes } from "./agent-auth-credential-modes.js";
 import { hasUsableOAuthCredential } from "./auth-profiles/credential-state.js";
-import { normalizeExternalCliProfileMetadata } from "./auth-profiles/external-cli-profile-metadata.js";
 import {
   listExternalCliSyncProviderIds,
   resolveExternalCliAuthProfiles,
@@ -49,7 +48,7 @@ import {
   resolveProviderEnvAuthLookupMaps,
 } from "./model-auth-env-vars.js";
 import { resolveProviderEnvAuthEvidence } from "./model-auth-env.js";
-import { isKnownEnvApiKeyMarker, isSecretRefHeaderValueMarker } from "./model-auth-markers.js";
+import { isSecretRefHeaderValueMarker } from "./model-auth-markers.js";
 import {
   hasSyntheticLocalProviderAuthConfig,
   hasUsableCustomProviderApiKey,
@@ -302,34 +301,7 @@ export function createModelAuthAvailabilityResolver(
     ...external.map((profile) => profile.profileId),
     ...getRuntimeExternalCliProfileIds(runtimeStore ?? store),
   ]);
-  // Runtime-owned CLI credentials are authoritative over legacy config metadata
-  // that described their canonical profile slots before OAuth was imported.
-  // Normalize only those exact marked profiles for read-only selection.
-  let readOnlyAuthProfiles:
-    | NonNullable<NonNullable<OpenClawConfig["auth"]>["profiles"]>
-    | undefined;
-  for (const profileId of externalCliRefreshProfileIds) {
-    const credential = (runtimeStore ?? store).profiles[profileId];
-    const configured = params.cfg.auth?.profiles?.[profileId];
-    const canonicalMetadata = normalizeExternalCliProfileMetadata(profileId, configured);
-    if (
-      credential?.type !== "oauth" ||
-      !configured ||
-      !canonicalMetadata ||
-      (configured.provider === canonicalMetadata.provider &&
-        configured.mode === canonicalMetadata.mode)
-    ) {
-      continue;
-    }
-    readOnlyAuthProfiles ??= { ...params.cfg.auth?.profiles };
-    readOnlyAuthProfiles[profileId] = {
-      ...configured,
-      ...canonicalMetadata,
-    };
-  }
-  const readOnlyAuthConfig = readOnlyAuthProfiles
-    ? { ...params.cfg, auth: { ...params.cfg.auth, profiles: readOnlyAuthProfiles } }
-    : params.cfg;
+  const readOnlyAuthConfig = params.cfg;
   const providerConfig = (provider: string) =>
     resolveMergedModelProviderConfig(params.cfg, provider);
   const prepareAuthTarget = (provider: string, ref: ModelAuthAvailabilityRef): AuthTarget => {
@@ -584,7 +556,7 @@ export function createModelAuthAvailabilityResolver(
       };
     }
     if (binding.kind === "marker") {
-      if (typeof apiKey === "string" && isKnownEnvApiKeyMarker(apiKey)) {
+      if (binding.evidence === "environment" && typeof apiKey === "string") {
         return {
           availability: modeAllowed(provider, target, configuredBearerMode)
             ? hasSecret(env[apiKey.trim()])
@@ -597,14 +569,14 @@ export function createModelAuthAvailabilityResolver(
         return {
           availability: false,
           selectedAuthMode: configuredBearerMode,
-          evidence: "synthetic",
+          evidence: binding.evidence,
         };
       }
       if (hasUsableCustomProviderApiKey(params.cfg, provider, env)) {
         return {
           availability: true,
           selectedAuthMode: configuredBearerMode,
-          evidence: "synthetic",
+          evidence: binding.evidence,
         };
       }
       const managed = typeof apiKey === "string" && isSecretRefHeaderValueMarker(apiKey);
@@ -614,7 +586,7 @@ export function createModelAuthAvailabilityResolver(
             undefined
           : undefined,
         selectedAuthMode: configuredBearerMode,
-        evidence: managed ? "runtime" : "synthetic",
+        evidence: managed ? "runtime" : binding.evidence,
       };
     }
     if (apiKeyRef) {
@@ -650,7 +622,9 @@ export function createModelAuthAvailabilityResolver(
         evidence: "aws-sdk",
       };
     }
-    const preparedRuntimeAuthMode = params.preparedRuntimeAuthModes?.[normalizeProvider(provider)];
+    const preparedRuntimeAuthMode =
+      params.preparedRuntimeAuthModes?.[normalizeProviderIdForAuth(provider)] ??
+      params.preparedRuntimeAuthModes?.[normalizeProvider(provider)];
     if (preparedRuntimeAuthMode) {
       return {
         availability: modeAllowed(provider, target, preparedRuntimeAuthMode),
@@ -940,23 +914,24 @@ export function createModelAuthAvailabilityResolver(
       !modelLock && !awsSdkTerminal && basePolicy.binding.kind === "profile"
         ? basePolicy.binding.profileId
         : undefined;
-    const explicitProfileOrder = profileOrder(
+    const orderResolution = profileOrder(
       provider,
       ref.modelId,
       ref.preferredProfileId,
       ref.lockedProfileId,
-    ).hasExplicitOrder;
+    );
     const materializedModelId = ref.modelId
       ? normalizeModelIdForProvider(provider, ref.modelId)?.toLowerCase()
       : undefined;
     const materialized =
-      !modelLock &&
-      !bindingProfileId &&
-      !basePolicy.required &&
-      !explicitProfileOrder &&
-      materializedModelId
+      !modelLock && !bindingProfileId && !basePolicy.required && materializedModelId
         ? params.preparedRuntimeAuthMaterializations?.find(
             (fact) =>
+              // Explicit order remains authoritative: runtime success only satisfies it
+              // when the producer names a profile still admitted by the current order.
+              (!orderResolution.hasExplicitOrder ||
+                (fact.authProfileId !== undefined &&
+                  orderResolution.profileIds.includes(fact.authProfileId))) &&
               normalizeProvider(fact.provider) === provider &&
               fact.modelId === materializedModelId &&
               routeResolution.routes.some((route) => {
@@ -1041,12 +1016,6 @@ export function createModelAuthAvailabilityResolver(
     const policy = directPolicy(
       provider,
       targetForMode(selectedConfiguredMode ?? basePolicy.direct.mode),
-    );
-    const orderResolution = profileOrder(
-      provider,
-      ref.modelId,
-      ref.preferredProfileId,
-      ref.lockedProfileId,
     );
     let profileIds = orderResolution.profileIds;
     if (profileIds.length === 0 && !modelLock && !bindingProfileId && !policy.required) {

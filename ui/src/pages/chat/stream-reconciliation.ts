@@ -6,6 +6,7 @@ import {
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import {
+  accumulatedStreamText,
   advanceAccumulatedStreamText,
   streamSegmentHasItemId,
   streamSegmentUsesAccumulatedText,
@@ -27,7 +28,7 @@ import {
   resolveLiveToolStreamRefs,
   resolveMatchingLiveToolIdentity,
 } from "./tool-stream-identity.ts";
-import { resetToolStream } from "./tool-stream.ts";
+import { resetToolStream, resetToolStreamRun } from "./tool-stream.ts";
 
 type StreamReconciliationState = StreamCausalBoundaryState & {
   chatStream: string | null;
@@ -64,6 +65,18 @@ type MaterializeVisibleStreamOptions = {
   isHiddenStreamText: StreamVisibility;
 };
 
+function resettableToolStreamHost(
+  state: StreamReconciliationState,
+): Parameters<typeof resetToolStream>[0] | null {
+  const toolHost = state as ToolStreamHost & Partial<Parameters<typeof resetToolStream>[0]>;
+  return toolHost.toolStreamById instanceof Map &&
+    Array.isArray(toolHost.toolStreamOrder) &&
+    Array.isArray(toolHost.chatToolMessages) &&
+    Array.isArray(toolHost.chatStreamSegments)
+    ? (toolHost as Parameters<typeof resetToolStream>[0])
+    : null;
+}
+
 export function currentLiveToolCallIds(state: StreamReconciliationState): string[] {
   const toolHost = state as ToolStreamHost;
   return Array.isArray(toolHost.toolStreamOrder)
@@ -89,20 +102,23 @@ export function maybeResetToolStream(
   state: StreamReconciliationState,
   opts?: { preserveStreamSegments?: boolean },
 ) {
-  const toolHost = state as ToolStreamHost & Partial<Parameters<typeof resetToolStream>[0]>;
-  if (
-    toolHost.toolStreamById instanceof Map &&
-    Array.isArray(toolHost.toolStreamOrder) &&
-    Array.isArray(toolHost.chatToolMessages) &&
-    Array.isArray(toolHost.chatStreamSegments)
-  ) {
-    const preservedStreamSegments = opts?.preserveStreamSegments
-      ? [...toolHost.chatStreamSegments]
-      : null;
-    resetToolStream(toolHost as Parameters<typeof resetToolStream>[0]);
-    if (preservedStreamSegments) {
-      toolHost.chatStreamSegments = preservedStreamSegments;
-    }
+  const toolHost = resettableToolStreamHost(state);
+  if (!toolHost) {
+    return;
+  }
+  const preservedStreamSegments = opts?.preserveStreamSegments
+    ? [...toolHost.chatStreamSegments]
+    : null;
+  resetToolStream(toolHost);
+  if (preservedStreamSegments) {
+    toolHost.chatStreamSegments = preservedStreamSegments;
+  }
+}
+
+export function maybeResetToolStreamRun(state: StreamReconciliationState, runId: string) {
+  const toolHost = resettableToolStreamHost(state);
+  if (toolHost) {
+    resetToolStreamRun(toolHost, runId);
   }
 }
 
@@ -266,6 +282,21 @@ function hasAssistantStreamReplacement(
   });
 }
 
+export function assistantMessageReplacesCurrentStream(
+  state: StreamReconciliationState,
+  message: unknown,
+): boolean {
+  const currentPart = visibleAssistantStreamParts(state, {
+    includeCurrent: true,
+    isHiddenStreamText: () => false,
+  }).findLast((part) => part.source === "current");
+  return Boolean(
+    currentPart &&
+    (hasAssistantStreamReplacement([message], currentPart.replacementText, () => false, 0) ||
+      hasAssistantStreamReplacement([message], currentPart.text, () => false, 0)),
+  );
+}
+
 function streamFallbackItemId(message: unknown): string | null {
   if (!message || typeof message !== "object") {
     return null;
@@ -318,7 +349,7 @@ export function visibleAssistantStreamParts(
     const afterBoundaryRunId =
       normalizeOptionalString(segment.afterBoundaryRunId) ?? latestBoundaryRunId;
     const boundaryRunId = normalizeOptionalString(segment.boundaryRunId);
-    if (!usesItemId && segment.boundaryMarker !== true) {
+    if (!usesItemId && segment.boundaryMarker !== true && segment.persisted !== true) {
       toolIndexedSegmentIndex += 1;
     }
     const usesAccumulatedText = streamSegmentUsesAccumulatedText(segment);
@@ -326,7 +357,7 @@ export function visibleAssistantStreamParts(
       usesAccumulatedText ? trimAccumulatedStreamPrefix(segment.text, previousText) : segment.text,
       opts.isHiddenStreamText,
     );
-    if (visible) {
+    if (visible && segment.persisted !== true) {
       parts.push({
         text: visible,
         replacementText: segment.text,
@@ -378,12 +409,7 @@ export function visibleCurrentAssistantStreamTail(
   const segments = Array.isArray(streamHost.chatStreamSegments)
     ? streamHost.chatStreamSegments
     : [];
-  let previousText: string | null = null;
-  for (const segment of segments) {
-    if (streamSegmentUsesAccumulatedText(segment) && typeof segment.text === "string") {
-      previousText = advanceAccumulatedStreamText(previousText, segment.text);
-    }
-  }
+  const previousText = accumulatedStreamText(segments);
   return visibleAssistantStreamText(
     trimAccumulatedStreamPrefix(state.chatStream, previousText),
     isHiddenStreamText,

@@ -10,7 +10,7 @@ title: "Arxi lifecycle producer inventory"
 
 This is source-level upgrade evidence, not a stable OpenClaw API. Arxi consumes
 only the versioned `gateway.suspend.*` protocol. The inventory was reviewed at
-upstream merge `cd299e6726b1140d5182f4d3bd1cc4f80c896d16`.
+exact upstream commit `b576bb41cf4b3b3418a25e925d9b48ff6dd18c57`.
 
 Active work is covered by the canonical Gateway snapshot in
 `src/infra/gateway-active-work.ts` plus server-local inspectors in
@@ -27,11 +27,16 @@ External ingress reaches one of the root/session/queue/reply boundaries above;
 prepared suspension closes that admission before inspection. Cron is the sole
 reviewed time-based producer. Its enabled `at`, `every`, and `cron` schedules,
 including persisted retry/backoff timestamps, converge on the scheduler's
-canonical `nextWakeAtMs`. Event-driven `on-exit`, stream, webhook, channel, and
-heartbeat inputs are either active blockers or external events; declarative
-heartbeat schedules are cron-owned.
+canonical `nextWakeAtMs`.
+
+At this pin the configured heartbeat monitor is a system-owned Automation in
+the cron store. Cron owns its cadence, persisted due state, retry/backoff, busy
+deferral, restart restoration, and next-wake projection. The remaining
+`heartbeat-runner*` modules execute a due monitor turn and deliver its result;
+they are not a second scheduler. Event-driven `on-exit`, stream, webhook, and
+channel inputs are active blockers or external events and do not add another
+time-based wake producer.
 
 `gateway-lifecycle-inventory.test.ts` compares the declared active categories
-with the canonical snapshot and pins reviewed upstream commit
-`4e7bf407d19bc96d1e95d48b562d1960de68511d`. Any upstream upgrade therefore
-fails until this inventory and the wake mapping are reviewed.
+with the canonical snapshot and pins the reviewed upstream merge. Any upstream
+upgrade therefore fails until this inventory and the wake mapping are reviewed.

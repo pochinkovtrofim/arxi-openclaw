@@ -45,12 +45,16 @@ first-failure path is preferable; Release Decision then cancels only the exact
 still-active child that owns the blocking failure.
 
 After dispatch, the parent writes one immutable
-`full-release-execution-plan-<run-id>` artifact. It records selected and
+`full-release-execution-plan-<run-id>` artifact and preserves the same bytes in
+an exact run-ID Actions cache. It records selected and
 required coverage, gate results, reuse identity, the original parent attempt,
 and every exact child run ID, attempt, title, workflow ref, and Tooling SHA.
 Decision, Drain, manifest generation, evidence verification, and the final
-verifier consume this artifact. Collector retries restore it and adopt the
-same children; they never rebuild the plan or redispatch tests.
+verifier consume the artifact for their current attempt. Collector retries
+restore the immutable cached copy, validate it, and upload the artifact again
+for the retry; they never rebuild the plan or redispatch tests. A missing or
+evicted cache fails closed, so start a new validation instead of retrying that
+stale parent.
 Release Decision also repeats canonical reuse-chain validation before a reused
 run can pass. The sealed target SHA, evidence SHA, policy, changed-path set,
 selected run, root run, source manifest, trusted tooling identity, and child
@@ -64,13 +68,15 @@ the artifacts and may differ when only one collector needed a retry.
 The helper creates a temporary `release-ci/*` ref pinned to the Tooling SHA,
 passes the Validation SHA as both the candidate ref and `expected_sha`, and
 deletes the temporary ref after successful validation and strict evidence
-verification. If Release Decision reports a blocker while Diagnostic Drain is
-still collecting failures, the helper exits nonzero immediately and keeps both
-temporary refs for reruns and diagnosis. The Validation SHA equals the Code
-SHA for product validation or the Release SHA for changelog-only validation; it
-is not a third release identity. The workflow rejects malformed or mismatched
-expected SHAs before child dispatch. Every child must report the same Tooling
-SHA. Pass
+verification. The helper reads Release Decision artifacts while the parent is
+active so blockers can surface while Diagnostic Drain collects failures. A
+not-yet-created artifact remains an unavailable polling result; terminal
+handling and temporary-ref cleanup wait for the parent to complete with a
+conclusion. Failed validations retain both refs for reruns and diagnosis. The
+Validation SHA equals the Code SHA for product validation or the Release SHA
+for changelog-only validation; it is not a third release identity. The workflow
+rejects malformed or mismatched expected SHAs before child dispatch. Every
+child must report the same Tooling SHA. Pass
 `-f reuse_evidence=false` to force a fresh run. Regular release-branch runs
 require `--workflow-sha` with the recorded full SHA, which must remain reachable
 from current `origin/main`. The helper rejects a pinned Tooling SHA that does
@@ -250,7 +256,7 @@ artifact when package or Docker-facing stages need it.
 | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Release target           | **Job:** `Resolve target ref`<br />**Backing workflow:** none<br />**Tests:** selected ref, optional expected Validation SHA, profile, concrete release-check groups, and focused live suite filter.<br />**Rerun:** select the concrete group for the failed surface.                                                                                                                                                                                                                                                                                                            |
 | Package artifact         | **Job:** `Prepare release package artifact`<br />**Backing workflow:** none<br />**Tests:** validates the umbrella's immutable package tuple, or packs one candidate tarball for a direct/focused Release Checks dispatch, then exposes it to downstream package-facing checks.<br />**Rerun:** the affected package, cross-OS, or live/E2E group.                                                                                                                                                                                                                                |
-| Install smoke            | **Job:** `Run install smoke`<br />**Backing workflow:** `Install Smoke`<br />**Tests:** full install path with root Dockerfile smoke image reuse, QR package install, root and gateway Docker smokes, installer Docker tests, and Bun global install image-provider smoke.<br />**Rerun:** `rerun_group=install-smoke`.                                                                                                                                                                                                                                                           |
+| Install smoke            | **Job:** `Run install smoke`<br />**Backing workflow:** `Install Smoke`<br />**Tests:** full install path with root Dockerfile smoke image reuse, QR package install, root and gateway Docker smokes, installer Docker tests, and Bun global install plus CLI/local-agent/Gateway runtime smoke.<br />**Rerun:** `rerun_group=install-smoke`.                                                                                                                                                                                                                                     |
 | Cross-OS                 | **Job:** `cross_os_release_checks`<br />**Backing workflow:** `OpenClaw Cross-OS Release Checks (Reusable)`<br />**Tests:** fresh and upgrade lanes on Linux, Windows, and macOS for the selected provider and mode, using the candidate tarball plus a baseline package.<br />**Rerun:** `rerun_group=cross-os`.                                                                                                                                                                                                                                                                 |
 | Repo and live E2E        | **Job:** `Run repo/live E2E validation`<br />**Backing workflow:** `OpenClaw Live And E2E Checks (Reusable)`<br />**Tests:** repository E2E, live cache, OpenAI websocket streaming, native live provider and plugin shards, and Docker-backed live model/backend/gateway harnesses selected by `release_profile`.<br />**Runs:** `run_release_soak=true`, `release_profile=full`, or focused `rerun_group=live-e2e`.<br />**Rerun:** `rerun_group=live-e2e`, optionally with `live_suite_filter`.                                                                                |
 | Docker release path      | **Job:** `Run Docker release-path validation`<br />**Backing workflow:** `OpenClaw Live And E2E Checks (Reusable)`<br />**Tests:** release-path Docker chunks against the shared package artifact.<br />**Runs:** `run_release_soak=true`, `release_profile=full`, or focused `rerun_group=live-e2e`.<br />**Rerun:** `rerun_group=live-e2e`.                                                                                                                                                                                                                                     |

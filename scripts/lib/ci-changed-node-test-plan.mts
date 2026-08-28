@@ -22,12 +22,17 @@ import {
   splitExtensionTestJobTargets,
 } from "./extension-test-plan.mts";
 import { buildPluginSdkEntrySources, publicPluginSdkEntrypoints } from "./plugin-sdk-entries.mts";
+import {
+  resolveVitestPretestBuildMode,
+  type VitestPretestBuildMode,
+} from "./vitest-build-prerequisites.mts";
 
 type ChangedNodeTestShard = {
   checkName: string;
   configs: string[];
   includePatterns?: string[];
   planConcurrency?: number;
+  pretestBuildMode?: VitestPretestBuildMode;
   requiresDist: boolean;
   runner: string;
   shardName: string;
@@ -319,6 +324,10 @@ function createChangedTargetShards(
       shardName: `${names.shardName}${suffix}`,
       targets: chunk,
     };
+    const pretestBuildMode = resolveVitestPretestBuildMode([{ includePatterns: chunk }]);
+    if (pretestBuildMode) {
+      shard.pretestBuildMode = pretestBuildMode;
+    }
     if (chunk.some((target) => SERIAL_CHANGED_TARGET_RE.test(target))) {
       shard.planConcurrency = 1;
     }
@@ -363,6 +372,12 @@ function createChangedExtensionConfigShards(extensionRoots: string[]) {
       runner: DEFAULT_NODE_TEST_RUNNER,
       shardName: `changed-extensions-config${suffix}`,
     };
+    const pretestBuildMode = resolveVitestPretestBuildMode([
+      { configs: [config], includePatterns },
+    ]);
+    if (pretestBuildMode) {
+      shard.pretestBuildMode = pretestBuildMode;
+    }
     if (includePatterns) {
       shard.includePatterns = includePatterns;
     }
