@@ -593,7 +593,7 @@ export function startEmbeddedAttemptDiagnostics(params: EmbeddedRunAttemptParams
   emitCompleted: EmitDiagnosticRunCompleted;
 } {
   const diagnosticTrace = freezeDiagnosticTraceContext(
-    getActiveDiagnosticTraceContext() ?? createDiagnosticTraceContext(),
+    params.diagnosticTrace ?? getActiveDiagnosticTraceContext() ?? createDiagnosticTraceContext(),
   );
   const runTrace = freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(diagnosticTrace));
   const diagnosticRunBase = {
