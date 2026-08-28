@@ -10,7 +10,7 @@ type Workflow = {
 };
 
 describe("Arxi fork gate", () => {
-  it("checks the upstream pin with complete candidate ancestry", () => {
+  it("checks the upstream pin with bounded candidate ancestry", () => {
     const workflow = parse(readFileSync(".github/workflows/arxi-ci.yml", "utf8")) as Workflow;
     const steps = workflow.jobs?.["runtime-contract"]?.steps ?? [];
     const checkout = steps.find((step) => step.name === "Checkout exact candidate");
@@ -18,8 +18,15 @@ describe("Arxi fork gate", () => {
       (step) => step.name === "Resolve exact change and qualified upstream bases",
     );
 
-    expect(checkout?.with?.["fetch-depth"]).toBe(0);
-    expect(resolve?.run).not.toContain("--depth=1");
+    expect(checkout?.with?.["fetch-depth"]).toBe(1);
+    expect(checkout?.with?.filter).toBe("blob:none");
+    expect(resolve?.run).toContain(
+      'git fetch --no-tags --filter=blob:none --depth=1 origin "$change_base" "$upstream_base"',
+    );
+    expect(resolve?.run).toContain("history_limit=4096");
+    expect(resolve?.run).toContain(
+      'git fetch --no-tags --filter=blob:none --deepen="$history_limit" origin "$GITHUB_SHA"',
+    );
     expect(resolve?.run).toContain('git merge-base --is-ancestor "$upstream_base" HEAD');
   });
 });

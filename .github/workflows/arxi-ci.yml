@@ -28,7 +28,8 @@ jobs:
       - name: Checkout exact candidate
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
         with:
-          fetch-depth: 0
+          fetch-depth: 1
+          filter: blob:none
           persist-credentials: false
 
       - name: Setup production Node toolchain
@@ -49,8 +50,12 @@ jobs:
           fi
           upstream_base="$(tr -d '[:space:]' < ARXI_UPSTREAM_PIN)"
           [[ "$upstream_base" =~ ^[0-9a-f]{40}$ ]]
-          git fetch --no-tags origin "$change_base" "$upstream_base"
+          git fetch --no-tags --filter=blob:none --depth=1 origin "$change_base" "$upstream_base"
           test "$(git cat-file -t "$upstream_base")" = commit
+          history_limit=4096
+          if ! git merge-base --is-ancestor "$upstream_base" HEAD; then
+            git fetch --no-tags --filter=blob:none --deepen="$history_limit" origin "$GITHUB_SHA"
+          fi
           git merge-base --is-ancestor "$upstream_base" HEAD
           echo "ARXI_DIFF_BASE=$change_base" >> "$GITHUB_ENV"
           echo "ARXI_UPSTREAM_BASE=$upstream_base" >> "$GITHUB_ENV"
