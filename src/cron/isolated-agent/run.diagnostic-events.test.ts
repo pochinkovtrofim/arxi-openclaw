@@ -5,6 +5,10 @@ import {
   onInternalDiagnosticEvent,
   resetDiagnosticEventsForTest,
 } from "../../infra/diagnostic-events.js";
+import {
+  runWithDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { resetDiagnosticStateForTest } from "../../logging/diagnostic.test-support.js";
 
 vi.mock("../../agents/auth-profiles/source-check.js", () => ({
@@ -109,6 +113,40 @@ describe("runCronIsolatedAgentTurn diagnostic events", () => {
     expect(orderedTypes[0]).toBe("message.queued");
     expect(orderedTypes[orderedTypes.length - 1]).toBe("message.processed");
     expect(orderedTypes).toContain("session.state");
+  });
+
+  it("starts an isolated trace when a scheduled run inherits an owner request scope", async () => {
+    const ownerTrace: DiagnosticTraceContext = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      traceFlags: "01",
+    };
+    const cronTraceIds: string[] = [];
+    const unsubscribe = onInternalDiagnosticEvent((event) => {
+      if (
+        event.type === "message.queued" ||
+        event.type === "session.state" ||
+        event.type === "message.processed"
+      ) {
+        const traceId = event.trace?.traceId;
+        if (traceId) {
+          cronTraceIds.push(traceId);
+        }
+      }
+    });
+
+    try {
+      const result = await runWithDiagnosticTraceContext(ownerTrace, () =>
+        runCronIsolatedAgentTurn(makeParams()),
+      );
+      expect(result.status).toBe("ok");
+    } finally {
+      unsubscribe();
+    }
+
+    expect(cronTraceIds.length).toBeGreaterThan(0);
+    expect(new Set(cronTraceIds)).toHaveLength(1);
+    expect(cronTraceIds).not.toContain(ownerTrace.traceId);
   });
 
   it("emits no lifecycle events when diagnostics.enabled is false", async () => {

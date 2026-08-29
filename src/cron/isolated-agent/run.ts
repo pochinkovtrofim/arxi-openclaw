@@ -25,6 +25,10 @@ import {
   releaseAgentRunContext,
 } from "../../infra/agent-run-registry.js";
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
+import {
+  createDiagnosticTraceContext,
+  runWithDiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { isFastTestRuntimeEnv } from "../../infra/env.js";
 import { createDiagnosticMessageLifecycle } from "../../logging/message-lifecycle.js";
 import { withPluginRuntimeRegistryScope } from "../../plugins/runtime/gateway-request-scope.js";
@@ -148,7 +152,7 @@ async function disposeCronRunContext(params: {
 }
 
 /** Runs one isolated cron agent turn, including setup, execution, delivery, and persistence. */
-export async function runCronIsolatedAgentTurn(params: {
+async function runCronIsolatedAgentTurnInTrace(params: {
   cfg: OpenClawConfig;
   deps: CliDeps;
   job: CronStoredJob;
@@ -472,4 +476,16 @@ export async function runCronIsolatedAgentTurn(params: {
       }
     }
   }
+}
+
+/** Scheduled work owns a root trace even when its timer inherited an earlier request scope. */
+export function runCronIsolatedAgentTurn(
+  params: Parameters<typeof runCronIsolatedAgentTurnInTrace>[0],
+): ReturnType<typeof runCronIsolatedAgentTurnInTrace> {
+  if (!isDiagnosticsEnabled(params.cfg)) {
+    return runCronIsolatedAgentTurnInTrace(params);
+  }
+  return runWithDiagnosticTraceContext(createDiagnosticTraceContext(), () =>
+    runCronIsolatedAgentTurnInTrace(params),
+  );
 }
