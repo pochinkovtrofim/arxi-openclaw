@@ -4,16 +4,25 @@ import {
   getPreparedModelRuntimePluginGeneration,
 } from "../../agents/prepared-model-runtime-generation-scope.js";
 import {
+  getActiveDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import { startAgentRunExecution } from "./agent-run-execution-phase.js";
 
 const dispatchAgentRunFromGateway = vi.hoisted(() => vi.fn());
+const logMessageDispatchStarted = vi.hoisted(() => vi.fn());
+const logMessageProcessed = vi.hoisted(() => vi.fn());
 
 vi.mock("./agent-run-dispatch.js", () => ({
   dispatchAgentRunFromGateway,
   resolveAbortedAgentStopReason: () => "rpc",
+}));
+
+vi.mock("../../logging/diagnostic.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../logging/diagnostic.js")>()),
+  logMessageDispatchStarted,
+  logMessageProcessed,
 }));
 
 function createExecution(
@@ -109,7 +118,11 @@ function createExecution(
 }
 
 describe("startAgentRunExecution Gateway ownership", () => {
-  beforeEach(() => dispatchAgentRunFromGateway.mockReset());
+  beforeEach(() => {
+    dispatchAgentRunFromGateway.mockReset();
+    logMessageDispatchStarted.mockReset();
+    logMessageProcessed.mockReset();
+  });
 
   it("dispatches with the runtime generation frozen at admission", async () => {
     const execution = createExecution();
@@ -173,13 +186,84 @@ describe("startAgentRunExecution Gateway ownership", () => {
     const dispatched = new Promise<void>((resolve) => {
       resolveDispatched = resolve;
     });
+    let dispatchStartedTrace: DiagnosticTraceContext | undefined;
+    logMessageDispatchStarted.mockImplementationOnce(() => {
+      dispatchStartedTrace = getActiveDiagnosticTraceContext();
+    });
     dispatchAgentRunFromGateway.mockImplementationOnce(resolveDispatched);
 
     runWithDiagnosticTraceContext(admissionTrace, () => startAgentRunExecution(execution.params));
 
     await dispatched;
     const dispatch = dispatchAgentRunFromGateway.mock.calls[0]?.[0];
-    expect(dispatch?.ingressOpts.diagnosticTrace).toEqual(ingressTrace);
+    expect(dispatchStartedTrace).toMatchObject({
+      traceId: ingressTrace.traceId,
+      parentSpanId: ingressTrace.spanId,
+      traceFlags: ingressTrace.traceFlags,
+    });
+    expect(dispatchStartedTrace?.spanId).not.toBe(ingressTrace.spanId);
+    expect(dispatch?.ingressOpts.diagnosticTrace).toEqual(dispatchStartedTrace);
+  });
+
+  it("keeps the gateway message lifecycle open until the agent run settles", async () => {
+    const ingressTrace: DiagnosticTraceContext = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      traceFlags: "01",
+    };
+    const execution = createExecution({ diagnosticTrace: ingressTrace });
+    let resolveDispatched!: () => void;
+    const dispatched = new Promise<void>((resolve) => {
+      resolveDispatched = resolve;
+    });
+    let dispatchStartedTrace: DiagnosticTraceContext | undefined;
+    let processedTrace: DiagnosticTraceContext | undefined;
+    logMessageDispatchStarted.mockImplementationOnce(() => {
+      dispatchStartedTrace = getActiveDiagnosticTraceContext();
+    });
+    logMessageProcessed.mockImplementationOnce(() => {
+      processedTrace = getActiveDiagnosticTraceContext();
+    });
+    dispatchAgentRunFromGateway.mockImplementationOnce(resolveDispatched);
+
+    startAgentRunExecution(execution.params);
+
+    await dispatched;
+    expect(logMessageDispatchStarted).toHaveBeenCalledOnce();
+    expect(logMessageProcessed).not.toHaveBeenCalled();
+    const dispatch = dispatchAgentRunFromGateway.mock.calls[0]?.[0];
+    await dispatch?.onSettled?.({
+      terminalOutcome: { reason: "completed", status: "ok" },
+    });
+    expect(logMessageProcessed).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "completed", reason: "completed" }),
+    );
+    expect(processedTrace).toEqual(dispatchStartedTrace);
+  });
+
+  it("closes the gateway message lifecycle when dispatch throws", async () => {
+    const execution = createExecution({
+      diagnosticTrace: {
+        traceId: "11111111111111111111111111111111",
+        spanId: "2222222222222222",
+        traceFlags: "01",
+      },
+    });
+    dispatchAgentRunFromGateway.mockImplementationOnce(() => {
+      throw new Error("dispatch unavailable");
+    });
+
+    startAgentRunExecution(execution.params);
+
+    await execution.runtimeReleased;
+    expect(logMessageDispatchStarted).toHaveBeenCalledOnce();
+    expect(logMessageProcessed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "error",
+        reason: "dispatch_failed",
+        error: "dispatch unavailable",
+      }),
+    );
   });
 
   it("releases the admitted runtime once when aborted before dispatch", async () => {

@@ -24,11 +24,14 @@ import type { SessionEntry } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { isAbortError } from "../../infra/abort-signal.js";
 import {
+  createChildDiagnosticTraceContext,
   freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
+  runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessageWithCode } from "../../infra/errors.js";
+import { logMessageDispatchStarted, logMessageProcessed } from "../../logging/diagnostic.js";
 import type { MediaFact } from "../../media/media-facts.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import { bindGatewayContextResolver } from "../../plugins/runtime/gateway-request-scope.js";
@@ -119,6 +122,53 @@ export function startAgentRunExecution(params: {
   const ingressDiagnosticTrace = activeDiagnosticTrace
     ? freezeDiagnosticTraceContext(activeDiagnosticTrace)
     : undefined;
+  const gatewayDispatchDiagnosticTrace = ingressDiagnosticTrace
+    ? freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(ingressDiagnosticTrace))
+    : undefined;
+  const gatewayDiagnosticChannel =
+    params.delivery.originMessageChannel ?? params.delivery.resolvedChannel ?? "gateway";
+  let gatewayMessageStartedAt: number | undefined;
+  let gatewayMessageFinished = false;
+  const startGatewayMessageDiagnostics = () => {
+    if (!gatewayDispatchDiagnosticTrace || gatewayMessageStartedAt !== undefined) {
+      return;
+    }
+    gatewayMessageStartedAt = Date.now();
+    runWithDiagnosticTraceContext(gatewayDispatchDiagnosticTrace, () =>
+      logMessageDispatchStarted({
+        channel: gatewayDiagnosticChannel,
+        sessionId: params.resolvedSessionId,
+        sessionKey: params.resolvedSessionKey,
+        source: "gateway.agent",
+      }),
+    );
+  };
+  const finishGatewayMessageDiagnostics = (outcome: {
+    outcome: "completed" | "skipped" | "error";
+    reason?: string;
+    error?: string;
+  }) => {
+    if (
+      !gatewayDispatchDiagnosticTrace ||
+      gatewayMessageStartedAt === undefined ||
+      gatewayMessageFinished
+    ) {
+      return;
+    }
+    const startedAt = gatewayMessageStartedAt;
+    gatewayMessageFinished = true;
+    runWithDiagnosticTraceContext(gatewayDispatchDiagnosticTrace, () =>
+      logMessageProcessed({
+        channel: gatewayDiagnosticChannel,
+        sessionId: params.resolvedSessionId,
+        sessionKey: params.resolvedSessionKey,
+        durationMs: Date.now() - startedAt,
+        outcome: outcome.outcome,
+        reason: outcome.reason,
+        error: outcome.error,
+      }),
+    );
+  };
   const { prepared } = params;
   let unpersistedOffloadedRefs = prepared.unpersistedOffloadedRefs;
   let preparedModelRuntimeLease: typeof prepared.preparedModelRuntimeLease | undefined =
@@ -294,6 +344,7 @@ export function startAgentRunExecution(params: {
       // Awaited routing can retire this owner before final dispatch.
       params.assertContextCurrent?.();
       finalizePreparedAgentRunUserTurn(prepared.userTurn);
+      startGatewayMessageDiagnostics();
       dispatchAdmittedAgentRun(
         withAgentRunDispatchExecutionIdentity(
           {
@@ -320,7 +371,9 @@ export function startAgentRunExecution(params: {
               accountId: params.delivery.resolvedAccountId,
               threadId: prepared.resolvedThreadId,
               runContext,
-              ...(ingressDiagnosticTrace ? { diagnosticTrace: ingressDiagnosticTrace } : {}),
+              ...(gatewayDispatchDiagnosticTrace
+                ? { diagnosticTrace: gatewayDispatchDiagnosticTrace }
+                : {}),
               ...(prepared.userTurn.bashElevated
                 ? { bashElevated: prepared.userTurn.bashElevated }
                 : {}),
@@ -458,13 +511,19 @@ export function startAgentRunExecution(params: {
             dedupeKeys: params.agentDedupeKeys,
             abortController: prepared.activeRunAbort.controller,
             cleanupAbortController: cleanupAdmittedRun,
-            onSettled: params.restoredCronContinuation
-              ? async ({ terminalOutcome, onRecovered }) =>
-                  await params.releaseCronContinuationClaimWithRecovery(
+            onSettled: async ({ terminalOutcome, onRecovered }) => {
+              finishGatewayMessageDiagnostics({
+                outcome: terminalOutcome.status === "ok" ? "completed" : "error",
+                reason: terminalOutcome.reason,
+                error: terminalOutcome.error,
+              });
+              return params.restoredCronContinuation
+                ? await params.releaseCronContinuationClaimWithRecovery(
                     { terminalOutcome },
                     onRecovered,
                   )
-              : undefined,
+                : true;
+            },
             io: params.io,
             context: params.context,
             taskTrackingMode: prepared.dispatchTaskTrackingMode,
@@ -481,6 +540,11 @@ export function startAgentRunExecution(params: {
         return;
       }
       const renderedErr = formatErrorMessageWithCode(err);
+      finishGatewayMessageDiagnostics({
+        outcome: "error",
+        reason: "dispatch_failed",
+        error: renderedErr,
+      });
       const error = errorShape(ErrorCodes.UNAVAILABLE, renderedErr);
       const payload = {
         runId: params.runId,
