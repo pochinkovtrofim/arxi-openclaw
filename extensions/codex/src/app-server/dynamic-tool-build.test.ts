@@ -1176,19 +1176,49 @@ describe("Codex app-server dynamic tool build", () => {
     expect(webSearch).not.toHaveProperty("namespace");
   });
 
-  it("uses direct dynamic tools for remote Codex app-server connections", () => {
+  it("uses direct dynamic tools for remote Codex app-server connections unless explicitly searchable", () => {
     const tools = [createRuntimeDynamicTool("message"), createRuntimeDynamicTool("web_search")];
-    const loading = resolveCodexDynamicToolsLoadingForRuntime({}, "openai/gpt-5.5", {
+    const defaultLoading = resolveCodexDynamicToolsLoadingForRuntime({}, "openai/gpt-5.5", {
       connectionClass: "remote",
     });
+    const explicitSearchableLoading = resolveCodexDynamicToolsLoadingForRuntime(
+      { codexDynamicToolsLoading: "searchable" },
+      "openai/gpt-5.5",
+      { connectionClass: "remote" },
+    );
+    const explicitDirectLoading = resolveCodexDynamicToolsLoadingForRuntime(
+      { codexDynamicToolsLoading: "direct" },
+      "openai/gpt-5.5",
+      { connectionClass: "remote" },
+    );
     const toolBridge = createCodexDynamicToolBridge({
       tools,
       signal: new AbortController().signal,
-      loading,
+      loading: defaultLoading,
     });
 
     expect(resolveCodexDynamicToolsLoadingForRuntime({}, "openai/gpt-5.5")).toBe("searchable");
-    expect(loading).toBe("direct");
+    expect(defaultLoading).toBe("direct");
+    expect(explicitSearchableLoading).toBe("searchable");
+    expect(explicitDirectLoading).toBe("direct");
+    expect(
+      resolveCodexDynamicToolsLoadingForRuntime(
+        { codexDynamicToolsLoading: "searchable" },
+        "openai/gpt-5.4-nano",
+        { connectionClass: "remote" },
+      ),
+    ).toBe("direct");
+    expect(
+      resolveCodexDynamicToolsLoadingForRuntime(
+        { codexDynamicToolsLoading: "searchable" },
+        "openai/gpt-5.5",
+        { connectionClass: "remote" },
+        {
+          OPENCLAW_BUILD_PRIVATE_QA: "1",
+          OPENCLAW_QA_FORCE_RUNTIME: "codex",
+        },
+      ),
+    ).toBe("direct");
     expect(toolBridge.specs).toHaveLength(2);
     expect(flattenCodexDynamicToolFunctions(toolBridge.specs).map((tool) => tool.name)).toEqual([
       "message",

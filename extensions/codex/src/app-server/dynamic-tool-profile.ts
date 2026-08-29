@@ -126,7 +126,11 @@ export function resolveCodexDynamicToolsLoadingForRuntime(
   env: CodexDynamicToolProfileEnv = process.env,
 ): CodexDynamicToolsLoading {
   const loading = resolveCodexDynamicToolsLoadingForModel(config, modelId, env);
-  return loading === "searchable" && options.connectionClass === "remote" ? "direct" : loading;
+  return loading === "searchable" &&
+    options.connectionClass === "remote" &&
+    config.codexDynamicToolsLoading !== "searchable"
+    ? "direct"
+    : loading;
 }
 
 /** Filters OpenClaw tools that Codex owns natively or config explicitly excludes. */
