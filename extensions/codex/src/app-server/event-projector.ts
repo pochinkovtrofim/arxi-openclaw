@@ -91,7 +91,6 @@ export class CodexAppServerEventProjector {
   private readonly responseCompletions = new CodexResponseCompletionProjection();
   private completedCompactionCount = 0;
   private pendingSteeringAssistantBoundaryItemId: string | undefined;
-
   constructor(
     private readonly params: EmbeddedRunAttemptParams,
     private readonly threadId: string,
@@ -112,9 +111,7 @@ export class CodexAppServerEventProjector {
       params,
       threadId,
       turnId,
-      {
-        runAbortSignal: options.runAbortSignal,
-      },
+      { modelCallTrace: options.modelCallTrace, runAbortSignal: options.runAbortSignal },
     );
     this.generatedMediaProjection = new CodexGeneratedMediaProjection(params.config, {
       remoteWorkspaceRoot: options.remoteWorkspaceRoot,

@@ -35,6 +35,50 @@ function buildCodexDiagnosticToolDefinitions(
   }));
 }
 
+function jsonCharLength(value: unknown): number | undefined {
+  try {
+    return JSON.stringify(value)?.length;
+  } catch {
+    return undefined;
+  }
+}
+
+function buildCodexModelCallPromptStats(params: {
+  tools: readonly CodexModelCallDiagnosticTool[];
+  buildInputMessages: () => unknown;
+  buildSystemPrompt: () => string | undefined;
+}) {
+  let inputMessages: unknown;
+  let systemPrompt: string | undefined;
+  try {
+    inputMessages = params.buildInputMessages();
+  } catch {
+    // Diagnostics are fail-open and must never prevent the model request.
+  }
+  try {
+    systemPrompt = params.buildSystemPrompt();
+  } catch {
+    // Diagnostics are fail-open and must never prevent the model request.
+  }
+  const toolDefinitions = buildCodexDiagnosticToolDefinitions(params.tools);
+  const inputMessagesChars = jsonCharLength(inputMessages);
+  const systemPromptChars = systemPrompt?.length;
+  const toolDefinitionsChars = jsonCharLength(toolDefinitions);
+  const measuredChars = [inputMessagesChars, systemPromptChars, toolDefinitionsChars].filter(
+    (value): value is number => value !== undefined,
+  );
+  return {
+    ...(Array.isArray(inputMessages) ? { inputMessagesCount: inputMessages.length } : {}),
+    ...(inputMessagesChars !== undefined ? { inputMessagesChars } : {}),
+    ...(systemPromptChars !== undefined ? { systemPromptChars } : {}),
+    toolDefinitionsCount: toolDefinitions.length,
+    ...(toolDefinitionsChars !== undefined ? { toolDefinitionsChars } : {}),
+    ...(measuredChars.length > 0
+      ? { totalChars: measuredChars.reduce((sum, value) => sum + value, 0) }
+      : {}),
+  };
+}
+
 /** Returns the serialized UTF-8 byte length for a JSON-compatible value. */
 export function utf8JsonByteLength(value: unknown): number | undefined {
   try {
@@ -121,6 +165,7 @@ export function createCodexModelCallDiagnosticEmitter(params: {
   const toolDefinitions = params.capture.toolDefinitions
     ? buildCodexDiagnosticToolDefinitions(params.tools)
     : undefined;
+  const promptStats = buildCodexModelCallPromptStats(params);
   let startedAt = now();
   let started = false;
   let terminalEmitted = false;
@@ -150,6 +195,7 @@ export function createCodexModelCallDiagnosticEmitter(params: {
         {
           type: "model.call.started",
           ...params.baseFields,
+          promptStats,
         } as TrustedDiagnosticEventInput,
         privateData(buildContent()),
       );
@@ -163,6 +209,7 @@ export function createCodexModelCallDiagnosticEmitter(params: {
         {
           type: "model.call.completed",
           ...params.baseFields,
+          promptStats,
           durationMs: Math.max(0, now() - startedAt),
           ...requestPayloadBytesField(),
         } as TrustedDiagnosticEventInput,
@@ -187,6 +234,7 @@ export function createCodexModelCallDiagnosticEmitter(params: {
         {
           type: "model.call.error",
           ...params.baseFields,
+          promptStats,
           durationMs: Math.max(0, now() - startedAt),
           errorCategory: fields.failureKind ?? "error",
           ...(fields.failureKind ? { failureKind: fields.failureKind } : {}),

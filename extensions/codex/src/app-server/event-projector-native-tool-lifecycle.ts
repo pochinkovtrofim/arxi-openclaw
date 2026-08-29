@@ -2,7 +2,12 @@ import type {
   BeforeToolCallFailureDisposition,
   EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
-import { emitTrustedDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
+import {
+  createChildDiagnosticTraceContext,
+  emitTrustedDiagnosticEvent,
+  freezeDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
 import { asDateTimestampMs } from "openclaw/plugin-sdk/number-runtime";
 import { readStringField as readString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { resolveCodexToolAbortTerminalReason } from "./dynamic-tool-execution.js";
@@ -34,6 +39,7 @@ type CodexNativeToolLifecycleContext = Pick<
 >;
 
 type CodexNativeToolLifecycleProjectorOptions = {
+  modelCallTrace?: DiagnosticTraceContext;
   runAbortSignal?: AbortSignal;
 };
 
@@ -45,6 +51,7 @@ type CodexNativePreToolUseFailureRecord = {
 /** Projects metadata-only lifecycle diagnostics for native tool items. */
 export class CodexNativeToolLifecycleProjector {
   private readonly startedAtByItem = new Map<string, number>();
+  private readonly traceByItem = new Map<string, DiagnosticTraceContext>();
   private readonly activeItems = new Map<
     string,
     { toolName: string; unfinishedStatus: CodexNativeToolUnfinishedStatus }
@@ -222,6 +229,8 @@ export class CodexNativeToolLifecycleProjector {
     this.webSearchCompletionByItem.delete(toolCallId);
     const startedAt = this.startedAtByItem.get(toolCallId);
     this.startedAtByItem.delete(toolCallId);
+    const trace = this.traceByItem.get(toolCallId);
+    this.traceByItem.delete(toolCallId);
     const endedAt = options.sourceTimestampMs ?? Date.now();
     const durationMs =
       options.itemDurationMs ?? (startedAt === undefined ? 0 : Math.max(0, endedAt - startedAt));
@@ -275,6 +284,7 @@ export class CodexNativeToolLifecycleProjector {
             };
     emitTrustedDiagnosticEvent({
       ...this.buildBase(toolCallId, toolName),
+      ...(trace ? { trace } : {}),
       ...terminalEvent,
       ...(options.sourceTimestampMs !== undefined
         ? { sourceTimestampMs: options.sourceTimestampMs }
@@ -302,6 +312,7 @@ export class CodexNativeToolLifecycleProjector {
       }
     }
     this.activeItems.clear();
+    this.traceByItem.clear();
     this.webSearchCompletionByItem.clear();
     this.approvalFailureDispositionByItem.clear();
     this.preToolUseFailureByItem.clear();
@@ -351,9 +362,16 @@ export class CodexNativeToolLifecycleProjector {
     }
     this.startedAtByItem.set(toolCallId, sourceTimestampMs ?? Date.now());
     this.activeItems.set(toolCallId, { toolName, unfinishedStatus });
+    const trace = this.options.modelCallTrace
+      ? freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(this.options.modelCallTrace))
+      : undefined;
+    if (trace) {
+      this.traceByItem.set(toolCallId, trace);
+    }
     emitTrustedDiagnosticEvent({
       type: "tool.execution.started",
       ...this.buildBase(toolCallId, toolName),
+      ...(trace ? { trace } : {}),
       ...(sourceTimestampMs !== undefined ? { sourceTimestampMs } : {}),
     });
   }

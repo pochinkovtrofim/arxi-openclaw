@@ -1037,6 +1037,30 @@ export async function invokeAgent(
   return respond;
 }
 
+export async function invokeAgentWait(
+  params: { runId: string; timeoutMs: number },
+  options?: {
+    respond?: ReturnType<typeof vi.fn>;
+    context?: GatewayRequestContext;
+    client?: AgentHandlerArgs["client"];
+    isWebchatConnect?: AgentHandlerArgs["isWebchatConnect"];
+  },
+) {
+  const respond = options?.respond ?? vi.fn();
+  await expectDefined(
+    agentHandlers["agent.wait"],
+    'agentHandlers["agent.wait"] test invariant',
+  )({
+    params,
+    respond: respond as never,
+    context: options?.context ?? makeContext(),
+    req: { type: "req", id: `${params.runId}-wait`, method: "agent.wait" },
+    client: options?.client ?? null,
+    isWebchatConnect: options?.isWebchatConnect ?? (() => false),
+  });
+  return respond;
+}
+
 export async function invokeAgentIdentityGet(
   params: AgentIdentityGetParams,
   options?: {

@@ -1,4 +1,5 @@
 import type { AgentPlanStep } from "openclaw/plugin-sdk/channel-outbound";
+import type { DiagnosticTraceContext } from "openclaw/plugin-sdk/diagnostic-runtime";
 import type { AssistantMessage } from "openclaw/plugin-sdk/llm";
 import type { CodexThreadItem, JsonValue } from "./protocol.js";
 import type { CodexRemoteWorkspaceFileReader } from "./remote-workspace-media.js";
@@ -8,6 +9,7 @@ export type CodexAsyncDeliverySettlement = "settled" | "retry";
 
 export type CodexAppServerEventProjectorOptions = {
   initialContextTokens?: number;
+  modelCallTrace?: DiagnosticTraceContext;
   nativePostToolUseRelayEnabled?: boolean;
   asyncUserMessageAllowed?: boolean;
   onAsyncDelivery?: (delivery: {

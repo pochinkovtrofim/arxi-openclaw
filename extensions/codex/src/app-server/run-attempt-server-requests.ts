@@ -1,4 +1,8 @@
-import { onInternalDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
+import {
+  createChildDiagnosticTraceContext,
+  freezeDiagnosticTraceContext,
+  onInternalDiagnosticEvent,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
 import { handleCodexAppServerApprovalRequest } from "./approval-bridge.js";
 import { isCodexAppServerApprovalRequest } from "./client.js";
 import { shouldAutoApproveCodexAppServerApprovals } from "./config.js";
@@ -50,7 +54,14 @@ export function createCodexAttemptServerRequestController(
   const { context } = prompt;
   const { runtime, attemptTools } = context;
   const { connection } = runtime;
-  const { params, computerUseConfig, runAbortController, appServer, sessionAgentId } = connection;
+  const {
+    params,
+    computerUseConfig,
+    runAbortController,
+    appServer,
+    sessionAgentId,
+    codexModelCallTrace,
+  } = connection;
   const {
     compactionPlanState,
     toolBridge,
@@ -165,6 +176,9 @@ export function createCodexAttemptServerRequestController(
         return toCodexDynamicToolProtocolResponse(await replayedExecution) as JsonValue;
       }
       const toolCallOrdinal = allocateCodexToolOutcomeOrdinal?.(call.callId);
+      const toolDiagnosticTrace = freezeDiagnosticTraceContext(
+        createChildDiagnosticTraceContext(codexModelCallTrace),
+      );
       armCompletionWatchOnResponse = true;
       markCurrentTurnRequestProgress({ hasIndependentTimeout: true });
       state.turnCrossedToolHandoff = true;
@@ -237,6 +251,7 @@ export function createCodexAttemptServerRequestController(
             runId: params.runId,
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,
+            trace: toolDiagnosticTrace,
           });
           const response = await handleDynamicToolCallWithTimeout({
             call,
@@ -329,6 +344,7 @@ export function createCodexAttemptServerRequestController(
             runId: params.runId,
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,
+            trace: toolDiagnosticTrace,
             durationMs: toolDurationMs,
           });
         }
@@ -363,6 +379,7 @@ export function createCodexAttemptServerRequestController(
             runId: params.runId,
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,
+            trace: toolDiagnosticTrace,
             durationMs: Math.max(0, Date.now() - toolStartedAt),
           });
         }

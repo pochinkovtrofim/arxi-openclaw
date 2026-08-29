@@ -63,6 +63,58 @@ function activeDiagnosticToolKeys(events: DiagnosticEventPayload[]): Set<string>
 setupRunAttemptTestHooks();
 
 describe("runCodexAppServerAttempt dynamic tools", () => {
+  it("carries the model-call trace on dynamic tool lifecycle diagnostics", async () => {
+    const diagnosticTrace = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      parentSpanId: "3333333333333333",
+      traceFlags: "01",
+    };
+    const diagnosticEvents: DiagnosticEventPayload[] = [];
+    const unsubscribeDiagnostics = onInternalDiagnosticEvent((event) =>
+      diagnosticEvents.push(event),
+    );
+    const call = {
+      threadId: "thread-1",
+      turnId: "turn-1",
+      callId: "call-memory-search-trace",
+      namespace: null,
+      tool: "memory_search",
+      arguments: { query: "sensitive memory query" },
+    } satisfies CodexDynamicToolCallParams;
+
+    try {
+      emitDynamicToolStartedDiagnostic({
+        call,
+        runId: "run-memory-search-trace",
+        trace: diagnosticTrace,
+      });
+      emitDynamicToolTerminalDiagnostic({
+        call,
+        runId: "run-memory-search-trace",
+        trace: diagnosticTrace,
+        durationMs: 7,
+        response: {
+          success: true,
+          contentItems: [{ type: "inputText", text: "sensitive result" }],
+        },
+      });
+      await flushDiagnosticEvents();
+    } finally {
+      unsubscribeDiagnostics();
+    }
+
+    expect(
+      diagnosticEvents
+        .filter((event) => "toolCallId" in event && event.toolCallId === call.callId)
+        .map((event) => ({ type: event.type, trace: event.trace })),
+    ).toEqual([
+      { type: "tool.execution.started", trace: diagnosticTrace },
+      { type: "tool.execution.completed", trace: diagnosticTrace },
+    ]);
+    expect(JSON.stringify(diagnosticEvents)).not.toContain("sensitive");
+  });
+
   it("emits one eager audit lifecycle when runtime normalization clones a wrapped tool", async () => {
     const diagnosticEvents: DiagnosticEventPayload[] = [];
     let startPresentAtImplementation = false;
@@ -136,6 +188,11 @@ describe("runCodexAppServerAttempt dynamic tools", () => {
       "tool.execution.started",
       "tool.execution.completed",
     ]);
+    expect(diagnosticEvents[0]?.trace).toEqual(diagnosticEvents[1]?.trace);
+    expect(diagnosticEvents[0]?.trace).toMatchObject({
+      traceId: expect.stringMatching(/^[0-9a-f]{32}$/),
+      spanId: expect.stringMatching(/^[0-9a-f]{16}$/),
+    });
   });
 
   it.each(["cancelled", "timed_out"] as const)(

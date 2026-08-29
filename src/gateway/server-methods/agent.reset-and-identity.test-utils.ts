@@ -28,6 +28,7 @@ import {
   waitForAgentCommandCall,
   mockSessionResetSuccess,
   invokeAgent,
+  invokeAgentWait,
   invokeAgentIdentityGet,
   describe0AfterEach0,
 } from "./agent.test-harness.js";
@@ -421,7 +422,9 @@ describe("gateway agent handler", () => {
 
   it("handles bare /new by resetting the same session without running the model", async () => {
     mockSessionResetSuccess({ reason: "new" });
+    mockMainSessionEntry({ sessionId: "existing-session-id" });
     mocks.agentCommand.mockClear();
+    const context = makeContext();
 
     const respond = await invokeAgent(
       {
@@ -431,6 +434,7 @@ describe("gateway agent handler", () => {
       },
       {
         reqId: "4",
+        context,
         client: { connect: { scopes: ["operator.admin"] } } as AgentHandlerArgs["client"],
       },
     );
@@ -449,6 +453,15 @@ describe("gateway agent handler", () => {
     };
     expect(result.payloads?.[0]?.text).toBe("✅ New session started.");
     expect(result.meta?.agentMeta?.sessionId).toBe("reset-session-id");
+
+    const waitRespond = await invokeAgentWait(
+      { runId: "test-idem-new", timeoutMs: 0 },
+      { context },
+    );
+    expect(waitRespond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({ runId: "test-idem-new", status: "ok" }),
+    );
   });
 
   it("persists the post-reset follow-up prompt in the canonical user-turn recorder", async () => {

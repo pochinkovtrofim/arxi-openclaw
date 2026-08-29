@@ -20,6 +20,58 @@ import {
 registerCodexEventProjectorTestLifecycle();
 
 describe("CodexAppServerEventProjector native tool audit projection", () => {
+  it("correlates native web search diagnostics with the model-call trace", async () => {
+    const modelCallTrace = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      parentSpanId: "3333333333333333",
+      traceFlags: "01",
+    };
+    const projector = await createProjector(await createParams(), { modelCallTrace });
+    const diagnosticEvents: DiagnosticEventPayload[] = [];
+    const unsubscribe = onInternalDiagnosticEvent((event) => diagnosticEvents.push(event));
+    const item = {
+      id: "web-search-trace-1",
+      type: "webSearch" as const,
+      query: "sensitive weather query",
+      action: { type: "search", query: "sensitive weather query", queries: null },
+    };
+
+    try {
+      await projector.handleNotification(forCurrentTurn("item/started", { item }));
+      await projector.handleNotification(
+        forCurrentTurn("item/completed", { item: { ...item, status: "completed" } }),
+      );
+      await projector.handleNotification(
+        forCurrentTurn("rawResponseItem/completed", {
+          item: {
+            id: item.id,
+            type: "web_search_call",
+            status: "completed",
+            action: item.action,
+          },
+        }),
+      );
+      await flushDiagnosticEvents();
+    } finally {
+      unsubscribe();
+    }
+
+    const toolEvents = diagnosticEvents.filter(
+      (event) => "toolCallId" in event && event.toolCallId === item.id,
+    );
+    expect(toolEvents.map((event) => event.type)).toEqual([
+      "tool.execution.started",
+      "tool.execution.completed",
+    ]);
+    expect(toolEvents[0]?.trace).toEqual(toolEvents[1]?.trace);
+    expect(toolEvents[0]?.trace).toMatchObject({
+      traceId: modelCallTrace.traceId,
+      parentSpanId: modelCallTrace.spanId,
+    });
+    expect(JSON.stringify(diagnosticEvents)).not.toContain("sensitive");
+  });
+
   it("synthesizes normalized tool progress for Codex-native tool items", async () => {
     const onAgentEvent = vi.fn();
     const projector = await createProjector({ ...(await createParams()), onAgentEvent });

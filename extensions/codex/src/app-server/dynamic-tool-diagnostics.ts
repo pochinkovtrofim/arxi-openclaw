@@ -1,7 +1,10 @@
 /**
  * Trusted diagnostics emitted around Codex dynamic tool execution lifecycle.
  */
-import { emitTrustedDiagnosticEvent } from "openclaw/plugin-sdk/diagnostic-runtime";
+import {
+  emitTrustedDiagnosticEvent,
+  type DiagnosticTraceContext,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
 import type { CodexDynamicToolCallParams, CodexDynamicToolCallResponse } from "./protocol.js";
 
 type DynamicToolDiagnosticContext = {
@@ -10,6 +13,7 @@ type DynamicToolDiagnosticContext = {
   runId?: string | undefined;
   sessionId?: string | undefined;
   sessionKey?: string | undefined;
+  trace?: DiagnosticTraceContext | undefined;
 };
 
 /** Emits a start event for one Codex dynamic tool call. */
@@ -20,6 +24,7 @@ export function emitDynamicToolStartedDiagnostic(params: DynamicToolDiagnosticCo
     runId: params.runId,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
+    trace: params.trace,
     toolName: params.call.tool,
     toolCallId: params.call.callId,
   });
@@ -38,6 +43,7 @@ export function emitDynamicToolErrorDiagnostic(
     runId: params.runId,
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
+    trace: params.trace,
     toolName: params.call.tool,
     toolCallId: params.call.callId,
     durationMs: params.durationMs,
@@ -62,6 +68,7 @@ export function emitDynamicToolTerminalDiagnostic(
       runId: params.runId,
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
+      trace: params.trace,
       toolName: params.call.tool,
       toolCallId: params.call.callId,
       durationMs: params.durationMs,
@@ -75,6 +82,7 @@ export function emitDynamicToolTerminalDiagnostic(
       runId: params.runId,
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
+      trace: params.trace,
       toolName: params.call.tool,
       toolCallId: params.call.callId,
       deniedReason: "plugin-before-tool-call",
