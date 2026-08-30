@@ -624,6 +624,8 @@ export type DiagnosticHarnessRunCompletedEvent = DiagnosticHarnessRunBaseEvent &
   outcome: DiagnosticHarnessRunOutcome;
   resultClassification?: "empty" | "reasoning-only" | "planning-only";
   yieldDetected?: boolean;
+  /** Content-free fact for an explicit, intentional NO_REPLY terminal. */
+  replyDisposition?: "silent";
   itemLifecycle?: {
     startedCount: number;
     completedCount: number;

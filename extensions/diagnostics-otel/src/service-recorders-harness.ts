@@ -77,6 +77,9 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
     if (typeof evt.yieldDetected === "boolean") {
       spanAttrs["openclaw.harness.yield_detected"] = evt.yieldDetected;
     }
+    if (evt.replyDisposition === "silent") {
+      spanAttrs["openclaw.reply.disposition"] = evt.replyDisposition;
+    }
     if (evt.itemLifecycle) {
       spanAttrs["openclaw.harness.items.started"] = evt.itemLifecycle.startedCount;
       spanAttrs["openclaw.harness.items.completed"] = evt.itemLifecycle.completedCount;

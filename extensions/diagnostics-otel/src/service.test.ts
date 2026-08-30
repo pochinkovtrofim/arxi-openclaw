@@ -4563,6 +4563,7 @@ describe("diagnostics-otel service", () => {
       resultClassification: "reasoning-only",
       yieldDetected: true,
       itemLifecycle: { startedCount: 3, completedCount: 2, activeCount: 1 },
+      replyDisposition: "silent",
     });
     await emitEventAndFlush("tool.execution.error", {
       toolCallId: "tool-1",
@@ -4617,6 +4618,7 @@ describe("diagnostics-otel service", () => {
     expect(harnessOptions?.attributes?.["openclaw.harness.items.started"]).toBe(3);
     expect(harnessOptions?.attributes?.["openclaw.harness.items.completed"]).toBe(2);
     expect(harnessOptions?.attributes?.["openclaw.harness.items.active"]).toBe(1);
+    expect(harnessOptions?.attributes?.["openclaw.reply.disposition"]).toBe("silent");
     expect(Object.hasOwn(harnessOptions?.attributes ?? {}, "openclaw.runId")).toBe(false);
     expect(Object.hasOwn(harnessOptions?.attributes ?? {}, "openclaw.sessionId")).toBe(false);
     expect(Object.hasOwn(harnessOptions?.attributes ?? {}, "openclaw.sessionKey")).toBe(false);

@@ -1,3 +1,4 @@
+import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 /**
  * Agent harness lifecycle diagnostics wrapper.
  *
@@ -248,6 +249,10 @@ function emitAgentHarnessRunCompleted(params: {
   // forward the message so the error span shows more than a bare category.
   const errorMessage =
     outcome === "error" ? diagnosticErrorMessage(terminal.promptError) : undefined;
+  const terminalAssistantText = result.assistantTexts.findLast((text) => text.trim().length > 0);
+  const replyDisposition = isSilentReplyText(terminalAssistantText, SILENT_REPLY_TOKEN)
+    ? "silent"
+    : undefined;
   emitTrustedDiagnosticEventWithPrivateData(
     {
       type: "harness.run.completed",
@@ -258,6 +263,7 @@ function emitAgentHarnessRunCompleted(params: {
         ? { resultClassification: result.agentHarnessResultClassification }
         : {}),
       ...(typeof result.yieldDetected === "boolean" ? { yieldDetected: result.yieldDetected } : {}),
+      ...(replyDisposition ? { replyDisposition } : {}),
       itemLifecycle: { ...result.itemLifecycle },
     },
     errorMessage ? { errorMessage } : undefined,

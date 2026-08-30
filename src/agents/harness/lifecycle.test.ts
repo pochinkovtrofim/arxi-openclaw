@@ -429,6 +429,35 @@ describe("AgentHarness lifecycle runner", () => {
     expect(typeof completedEvent?.durationMs).toBe("number");
   });
 
+  it("emits a content-free terminal disposition for an explicit NO_REPLY", async () => {
+    resetDiagnosticEventsForTest();
+    const params = createAttemptParams();
+    const result = {
+      ...createAttemptResult(),
+      assistantTexts: ["NO_REPLY"],
+    } as EmbeddedRunAttemptResult;
+    const harness: AgentHarness = {
+      id: "codex",
+      label: "Codex",
+      supports: () => ({ supported: true }),
+      runAttempt: async () => result,
+    };
+    const diagnostics = captureDiagnosticEvents();
+    try {
+      await runAgentHarnessLifecycleAttempt(harness, params);
+      await flushDiagnosticEvents();
+    } finally {
+      diagnostics.unsubscribe();
+    }
+
+    expect(diagnostics.events[1]?.event).toMatchObject({
+      type: "harness.run.completed",
+      outcome: "completed",
+      replyDisposition: "silent",
+    });
+    expect(JSON.stringify(diagnostics.events[1]?.event)).not.toContain("NO_REPLY");
+  });
+
   it("reports canonical timeout attempts as timed out harness diagnostics", async () => {
     resetDiagnosticEventsForTest();
     const params = createAttemptParams();

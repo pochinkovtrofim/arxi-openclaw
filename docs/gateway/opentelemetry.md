@@ -693,7 +693,8 @@ for usage methods and request options.
   per-run lifecycle for the agent harness. Includes `harnessId`, optional
   `pluginId`, provider/model/channel, and run id. Completion adds
   `durationMs`, `outcome`, optional `resultClassification`, `yieldDetected`,
-  and `itemLifecycle` counts. Errors add `phase`
+  `itemLifecycle` counts, and the content-free `silent` reply disposition for
+  an explicit intentional `NO_REPLY`. Errors add `phase`
   (`prepare`/`start`/`send`/`resolve`/`cleanup`), `errorCategory`, and
   optional `cleanupFailed`.
 
