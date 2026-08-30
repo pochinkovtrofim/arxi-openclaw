@@ -95,6 +95,24 @@ describe("buildCodexMcpServersConfig", () => {
       },
     });
   });
+
+  it("omits stdio-only cwd from streamable-http server config", () => {
+    expect(
+      buildCodexMcpServersConfig({
+        mcpServers: {
+          google_workspace: {
+            transport: "streamable-http",
+            url: "http://127.0.0.1:18080/google/mcp",
+            cwd: "/opt/arxi/channel-plugin",
+          },
+        },
+      }),
+    ).toEqual({
+      google_workspace: {
+        url: "http://127.0.0.1:18080/google/mcp",
+      },
+    });
+  });
 });
 
 describe("loadCodexBundleMcpThreadConfigCore", () => {

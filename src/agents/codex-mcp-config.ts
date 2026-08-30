@@ -92,6 +92,9 @@ export function normalizeCodexMcpServerConfig(
   server: BundleMcpServerConfig,
 ): Record<string, unknown> {
   const next = normalizeBundleMcpServerConfig(server);
+  if (typeof next.url === "string" && typeof next.command !== "string") {
+    delete next.cwd;
+  }
   applyCodexToolFilter(next, name, server);
   const defaultToolsApprovalMode = resolveProjectedMcpCodexToolApprovalMode(name, server);
   if (defaultToolsApprovalMode) {
