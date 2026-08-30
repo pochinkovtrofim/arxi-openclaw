@@ -29,4 +29,15 @@ describe("Arxi fork gate", () => {
     );
     expect(resolve?.run).toContain('git merge-base --is-ancestor "$upstream_base" HEAD');
   });
+
+  it("classifies requester-scoped MCP and repository instruction changes", () => {
+    const workflow = parse(readFileSync(".github/workflows/arxi-ci.yml", "utf8")) as Workflow;
+    const steps = workflow.jobs?.["runtime-contract"]?.steps ?? [];
+    const reject = steps.find((step) => step.name === "Reject unclassified production changes");
+
+    expect(reject?.run).toContain("src/agents/mcp-connection-resolver.ts");
+    expect(reject?.run).toContain("src/agents/mcp-oauth-identity.ts");
+    expect(reject?.run).toContain("src/plugins/types.mcp-connection.ts");
+    expect(reject?.run).toContain("scripts/AGENTS.md");
+  });
 });

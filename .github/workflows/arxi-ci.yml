@@ -227,6 +227,7 @@ jobs:
           src/plugin-sdk/media-mime.ts
           config/assertion-safety-baseline.txt
           scripts/ci-changed-scope.mjs
+          scripts/AGENTS.md
           scripts/plugin-sdk-surface-report.mts
           scripts/protocol-gen-swift.ts
           package.json
