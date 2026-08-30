@@ -3,6 +3,15 @@
 Telegraph style. Root rules only. Read scoped `AGENTS.md` before subtree work.
 Skills own workflows; root owns hard policy and routing. Product direction and merge scope: `VISION.md`.
 
+## Arxi execution-host override
+
+For this checkout under the Arxi workspace, all repository-controlled tests,
+builds, checks, typechecks, lint/format runs, generators, benchmarks, dependency
+installs, and scripts execute only in a synchronized isolated workspace on
+`arxi-production`. Never execute them on the workstation, even for a focused or
+cheap preflight, and never fall back locally when remote execution is blocked.
+Later command examples select what to run, not the physical execution host.
+
 ## Start
 
 - Repo: `https://github.com/openclaw/openclaw`
@@ -14,7 +23,7 @@ Skills own workflows; root owns hard policy and routing. Product direction and m
 - Codex hard gate: the acting agent must personally inspect sibling `../codex` source (clone `https://github.com/openai/codex.git` there if missing) for the exact protocol/runtime behavior before any verdict, comment, approval, merge recommendation, code change, or `proof sufficient` claim. Subagent reports, PR text, OpenClaw wrappers, generated schemas, memory, and prior bot reviews do not satisfy it — no direct `../codex` check means no Codex verdict. Cite Codex files/lines checked.
 - Provider model changes: update the owning plugin manifest; after landing, verify `openclaw/catalog/models/v1/catalog.json` refreshes and dispatch the catalog publish workflow when needed.
 - Live-verify is the default, not a nicety: user-facing behavior gets live-tested through the real flow before landing. Skipping requires a concrete infeasibility stated in the PR, not convenience. Never print secrets.
-- Missing deps in a normal checkout: `pnpm install`, retry once, then report first actionable error. Worktrees: see Commands — never reconcile there.
+- Missing deps in a remote normal checkout: run `pnpm install` on `arxi-production`, retry once, then report first actionable error. Worktrees: see Commands — never reconcile on the workstation.
 - `CODEOWNERS` routes reviewers; it does not itself enforce approval. Maint/refactor/tests need no separate owner ask unless a path has explicit restricted/security ownership; those paths need listed-owner involvement. For governance changes to ownership/review policy itself, explicit direction from an organization owner is an alternative only when live GitHub organization membership shows `state: active` and `role: admin`; repository `ADMIN`, `viewerCanAdminister`, or bypass permission alone never qualifies. Larger behavior/product/security/ownership otherwise needs listed-owner involvement. Neither authorization route bypasses a GitHub-enforced review rule; verify live branch protection/rulesets and PR review state before calling approval mandatory.
 - Product/docs/UI/changelog wording: "plugin/plugins"; `extensions/` is internal.
 - New channel/plugin/app/doc surface: update `.github/labeler.yml` + GH labels.
@@ -167,12 +176,12 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 
 - Runtime: Node 22.22.3+, 24.15+, or 25.9+; Node 26 recommended (CI and release workflows still pin Node 24). Keep Node + Bun paths working.
 - Package manager/runtime: repo defaults only. No swaps without approval.
-- Install: `pnpm install` (keep Bun lock/patches aligned if touched). Trusted development installs and validation run locally by default.
+- Install: `pnpm install` (keep Bun lock/patches aligned if touched). All installs and validation execute in the synchronized isolated checkout on `arxi-production`; never on the workstation.
 - CLI: `pnpm openclaw ...` or `pnpm dev`; build: `pnpm build`.
 - Never run the CLI as `node --import tsx src/index.ts`: tsx compiles all bundled plugins per process (~220s), the cost lands inside the agent task budget, and the run fails as a misleading `no progress ... timed out`. Use the dist-backed wrappers above. (Scoped-guide `node --import tsx scripts/*.mts` tools are fine — this rule is about the CLI entrypoint.)
 - Checkout classes for the rules below: a **normal checkout** is a full clone with its own installed `node_modules` (includes harness/PR worktrees that have them); a **worktree** here means any Codex, linked, sparse, or `node_modules`-less checkout where pnpm may prompt or reconcile dependencies.
-- Test commands, trusted source: use `pnpm test <path-or-filter> [vitest args...]`, `pnpm test:changed`, `pnpm test:serial`, or `pnpm test:coverage` with scope proportional to the touched contract. In a worktree, direct local `pnpm test*` is valid when dependencies are ready; use `node scripts/run-vitest.mjs <path-or-filter>` when avoiding pnpm dependency reconciliation is useful. Never raw `vitest`; if unavoidable, `vitest run ...` (bare `vitest` starts watch mode and never exits). No `--repeat`; use a bounded shell loop.
-- Checks/lint, trusted source: `pnpm check:changed` classifies and runs the local formatting/typecheck/lint/guard plan. Lanes: `pnpm changed:lanes --json`; staged/path forms: `--staged` / `-- <files...>`. In a worktree, direct local `pnpm check*` is valid when dependencies are ready; use `node scripts/check-changed.mjs [--staged|-- <files...>]` when avoiding pnpm dependency reconciliation is useful. Untrusted source: never run these repository-controlled classifiers locally.
+- Test commands, trusted source: use `pnpm test <path-or-filter> [vitest args...]`, `pnpm test:changed`, `pnpm test:serial`, or `pnpm test:coverage` with scope proportional to the touched contract. Execute them only in the synchronized isolated checkout on `arxi-production`. In a worktree, use `node scripts/run-vitest.mjs <path-or-filter>` when avoiding pnpm dependency reconciliation is useful. Never raw `vitest`; if unavoidable, `vitest run ...` (bare `vitest` starts watch mode and never exits). No `--repeat`; use a bounded shell loop.
+- Checks/lint, trusted source: `pnpm check:changed` classifies and runs the formatting/typecheck/lint/guard plan on `arxi-production`. Lanes: `pnpm changed:lanes --json`; staged/path forms: `--staged` / `-- <files...>`. In a worktree, use `node scripts/check-changed.mjs [--staged|-- <files...>]` when avoiding pnpm dependency reconciliation is useful. Untrusted source: never run these repository-controlled classifiers on the workstation or a credential-bearing host.
 - Extension tests: `pnpm test:extensions`, `pnpm test extensions`, `pnpm test extensions/<id>`.
 - Typecheck: `tsgo` lanes only (`pnpm tsgo*`, `pnpm check:test-types`); never add `tsc --noEmit`, `typecheck`, `check:types`.
 - Formatting: `oxfmt`, not Prettier. Normal checkout: `pnpm format <paths>` (no `format:write` script); worktree: `node_modules/.bin/oxfmt` directly. Checks use repo wrappers (`pnpm format:*`, `scripts/run-oxlint.mjs`; full `pnpm lint:*` only when scope requires).
@@ -180,20 +189,20 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 - Script implementations use TypeScript where their runtime supports `tsx`; plain-Node lifecycle, packaged, Docker, and loader closures remain JavaScript and are included in the scripts program through `allowJs`.
 - Script wrappers: failing or crashed run must end with one final `[tool] FAILED (exit N)` stderr line; crash = nonzero exit. Truncated output must never read as success. Pattern: `scripts/run-oxlint.mjs`.
 - Tooling crash `Cannot find module ...` right after pulling/merging main = stale `node_modules`, not a code bug. `pnpm install` first; only then debug.
-- Build locally before push when build output, packaging, lazy/module boundaries, dynamic imports, or published surfaces can change. Use a remote host only when clean-machine, package/install, or platform-specific behavior is part of the proof.
+- Build on `arxi-production` before push when build output, packaging, lazy/module boundaries, dynamic imports, or published surfaces can change. The synchronized remote checkout must represent the exact local working tree.
 
 ## Validation
 
 - Use `$openclaw-testing` for test/CI choice and `$crabbox` for remote-environment, isolation, and clean-machine E2E proof.
-- Proof routing: source trust first, required environment second. Trusted development tests, changed gates, typecheck/lint, builds, and full suites run locally with scope proportional to the touched contract. Use Crabbox/Testbox only when the environment is part of the proof: clean-machine, install/package, Docker, E2E, live, desktop, cross-OS, CI parity, or explicit operator-requested remote work. Do not use it merely as generic compute offload. Lease/procedure mechanics: `$crabbox`.
+- Proof routing: source trust first, required environment second. Trusted development tests, changed gates, typecheck/lint, builds, and full suites run in the synchronized isolated checkout on `arxi-production`, with scope proportional to the touched contract. Use Crabbox/Testbox only when that distinct environment is part of the proof: clean-machine, install/package, Docker, E2E, live, desktop, cross-OS, or CI parity. Lease/procedure mechanics: `$crabbox`.
 - Untrusted (contributor/fork) source: never run its scripts, tests, checks, wrappers, config, or package hooks locally, regardless of proof size, and never fall back to local. Use secretless fork CI or the sanitized direct AWS Crabbox procedure in `$crabbox`, never a credential-hydrated Testbox. Maintainer approval of credentialed execution after review makes it trusted; an explicit owner/maintainer instruction to land named, reviewed PRs is that approval — do not ask twice.
 - Visual proof: use a real isolated browser/desktop on the current host when capable; otherwise use Crabbox. Set up like a user, then screenshot-verify. No harness/bypass/shortcut unless explicitly asked.
 - Captured screenshots/videos are proof only after the agent has looked at them: open every capture, confirm the asserted state is actually visible in frame, and re-shoot when it is not. An uninspected capture is not verification and must not be attached as evidence.
 - UI-visible change (Control UI, native app, or user-visible chat/session behavior): before/after screenshots or a short video are mandatory PR evidence, captured from a real running surface and sanitized. Exception: channel-visible chat behavior may satisfy the real-behavior-proof gate via the mock-gateway harness verdict (ClawSweeper section) when it covers the changed path; live proof is stronger. UI proof infeasible: state the exact blocker in the PR.
 - Gateway-behavior change provable in the Control UI (session lifecycle, steering/queue, subagent flows, delivery states): prove on a live dev gateway — isolated `OPENCLAW_STATE_DIR`, own port, never the operator's gateway — and attach a video of the flow. Default recorder: Playwright `recordVideo` against the dashboard URL; keep the driving script's waits on asserted UI states, not sleeps.
-- In Codex or linked worktrees, direct local `pnpm test*` and `pnpm check*` are valid when dependencies are ready. Use the direct `node` test/check wrappers when avoiding pnpm dependency reconciliation; use the direct Crabbox wrapper only for actual remote proof.
-- Repo-native PR worktrees may omit `node_modules`; run `pnpm install` once, retry the local proof, then report the first actionable error.
-- Targeted local format/lint (including release branches): use existing `./node_modules/.bin/*`; never `pnpm exec` reconciliation. Use Testbox only when explicit clean-machine proof requires it.
+- In Codex or linked worktrees, execute `pnpm test*`, `pnpm check*`, and direct `node` test/check wrappers only in the synchronized isolated checkout on `arxi-production`. Use the direct Crabbox wrapper only for proof that specifically requires Crabbox.
+- Repo-native PR worktrees may omit `node_modules`; run `pnpm install` once in the remote checkout, retry the remote proof, then report the first actionable error.
+- Targeted format/lint (including release branches): on `arxi-production`, use existing `./node_modules/.bin/*`; never use workstation `pnpm exec` reconciliation. Use Testbox only when explicit clean-machine proof requires it.
 - Parallel agents share the checkout; never switch its branch while sibling work runs.
 - QA CLI `--output-dir` must be repo-relative.
 - Before handoff/push: prove touched surface. Before landing to `main`: proof matches actual risk. Bounded behavior-neutral refactor: focused tests/checks enough; no issue proof or full/broad suite by default.
@@ -225,7 +234,7 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 - Generic triage and landing shortlists: exclude PRs authored by maintainers with broad repository access until 14 days after creation; only a named PR or explicit request for maintainer-owned work overrides this gate.
 - PR reviewable findings: post them on the PR, not chat-only, so author sees actionable feedback.
 - Issue/PR final answer: last line is the full GitHub URL.
-- PR verification: before merge, post land-ready work done, exact local commands, CI/Testbox run IDs, before/after proof when used, and known proof gaps.
+- PR verification: before merge, post land-ready work done, exact remote commands and host, CI/Testbox run IDs, before/after proof when used, and known proof gaps.
 - Issue fixed on `main`, when acting under landing/`ship`/close/sweep authority: search duplicates, comment proof + canonical commit/PR/release, then close. Without that authority, report it instead of closing unsolicited.
 - After PR merge/ship: concise prose recap, not a bullet pile; cover behavior, key surface, proof, and issue/PR state. Check for worthwhile refactor or simplification follow-ups; suggest any warranted.
 - Public GH comments: show draft in chat first, unless the user explicitly asked to post/comment/reply/close/merge/land — under that explicit authority, once changes/proof exist, post the review/proof/commit comment without re-asking.

@@ -74,6 +74,20 @@ describe("registerMcpServerConnectionResolver ownership", () => {
       pluginRegistry.registry.diagnostics.filter((diagnostic) => diagnostic.level === "error"),
     ).toEqual([]);
   });
+
+  it("retains the explicit background-run authorization contract", () => {
+    const { pluginRegistry, apiFor } = createRegistryHarness();
+    apiFor("host-boundary").registerMcpServerConnectionResolver({
+      serverName: "host-workspace",
+      requiresRequesterIdentity: false,
+      resolve: async () => null,
+    });
+
+    expect(pluginRegistry.registry.mcpServerConnectionResolvers[0]?.resolver).toMatchObject({
+      serverName: "host-workspace",
+      requiresRequesterIdentity: false,
+    });
+  });
 });
 
 describe("registerSessionCatalog ownership", () => {

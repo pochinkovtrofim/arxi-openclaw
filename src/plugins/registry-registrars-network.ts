@@ -275,6 +275,7 @@ export function createNetworkRegistrars(state: PluginRegistryState) {
       pluginName: record.name,
       resolver: {
         serverName,
+        requiresRequesterIdentity: resolver.requiresRequesterIdentity !== false,
         resolve: resolver.resolve,
       },
       source: record.source,

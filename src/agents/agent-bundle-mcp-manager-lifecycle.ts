@@ -32,7 +32,10 @@ type SessionMcpRuntimeManagerStore = {
   deferredRetirementSessionIds: Set<string>;
   // Reset/delete retirement survives late creation or reuse by the stopping run.
   requiredRetirementSessionIds: Set<string>;
-  connectionMetaByRuntimeKey: Map<string, { connectionHash: string; resolvedAt: number }>;
+  connectionMetaByRuntimeKey: Map<
+    string,
+    { connectionHash: string; resolutionContextKey: string; resolvedAt: number }
+  >;
   advertisedScopedCatalogBySessionId: Map<string, AdvertisedScopedCatalogEntry>;
   requesterWorkChains: Map<string, Promise<unknown>>;
   createInFlight: Map<string, ManagerCreateInFlight>;
@@ -75,7 +78,8 @@ export function createSessionMcpRuntimeManagerStore(
     sessionIdBySessionKey: new Map<string, string>(),
     deferredRetirementSessionIds: new Set<string>(),
     requiredRetirementSessionIds: new Set<string>(),
-    // Manager-side only: connection hash + resolve time. Never stores raw url/headers.
+    // Manager-side only: connection hash, content-free resolution context, and
+    // resolve time. Never stores raw url/headers.
     connectionMetaByRuntimeKey: new Map(),
     /**
      * Session-stable advertised catalogs for requester-scoped servers.

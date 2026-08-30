@@ -69,6 +69,11 @@ jobs:
               'extensions/codex/**' \
               'extensions/openai/openai-provider.test.ts' \
               'extensions/openai/openai-provider.ts' \
+              'packages/gateway-protocol/src/schema/agent.ts' \
+              'src/agents/agent-bundle-mcp-*.ts' \
+              'src/agents/embedded-agent-runner/run/attempt-bundle-tools.ts' \
+              'src/agents/mcp-connection-resolver*.ts' \
+              'src/agents/mcp-oauth-identity*.ts' \
               'src/agents/prepared-model-catalog-worker.integration.test.ts' \
               'src/agents/prepared-model-catalog-worker.ts' \
               'src/agents/prepared-model-catalog.worker.ts' \
@@ -77,7 +82,11 @@ jobs:
               'src/channels/**' \
               'src/commands/models/list.rows.ts' \
               'src/commands/models/list.rows.projection.test.ts' \
+              'src/gateway/agent-turn/agent-run-execution-phase*.ts' \
+              'src/gateway/server-methods/agent-request-types.ts' \
               'src/infra/outbound/**' \
+              'src/plugins/registry-registrars-network*.ts' \
+              'src/plugins/types.mcp-connection.ts' \
               'src/plugins/plugin-metadata-snapshot.test.ts' \
               'src/plugins/plugin-metadata-snapshot.ts' \
               'src/plugin-sdk/**' \
@@ -133,15 +142,27 @@ jobs:
           extensions/openai/openai-provider.ts
           packages/gateway-protocol/src/gateway-suspend.test.ts
           packages/gateway-protocol/src/public-schema.ts
+          packages/gateway-protocol/src/schema/agent.ts
           packages/gateway-protocol/src/schema/gateway-suspend.ts
           packages/gateway-protocol/src/schema/protocol-schema-fragment-transport.ts
           src/agents/prepared-model-catalog-worker.integration.test.ts
           src/agents/prepared-model-catalog-worker.ts
           src/agents/prepared-model-catalog.worker.ts
+          src/agents/agent-bundle-mcp-manager-api.ts
+          src/agents/agent-bundle-mcp-manager-install.ts
+          src/agents/agent-bundle-mcp-manager-lifecycle.ts
+          src/agents/agent-bundle-mcp-manager.ts
+          src/agents/agent-bundle-mcp-runtime.test.ts
+          src/agents/agent-bundle-mcp-types.ts
           src/agents/agent-tool-definition-adapter.ts
           src/agents/agent-tools.before-tool-call.wrapper.ts
           src/agents/auth-profiles/path-resolve.ts
           src/agents/auth-profiles/sqlite.ts
+          src/agents/embedded-agent-runner/run/attempt-bundle-tools.ts
+          src/agents/mcp-connection-resolver.test.ts
+          src/agents/mcp-connection-resolver.ts
+          src/agents/mcp-oauth-identity.test.ts
+          src/agents/mcp-oauth-identity.ts
           src/agents/runtime-plan/types.ts
           src/agents/tools/common.ts
           src/agents/tools/web-search-provider-common.ts
@@ -164,7 +185,10 @@ jobs:
           src/cron/service.ts
           src/gateway/server-cron-lazy.test.ts
           src/gateway/server-cron-lazy.ts
+          src/gateway/agent-turn/agent-run-execution-phase.owner.test.ts
+          src/gateway/agent-turn/agent-run-execution-phase.ts
           src/gateway/server-methods.suspension-admission.test.ts
+          src/gateway/server-methods/agent-request-types.ts
           src/gateway/server-methods/agent.test-harness.ts
           src/gateway/server-methods/suspend.ts
           src/infra/heartbeat-runner-delivery.ts
@@ -195,8 +219,11 @@ jobs:
           src/infra/outbound/prepared-batch.ts
           src/plugins/plugin-metadata-snapshot.test.ts
           src/plugins/plugin-metadata-snapshot.ts
+          src/plugins/registry-registrars-network.mcp-resolver.test.ts
+          src/plugins/registry-registrars-network.ts
           src/plugins/tools.optional.test.ts
           src/plugins/tools.ts
+          src/plugins/types.mcp-connection.ts
           src/plugin-sdk/media-mime.ts
           config/assertion-safety-baseline.txt
           scripts/ci-changed-scope.mjs
@@ -237,9 +264,13 @@ jobs:
           pnpm test \
             extensions/openai/openai-provider.test.ts \
             extensions/telegram/src/external-context-projection.test.ts \
+            src/agents/agent-bundle-mcp-runtime.test.ts \
+            src/agents/mcp-connection-resolver.test.ts \
+            src/agents/mcp-oauth-identity.test.ts \
             src/agents/prepared-model-catalog-worker.integration.test.ts \
             src/auto-reply/reply-payload.test.ts \
             src/commands/models/list.rows.projection.test.ts \
+            src/gateway/agent-turn/agent-run-execution-phase.owner.test.ts \
             src/infra/outbound/delivery-queue-media-spool.test.ts \
             src/infra/outbound/delivery-queue-reconciliation.test.ts \
             src/infra/outbound/message-action-send.test.ts \
@@ -247,7 +278,8 @@ jobs:
             src/infra/outbound/message-plan.test.ts \
             src/infra/outbound/outbound-send-service.test.ts \
             src/infra/outbound/payloads.test.ts \
-            src/plugins/plugin-metadata-snapshot.test.ts
+            src/plugins/plugin-metadata-snapshot.test.ts \
+            src/plugins/registry-registrars-network.mcp-resolver.test.ts
           pnpm exec vitest run src/infra/outbound/deliver.test.ts \
             -t 'passes an explicitly classified durable final run without a reply dispatcher|passes the originating run correlation to model-authored media sends|does not label non-final text, status, or error payloads as useful results'
           pnpm exec vitest run src/infra/heartbeat-runner.structured-delivery.test.ts \

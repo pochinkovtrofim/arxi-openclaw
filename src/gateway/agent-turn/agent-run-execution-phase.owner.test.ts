@@ -31,6 +31,9 @@ function createExecution(
     admissionTrace?: DiagnosticTraceContext;
     diagnosticTrace?: DiagnosticTraceContext;
     assertContextCurrent?: () => void;
+    admittedConversationId?: string;
+    admittedRequesterSenderId?: string;
+    operatorAdminClient?: "local" | "remote";
   } = {},
 ) {
   const abortCleanup = vi.fn();
@@ -82,7 +85,10 @@ function createExecution(
         },
         workspaceOverride: "/workspace/A",
       },
-      request: {},
+      request: {
+        admittedConversationId: options.admittedConversationId,
+        admittedRequesterSenderId: options.admittedRequesterSenderId,
+      },
       cfg: {},
       activeSessionAgentId: "main",
       delivery: {},
@@ -102,7 +108,15 @@ function createExecution(
       skipAgentInitialSessionTouch: true,
       canUseInternalRuntimeHandoff: false,
       diagnosticTrace: options.diagnosticTrace,
-      client: null,
+      client:
+        options.operatorAdminClient === "local"
+          ? {
+              internal: { isLocalClient: true },
+              connect: { scopes: ["operator.admin"] },
+            }
+          : options.operatorAdminClient === "remote"
+            ? { connect: { scopes: ["operator.admin"] } }
+            : null,
       context: {
         dedupe: new Map(),
         deps: {},
@@ -203,6 +217,46 @@ describe("startAgentRunExecution Gateway ownership", () => {
     });
     expect(dispatchStartedTrace?.spanId).not.toBe(ingressTrace.spanId);
     expect(dispatch?.ingressOpts.diagnosticTrace).toEqual(dispatchStartedTrace);
+  });
+
+  it("honors host-admitted conversation identity only from a local operator admin", async () => {
+    const admittedRequest = {
+      admittedConversationId: "telegram-chat:42",
+      admittedRequesterSenderId: "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    };
+    const trusted = createExecution({
+      ...admittedRequest,
+      operatorAdminClient: "local",
+    });
+    let resolveTrusted!: () => void;
+    const trustedDispatched = new Promise<void>((resolve) => {
+      resolveTrusted = resolve;
+    });
+    dispatchAgentRunFromGateway.mockImplementationOnce(resolveTrusted);
+
+    startAgentRunExecution(trusted.params);
+    await trustedDispatched;
+    expect(dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.runContext).toMatchObject({
+      chatId: "telegram-chat:42",
+      senderId: "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    });
+
+    dispatchAgentRunFromGateway.mockReset();
+    const untrusted = createExecution({
+      ...admittedRequest,
+      operatorAdminClient: "remote",
+    });
+    let resolveUntrusted!: () => void;
+    const untrustedDispatched = new Promise<void>((resolve) => {
+      resolveUntrusted = resolve;
+    });
+    dispatchAgentRunFromGateway.mockImplementationOnce(resolveUntrusted);
+
+    startAgentRunExecution(untrusted.params);
+    await untrustedDispatched;
+    const runContext = dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.runContext;
+    expect(runContext?.chatId).toBeUndefined();
+    expect(runContext?.senderId).toBeUndefined();
   });
 
   it("keeps the gateway message lifecycle open until the agent run settles", async () => {

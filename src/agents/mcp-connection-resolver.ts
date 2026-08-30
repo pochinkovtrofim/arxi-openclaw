@@ -28,7 +28,7 @@ const MCP_CONNECTION_RESOLVER_TIMEOUT_MS = 10_000;
  * How long a full-set requester runtime may skip re-resolve while active.
  * Revocation/rotation takes effect within this window even for continuously active requesters.
  */
-const MCP_CONNECTION_REVALIDATE_MS = 5 * 60 * 1000;
+const MCP_CONNECTION_REVALIDATE_MS = 60 * 1000;
 
 const MCP_CONNECTION_RESOLVER_TEST_STATE_KEY = Symbol.for(
   "openclaw.mcpServerConnectionResolverTestState",
@@ -148,6 +148,7 @@ function listMcpServerConnectionResolversByServerName(): Map<
     byName.set(serverName, {
       pluginId: entry.pluginId,
       serverName,
+      requiresRequesterIdentity: entry.resolver.requiresRequesterIdentity,
       resolve: entry.resolver.resolve,
     });
   }
@@ -228,30 +229,53 @@ function registerResolvedConnectionSecrets(connection: McpServerConnectionResolv
 }
 
 /**
- * Resolve requester-scoped server connections. Fail closed without requesterSenderId:
- * returns an empty map (no shared-connection fallback). Per-server resolve errors and
- * timeouts are logged generically and omitted so one plugin cannot block static MCP.
- * Servers resolve concurrently (each individually bounded).
+ * Resolve requester-scoped server connections. Resolvers require a current
+ * requester by default. A resolver may explicitly delegate authorization to a
+ * host boundary, but background runs must still carry canonical agent + session
+ * identity. Per-server resolve errors and timeouts are logged generically and
+ * omitted so one plugin cannot block static MCP. Servers resolve concurrently.
  */
 export async function resolveRequesterScopedMcpConnections(params: {
   serverNames: readonly string[];
   requesterSenderId?: string | null;
   agentAccountId?: string | null;
   messageChannel?: string | null;
+  agentId?: string | null;
+  sessionKey?: string | null;
+  chatType?: string | null;
+  conversationId?: string | null;
+  runtimeGeneration?: string | null;
+  traceId?: string | null;
 }): Promise<Map<string, McpServerConnectionResolved>> {
   const requesterSenderId = normalizeOptionalString(params.requesterSenderId);
   const resolved = new Map<string, McpServerConnectionResolved>();
-  if (!requesterSenderId || params.serverNames.length === 0) {
+  if (params.serverNames.length === 0) {
     return resolved;
   }
+  const agentId = normalizeOptionalString(params.agentId);
+  const sessionKey = normalizeOptionalString(params.sessionKey);
   const resolvers = listMcpServerConnectionResolversByServerName();
   const ctx: McpServerConnectionResolveContext = {
-    requesterSenderId,
+    ...(requesterSenderId ? { requesterSenderId } : {}),
     ...(normalizeOptionalString(params.agentAccountId)
       ? { agentAccountId: normalizeOptionalString(params.agentAccountId) }
       : {}),
     ...(normalizeOptionalString(params.messageChannel)
       ? { messageChannel: normalizeOptionalString(params.messageChannel) }
+      : {}),
+    ...(agentId ? { agentId } : {}),
+    ...(sessionKey ? { sessionKey } : {}),
+    ...(normalizeOptionalString(params.chatType)
+      ? { chatType: normalizeOptionalString(params.chatType) }
+      : {}),
+    ...(normalizeOptionalString(params.conversationId)
+      ? { conversationId: normalizeOptionalString(params.conversationId) }
+      : {}),
+    ...(normalizeOptionalString(params.runtimeGeneration)
+      ? { runtimeGeneration: normalizeOptionalString(params.runtimeGeneration) }
+      : {}),
+    ...(normalizeOptionalString(params.traceId)
+      ? { traceId: normalizeOptionalString(params.traceId) }
       : {}),
   };
   const timeoutMs = resolveConnectionResolverTimeoutMs();
@@ -260,6 +284,12 @@ export async function resolveRequesterScopedMcpConnections(params: {
     sortedNames.map(async (serverName) => {
       const entry = resolvers.get(serverName);
       if (!entry) {
+        return null;
+      }
+      if (
+        !requesterSenderId &&
+        (entry.requiresRequesterIdentity !== false || !agentId || !sessionKey)
+      ) {
         return null;
       }
       try {
@@ -378,14 +408,25 @@ export function buildMcpRequesterRuntimeCacheKey(params: {
   sessionId: string;
   messageChannel?: string | null;
   agentAccountId?: string | null;
-  requesterSenderId: string;
+  requesterSenderId?: string | null;
+  agentId?: string | null;
+  sessionKey?: string | null;
+  chatType?: string | null;
+  conversationId?: string | null;
+  runtimeGeneration?: string | null;
+  traceId?: string | null;
 }): string {
   // Composite key for requester-scoped runtimes. Static runtimes keep bare sessionId.
   return JSON.stringify({
     sessionId: params.sessionId,
     messageChannel: normalizeOptionalString(params.messageChannel) ?? "",
     agentAccountId: normalizeOptionalString(params.agentAccountId) ?? "",
-    requesterSenderId: params.requesterSenderId,
+    requesterSenderId: normalizeOptionalString(params.requesterSenderId) ?? "",
+    agentId: normalizeOptionalString(params.agentId) ?? "",
+    sessionKey: normalizeOptionalString(params.sessionKey) ?? "",
+    chatType: normalizeOptionalString(params.chatType) ?? "",
+    conversationId: normalizeOptionalString(params.conversationId) ?? "",
+    runtimeGeneration: normalizeOptionalString(params.runtimeGeneration) ?? "",
   });
 }
 
@@ -406,6 +447,7 @@ export const testing = {
       map.set(serverName, {
         pluginId: normalizeOptionalString(resolver.pluginId) ?? "test-plugin",
         serverName,
+        requiresRequesterIdentity: resolver.requiresRequesterIdentity,
         resolve: resolver.resolve,
       });
     }

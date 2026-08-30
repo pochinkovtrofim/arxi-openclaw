@@ -53,9 +53,14 @@ type SessionMcpRuntimeManagerInstall = {
     resolverRequesterServerNames: readonly string[];
     safeServerNamesByServer: ReadonlyMap<string, string>;
     fullScopedFingerprint: string;
-    requesterSenderId: string;
+    requesterSenderId?: string;
     agentAccountId?: string | null;
     messageChannel?: string | null;
+    agentId?: string | null;
+    chatType?: string | null;
+    conversationId?: string | null;
+    runtimeGeneration?: string | null;
+    traceId?: string | null;
     requesterScope: SessionMcpRequesterScope;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }) => Promise<SessionMcpRuntime | undefined>;
@@ -202,6 +207,7 @@ export function createSessionMcpRuntimeManagerInstall(
     connectionOverrides: Map<string, McpServerConnectionResolved>;
     redactConnectionServerNames: ReadonlySet<string>;
     requesterScope: SessionMcpRequesterScope;
+    resolutionContextKey: string;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }): Promise<SessionMcpRuntime> => {
     const { fingerprint: resolvedFingerprint } = loadSessionMcpConfig({
@@ -235,6 +241,7 @@ export function createSessionMcpRuntimeManagerInstall(
       existing.markUsed();
       store.connectionMetaByRuntimeKey.set(params.runtimeKey, {
         connectionHash,
+        resolutionContextKey: params.resolutionContextKey,
         resolvedAt: store.now(),
       });
       return existing;
@@ -263,6 +270,7 @@ export function createSessionMcpRuntimeManagerInstall(
     });
     store.connectionMetaByRuntimeKey.set(params.runtimeKey, {
       connectionHash,
+      resolutionContextKey: params.resolutionContextKey,
       resolvedAt: store.now(),
     });
     return runtime;
@@ -290,9 +298,14 @@ export function createSessionMcpRuntimeManagerInstall(
     resolverRequesterServerNames: readonly string[];
     safeServerNamesByServer: ReadonlyMap<string, string>;
     fullScopedFingerprint: string;
-    requesterSenderId: string;
+    requesterSenderId?: string;
     agentAccountId?: string | null;
     messageChannel?: string | null;
+    agentId?: string | null;
+    chatType?: string | null;
+    conversationId?: string | null;
+    runtimeGeneration?: string | null;
+    traceId?: string | null;
     requesterScope: SessionMcpRequesterScope;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }): Promise<SessionMcpRuntime | undefined> => {
@@ -324,12 +337,15 @@ export function createSessionMcpRuntimeManagerInstall(
     );
     const existing = store.runtimesBySessionId.get(params.runtimeKey);
     const meta = store.connectionMetaByRuntimeKey.get(params.runtimeKey);
+    const resolutionContextKey = params.traceId ?? "";
     const revalidateMs = resolveMcpConnectionRevalidateMs();
     // Full-set + within revalidation window: skip resolver I/O.
     // Revocation/rotation takes effect within MCP_CONNECTION_REVALIDATE_MS even for
     // continuously active requesters (markUsed does not extend this clock alone).
     const withinRevalidateWindow =
-      meta !== undefined && store.now() - meta.resolvedAt < revalidateMs;
+      meta !== undefined &&
+      meta.resolutionContextKey === resolutionContextKey &&
+      store.now() - meta.resolvedAt < revalidateMs;
     if (
       withinRevalidateWindow &&
       existing &&
@@ -350,6 +366,12 @@ export function createSessionMcpRuntimeManagerInstall(
       requesterSenderId: params.requesterSenderId,
       agentAccountId: params.agentAccountId,
       messageChannel: params.messageChannel,
+      agentId: params.agentId,
+      sessionKey: params.sessionKey,
+      chatType: params.chatType,
+      conversationId: params.conversationId,
+      runtimeGeneration: params.runtimeGeneration,
+      traceId: params.traceId,
     });
     const activeNameSet = new Set([
       ...(requesterConnect?.authorizedServerNames ?? []),
@@ -380,6 +402,7 @@ export function createSessionMcpRuntimeManagerInstall(
       connectionOverrides,
       redactConnectionServerNames: new Set(params.resolverRequesterServerNames),
       requesterScope: params.requesterScope,
+      resolutionContextKey,
       toolOverrides: params.toolOverrides,
     });
   };

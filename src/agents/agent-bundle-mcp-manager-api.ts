@@ -33,6 +33,11 @@ export async function getOrCreateSessionMcpRuntime(params: {
   requesterSenderId?: string | null;
   agentAccountId?: string | null;
   messageChannel?: string | null;
+  agentId?: string | null;
+  chatType?: string | null;
+  conversationId?: string | null;
+  runtimeGeneration?: string | null;
+  traceId?: string | null;
   toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
 }): Promise<SessionMcpRuntime> {
   return await getSessionMcpRuntimeManager().getOrCreate(params);
@@ -52,6 +57,11 @@ export async function getOrCreateRequesterScopedMcpRuntime(params: {
   requesterSenderId?: string | null;
   agentAccountId?: string | null;
   messageChannel?: string | null;
+  agentId?: string | null;
+  chatType?: string | null;
+  conversationId?: string | null;
+  runtimeGeneration?: string | null;
+  traceId?: string | null;
   toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
 }): Promise<SessionMcpRuntime | undefined> {
   return await getSessionMcpRuntimeManager().getOrCreateRequesterScoped(params);

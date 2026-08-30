@@ -310,6 +310,10 @@ export const AgentParamsSchema = closedObject({
   groupId: Type.Optional(Type.String()),
   groupChannel: Type.Optional(Type.String()),
   groupSpace: Type.Optional(Type.String()),
+  // Host-admitted channel identity. Honored only for a local operator.admin
+  // client and never exposed as a model-selectable tool argument.
+  admittedConversationId: Type.Optional(NonEmptyString),
+  admittedRequesterSenderId: Type.Optional(NonEmptyString),
   timeout: Type.Optional(Type.Integer({ minimum: 0 })),
   bestEffortDeliver: Type.Optional(Type.Boolean()),
   lane: Type.Optional(Type.String()),

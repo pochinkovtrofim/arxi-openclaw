@@ -320,10 +320,20 @@ export function startAgentRunExecution(params: {
           restartRecoveryChannelContext?.channel ?? params.delivery.originMessageChannel,
         accountId:
           restartRecoveryChannelContext?.requesterAccountId ?? params.delivery.resolvedAccountId,
-        senderId: restartRecoveryChannelContext?.requesterSenderId,
+        senderId:
+          restartRecoveryChannelContext?.requesterSenderId ??
+          (params.client?.internal?.isLocalClient === true &&
+          params.client.connect?.scopes?.includes("operator.admin")
+            ? params.request.admittedRequesterSenderId
+            : undefined),
         groupId: params.groupId,
         groupChannel: params.groupChannel,
         groupSpace: params.groupSpace,
+        chatId:
+          params.client?.internal?.isLocalClient === true &&
+          params.client.connect?.scopes?.includes("operator.admin")
+            ? params.request.admittedConversationId
+            : undefined,
         currentChannelId: restartRecoveryChannelContext?.currentChannelId,
         currentThreadTs:
           restartRecoveryChannelContext?.currentThreadTs ??

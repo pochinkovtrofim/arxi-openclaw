@@ -92,7 +92,7 @@ export type McpRequestOptions = {
 
 /** Trusted requester identity used to scope per-user MCP connections. */
 export type SessionMcpRequesterScope = {
-  requesterSenderId: string;
+  requesterSenderId?: string;
   agentAccountId?: string;
   messageChannel?: string;
 };
@@ -155,6 +155,11 @@ export type SessionMcpRuntimeManager = {
     requesterSenderId?: string | null;
     agentAccountId?: string | null;
     messageChannel?: string | null;
+    agentId?: string | null;
+    chatType?: string | null;
+    conversationId?: string | null;
+    runtimeGeneration?: string | null;
+    traceId?: string | null;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }) => Promise<SessionMcpRuntime>;
   /**
@@ -171,6 +176,11 @@ export type SessionMcpRuntimeManager = {
     requesterSenderId?: string | null;
     agentAccountId?: string | null;
     messageChannel?: string | null;
+    agentId?: string | null;
+    chatType?: string | null;
+    conversationId?: string | null;
+    runtimeGeneration?: string | null;
+    traceId?: string | null;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }) => Promise<SessionMcpRuntime | undefined>;
   /**

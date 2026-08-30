@@ -6,12 +6,24 @@
  * Future trusted fields (for example cron/subagent user context) can be added additively.
  */
 export type McpServerConnectionResolveContext = {
-  /** Trusted message sender id. Required; runs without one fail closed. */
-  requesterSenderId: string;
+  /** Trusted message sender id when the run has a current human requester. */
+  requesterSenderId?: string;
   /** Channel account id that received the message. */
   agentAccountId?: string;
   /** Message channel id (for example telegram or slack). */
   messageChannel?: string;
+  /** Agent selected by the admitted run. */
+  agentId?: string;
+  /** Canonical session key selected by core. */
+  sessionKey?: string;
+  /** Admitted conversation shape (for example direct or group). */
+  chatType?: string;
+  /** Canonical conversation or topic id selected by core. */
+  conversationId?: string;
+  /** Runtime lifecycle generation selected by core. */
+  runtimeGeneration?: string;
+  /** Diagnostic trace id selected by core for cross-boundary audit correlation. */
+  traceId?: string;
 };
 
 /** Transport connection resolved for one requester-scoped MCP server. */
@@ -28,6 +40,11 @@ export type McpServerConnectionResolved = {
 export type OpenClawPluginMcpServerConnectionResolver = {
   /** Server name matching `mcp.servers` / bundle MCP declaration. */
   serverName: string;
+  /**
+   * Keep the default requester requirement unless the connection is authorized
+   * by a separate host boundary using canonical agent and session identity.
+   */
+  requiresRequesterIdentity?: boolean;
   resolve: (
     ctx: McpServerConnectionResolveContext,
   ) => McpServerConnectionResolved | null | Promise<McpServerConnectionResolved | null>;

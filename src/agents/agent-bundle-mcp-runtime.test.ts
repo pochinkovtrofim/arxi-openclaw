@@ -3376,6 +3376,44 @@ describe("requester-scoped MCP connection resolution", () => {
     vi.useRealTimers();
   });
 
+  it("materializes a host-authorized resolver for a senderless background run", async () => {
+    const contexts: unknown[] = [];
+    const { testing: resolverTesting } = await import("./mcp-connection-resolver.js");
+    resolverTesting.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "host-workspace",
+        requiresRequesterIdentity: false,
+        resolve: async (context) => {
+          contexts.push(context);
+          return { url: "https://mcp.example.test/background" };
+        },
+      },
+    ]);
+    const manager = testing.createSessionMcpRuntimeManager({
+      createRuntime: (params) =>
+        makeManagedRuntime(
+          params,
+          [{ toolName: "probe", description: "probe" }],
+          params.includeServerNames ? [...params.includeServerNames][0] : undefined,
+        ),
+      enableIdleSweepTimer: false,
+    });
+
+    const runtime = await manager.getOrCreate({
+      sessionId: "session-background",
+      sessionKey: "agent:main:cron:daily",
+      workspaceDir: "/workspace",
+      agentId: "main",
+      cfg: {
+        mcp: { servers: { "host-workspace": { transport: "streamable-http" } } },
+      } as never,
+    });
+
+    expect(contexts).toEqual([{ agentId: "main", sessionKey: "agent:main:cron:daily" }]);
+    expect((await runtime.getCatalog()).servers).toHaveProperty("host-workspace");
+    await manager.disposeAll();
+  });
+
   it.each([
     ["static", 1],
     ["full", 2],
@@ -3634,11 +3672,17 @@ describe("requester-scoped MCP connection resolution", () => {
       },
     };
 
-    const params = makeRequesterParams("session-resolve-once", cfg as never, "sender-a");
+    const params = {
+      ...makeRequesterParams("session-resolve-once", cfg as never, "sender-a"),
+      traceId: "11111111111111111111111111111111",
+    };
     await manager.getOrCreate(params);
     await manager.getOrCreate(params);
 
     expect(resolveCalls).toBe(1);
+    await manager.getOrCreate({ ...params, traceId: "22222222222222222222222222222222" });
+    expect(resolveCalls).toBe(2);
+    expect(manager.listRuntimeKeys().filter((key) => key.startsWith("{"))).toHaveLength(1);
     await manager.disposeAll();
   });
 

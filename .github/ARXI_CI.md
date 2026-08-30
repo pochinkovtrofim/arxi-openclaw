@@ -15,6 +15,8 @@ the composed Arxi platform ships:
 - model-authored message-action correlation into the durable owner-channel
   adapter, including the negative operator-send classification;
 - the public Telegram planning export and plugin-SDK/package boundary;
+- requester-scoped MCP identity propagation, resolver revalidation, and the
+  gateway/plugin seams used by the Google Workspace capability;
 - dependency and lockfile consistency through the frozen install;
 - workflow validity. Diff-scoped OpenGrep, CodeQL, dependency review, and
   secret/security guards remain separate automatic security workflows.

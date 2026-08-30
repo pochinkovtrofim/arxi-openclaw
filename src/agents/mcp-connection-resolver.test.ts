@@ -30,6 +30,7 @@ import {
   hashMcpResolvedConnections,
   partitionMcpServersByConnectionScope,
   redactMcpServersForFingerprint,
+  resolveMcpConnectionRevalidateMs,
   resolveRequesterScopedMcpConnections,
   testing,
 } from "./mcp-connection-resolver.js";
@@ -225,6 +226,11 @@ describe("mcp connection resolver helpers", () => {
       serverName: "scoped-mail",
       resolve: async () => ({ url: "https://scoped.example.test" }),
     });
+    scoped.apiFor("scoped-host").registerMcpServerConnectionResolver({
+      serverName: "scoped-host",
+      requiresRequesterIdentity: false,
+      resolve: async () => ({ url: "https://host.example.test" }),
+    });
     setActivePluginRegistry(root.registry);
 
     await withPluginRuntimeRegistryScope(scoped.registry, async () => {
@@ -234,6 +240,13 @@ describe("mcp connection resolver helpers", () => {
           requesterSenderId: "requester",
         }),
       ).resolves.toEqual(new Map([["scoped-mail", { url: "https://scoped.example.test" }]]));
+      await expect(
+        resolveRequesterScopedMcpConnections({
+          serverNames: ["scoped-host"],
+          agentId: "main",
+          sessionKey: "agent:main:cron:daily",
+        }),
+      ).resolves.toEqual(new Map([["scoped-host", { url: "https://host.example.test" }]]));
     });
     await expect(
       resolveRequesterScopedMcpConnections({
@@ -473,6 +486,83 @@ describe("mcp connection resolver helpers", () => {
     ).resolves.toEqual(new Map([["user-mail", { url: "https://example.test/ok" }]]));
   });
 
+  it("allows a host-authorized resolver to serve background runs only with canonical run identity", async () => {
+    const contexts: unknown[] = [];
+    testing.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "host-workspace",
+        requiresRequesterIdentity: false,
+        resolve: async (ctx) => {
+          contexts.push(ctx);
+          return { url: "http://127.0.0.1:18080/google/mcp" };
+        },
+      },
+    ]);
+
+    await expect(
+      resolveRequesterScopedMcpConnections({
+        serverNames: ["host-workspace"],
+      }),
+    ).resolves.toEqual(new Map());
+    await expect(
+      resolveRequesterScopedMcpConnections({
+        serverNames: ["host-workspace"],
+        agentId: "axi_0123456789abcdef0123456789abcdef",
+        sessionKey: "agent:axi_0123456789abcdef0123456789abcdef:cron:daily",
+      }),
+    ).resolves.toEqual(new Map([["host-workspace", { url: "http://127.0.0.1:18080/google/mcp" }]]));
+    expect(contexts).toEqual([
+      {
+        agentId: "axi_0123456789abcdef0123456789abcdef",
+        sessionKey: "agent:axi_0123456789abcdef0123456789abcdef:cron:daily",
+      },
+    ]);
+  });
+
+  it("revalidates resolved credentials before a two-minute bearer can expire", () => {
+    expect(resolveMcpConnectionRevalidateMs()).toBeLessThanOrEqual(60_000);
+  });
+
+  it("passes canonical admitted-run identity to the resolver", async () => {
+    const contexts: unknown[] = [];
+    testing.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "user-workspace",
+        resolve: async (ctx) => {
+          contexts.push(ctx);
+          return { url: "https://example.test/workspace" };
+        },
+      },
+    ]);
+
+    await resolveRequesterScopedMcpConnections({
+      serverNames: ["user-workspace"],
+      requesterSenderId: "telegram-user-1",
+      agentAccountId: "personal-bot",
+      messageChannel: "telegram",
+      agentId: "axi_0123456789abcdef0123456789abcdef",
+      sessionKey: "agent:axi_0123456789abcdef0123456789abcdef:telegram:group:42",
+      chatType: "group",
+      conversationId: "-10042:topic:7",
+      runtimeGeneration: "gateway-generation-3",
+      traceId: "1234567890abcdef1234567890abcdef",
+    });
+
+    expect(contexts).toEqual([
+      {
+        requesterSenderId: "telegram-user-1",
+        agentAccountId: "personal-bot",
+        messageChannel: "telegram",
+        agentId: "axi_0123456789abcdef0123456789abcdef",
+        sessionKey: "agent:axi_0123456789abcdef0123456789abcdef:telegram:group:42",
+        chatType: "group",
+        conversationId: "-10042:topic:7",
+        runtimeGeneration: "gateway-generation-3",
+        traceId: "1234567890abcdef1234567890abcdef",
+      },
+    ]);
+  });
+
   it("registers resolved header and signed-URL credentials for redaction", async () => {
     const { resetSecretRedactionRegistryForTest } =
       await import("../logging/secret-redaction-registry.test-support.js");
@@ -703,6 +793,12 @@ describe("mcp connection resolver helpers", () => {
         messageChannel: "telegram",
         agentAccountId: "bot",
         requesterSenderId: "user-1",
+        agentId: "agent-1",
+        sessionKey: "agent:agent-1:telegram:group:42",
+        chatType: "group",
+        conversationId: "42:topic:7",
+        runtimeGeneration: "generation-3",
+        traceId: "1234567890abcdef1234567890abcdef",
       }),
     ).toBe(
       JSON.stringify({
@@ -710,6 +806,11 @@ describe("mcp connection resolver helpers", () => {
         messageChannel: "telegram",
         agentAccountId: "bot",
         requesterSenderId: "user-1",
+        agentId: "agent-1",
+        sessionKey: "agent:agent-1:telegram:group:42",
+        chatType: "group",
+        conversationId: "42:topic:7",
+        runtimeGeneration: "generation-3",
       }),
     );
   });

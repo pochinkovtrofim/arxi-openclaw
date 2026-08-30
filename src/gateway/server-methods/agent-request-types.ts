@@ -27,6 +27,8 @@ export type AgentRunRequest = {
   groupId?: string;
   groupChannel?: string;
   groupSpace?: string;
+  admittedConversationId?: string;
+  admittedRequesterSenderId?: string;
   lane?: string;
   cwd?: string;
   extraSystemPrompt?: string;

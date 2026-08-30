@@ -130,6 +130,11 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
         requesterSenderId: params.attempt.senderId,
         agentAccountId: params.attempt.agentAccountId,
         messageChannel: params.attempt.messageChannel ?? params.attempt.messageProvider,
+        agentId: params.sessionAgentId,
+        chatType: params.attempt.chatType,
+        conversationId: params.attempt.chatId ?? params.attempt.groupId ?? params.attempt.messageTo,
+        runtimeGeneration: params.attempt.lifecycleGeneration,
+        traceId: params.attempt.diagnosticTrace?.traceId,
       })
     : undefined;
   const bundleMcpRuntime = bundleMcpSessionRuntime

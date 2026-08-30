@@ -26,6 +26,9 @@ export function requesterMcpOAuthIdentity(
   serverUrl: string,
   scope: SessionMcpRequesterScope,
 ): McpOAuthIdentity {
+  if (!scope.requesterSenderId) {
+    throw new Error("authenticated requester sender identity is required for per-requester OAuth");
+  }
   const operator = operatorMcpOAuthIdentity(serverName, serverUrl);
   // The requester tuple intentionally excludes session identity. Changing this
   // grammar would either leak credentials across principals or strand stored rows.

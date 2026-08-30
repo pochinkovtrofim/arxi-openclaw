@@ -54,18 +54,29 @@ export function createSessionMcpRuntimeManager(
       resolverRequesterServerNames: readonly string[];
       scopedNameSet: ReadonlySet<string>;
       safeServerNamesByServer: ReadonlyMap<string, string>;
-      requesterSenderId: string;
+      requesterSenderId?: string;
     },
   ) => {
     const oauthRequesterNameSet = new Set(params.oauthRequesterServerNames);
     const resolverRequesterNameSet = new Set(params.resolverRequesterServerNames);
     const agentAccountId = normalizeOptionalString(params.agentAccountId);
     const messageChannel = normalizeOptionalString(params.messageChannel);
+    const agentId = normalizeOptionalString(params.agentId);
+    const sessionKey = normalizeOptionalString(params.sessionKey);
+    const chatType = normalizeOptionalString(params.chatType);
+    const conversationId = normalizeOptionalString(params.conversationId);
+    const runtimeGeneration = normalizeOptionalString(params.runtimeGeneration);
+    const traceId = normalizeOptionalString(params.traceId);
     const runtimeKey = buildMcpRequesterRuntimeCacheKey({
       sessionId: params.sessionId,
       messageChannel,
       agentAccountId,
       requesterSenderId: params.requesterSenderId,
+      agentId,
+      sessionKey,
+      chatType,
+      conversationId,
+      runtimeGeneration,
     });
     const fullScopedFingerprint = loadSessionMcpConfig({
       workspaceDir: params.workspaceDir,
@@ -82,11 +93,16 @@ export function createSessionMcpRuntimeManager(
         ...params,
         runtimeKey,
         fullScopedFingerprint,
-        oauthRequesterNameSet,
+        oauthRequesterNameSet: params.requesterSenderId ? oauthRequesterNameSet : new Set(),
         agentAccountId,
         messageChannel,
+        agentId,
+        chatType,
+        conversationId,
+        runtimeGeneration,
+        traceId,
         requesterScope: {
-          requesterSenderId: params.requesterSenderId,
+          ...(params.requesterSenderId ? { requesterSenderId: params.requesterSenderId } : {}),
           ...(agentAccountId ? { agentAccountId } : {}),
           ...(messageChannel ? { messageChannel } : {}),
         },
@@ -171,7 +187,11 @@ export function createSessionMcpRuntimeManager(
       }
 
       const requesterSenderId = normalizeOptionalString(params.requesterSenderId);
-      if (requesterSenderId) {
+      const hasHostAuthorizedRunIdentity =
+        resolverRequesterServerNames.length > 0 &&
+        normalizeOptionalString(params.agentId) !== undefined &&
+        normalizeOptionalString(params.sessionKey) !== undefined;
+      if (requesterSenderId || hasHostAuthorizedRunIdentity) {
         const { runtimeKey, runtime: scopedRuntime } = await materializeRequesterScopedRuntime({
           ...params,
           mcpServers: fullConfig.loaded.mcpServers,
@@ -214,10 +234,14 @@ export function createSessionMcpRuntimeManager(
       });
     },
     async getOrCreateRequesterScoped(params) {
-      // Anonymous turns own no requester runtime; avoid leaking session keys or
-      // sweeping unrelated runtimes before confirming the requester exists.
       const requesterSenderId = normalizeOptionalString(params.requesterSenderId);
-      if (!requesterSenderId) {
+      const hasPotentialHostAuthorizedRunIdentity =
+        normalizeOptionalString(params.agentId) !== undefined &&
+        normalizeOptionalString(params.sessionKey) !== undefined;
+      // Anonymous turns own no requester runtime. A resolver explicitly marked
+      // host-authorized may instead bind a senderless background run to its
+      // admitted agent/session identity.
+      if (!requesterSenderId && !hasPotentialHostAuthorizedRunIdentity) {
         return undefined;
       }
       await lifecycle.sweepIdleRuntimes();
@@ -238,6 +262,13 @@ export function createSessionMcpRuntimeManager(
         resolverRequesterServerNames,
       } = partitionMcpServersByConnectionScope(fullConfig.loaded.mcpServers);
       if (requesterScopedServerNames.length === 0) {
+        return undefined;
+      }
+      const hasHostAuthorizedRunIdentity =
+        resolverRequesterServerNames.length > 0 &&
+        normalizeOptionalString(params.agentId) !== undefined &&
+        normalizeOptionalString(params.sessionKey) !== undefined;
+      if (!requesterSenderId && !hasHostAuthorizedRunIdentity) {
         return undefined;
       }
       const safeServerNamesByServer = assignSafeServerNames(
