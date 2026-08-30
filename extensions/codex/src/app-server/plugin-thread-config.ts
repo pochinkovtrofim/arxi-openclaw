@@ -542,6 +542,8 @@ function emptyPluginThreadConfig(params: {
 
 export function buildDisabledAppsConfigPatch(): JsonObject {
   return {
+    "features.apps": false,
+    "features.plugins": false,
     apps: {
       _default: {
         enabled: false,

@@ -968,6 +968,8 @@ describe("Codex plugin thread config", () => {
 
     expect(config.enabled).toBe(false);
     expect(config.configPatch).toEqual({
+      "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: {
           enabled: false,
@@ -1781,6 +1783,8 @@ describe("Codex plugin thread config", () => {
 
     expect(config.enabled).toBe(false);
     expect(config.configPatch).toEqual({
+      "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: {
           enabled: false,
@@ -2979,6 +2983,10 @@ describe("Codex plugin thread config", () => {
         destructive_enabled: false,
         open_world_enabled: false,
       },
+    });
+    expect(fallback.configPatch).toMatchObject({
+      "features.apps": false,
+      "features.plugins": false,
     });
     expect(fallback.diagnostics).toEqual([
       { code: "plugin_config_timeout", message: "Plugin discovery timed out." },
