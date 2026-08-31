@@ -14,6 +14,7 @@ import {
   runOpenClawStateWriteTransaction,
   type OpenClawStateDatabaseOptions,
 } from "../../state/openclaw-state-db.js";
+import { resolveSecretStoreDatabase } from "./secret-store-database.js";
 import {
   SECRET_STORE_VALUE_MAX_BYTES,
   SecretStoreValidationError,
@@ -139,7 +140,7 @@ export function writeHiddenGitHubSecretRecord(params: {
           ),
       );
     },
-    params.database,
+    resolveSecretStoreDatabase(params.database),
     { operationLabel: "secrets.store.write" },
   );
   registerSecretValueForRedaction(params.value);
@@ -166,7 +167,7 @@ export function readHiddenGitHubSecretRecord(params: {
           .where("allowed_hosts", "is", null)
           .where("deleted_at_ms", "is", null),
       );
-    }, params.database ?? {});
+    }, resolveSecretStoreDatabase(params.database));
     if (!row || !isLiveHiddenGitHubStoreRow(row, kind, Date.now())) {
       return undefined;
     }
@@ -213,7 +214,7 @@ export function listHiddenGitHubSecretRecordNames(params: {
           registerSecretValueForRedaction(row.value);
           return [row.name];
         });
-      }, params.database ?? {}) ?? []
+      }, resolveSecretStoreDatabase(params.database)) ?? []
     );
   } catch (error) {
     if (isMissingSecretStoreTableError(error)) {
@@ -242,7 +243,7 @@ export function deleteHiddenGitHubSecretRecord(params: {
             .where("name", "=", params.name),
         );
       },
-      params.database,
+      resolveSecretStoreDatabase(params.database),
       { operationLabel: "secrets.store.delete-hidden-github" },
     );
   } catch (error) {
