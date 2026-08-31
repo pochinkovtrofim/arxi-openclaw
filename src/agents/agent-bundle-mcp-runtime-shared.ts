@@ -21,8 +21,13 @@ export const SESSION_MCP_MAX_IDLE_REQUESTER_RUNTIMES = 64;
 export function shouldLoadRequesterScopedMcpHarnessRuntime(params: {
   sessionId: string;
   requesterSenderId?: string | null;
+  agentId?: string | null;
+  sessionKey?: string | null;
 }): boolean {
   if (params.requesterSenderId?.trim()) {
+    return true;
+  }
+  if (params.agentId?.trim() && params.sessionKey?.trim()) {
     return true;
   }
   const manager = (globalThis as Record<PropertyKey, unknown>)[SESSION_MCP_RUNTIME_MANAGER_KEY] as
