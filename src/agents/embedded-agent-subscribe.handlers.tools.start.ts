@@ -611,6 +611,14 @@ export function handleToolExecutionStart(
               if (!binding) {
                 return;
               }
+              if (process.env.ARXI_AUTH_AGENT_DIR?.trim()) {
+                const allowedHosts = binding.allowedHosts?.length
+                  ? ` Allowed hosts: ${binding.allowedHosts.join(", ")}.`
+                  : "";
+                return ctx.params.onToolResult?.({
+                  text: `🔑 Agent requests credential ${binding.name} (${binding.kind}).${allowedHosts} Reply is disabled for secrets — open the Arxi Mini App, then Settings → Keys and API tokens.`,
+                });
+              }
               const config = ctx.params.config;
               const controlUiBase =
                 resolveControlUiSessionLinkBase(config) ??

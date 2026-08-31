@@ -41,6 +41,7 @@ function countStoredRows(database: ReturnType<typeof createDatabaseOptions>, nam
 }
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.useRealTimers();
   closeOpenClawStateDatabaseForTest();
   for (const root of roots.splice(0)) {
@@ -49,6 +50,34 @@ afterEach(() => {
 });
 
 describe("secret store", () => {
+  it("routes implicit secret storage to a protected database override", () => {
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "openclaw-secret-override-")),
+    );
+    roots.push(root);
+    const protectedPath = path.join(root, "credential-lease", "openclaw-secrets.sqlite");
+    vi.stubEnv("OPENCLAW_STATE_DIR", path.join(root, "ordinary-state"));
+    vi.stubEnv("ARXI_AUTH_AGENT_DIR", path.dirname(protectedPath));
+
+    writeSecretStoreEntry({
+      scope: team,
+      name: "ARXI_TEST_API_TOKEN",
+      value: "protected-secret-marker",
+      kind: "secret",
+      updatedBy: "test",
+    });
+
+    expect(fs.existsSync(protectedPath)).toBe(true);
+    expect(
+      readSecretStoreValue({
+        scope: team,
+        name: "ARXI_TEST_API_TOKEN",
+        database: { path: protectedPath },
+      }),
+    ).toEqual({ ok: true, value: "protected-secret-marker" });
+    expect(fs.existsSync(path.join(root, "ordinary-state", "openclaw.sqlite"))).toBe(false);
+  });
+
   it("consumes only a fresh, unbound GitHub setup handoff", () => {
     const database = createDatabaseOptions();
     const name = "github-setup-11111111111111111111111111111111";

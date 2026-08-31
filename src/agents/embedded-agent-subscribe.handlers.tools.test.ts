@@ -134,6 +134,7 @@ async function activateAskUserPrompt(toolCallId: string, args: unknown) {
 }
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   await Promise.all([...pendingAskUserFinishes].map((finish) => finish()));
   resetPendingAskUserQuestionsForTest();
 });
@@ -457,7 +458,12 @@ describe("handleToolExecutionStart read path checks", () => {
         controlUi: { basePath: "/control" },
       },
     };
-    const args = { action: "request", name: "TEST_API_KEY", kind: "secret" };
+    const args = {
+      action: "request",
+      name: "TEST_API_KEY",
+      kind: "secret",
+      allowedHosts: ["api.example.test"],
+    };
     let questionId = "";
     let resolveAnswer: ((value: { status: "cancelled" }) => void) | undefined;
     const tool = createSecretsTool({
@@ -490,6 +496,48 @@ describe("handleToolExecutionStart read path checks", () => {
     });
     expect(onToolResult.mock.calls[0]?.[0]).not.toHaveProperty("channelData");
     expect(onToolResult.mock.calls[0]?.[0]).not.toHaveProperty("presentation");
+    resolveAnswer?.({ status: "cancelled" });
+    await pending;
+  });
+
+  it("routes Arxi credential requests to its authenticated Mini App", async () => {
+    vi.stubEnv("ARXI_AUTH_AGENT_DIR", "/run/arxi/credential-lease");
+    const { ctx } = createTestContext();
+    const onToolResult = vi.fn();
+    ctx.params.onToolResult = onToolResult;
+    const args = {
+      action: "request",
+      name: "TEST_API_KEY",
+      kind: "secret",
+      allowedHosts: ["api.example.test"],
+    };
+    let resolveAnswer: ((value: { status: "cancelled" }) => void) | undefined;
+    const tool = createSecretsTool({
+      agentId: "agent-test-id",
+      sessionKey: "agent:unit-session",
+      runId: "run-test",
+      gatewayCall: async (method, _options, params) => {
+        if (method === "question.request") {
+          return { id: String(requireRecord(params, "question request").id) };
+        }
+        if (method === "question.get") {
+          return { question: { questions: [] } };
+        }
+        if (method === "question.waitAnswer") {
+          return await new Promise((resolve) => {
+            resolveAnswer = resolve;
+          });
+        }
+        throw new Error(`unexpected method ${method}`);
+      },
+    });
+
+    await startTool(ctx, { toolName: "secrets", toolCallId: "secret-call-arxi", args });
+    const pending = tool.execute("secret-call-arxi", args);
+    await vi.waitFor(() => expect(onToolResult).toHaveBeenCalledOnce());
+    expect(onToolResult).toHaveBeenCalledWith({
+      text: "🔑 Agent requests credential TEST_API_KEY (secret). Allowed hosts: api.example.test. Reply is disabled for secrets — open the Arxi Mini App, then Settings → Keys and API tokens.",
+    });
     resolveAnswer?.({ status: "cancelled" });
     await pending;
   });

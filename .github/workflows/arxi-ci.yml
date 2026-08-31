@@ -158,6 +158,8 @@ jobs:
           src/agents/agent-tools.before-tool-call.wrapper.ts
           src/agents/auth-profiles/path-resolve.ts
           src/agents/auth-profiles/sqlite.ts
+          src/agents/embedded-agent-subscribe.handlers.tools.start.ts
+          src/agents/embedded-agent-subscribe.handlers.tools.test.ts
           src/agents/embedded-agent-runner/run/attempt-bundle-tools.ts
           src/agents/mcp-connection-resolver.test.ts
           src/agents/mcp-connection-resolver.ts
@@ -225,6 +227,10 @@ jobs:
           src/plugins/tools.ts
           src/plugins/types.mcp-connection.ts
           src/plugin-sdk/media-mime.ts
+          src/secrets/store/secret-store-database.ts
+          src/secrets/store/secret-store-hidden-github.ts
+          src/secrets/store/secret-store.test.ts
+          src/secrets/store/secret-store.ts
           config/assertion-safety-baseline.txt
           scripts/ci-changed-scope.mjs
           scripts/AGENTS.md

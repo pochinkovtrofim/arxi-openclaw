@@ -18,6 +18,7 @@ import {
 } from "../../state/openclaw-state-db.js";
 import { normalizeExactAllowedHost } from "../exact-hostname.js";
 import { mintSecretSentinel } from "../sentinel.js";
+import { resolveSecretStoreDatabase } from "./secret-store-database.js";
 import {
   classifyHiddenGitHubStoreName,
   GITHUB_DEVICE_STORE_MAX_AGE_MS,
@@ -202,7 +203,7 @@ export function listSecretStoreEntries(params: {
         return executeSqliteQuerySync(sqlite, query)
           .rows.filter((row) => classifyHiddenGitHubStoreName(row.name) === undefined)
           .map(toMetadata);
-      }, params.database ?? {}) ?? []
+      }, resolveSecretStoreDatabase(params.database)) ?? []
     );
   } catch (error) {
     if (isMissingSecretStoreTableError(error)) {
@@ -254,7 +255,7 @@ export function consumeGitHubSetupHandoff(params: {
         );
         value = row.value;
       },
-      params.database,
+      resolveSecretStoreDatabase(params.database),
       { operationLabel: "secrets.store.consume-github-setup-handoff" },
     );
     if (value !== undefined) {
@@ -324,7 +325,7 @@ export function readSecretStoreExecEnvironment(params: {
           ...(Object.keys(secretSentinels).length > 0 ? { secretSentinels } : {}),
           ...(secretEgressBindings.length > 0 ? { secretEgressBindings } : {}),
         };
-      }, params.database ?? {}) ?? {}
+      }, resolveSecretStoreDatabase(params.database)) ?? {}
     );
   } catch (error) {
     if (isMissingSecretStoreTableError(error)) {
@@ -354,7 +355,7 @@ export function readSecretStoreValue(params: {
           .where("name", "=", params.name)
           .where("deleted_at_ms", "is", null),
       );
-    }, params.database ?? {});
+    }, resolveSecretStoreDatabase(params.database));
     if (!row) {
       return err({
         code: "SECRET_STORE_NOT_FOUND",
@@ -443,7 +444,7 @@ export function writeSecretStoreEntry(params: {
           ),
       );
     },
-    params.database,
+    resolveSecretStoreDatabase(params.database),
     { operationLabel: "secrets.store.write" },
   );
 }
@@ -485,7 +486,7 @@ export function updateSecretStoreAllowedHosts(params: {
         );
       }
     },
-    params.database,
+    resolveSecretStoreDatabase(params.database),
     { operationLabel: "secrets.store.allowed-hosts" },
   );
 }
@@ -497,7 +498,8 @@ export function deleteSecretStoreEntry(params: {
 }): void {
   assertSecretStoreMutationName(params.name);
   const { scopeKind, scopeId } = normalizeScope(params.scope);
-  const state = openOpenClawStateDatabase(params.database);
+  const database = resolveSecretStoreDatabase(params.database);
+  const state = openOpenClawStateDatabase(database);
   const now = Date.now();
   try {
     runOpenClawStateWriteTransaction(
@@ -519,7 +521,7 @@ export function deleteSecretStoreEntry(params: {
                 .where("deleted_at_ms", "is", null);
         executeSqliteQuerySync(sqlite, query);
       },
-      { ...params.database, database: state },
+      { ...database, database: state },
       { operationLabel: "secrets.store.delete" },
     );
   } catch (error) {
@@ -534,7 +536,8 @@ export function purgeExpiredSecretStoreEntries(
     database?: OpenClawStateDatabaseOptions;
   } = {},
 ): number {
-  const state = openOpenClawStateDatabase(params.database);
+  const database = resolveSecretStoreDatabase(params.database);
+  const state = openOpenClawStateDatabase(database);
   const threshold = Date.now() - SECRET_STORE_RETENTION_MS;
   const handoffThreshold = Date.now() - GITHUB_SETUP_HANDOFF_MAX_AGE_MS;
   const deviceThreshold = Date.now() - GITHUB_DEVICE_STORE_MAX_AGE_MS;
@@ -579,7 +582,7 @@ export function purgeExpiredSecretStoreEntries(
         }
         return Number(deleted.numAffectedRows ?? 0n) + expiredHidden;
       },
-      { ...params.database, database: state },
+      { ...database, database: state },
       { operationLabel: "secrets.store.purge" },
     );
   } catch (error) {
