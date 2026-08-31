@@ -401,6 +401,18 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
       path.join(tempDir, "workspace-native-mcp-auth-failure"),
     );
     configureFakeMcp(params);
+    params.agentId = "main";
+    params.senderId = "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    params.agentAccountId = "default";
+    params.messageChannel = "arxi";
+    params.chatType = "direct";
+    params.chatId = "telegram-chat:42";
+    params.lifecycleGeneration = "63";
+    params.diagnosticTrace = {
+      traceId: "1234567890abcdef1234567890abcdef",
+      spanId: "1234567890abcdef",
+      traceFlags: "01",
+    };
 
     const harness = createStartedThreadHarness(async (method) => {
       if (method === "mcpServerStatus/list") {
@@ -428,6 +440,17 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(mcpMocks.requesterParams[0]?.manifestRegistry).toBe(
       params.preparedModelRuntime?.metadataSnapshot.manifestRegistry,
     );
+    expect(mcpMocks.requesterParams[0]).toMatchObject({
+      sessionKey: params.sessionKey,
+      agentId: "main",
+      requesterSenderId: "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      agentAccountId: "default",
+      messageChannel: "arxi",
+      chatType: "direct",
+      conversationId: "telegram-chat:42",
+      runtimeGeneration: "63",
+      traceId: "1234567890abcdef1234567890abcdef",
+    });
     expect(mcpMocks.captureCalls).toHaveLength(1);
     expect(mcpMocks.captureCalls[0]!.storedNames).not.toContain("fake__show");
   });

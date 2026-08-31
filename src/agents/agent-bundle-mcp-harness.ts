@@ -97,6 +97,10 @@ type MaterializeRequesterScopedMcpToolsForHarnessRunParams = {
   requesterSenderId?: string | null;
   agentAccountId?: string | null;
   messageChannel?: string | null;
+  chatType?: string | null;
+  conversationId?: string | null;
+  runtimeGeneration?: string | null;
+  traceId?: string | null;
   reservedToolNames?: Iterable<string>;
   toolsAllow?: string[];
   /** When set, applies the same final effective tool policy as the embedded runner. */
@@ -276,6 +280,11 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
     requesterSenderId: params.requesterSenderId,
     agentAccountId: params.agentAccountId,
     messageChannel: params.messageChannel,
+    agentId: params.agentId,
+    chatType: params.chatType,
+    conversationId: params.conversationId,
+    runtimeGeneration: params.runtimeGeneration,
+    traceId: params.traceId,
   });
 
   let liveRuntime: Awaited<ReturnType<typeof materializeBundleMcpToolsForRun>> | undefined;

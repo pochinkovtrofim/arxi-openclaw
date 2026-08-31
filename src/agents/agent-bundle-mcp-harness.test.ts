@@ -583,6 +583,38 @@ describe("materializeRequesterScopedMcpToolsForHarnessRunCore", () => {
     expect(mocks.rememberAdvertisedScopedMcpCatalog).not.toHaveBeenCalled();
   });
 
+  it("forwards the host-admitted run identity to requester-scoped resolution", async () => {
+    mocks.setResolveImpl(async () => undefined);
+
+    await materializeRequesterScopedMcpToolsForHarnessRunCore({
+      sessionId: "session-host-admitted",
+      sessionKey: "agent:main:external:conversation",
+      agentId: "main",
+      workspaceDir: "/workspace",
+      requesterSenderId: "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      agentAccountId: "default",
+      messageChannel: "arxi",
+      chatType: "direct",
+      conversationId: "telegram-chat:42",
+      runtimeGeneration: "63",
+      traceId: "1234567890abcdef1234567890abcdef",
+    });
+
+    expect(mocks.getOrCreateRequesterScopedMcpRuntime).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionKey: "agent:main:external:conversation",
+        agentId: "main",
+        requesterSenderId: "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        agentAccountId: "default",
+        messageChannel: "arxi",
+        chatType: "direct",
+        conversationId: "telegram-chat:42",
+        runtimeGeneration: "63",
+        traceId: "1234567890abcdef1234567890abcdef",
+      }),
+    );
+  });
+
   it("bootstraps a requester connect tool without starting OAuth during materialization", async () => {
     mocks.setResolveImpl(async (params) =>
       makeConnectRuntime({
