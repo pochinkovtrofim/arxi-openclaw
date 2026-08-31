@@ -7,7 +7,6 @@ import {
 import { normalizePluginsConfig } from "../plugins/config-state.js";
 import { extractPluginInstallRecordsFromInstalledPluginIndex } from "../plugins/installed-plugin-index-install-records.js";
 import { loadPluginRegistryHandle } from "../plugins/loader.js";
-import { adoptRuntimeMcpServerConnectionResolverRegistrations } from "../plugins/mcp-server-connection-resolvers.js";
 import { loadPluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.js";
 import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.types.js";
 import type { PluginRegistry } from "../plugins/registry-types.js";
@@ -122,11 +121,8 @@ export function loadAgentRuntimePluginRegistryHandle(
   if (!activeRegistry) {
     return pluginRegistry;
   }
-  return adoptRuntimeMcpServerConnectionResolverRegistrations(
-    adoptRuntimeWidgetPresenterRegistrations(
-      adoptRuntimeContextEngineRegistrations(pluginRegistry, activeRegistry),
-      activeRegistry,
-    ),
+  return adoptRuntimeWidgetPresenterRegistrations(
+    adoptRuntimeContextEngineRegistrations(pluginRegistry, activeRegistry),
     activeRegistry,
   );
 }

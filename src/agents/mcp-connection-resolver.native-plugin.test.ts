@@ -109,3 +109,68 @@ it("keeps a native plugin MCP server requester-scoped when the plugin registers 
     ),
   ).resolves.toEqual(new Map([["google_workspace", { url: "http://127.0.0.1:18080/google/mcp" }]]));
 });
+
+it("does not borrow a full-runtime MCP resolver into a discovery generation", async () => {
+  useNoBundledPlugins();
+  const workspaceDir = makePluginLoaderTempDir();
+  const pluginDir = path.join(workspaceDir, "full-only-resolver");
+  fs.mkdirSync(pluginDir, { recursive: true });
+  const pluginFile = path.join(pluginDir, "index.mjs");
+  fs.writeFileSync(
+    path.join(pluginDir, "openclaw.plugin.json"),
+    JSON.stringify({
+      id: "full-only-resolver",
+      configSchema: { type: "object", additionalProperties: false },
+      mcpServers: {
+        google_workspace: {
+          transport: "streamable-http",
+          url: "http://127.0.0.1:18080/google/mcp",
+        },
+      },
+    }),
+  );
+  fs.writeFileSync(
+    pluginFile,
+    `export default {
+      id: "full-only-resolver",
+      register(api) {
+        if (api.registrationMode !== "full") return;
+        api.registerMcpServerConnectionResolver({
+          serverName: "google_workspace",
+          requiresRequesterIdentity: false,
+          resolve: async () => ({ url: "http://127.0.0.1:18080/google/mcp" }),
+        });
+      },
+    };`,
+  );
+  const config: OpenClawConfig = {
+    plugins: {
+      enabled: true,
+      allow: ["full-only-resolver"],
+      load: { paths: [pluginFile] },
+      entries: { "full-only-resolver": { enabled: true } },
+    },
+  };
+
+  const runtimeRegistry = loadAndActivateRootPluginRegistry({
+    workspaceDir,
+    config,
+    cache: false,
+  });
+  expect(runtimeRegistry.mcpServerConnectionResolvers).toHaveLength(1);
+
+  const attemptRegistry = loadAgentRuntimePluginRegistryHandle({
+    config,
+    workspaceDir,
+  });
+  expect(attemptRegistry.mcpServerConnectionResolvers).toHaveLength(0);
+  await expect(
+    withPluginRuntimeRegistryScope(attemptRegistry, () =>
+      resolveRequesterScopedMcpConnections({
+        serverNames: ["google_workspace"],
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      }),
+    ),
+  ).resolves.toEqual(new Map());
+});
