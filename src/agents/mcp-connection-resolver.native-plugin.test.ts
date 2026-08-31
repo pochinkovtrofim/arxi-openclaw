@@ -9,9 +9,11 @@ import {
   useNoBundledPlugins,
 } from "../plugins/loader.test-fixtures.js";
 import { loadPluginManifestRegistryForPluginRegistry } from "../plugins/plugin-registry.js";
+import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
 import { shouldLoadRequesterScopedMcpHarnessRuntime } from "./agent-bundle-mcp-runtime-shared.js";
 import { loadCodexBundleMcpThreadConfigCore } from "./codex-mcp-config.js";
 import { resolveRequesterScopedMcpConnections } from "./mcp-connection-resolver.js";
+import { loadAgentRuntimePluginRegistryHandle } from "./runtime-plugins.js";
 
 afterEach(() => {
   resetPluginLoaderTestStateForTest();
@@ -90,5 +92,20 @@ it("keeps a native plugin MCP server requester-scoped when the plugin registers 
       agentId: "main",
       sessionKey: "agent:main:main",
     }),
+  ).resolves.toEqual(new Map([["google_workspace", { url: "http://127.0.0.1:18080/google/mcp" }]]));
+
+  const attemptRegistry = loadAgentRuntimePluginRegistryHandle({
+    config,
+    workspaceDir,
+  });
+  expect(attemptRegistry.mcpServerConnectionResolvers).toHaveLength(1);
+  await expect(
+    withPluginRuntimeRegistryScope(attemptRegistry, () =>
+      resolveRequesterScopedMcpConnections({
+        serverNames: ["google_workspace"],
+        agentId: "main",
+        sessionKey: "agent:main:main",
+      }),
+    ),
   ).resolves.toEqual(new Map([["google_workspace", { url: "http://127.0.0.1:18080/google/mcp" }]]));
 });
