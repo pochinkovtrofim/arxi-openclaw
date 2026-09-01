@@ -143,6 +143,7 @@ jobs:
           packages/gateway-protocol/src/gateway-suspend.test.ts
           packages/gateway-protocol/src/public-schema.ts
           packages/gateway-protocol/src/schema/agent.ts
+          packages/gateway-protocol/src/schema/agents-models-skills.ts
           packages/gateway-protocol/src/schema/gateway-suspend.ts
           packages/gateway-protocol/src/schema/protocol-schema-fragment-transport.ts
           src/agents/prepared-model-catalog-worker.integration.test.ts
@@ -192,6 +193,8 @@ jobs:
           src/gateway/server-methods.suspension-admission.test.ts
           src/gateway/server-methods/agent-request-types.ts
           src/gateway/server-methods/agent.test-harness.ts
+          src/gateway/server-methods/agents-mutate.test.ts
+          src/gateway/server-methods/agents.ts
           src/gateway/server-methods/suspend.ts
           src/infra/heartbeat-runner-delivery.ts
           src/infra/heartbeat-runner-execution.ts

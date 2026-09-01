@@ -915,6 +915,14 @@ export const agentsHandlers: GatewayRequestHandlers = {
     }
 
     const result = await createAgent({
+      ...(params.agentId
+        ? {
+            entry: {
+              id: params.agentId,
+              name: params.name,
+            },
+          }
+        : {}),
       name: params.name,
       workspace: params.workspace,
       model: params.model,
