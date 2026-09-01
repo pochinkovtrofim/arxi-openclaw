@@ -755,6 +755,23 @@ describe("agents.create", () => {
     expect(mocks.writeConfigFile).toHaveBeenCalled();
   });
 
+  it("creates an agent with an explicit stable id distinct from its display name", async () => {
+    const { respond, promise } = makeCall("agents.create", {
+      agentId: "axi_0123456789abcdef0123456789abcdef",
+      name: "Mira",
+      workspace: "/home/user/agents/mira",
+      avatar: "avatar.jpg",
+    });
+    await promise;
+
+    expectRespondOk(respond, {
+      ok: true,
+      agentId: "axi_0123456789abcdef0123456789abcdef",
+      name: "Mira",
+      workspace: "/resolved/home/user/agents/mira",
+    });
+  });
+
   it("defaults an omitted workspace", async () => {
     const { respond, promise } = makeCall("agents.create", { name: "Test Agent" });
 
