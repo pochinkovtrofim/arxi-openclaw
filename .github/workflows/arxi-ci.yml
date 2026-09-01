@@ -190,6 +190,9 @@ jobs:
           src/gateway/server-cron-lazy.ts
           src/gateway/agent-turn/agent-run-execution-phase.owner.test.ts
           src/gateway/agent-turn/agent-run-execution-phase.ts
+          src/gateway/server-methods/chat-metadata-runtime.test.ts
+          src/gateway/server-methods/chat-metadata-runtime.ts
+          src/gateway/server.chat-metadata-boundary.test.ts
           src/gateway/server-methods.suspension-admission.test.ts
           src/gateway/server-methods/agent-request-types.ts
           src/gateway/server-methods/agent.test-harness.ts

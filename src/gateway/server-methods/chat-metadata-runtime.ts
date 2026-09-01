@@ -129,7 +129,11 @@ function captureGenerationFacts(deps: ChatMetadataRuntimeDeps): PreparedGenerati
     const agentId = normalizeAgentId(rawAgentId);
     // Metadata follows the published lifecycle owner while its replacement gate owns turnover;
     // display-only config publications must not make that still-current owner disappear.
-    const owner = deps.getPreparedOwner({ agentId, config });
+    const owner = deps.getPreparedOwner({
+      agentId,
+      config,
+      allowGatewaySubagentBinding: true,
+    });
     if (!owner) {
       throw new ChatMetadataSnapshotUnavailableError(
         `prepared chat metadata owner is unavailable for agent "${agentId}"`,
