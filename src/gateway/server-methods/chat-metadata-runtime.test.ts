@@ -165,6 +165,27 @@ function createHarness(
 }
 
 describe("gateway chat metadata runtime", () => {
+  test("reads prepared owners through the gateway publication key for every agent", async () => {
+    const harness = createHarness({
+      agents: {
+        list: [{ id: "main", default: true }, { id: "managed-personal-agent" }],
+      },
+    });
+
+    await harness.runtime.refresh();
+
+    expect(harness.getPreparedOwner).toHaveBeenCalledWith({
+      agentId: "main",
+      config: expect.any(Object),
+      allowGatewaySubagentBinding: true,
+    });
+    expect(harness.getPreparedOwner).toHaveBeenCalledWith({
+      agentId: "managed-personal-agent",
+      config: expect.any(Object),
+      allowGatewaySubagentBinding: true,
+    });
+  });
+
   test("refreshes lazily on the first read when configured", async () => {
     const beforeRefresh = vi.fn(async () => {});
     const harness = createHarness(undefined, { beforeRefresh, refreshOnRead: true });

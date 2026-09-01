@@ -38,7 +38,10 @@ beforeEach(async () => {
   await writeGatewayConfig(CHAT_METADATA_BOUNDARY_CONFIG);
   const { refreshPreparedModelRuntimeSnapshots } =
     await import("../agents/prepared-model-runtime.js");
-  await refreshPreparedModelRuntimeSnapshots(getRuntimeConfig(), { gatewayLifecycle: true });
+  await refreshPreparedModelRuntimeSnapshots(getRuntimeConfig(), {
+    gatewayLifecycle: true,
+    allowGatewaySubagentBinding: true,
+  });
   const ready = await rpcReq(requireGateway().ws, "chat.metadata", { agentId: "main" });
   expect(ready.ok, JSON.stringify(ready)).toBe(true);
 });
@@ -138,7 +141,10 @@ test("chat.metadata retries owner misses without broadly retrying cached failure
   // Reset the published runtime between boundary cases without restarting the Gateway.
   const { refreshPreparedModelRuntimeSnapshots } =
     await import("../agents/prepared-model-runtime.js");
-  await refreshPreparedModelRuntimeSnapshots(getRuntimeConfig(), { gatewayLifecycle: true });
+  await refreshPreparedModelRuntimeSnapshots(getRuntimeConfig(), {
+    gatewayLifecycle: true,
+    allowGatewaySubagentBinding: true,
+  });
   const reset = await rpcReq(ws, "chat.metadata", { agentId: "main" });
   expect(reset.ok).toBe(true);
 
