@@ -10,7 +10,8 @@ title: "Arxi lifecycle producer inventory"
 
 This is source-level upgrade evidence, not a stable OpenClaw API. Arxi consumes
 only the versioned `gateway.suspend.*` protocol. The inventory was reviewed at
-exact upstream commit `b576bb41cf4b3b3418a25e925d9b48ff6dd18c57`.
+OpenClaw `v2026.8.2`, exact upstream commit
+`0965053fe6b9341776df147a6934b7485c60b5ca`.
 
 Active work is covered by the canonical Gateway snapshot in
 `src/infra/gateway-active-work.ts` plus server-local inspectors in

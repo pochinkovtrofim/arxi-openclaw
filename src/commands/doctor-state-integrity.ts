@@ -50,6 +50,7 @@ import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { HealthFinding, HealthRepairEffect } from "../flows/health-checks.js";
 import { safeRealpathSync } from "../infra/boundary-path.js";
+import { findGitRoot } from "../infra/git-root.js";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import {
   loadLegacySessionStore,
@@ -1637,7 +1638,9 @@ export async function noteStateIntegrity(
   const inspectedLegacyStores = new Set<string>();
   for (const target of sessionTargets) {
     const legacyStorePath = path.resolve(target.storePath);
-    await inspectAgentSessionIntegrity(target, !inspectedLegacyStores.has(legacyStorePath));
+    const inspectLegacyStore =
+      !legacyStorePath.endsWith(".sqlite") && !inspectedLegacyStores.has(legacyStorePath);
+    await inspectAgentSessionIntegrity(target, inspectLegacyStore);
     inspectedLegacyStores.add(legacyStorePath);
   }
   for (const warning of describeHeartbeatSessionTargetIssues(cfg)) {
@@ -1657,8 +1660,8 @@ export function collectWorkspaceBackupTip(workspaceDir: string): string | null {
   if (!existsDir(workspaceDir)) {
     return null;
   }
-  const gitMarker = path.join(workspaceDir, ".git");
-  if (fs.existsSync(gitMarker)) {
+  const resolvedWorkspaceDir = safeRealpathSync(workspaceDir);
+  if (!resolvedWorkspaceDir || findGitRoot(resolvedWorkspaceDir)) {
     return null;
   }
   return "- Tip: back up the agent workspace in a private git repo; keep ~/.openclaw out of git (credentials, sessions). Details: /concepts/agent-workspace#git-backup-recommended";

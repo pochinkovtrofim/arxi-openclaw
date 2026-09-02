@@ -18,7 +18,6 @@ import { createCronContinuationController } from "../server-methods/agent-cron-c
 import { runAgentResetPhase } from "../server-methods/agent-reset-phase.js";
 import { buildAgentSessionPatch } from "../server-methods/agent-session-patch.js";
 import { prepareAgentSession } from "../server-methods/agent-session-prepare.js";
-import { handleChatAbortRequest } from "../server-methods/chat-abort-handler.js";
 import { resolveAgentRunSessionCreation } from "../server-methods/session-creation-provenance.js";
 import type { GatewayRequestHandlerOptions, RespondFn } from "../server-methods/shared-types.js";
 import { authorizeResolvedSessionMutation } from "../session-sharing.js";
@@ -43,10 +42,6 @@ type AgentTurnStartRequest = {
   onRunObserved?: (runId: string) => void;
   diagnosticTrace?: DiagnosticTraceContext;
 };
-
-function createAcceptanceRespond(io: AgentTurnIo): RespondFn {
-  return (ok, payload, error, meta) => io.emitAcceptance([ok, payload, error], meta);
-}
 
 function replayAgentTurnIfCached(params: {
   preflight: AgentRequestPreflight;
@@ -99,10 +94,12 @@ export function createAgentTurnService(
     onRunObserved,
     diagnosticTrace,
   }: AgentTurnStartRequest): Promise<void> => {
+    const promptedAt = Date.now();
     if (replayAgentTurnIfCached({ preflight, context, io })) {
       return;
     }
-    const respond = createAcceptanceRespond(io);
+    const respond: RespondFn = (ok, payload, error, meta) =>
+      io.emitAcceptance([ok, payload, error], meta);
     const {
       request,
       cfg,
@@ -525,6 +522,7 @@ export function createAgentTurnService(
       const { activeSessionAgentId } = delivery;
 
       const preparedDispatch = await prepareAgentRunDispatch({
+        promptedAt,
         request,
         cfg,
         cfgForAgent,
@@ -715,9 +713,5 @@ export function createAgentTurnService(
     };
   };
 
-  const abortTurn = async (options: GatewayRequestHandlerOptions): Promise<void> => {
-    await handleChatAbortRequest({ ...options, context, isWebchatConnect });
-  };
-
-  return { startTurn, waitForTurn, abortTurn };
+  return { startTurn, waitForTurn };
 }

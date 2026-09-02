@@ -1,3 +1,4 @@
+import { gatewayOriginScope } from "@openclaw/gateway-client/browser";
 import {
   parseControlUiFocusLocation,
   type ControlUiFocusLocation,
@@ -35,6 +36,7 @@ import { createAgentSelectionCapability } from "./agent-selection.ts";
 import { resolveControlUiDocumentMode, type ControlUiDocumentMode } from "./approval-deep-link.ts";
 import { createBrowserHistory, resolveControlUiPaths } from "./browser.ts";
 import { createChatAttachmentHandoff } from "./chat-attachment-handoff.ts";
+import { createChatSubmissions } from "./chat-submissions.ts";
 import { createApplicationConfigCapability } from "./config.ts";
 import type {
   ApplicationNavigationOptions,
@@ -47,8 +49,8 @@ import type {
 import { applyControlUiAccent, syncControlUiSystemChrome } from "./control-ui-presentation.ts";
 import { syncCustomThemeStyleTag } from "./custom-theme.ts";
 import { createScopeUpgradeCapability } from "./device-scope-upgrade.ts";
+import { startGatewayPageActivation } from "./gateway-page-activation.ts";
 import { createApplicationGateway } from "./gateway-store.ts";
-import { createInitialUserMessageHandoff } from "./initial-user-message-handoff.ts";
 import { createNativeChatDrafts } from "./native-bridge.ts";
 import { startNativeLinkRouting } from "./native-link-routing.ts";
 import { createNativeNotificationsCapability } from "./native-notifications.ts";
@@ -56,9 +58,11 @@ import { createApplicationOverlays } from "./overlays.ts";
 import { isBrowserPanelAvailable } from "./panel-availability.ts";
 import { createApplicationPlacementStartup } from "./session-placement-startup.ts";
 import {
+  loadGatewaySessionSelection,
   loadSettings,
   patchSettings,
   persistSessionToken,
+  resolveGatewayCredentialsForUrlEdit,
   resolvePageGatewaySettings,
   saveSettings,
   type UiSettings,
@@ -271,7 +275,7 @@ export type ApplicationRuntime = {
   readonly focusLocation: ControlUiFocusLocation | null;
   readonly pendingGatewayConnection: {
     readonly gatewayUrl: string;
-    readonly token: string;
+    readonly token: string | null;
   } | null;
   readonly confirmPendingGatewayConnection: () => void;
   readonly cancelPendingGatewayConnection: () => void;
@@ -303,6 +307,18 @@ export function bootstrapApplication(
     ? resolvePageGatewaySettings(persistedSettings)
     : persistedSettings;
   const startup = resolveApplicationStartupSettings(initialSettings, startupLocation);
+  const startupTargetSelection =
+    gatewayOriginScope(startup.settings.gatewayUrl) ===
+    gatewayOriginScope(initialSettings.gatewayUrl)
+      ? null
+      : loadGatewaySessionSelection(startup.settings.gatewayUrl);
+  const settings = startupTargetSelection
+    ? {
+        ...startup.settings,
+        ...startupTargetSelection,
+        selectedAgentId: startupTargetSelection.selectedAgentId,
+      }
+    : startup.settings;
   if (
     startup.location.pathname !== startupLocation.pathname ||
     startup.location.search !== startupLocation.search ||
@@ -313,9 +329,9 @@ export function bootstrapApplication(
   }
   if (startup.changed) {
     if (documentMode) {
-      persistSessionToken(startup.settings.gatewayUrl, startup.settings.token);
+      persistSessionToken(settings.gatewayUrl, settings.token);
     } else {
-      saveSettings(startup.settings);
+      saveSettings(settings);
     }
   }
   let applicationLocation = normalizeLegacyTerminalViewLocation(startup.location, basePath);
@@ -347,16 +363,16 @@ export function bootstrapApplication(
           setSessionPathBuilder(contract.buildControlUiSessionPath);
         }));
 
-  const settings = startup.settings;
+  const hasPendingGateway = startup.pendingGatewayUrl !== null;
   const gateway = createApplicationGateway(
     settings,
     startup.password ?? "",
-    startup.pendingBootstrapToken ?? "",
+    hasPendingGateway ? "" : (startup.pendingBootstrapToken ?? ""),
     undefined,
     {
       persistDefaultConnectionSettings: documentMode === null,
       resourceBasePath,
-      ...(startup.pendingBootstrapProfile
+      ...(!hasPendingGateway && startup.pendingBootstrapProfile
         ? { bootstrapProfile: startup.pendingBootstrapProfile }
         : {}),
     },
@@ -382,6 +398,7 @@ export function bootstrapApplication(
               sessionKey: settings.sessionKey,
               gateway,
               agentsList: () => agents.state.agentsList,
+              selectedAgentId: settings.selectedAgentId,
               signal: startupLifecycle.signal,
             }),
         )
@@ -394,7 +411,20 @@ export function bootstrapApplication(
     throw error;
   });
   const agentIdentity = createAgentIdentityCapability(gateway);
-  const agentSelection = createAgentSelectionCapability(gateway, agents);
+  const agentSelection = createAgentSelectionCapability(
+    gateway,
+    agents,
+    startsApplicationRouter
+      ? {
+          load: (gatewayUrl) => loadGatewaySessionSelection(gatewayUrl).selectedAgentId ?? null,
+          save: (gatewayUrl, selectedAgentId) => {
+            if (gateway.connection.gatewayUrl === gatewayUrl) {
+              patchSettings({ selectedAgentId: selectedAgentId ?? undefined });
+            }
+          },
+        }
+      : undefined,
+  );
   const channels = createChannelCapability(gateway);
   const scopeUpgrade = createScopeUpgradeCapability(gateway);
   const config = createApplicationConfigCapability({
@@ -435,11 +465,11 @@ export function bootstrapApplication(
   const nativeNotifications = createNativeNotificationsCapability();
   const webPush = createWebPushCapability(gateway);
   const skillWorkshopRevisionAdmissions = createSkillWorkshopRevisionAdmissions();
-  const initialUserMessage = createInitialUserMessageHandoff();
+  const chatSubmissions = createChatSubmissions();
   const placementStartup = createApplicationPlacementStartup({
     gateway,
     sessions,
-    initialUserMessage,
+    chatSubmissions,
   });
   const chatAttachmentHandoff = createChatAttachmentHandoff();
   const router = createApplicationRouter();
@@ -451,7 +481,7 @@ export function bootstrapApplication(
     startup.pendingGatewayUrl !== null
       ? {
           gatewayUrl: startup.pendingGatewayUrl,
-          token: startup.pendingGatewayToken ?? "",
+          token: startup.pendingGatewayToken,
           bootstrapToken: startup.pendingBootstrapToken ?? "",
           ...(startup.pendingBootstrapProfile
             ? { bootstrapProfile: startup.pendingBootstrapProfile }
@@ -514,9 +544,15 @@ export function bootstrapApplication(
       return;
     }
     pendingGatewayConnection = null;
+    const credentials = resolveGatewayCredentialsForUrlEdit(
+      gateway.connection.gatewayUrl,
+      pending.gatewayUrl,
+      gateway.connection,
+    );
     gateway.connect({
       gatewayUrl: pending.gatewayUrl,
-      token: pending.token,
+      token: pending.bootstrapToken ? "" : (pending.token ?? credentials.token),
+      password: credentials.password,
       bootstrapToken: pending.bootstrapToken,
       bootstrapProfile: pending.bootstrapProfile,
     });
@@ -567,7 +603,7 @@ export function bootstrapApplication(
     nativeNotifications,
     webPush,
     skillWorkshopRevisionAdmissions,
-    initialUserMessage,
+    chatSubmissions,
     chatAttachmentHandoff,
     navigate: (routeId, options) => {
       void navigateAndWait(routeId, options);
@@ -599,6 +635,7 @@ export function bootstrapApplication(
           gateway.start();
           return () => gateway.stop();
         },
+        () => startGatewayPageActivation(gateway, document, window),
         () => sessionPathBuilderReady,
       ];
       // Resolve first-run setup before routing: the default Chat route owns the
@@ -688,7 +725,7 @@ export function bootstrapApplication(
       nativeNotifications?.dispose();
       webPush.dispose();
       skillWorkshopRevisionAdmissions.dispose();
-      initialUserMessage.clear();
+      chatSubmissions.clear();
       chatAttachmentHandoff.dispose();
     },
   };
