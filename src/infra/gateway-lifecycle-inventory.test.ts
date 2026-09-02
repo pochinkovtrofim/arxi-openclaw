@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createGatewayActiveWorkSnapshot } from "./gateway-active-work.js";
 
-const ARXI_LIFECYCLE_REVIEWED_UPSTREAM_COMMIT = "b576bb41cf4b3b3418a25e925d9b48ff6dd18c57";
+const ARXI_LIFECYCLE_REVIEWED_UPSTREAM_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
 
 const GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS = [
   { id: "command-queue", countKey: "queueSize" },
@@ -28,8 +28,10 @@ describe("Arxi lifecycle upgrade inventory", () => {
   it("covers every canonical active-work count", () => {
     const countKeys = Object.keys(createGatewayActiveWorkSnapshot().counts)
       .filter((key) => key !== "totalActive")
-      .sort();
-    const inventoried = GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS.map((entry) => entry.countKey).sort();
+      .toSorted();
+    const inventoried = GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS.map(
+      (entry) => entry.countKey,
+    ).toSorted();
     expect(inventoried).toEqual(countKeys);
   });
 

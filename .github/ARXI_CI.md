@@ -17,6 +17,10 @@ the composed Arxi platform ships:
 - the public Telegram planning export and plugin-SDK/package boundary;
 - requester-scoped MCP identity propagation, resolver revalidation, and the
   gateway/plugin seams used by the Google Workspace capability;
+- the pinned Codex app-server package, protocol projection, dynamic/native tool
+  lifecycle, authenticated MCP bridge, and model-call diagnostics;
+- credential custody, managed-agent ownership, diagnostic trace propagation,
+  and the atomic suspend/wake lifecycle used by the host;
 - dependency and lockfile consistency through the frozen install;
 - workflow validity. Diff-scoped OpenGrep, CodeQL, dependency review, and
   secret/security guards remain separate automatic security workflows.

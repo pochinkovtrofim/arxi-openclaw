@@ -2,19 +2,19 @@
 import type { SessionToolOverrides } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
-import { getPluginToolMeta } from "../plugins/tools.js";
-import {
-  buildBundleMcpToolsFromCatalog,
-  materializeBundleMcpToolsForRun,
-} from "./agent-bundle-mcp-materialize.js";
-import { mergeMcpConnectCatalog } from "./agent-bundle-mcp-requester-connect.js";
+import { getPluginToolMeta } from "../plugins/tool-metadata.js";
 import {
   getAdvertisedScopedMcpCatalog,
   getOrCreateRequesterScopedMcpRuntime,
   getOrCreateSessionMcpRuntime,
   rememberAdvertisedScopedMcpCatalog,
   retireSessionMcpRuntime,
-} from "./agent-bundle-mcp-runtime.js";
+} from "./agent-bundle-mcp-manager-api.js";
+import {
+  buildBundleMcpToolsFromCatalog,
+  materializeBundleMcpToolsForRun,
+} from "./agent-bundle-mcp-materialize.js";
+import { mergeMcpConnectCatalog } from "./agent-bundle-mcp-requester-connect.js";
 import type { McpToolCatalog, RequesterMcpConnect } from "./agent-bundle-mcp-types.js";
 import {
   resolveConversationCapabilityProfile,
@@ -269,7 +269,7 @@ export async function materializeStaticMcpToolsForScheduledHarnessRunCore(
 export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
   params: MaterializeRequesterScopedMcpToolsForHarnessRunParams,
 ): Promise<RequesterScopedHarnessMcpTools | undefined> {
-  const scopedRuntime = await getOrCreateRequesterScopedMcpRuntime({
+  const scopedRuntimeHandle = await getOrCreateRequesterScopedMcpRuntime({
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
     workspaceDir: params.workspaceDir,
@@ -286,6 +286,7 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
     runtimeGeneration: params.runtimeGeneration,
     traceId: params.traceId,
   });
+  const scopedRuntime = scopedRuntimeHandle?.runtime;
 
   let liveRuntime: Awaited<ReturnType<typeof materializeBundleMcpToolsForRun>> | undefined;
   let liveCatalog: McpToolCatalog | undefined;
@@ -297,8 +298,8 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
         reservedToolNames: params.reservedToolNames,
       });
       liveCatalog = scopedRuntime.peekCatalog() ?? (await scopedRuntime.getCatalog());
-      if (liveCatalog.tools.length > 0) {
-        rememberAdvertisedScopedMcpCatalog(params.sessionId, liveCatalog);
+      if (liveCatalog.tools.length > 0 && scopedRuntimeHandle) {
+        rememberAdvertisedScopedMcpCatalog(scopedRuntimeHandle, liveCatalog);
       }
     }
 

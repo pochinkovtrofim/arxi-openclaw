@@ -17,7 +17,7 @@ import {
   type OpenClawStateDatabaseOptions,
 } from "../../state/openclaw-state-db.js";
 import { normalizeExactAllowedHost } from "../exact-hostname.js";
-import { mintSecretSentinel } from "../sentinel.js";
+import { sealSecretSentinel } from "../sentinel.js";
 import { resolveSecretStoreDatabase } from "./secret-store-database.js";
 import {
   classifyHiddenGitHubStoreName,
@@ -307,9 +307,9 @@ export function readSecretStoreExecEnvironment(params: {
           }
           registerSecretValueForRedaction(row.value);
           if (params.includeSecretSentinels) {
-            // Named placeholders disclose the credential name. The existing sentinel
-            // is authenticated ciphertext, so an escaped value only fails vendor auth.
-            const sentinel = mintSecretSentinel(row.value, {
+            // Subprocesses must never receive plaintext, even when provider-auth
+            // sentinel masking is disabled for compatibility.
+            const sentinel = sealSecretSentinel(row.value, {
               label: `exec-store:${row.name}`,
             });
             secretSentinels[row.name] = sentinel;

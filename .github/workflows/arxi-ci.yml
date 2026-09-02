@@ -124,6 +124,28 @@ jobs:
           while IFS= read -r path; do
             shipped_files["$path"]=1
           done <<'EOF'
+          extensions/codex/harness.ts
+          extensions/codex/package.json
+          extensions/codex/src/app-server/attempt-diagnostics.test.ts
+          extensions/codex/src/app-server/attempt-diagnostics.ts
+          extensions/codex/src/app-server/dynamic-tool-build.test.ts
+          extensions/codex/src/app-server/dynamic-tool-diagnostics.ts
+          extensions/codex/src/app-server/dynamic-tool-profile.ts
+          extensions/codex/src/app-server/event-projector-native-tool-lifecycle.ts
+          extensions/codex/src/app-server/event-projector-options.ts
+          extensions/codex/src/app-server/event-projector.native-audit.test.ts
+          extensions/codex/src/app-server/event-projector.ts
+          extensions/codex/src/app-server/plugin-thread-config.test.ts
+          extensions/codex/src/app-server/plugin-thread-config.ts
+          extensions/codex/src/app-server/run-attempt-active-turn.ts
+          extensions/codex/src/app-server/run-attempt-server-requests.ts
+          extensions/codex/src/app-server/run-attempt-tool-setup.ts
+          extensions/codex/src/app-server/run-attempt.configured-mcp.test.ts
+          extensions/codex/src/app-server/run-attempt.dynamic-tools.test.ts
+          extensions/codex/src/app-server/turn-params.ts
+          extensions/codex/src/app-server/version.ts
+          extensions/diagnostics-otel/src/service-recorders-harness.ts
+          extensions/diagnostics-otel/src/service.test.ts
           extensions/telegram/src/bot-message-context.session.ts
           extensions/telegram/src/bot/body-helpers.ts
           extensions/telegram/src/bot/helpers.ts
@@ -141,6 +163,7 @@ jobs:
           extensions/openai/openai-provider.test.ts
           extensions/openai/openai-provider.ts
           packages/gateway-protocol/src/gateway-suspend.test.ts
+          packages/gateway-protocol/src/native-protocol-levels.guard.test.ts
           packages/gateway-protocol/src/public-schema.ts
           packages/gateway-protocol/src/schema/agent.ts
           packages/gateway-protocol/src/schema/agents-models-skills.ts
@@ -153,21 +176,44 @@ jobs:
           src/agents/agent-bundle-mcp-manager-install.ts
           src/agents/agent-bundle-mcp-manager-lifecycle.ts
           src/agents/agent-bundle-mcp-manager.ts
+          src/agents/agent-bundle-mcp-harness.test.ts
+          src/agents/agent-bundle-mcp-harness.ts
+          src/agents/agent-bundle-mcp-runtime-shared.test.ts
+          src/agents/agent-bundle-mcp-runtime-shared.ts
           src/agents/agent-bundle-mcp-runtime.test.ts
           src/agents/agent-bundle-mcp-types.ts
           src/agents/agent-tool-definition-adapter.ts
           src/agents/agent-tools.before-tool-call.wrapper.ts
+          src/agents/auth-profiles/path-resolve.shared-store.test.ts
           src/agents/auth-profiles/path-resolve.ts
+          src/agents/auth-profiles/paths-direct-import.test.ts
+          src/agents/auth-profiles/shared-main-dir.ts
           src/agents/auth-profiles/sqlite.ts
+          src/agents/codex-mcp-config.test.ts
+          src/agents/codex-mcp-config.ts
+          src/agents/command/attempt-execution.cli.test.ts
+          src/agents/command/attempt-execution.ts
+          src/agents/command/types.ts
+          src/agents/embedded-agent-runner/run/attempt-setup.diagnostic-trace.test.ts
+          src/agents/embedded-agent-runner/run/attempt-setup.ts
+          src/agents/embedded-agent-runner/run/params.ts
+          src/agents/embedded-agent-runner/run/run-attempt-dispatch.ts
           src/agents/embedded-agent-subscribe.handlers.tools.start.ts
           src/agents/embedded-agent-subscribe.handlers.tools.test.ts
           src/agents/embedded-agent-runner/run/attempt-bundle-tools.ts
+          src/agents/harness/lifecycle.test.ts
+          src/agents/harness/lifecycle.ts
+          src/agents/harness/selection.test.ts
+          src/agents/harness/selection.ts
+          src/agents/mcp-connection-resolver.native-plugin.test.ts
           src/agents/mcp-connection-resolver.test.ts
           src/agents/mcp-connection-resolver.ts
           src/agents/mcp-oauth-identity.test.ts
           src/agents/mcp-oauth-identity.ts
           src/agents/runtime-plan/types.ts
           src/agents/tools/common.ts
+          src/agents/tools/web-guarded-fetch.test.ts
+          src/agents/tools/web-guarded-fetch.ts
           src/agents/tools/web-search-provider-common.ts
           src/auto-reply/reply/agent-runner-execute.ts
           src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts
@@ -185,11 +231,24 @@ jobs:
           src/commands/models/list.rows.projection.test.ts
           src/commands/models/list.rows.ts
           src/commands/onboard-auth.test.ts
+          src/cron/isolated-agent/run.diagnostic-events.test.ts
+          src/cron/isolated-agent/run.ts
+          src/cron/service-contract.ts
           src/cron/service.ts
+          src/cron/service/ops-read.ts
           src/gateway/server-cron-lazy.test.ts
           src/gateway/server-cron-lazy.ts
+          src/gateway/agent-turn/agent-audio-understanding.ts
+          src/gateway/agent-turn/agent-content-phase.audio.test.ts
+          src/gateway/agent-turn/agent-content-phase.ts
           src/gateway/agent-turn/agent-run-execution-phase.owner.test.ts
           src/gateway/agent-turn/agent-run-execution-phase.ts
+          src/gateway/agent-turn/agent-turn-service.ts
+          src/gateway/local-request-context.ts
+          src/gateway/server-methods/agent-run-handler.diagnostic-trace.test.ts
+          src/gateway/server-methods/agent-run-handler.ts
+          src/gateway/server-methods/agent.media-and-routing.test-utils.ts
+          src/gateway/server-methods/agent.reset-and-identity.test-utils.ts
           src/gateway/server-methods/chat-metadata-runtime.test.ts
           src/gateway/server-methods/chat-metadata-runtime.ts
           src/gateway/server.chat-metadata-boundary.test.ts
@@ -199,6 +258,8 @@ jobs:
           src/gateway/server-methods/agents-mutate.test.ts
           src/gateway/server-methods/agents.ts
           src/gateway/server-methods/suspend.ts
+          src/gateway/server/plugins-http.suspension-admission.test.ts
+          src/infra/diagnostic-events.ts
           src/infra/heartbeat-runner-delivery.ts
           src/infra/heartbeat-runner-execution.ts
           src/infra/heartbeat-runner.structured-delivery.test.ts
@@ -209,6 +270,7 @@ jobs:
           src/infra/outbound/deliver-contracts.ts
           src/infra/outbound/deliver-core.ts
           src/infra/outbound/deliver-prepare.ts
+          src/infra/outbound/deliver.target-adoption.test.ts
           src/infra/outbound/deliver.test.ts
           src/infra/outbound/delivery-queue-media-spool.test.ts
           src/infra/outbound/delivery-queue-media-spool.ts
@@ -225,6 +287,9 @@ jobs:
           src/infra/outbound/payloads.test.ts
           src/infra/outbound/payloads.ts
           src/infra/outbound/prepared-batch.ts
+          src/infra/restart-suspension.test.ts
+          src/infra/state-migrations.media-persistence-targets.test.ts
+          src/infra/state-migrations.media-persistence-targets.ts
           src/plugins/plugin-metadata-snapshot.test.ts
           src/plugins/plugin-metadata-snapshot.ts
           src/plugins/registry-registrars-network.mcp-resolver.test.ts
@@ -233,6 +298,8 @@ jobs:
           src/plugins/tools.ts
           src/plugins/types.mcp-connection.ts
           src/plugin-sdk/media-mime.ts
+          src/plugin-sdk/provider-web-search.ts
+          src/plugins/contracts/scheduled-turns.contract.test.ts
           src/secrets/store/secret-store-database.ts
           src/secrets/store/secret-store-hidden-github.ts
           src/secrets/store/secret-store.test.ts
@@ -240,6 +307,8 @@ jobs:
           config/assertion-safety-baseline.txt
           scripts/ci-changed-scope.mjs
           scripts/AGENTS.md
+          scripts/e2e/lib/codex-media-path/fake-codex-app-server.mjs
+          scripts/e2e/lib/codex-release-package-assertions.mjs
           scripts/plugin-sdk-surface-report.mts
           scripts/protocol-gen-swift.ts
           package.json
@@ -275,15 +344,36 @@ jobs:
       - name: Test fork seams consumed by Arxi
         run: |
           pnpm test \
+            extensions/codex/src/app-server/attempt-diagnostics.test.ts \
+            extensions/codex/src/app-server/dynamic-tool-build.test.ts \
+            extensions/codex/src/app-server/event-projector.native-audit.test.ts \
+            extensions/codex/src/app-server/plugin-thread-config.test.ts \
+            extensions/codex/src/app-server/run-attempt.configured-mcp.test.ts \
+            extensions/codex/src/app-server/run-attempt.dynamic-tools.test.ts \
+            extensions/codex/src/manifest.test.ts \
+            extensions/diagnostics-otel/src/service.test.ts \
+            extensions/exa/src/exa-web-search-provider.test.ts \
             extensions/openai/openai-provider.test.ts \
             extensions/telegram/src/external-context-projection.test.ts \
+            src/agents/auth-profiles/path-resolve.shared-store.test.ts \
+            src/agents/embedded-agent-runner/run/attempt-setup.diagnostic-trace.test.ts \
+            src/agents/embedded-agent-subscribe.handlers.tools.test.ts \
             src/agents/agent-bundle-mcp-runtime.test.ts \
+            src/agents/harness/lifecycle.test.ts \
+            src/agents/harness/selection.test.ts \
             src/agents/mcp-connection-resolver.test.ts \
             src/agents/mcp-oauth-identity.test.ts \
             src/agents/prepared-model-catalog-worker.integration.test.ts \
             src/auto-reply/reply-payload.test.ts \
             src/commands/models/list.rows.projection.test.ts \
+            src/commands/models/auth.test.ts \
+            src/gateway/agent-turn/agent-content-phase.audio.test.ts \
             src/gateway/agent-turn/agent-run-execution-phase.owner.test.ts \
+            src/gateway/server-methods/agent-run-handler.diagnostic-trace.test.ts \
+            src/gateway/server-methods/agents-mutate.test.ts \
+            src/gateway/server-methods/chat-metadata-runtime.test.ts \
+            src/infra/gateway-lifecycle-inventory.test.ts \
+            src/infra/gateway-suspend-coordinator.test.ts \
             src/infra/outbound/delivery-queue-media-spool.test.ts \
             src/infra/outbound/delivery-queue-reconciliation.test.ts \
             src/infra/outbound/message-action-send.test.ts \
@@ -291,8 +381,13 @@ jobs:
             src/infra/outbound/message-plan.test.ts \
             src/infra/outbound/outbound-send-service.test.ts \
             src/infra/outbound/payloads.test.ts \
+            src/infra/state-migrations.media-persistence-targets.test.ts \
             src/plugins/plugin-metadata-snapshot.test.ts \
             src/plugins/registry-registrars-network.mcp-resolver.test.ts
+          pnpm test \
+            src/secrets/store/secret-store.test.ts \
+            test/scripts/codex-client-version-contract.test.ts \
+            test/scripts/codex-install-assertions.test.ts
           pnpm exec vitest run src/infra/outbound/deliver.test.ts \
             -t 'passes an explicitly classified durable final run without a reply dispatcher|passes the originating run correlation to model-authored media sends|does not label non-final text, status, or error payloads as useful results'
           pnpm exec vitest run src/infra/heartbeat-runner.structured-delivery.test.ts \

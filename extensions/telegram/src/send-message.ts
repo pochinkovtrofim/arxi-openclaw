@@ -169,6 +169,7 @@ async function sendMessageTelegramWithContext(
       await opts.onPlatformSendDispatch?.();
       return requestWithChatNotFound(send, label, options);
     },
+    assertPlatformSendAuthorized: opts.assertPlatformSendAuthorized,
   });
   const { sendChunkedText } = createTelegramTextSender({
     cfg,

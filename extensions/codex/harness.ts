@@ -18,7 +18,7 @@ import type { CodexSessionCatalogControlFactory } from "./src/session-catalog-ty
 // New runtime identity uses the `openai` provider.
 const DEFAULT_CODEX_HARNESS_PROVIDER_IDS = new Set(["codex", "openai"]);
 const SHARED_CODEX_APP_SERVER_CLIENT_DISPOSER = Symbol.for("openclaw.codexAppServerClientDisposer");
-// Audited against @openai/codex 0.150.1 (rust-v0.150.1). These exact denies
+// Audited against @openai/codex 0.152.1 (rust-v0.152.1). These exact denies
 // either have no Codex-native equivalent or are enforced by the harness. Keep
 // the list positive and conservative: an omitted tool isolates the native surface.
 const CODEX_TOOL_POLICY_SAFE_DENY_NAMES = [
@@ -86,6 +86,12 @@ export function createCodexAppServerAgentHarness(
   );
   const sessionCatalogControlFactory = options.sessionCatalogControlFactory;
   const sessionRuntime = options.runtime;
+  let modelCatalog:
+    | ReturnType<
+        typeof import("./src/app-server/model-catalog.js").createCodexAppServerModelCatalog
+      >
+    | undefined;
+  let disposed = false;
   const resolveAttemptPluginConfig = (config: OpenClawConfig | undefined) =>
     resolvePluginConfigObject(config, "codex") ??
     options.resolvePluginConfig?.() ??
@@ -148,12 +154,16 @@ export function createCodexAppServerAgentHarness(
       });
     },
     loadModelCatalog: async (params) => {
-      const { loadCodexAppServerModelCatalog } = await import("./src/app-server/model-catalog.js");
-      return await loadCodexAppServerModelCatalog(
-        params,
-        resolveAttemptPluginConfig(params.config),
-      );
+      const { createCodexAppServerModelCatalog } =
+        await import("./src/app-server/model-catalog.js");
+      if (disposed) {
+        return [];
+      }
+      modelCatalog ??= createCodexAppServerModelCatalog(harnessRuntimeId);
+      return await modelCatalog.load(params, resolveAttemptPluginConfig(params.config));
     },
+    readModelCatalogReadiness: (params) =>
+      modelCatalog?.read(params, resolveAttemptPluginConfig(params.config)),
     loadMcpToolCatalog: async (params) => {
       const { loadCodexEffectiveMcpCatalog } =
         await import("./src/app-server/effective-mcp-catalog.js");
@@ -332,7 +342,11 @@ export function createCodexAppServerAgentHarness(
         }
       }
     },
-    dispose: disposeSharedCodexAppServerClients,
+    dispose: async () => {
+      disposed = true;
+      modelCatalog?.dispose();
+      await disposeSharedCodexAppServerClients();
+    },
   };
   return harness;
 }

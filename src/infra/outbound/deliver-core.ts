@@ -64,7 +64,8 @@ export async function deliverOutboundPayloadsCore(
     recordIdentifiedDeliveryResult,
     recordIdentifiedDeliveryResults,
     reportIdentifiedDeliveryResult,
-    resetReportedResults,
+    getSuppressionReason,
+    resetPayloadResults,
   } = createDeliveryResultRecorder({
     results,
     onDeliveryResult: params.onDeliveryResult,
@@ -100,6 +101,7 @@ export async function deliverOutboundPayloadsCore(
         await params.onPlatformSendStart?.(route, activeSourceIndex);
       },
       onDirectAdapterHandoff: params.onDirectAdapterHandoff,
+      assertDirectAdapterHandoff: params.assertDirectAdapterHandoff,
       onPlatformSendDispatch: params.onPlatformSendDispatch,
       onDeliveryResult: reportIdentifiedDeliveryResult,
     });
@@ -226,6 +228,9 @@ export async function deliverOutboundPayloadsCore(
   const diagnosticSessionKey =
     params.mirror?.sessionKey ?? params.session?.key ?? params.session?.policyKey;
   for (const [deliveryPayloadIndex, preparedEntry] of acceptedEntries.entries()) {
+    // A rejected adapter has no final return; never match its progress or
+    // suppression disposition to a later logical payload.
+    resetPayloadResults();
     const payloadIndex = preparedEntry.sourceIndex;
     activeSourceIndex = payloadIndex;
     const payload = preparedEntry.payload;
@@ -378,7 +383,7 @@ export async function deliverOutboundPayloadsCore(
           recordPayloadOutcome(
             suppressedPayloadOutcome({
               index: payloadIndex,
-              reason: "adapter_returned_no_identity",
+              reason: getSuppressionReason() ?? "adapter_returned_no_identity",
             }),
           );
           continue;
@@ -397,7 +402,7 @@ export async function deliverOutboundPayloadsCore(
         }
       } else if (!deliveryHandler.supportsMedia) {
         log.warn(
-          "Plugin outbound adapter does not implement sendMedia; media URLs will be dropped and text fallback will be used",
+          "Plugin outbound adapter does not implement sendMedia or sendFormattedMedia; media URLs will be dropped and text fallback will be used",
           {
             channel,
             to,
@@ -407,7 +412,7 @@ export async function deliverOutboundPayloadsCore(
         const fallbackText = payloadSummary.text.trim();
         if (!fallbackText) {
           throw new Error(
-            "Plugin outbound adapter does not implement sendMedia and no text fallback is available for media payload",
+            "Plugin outbound adapter does not implement sendMedia or sendFormattedMedia and no text fallback is available for media payload",
           );
         }
         await sendTextChunks(deliveryHandler, fallbackText, sendOverrides);
@@ -423,23 +428,18 @@ export async function deliverOutboundPayloadsCore(
           overrides: sendOverrides,
           consumeReplyTo: applySendReplyToConsumption,
         });
+        const sendMedia = deliveryHandler.sendFormattedMedia ?? deliveryHandler.sendMedia;
         for (const unit of mediaUnits) {
           if (unit.kind !== "media") {
             continue;
           }
           throwIfAborted(abortSignal);
           const resultIndex = results.length;
-          const delivery = deliveryHandler.sendFormattedMedia
-            ? await deliveryHandler.sendFormattedMedia(
-                unit.caption ?? "",
-                unit.mediaUrl,
-                withPreparedTarget(unit.overrides),
-              )
-            : await deliveryHandler.sendMedia(
-                unit.caption ?? "",
-                unit.mediaUrl,
-                withPreparedTarget(unit.overrides),
-              );
+          const delivery = await sendMedia(
+            unit.caption ?? "",
+            unit.mediaUrl,
+            withPreparedTarget(unit.overrides),
+          );
           const recorded = await recordIdentifiedDeliveryResult(delivery);
           adoptSuccessfulResultsSince(resultIndex);
           if (recorded) {
@@ -461,9 +461,13 @@ export async function deliverOutboundPayloadsCore(
         recordPayloadOutcome(
           suppressedPayloadOutcome({
             index: payloadIndex,
-            reason: "adapter_returned_no_identity",
+            reason: getSuppressionReason() ?? "adapter_returned_no_identity",
           }),
         );
+        if (getSuppressionReason() === "adapter_returned_no_send") {
+          completeDeliveryDiagnostics(0);
+          continue;
+        }
       }
       const firstMessageId = mediaMessageIds
         ? mediaMessageIds.first
@@ -491,9 +495,6 @@ export async function deliverOutboundPayloadsCore(
       });
       completeDeliveryDiagnostics(deliveredResults.length);
     } catch (err) {
-      // A rejected adapter has no final return to reconcile with its progress
-      // results. Keep the results, but never match them to a later payload.
-      resetReportedResults();
       const failedPayloadResults = results.slice(payloadResultStartIndex);
       adoptSuccessfulResultsSince(payloadResultStartIndex);
       if (effectivePayload && failedPayloadResults.length > 0) {
@@ -508,7 +509,10 @@ export async function deliverOutboundPayloadsCore(
         index: payloadIndex,
         status: "failed",
         error: err,
-        sentBeforeError: failedPayloadResults.length > 0,
+        // A later pre-send failure cannot erase an earlier chunk's unknown result.
+        sentBeforeError:
+          failedPayloadResults.length > 0 ||
+          getSuppressionReason() === "adapter_returned_no_identity",
         stage: "platform_send",
         results: failedPayloadResults,
       });

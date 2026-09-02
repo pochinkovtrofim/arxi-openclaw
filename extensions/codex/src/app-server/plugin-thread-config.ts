@@ -677,6 +677,7 @@ function readPersistedAppToolApprovalOverrideNames(
     return [];
   }
   return Object.entries(tools)
+    .filter(([toolName]) => !app.readOnlyToolConfigKeys?.includes(toolName))
     .filter(([, value]) => hasPersistedToolApprovalOverride(value))
     .map(([toolName]) => toolName)
     .toSorted();
@@ -767,3 +768,5 @@ function stableStringify(value: JsonValue | undefined): string {
   }
   return JSON.stringify(value);
 }
+
+/* oxlint-disable max-lines -- Upstream v2026.8.2 already exceeds the limit; Arxi adds two config keys. */
