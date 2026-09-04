@@ -12,6 +12,7 @@ import {
 } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type {
+  CronScheduledMcpToolBinding,
   CronScheduledToolCallerOrigin,
   CronScheduledToolPolicy,
   CronToolsAllowExecTarget,
@@ -44,6 +45,7 @@ export type RestoredCronContinuation = {
   toolsAllowIsDefault?: boolean;
   scheduledToolPolicy?: CronScheduledToolPolicy;
   scheduledToolCallerOrigin?: CronScheduledToolCallerOrigin;
+  scheduledMcpToolBindings?: CronScheduledMcpToolBinding[];
   toolsAllowExecTarget?: CronToolsAllowExecTarget;
   cliSessionBindingFacts?: {
     extraSystemPromptStatic?: string;

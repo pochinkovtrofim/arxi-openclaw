@@ -44,6 +44,14 @@ describe("cron caller scope ownership", () => {
             turnSourceAccountId: "work",
             cronToolsAllowCapture: "final-executable-surface",
             cronExecToolTarget: { host: "gateway", ask: "always" },
+            cronMcpToolBindings: [
+              {
+                name: "MAIL__READ",
+                serverName: "mail",
+                operation: "tool",
+                toolName: "read",
+              },
+            ],
             ...source,
           },
         },
@@ -55,6 +63,9 @@ describe("cron caller scope ownership", () => {
         host: "gateway",
         ask: "always",
       });
+      expect(scope?.toolsAllowProvenance?.mcpToolBindings).toEqual([
+        { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+      ]);
     },
   );
 

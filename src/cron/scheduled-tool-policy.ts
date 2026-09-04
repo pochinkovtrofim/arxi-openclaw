@@ -3,6 +3,90 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { normalizeOptionalAccountId } from "../routing/account-id.js";
 import { snapshotOwnCronRecord } from "./own-record.js";
 
+const CRON_SCHEDULED_MCP_BINDING_MAX_COUNT = 256;
+const CRON_SCHEDULED_MCP_BINDING_MAX_FIELD_LENGTH = 512;
+
+export type CronScheduledMcpOperation =
+  | "tool"
+  | "resources_list"
+  | "resources_read"
+  | "prompts_list"
+  | "prompts_get";
+
+/** Canonical MCP identity bound to one persisted scheduled-tool policy name. */
+export type CronScheduledMcpToolBinding = {
+  name: string;
+  serverName: string;
+  operation: CronScheduledMcpOperation;
+  toolName: string;
+};
+
+const CRON_SCHEDULED_MCP_OPERATIONS = new Set<CronScheduledMcpOperation>([
+  "tool",
+  "resources_list",
+  "resources_read",
+  "prompts_list",
+  "prompts_get",
+]);
+
+function normalizeBoundedBindingField(value: unknown, lowercase = false): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = lowercase ? value.trim().toLowerCase() : value.trim();
+  return normalized && normalized.length <= CRON_SCHEDULED_MCP_BINDING_MAX_FIELD_LENGTH
+    ? normalized
+    : undefined;
+}
+
+/** Invalid or ambiguous persisted identity maps fail closed as a missing map. */
+export function normalizeCronScheduledMcpToolBindings(
+  value: unknown,
+): CronScheduledMcpToolBinding[] | undefined {
+  if (!Array.isArray(value) || value.length > CRON_SCHEDULED_MCP_BINDING_MAX_COUNT) {
+    return undefined;
+  }
+  const bindings: CronScheduledMcpToolBinding[] = [];
+  const identityByName = new Map<string, string>();
+  for (const entry of value) {
+    const input = isRecord(entry) ? snapshotOwnCronRecord(entry) : undefined;
+    const name = normalizeBoundedBindingField(input?.name, true);
+    const serverName = normalizeBoundedBindingField(input?.serverName);
+    const toolName = normalizeBoundedBindingField(input?.toolName);
+    const operation = input?.operation;
+    if (
+      !input ||
+      !name ||
+      !serverName ||
+      !toolName ||
+      typeof operation !== "string" ||
+      !CRON_SCHEDULED_MCP_OPERATIONS.has(operation as CronScheduledMcpOperation) ||
+      !Object.keys(input).every((key) =>
+        ["name", "serverName", "operation", "toolName"].includes(key),
+      )
+    ) {
+      return undefined;
+    }
+    const binding = {
+      name,
+      serverName,
+      operation: operation as CronScheduledMcpOperation,
+      toolName,
+    };
+    const identity = JSON.stringify([serverName, operation, toolName]);
+    const existingIdentity = identityByName.get(name);
+    if (existingIdentity !== undefined) {
+      if (existingIdentity !== identity) {
+        return undefined;
+      }
+      continue;
+    }
+    identityByName.set(name, identity);
+    bindings.push(binding);
+  }
+  return bindings;
+}
+
 /** Closed, server-authored origin of an account-scoped scheduled tool cap. */
 export type CronScheduledToolCallerOrigin =
   | { kind: "external"; channel: string }

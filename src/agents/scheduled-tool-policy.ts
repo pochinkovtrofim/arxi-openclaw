@@ -1,7 +1,9 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
+  normalizeCronScheduledMcpToolBindings,
   normalizeCronScheduledToolCallerOrigin,
   normalizeCronScheduledToolPolicy,
+  type CronScheduledMcpToolBinding,
   type CronScheduledToolCallerOrigin,
   type CronScheduledToolPolicy,
 } from "../cron/scheduled-tool-policy.js";
@@ -16,6 +18,8 @@ export type ScheduledToolPolicyContext = (
 ) & {
   /** Restrict-only policy for the rebuilt exec tool; absence keeps baseline exec. */
   execTarget?: { host: "gateway"; ask?: "always" };
+  /** Store-private canonical MCP identities authorized under the persisted names. */
+  mcpToolBindings?: readonly CronScheduledMcpToolBinding[];
 };
 
 /** Separates a scheduled creator's authorization identity from its delivery route. */
@@ -47,6 +51,7 @@ export function resolveScheduledToolPolicyContext(params: {
   scheduledToolPolicy?: unknown;
   callerOrigin?: unknown;
   execTarget?: unknown;
+  mcpToolBindings?: unknown;
 }): ScheduledToolPolicyContext | undefined {
   if (params.toolsAllow === undefined) {
     return undefined;
@@ -85,8 +90,12 @@ export function resolveScheduledToolPolicyContext(params: {
           },
         }
       : {};
+  const rawMcpToolBindings =
+    params.mcpToolBindings ?? (isRecord(rawPolicy) ? rawPolicy.mcpToolBindings : undefined);
+  const mcpToolBindings = normalizeCronScheduledMcpToolBindings(rawMcpToolBindings);
+  const mcpBindings = mcpToolBindings ? { mcpToolBindings } : {};
   if (policy.mode === "trusted") {
-    return { ...policy, ...pinned };
+    return { ...policy, ...pinned, ...mcpBindings };
   }
   return {
     ...policy,
@@ -94,5 +103,6 @@ export function resolveScheduledToolPolicyContext(params: {
       params.callerOrigin ?? (isRecord(rawPolicy) ? rawPolicy.ownerOrigin : undefined),
     ),
     ...pinned,
+    ...mcpBindings,
   };
 }

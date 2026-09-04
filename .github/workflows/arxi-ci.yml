@@ -90,6 +90,8 @@ jobs:
               'src/plugins/plugin-metadata-snapshot.test.ts' \
               'src/plugins/plugin-metadata-snapshot.ts' \
               'src/plugin-sdk/**' \
+              'src/system-agent/agent-turn.test.ts' \
+              'src/system-agent/agent-turn.ts' \
               'scripts/plugin-sdk-surface-report.mts' \
               'package.json' \
               'config/assertion-safety-baseline.txt' |
@@ -183,6 +185,7 @@ jobs:
           src/agents/agent-bundle-mcp-runtime.test.ts
           src/agents/agent-bundle-mcp-types.ts
           src/agents/agent-tool-definition-adapter.ts
+          src/agents/agent-tools.before-tool-call.state.ts
           src/agents/agent-tools.before-tool-call.wrapper.ts
           src/agents/auth-profiles/path-resolve.shared-store.test.ts
           src/agents/auth-profiles/path-resolve.ts
@@ -238,6 +241,8 @@ jobs:
           src/cron/service/ops-read.ts
           src/gateway/server-cron-lazy.test.ts
           src/gateway/server-cron-lazy.ts
+          src/gateway/server-close.test.ts
+          src/gateway/server-close.ts
           src/gateway/agent-turn/agent-audio-understanding.ts
           src/gateway/agent-turn/agent-content-phase.audio.test.ts
           src/gateway/agent-turn/agent-content-phase.ts
@@ -304,6 +309,8 @@ jobs:
           src/secrets/store/secret-store-hidden-github.ts
           src/secrets/store/secret-store.test.ts
           src/secrets/store/secret-store.ts
+          src/system-agent/agent-turn.test.ts
+          src/system-agent/agent-turn.ts
           config/assertion-safety-baseline.txt
           scripts/ci-changed-scope.mjs
           scripts/AGENTS.md
@@ -372,6 +379,7 @@ jobs:
             src/gateway/server-methods/agent-run-handler.diagnostic-trace.test.ts \
             src/gateway/server-methods/agents-mutate.test.ts \
             src/gateway/server-methods/chat-metadata-runtime.test.ts \
+            src/gateway/server-close.test.ts \
             src/infra/gateway-lifecycle-inventory.test.ts \
             src/infra/gateway-suspend-coordinator.test.ts \
             src/infra/outbound/delivery-queue-media-spool.test.ts \
@@ -383,7 +391,8 @@ jobs:
             src/infra/outbound/payloads.test.ts \
             src/infra/state-migrations.media-persistence-targets.test.ts \
             src/plugins/plugin-metadata-snapshot.test.ts \
-            src/plugins/registry-registrars-network.mcp-resolver.test.ts
+            src/plugins/registry-registrars-network.mcp-resolver.test.ts \
+            src/system-agent/agent-turn.test.ts
           pnpm test \
             src/secrets/store/secret-store.test.ts \
             test/scripts/codex-client-version-contract.test.ts \

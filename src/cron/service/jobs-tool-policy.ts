@@ -102,11 +102,22 @@ function reconcileToolsAllowProvenance(params: {
     return;
   }
   if (
-    params.job.payload.toolsAllowIsDefault === true &&
     params.toolsAllowProvenance?.version === 1 &&
     params.toolsAllowProvenance.source === "final-executable-surface"
   ) {
-    params.job.toolsAllowProvenance = structuredClone(params.toolsAllowProvenance);
+    const allowedNames = new Set(
+      (params.job.payload.toolsAllow ?? []).map((name) => name.trim().toLowerCase()),
+    );
+    params.job.toolsAllowProvenance = {
+      ...structuredClone(params.toolsAllowProvenance),
+      ...(params.toolsAllowProvenance.mcpToolBindings
+        ? {
+            mcpToolBindings: params.toolsAllowProvenance.mcpToolBindings.filter((binding) =>
+              allowedNames.has(binding.name),
+            ),
+          }
+        : {}),
+    };
     return;
   }
   delete params.job.toolsAllowProvenance;

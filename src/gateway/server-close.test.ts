@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   getAcpSessionManager: vi.fn(() => ({})),
   fenceSessionSuspensionWritesForGatewayShutdown: vi.fn(),
   closePluginStateDatabase: vi.fn(async () => undefined),
+  closeOpenClawAgentDatabases: vi.fn(),
 }));
 const WEBSOCKET_CLOSE_GRACE_MS = 1_000;
 const WEBSOCKET_CLOSE_FORCE_CONTINUE_MS = 250;
@@ -112,6 +113,10 @@ vi.mock("../plugin-state/plugin-state-store.js", async () => ({
     "../plugin-state/plugin-state-store.js",
   )),
   closePluginStateDatabase: mocks.closePluginStateDatabase,
+}));
+
+vi.mock("../state/openclaw-agent-db.js", () => ({
+  closeOpenClawAgentDatabases: mocks.closeOpenClawAgentDatabases,
 }));
 
 vi.mock("../logging/subsystem.js", () => ({
@@ -232,6 +237,7 @@ describe("createGatewayCloseHandler", () => {
     mocks.fenceSessionSuspensionWritesForGatewayShutdown.mockReset();
     mocks.closePluginStateDatabase.mockReset();
     mocks.closePluginStateDatabase.mockResolvedValue(undefined);
+    mocks.closeOpenClawAgentDatabases.mockReset();
   });
 
   afterEach(() => {
@@ -267,6 +273,17 @@ describe("createGatewayCloseHandler", () => {
   });
 
   it("completes a clean shutdown with a ShutdownResult", async () => {
+    const closeOrder: string[] = [];
+    resolveGlobalSingleton(
+      Symbol("openclaw.test.gatewayCloseAgentDatabaseOrder"),
+      () => ({}),
+      () => {
+        closeOrder.push("runtime-owner");
+      },
+    );
+    mocks.closeOpenClawAgentDatabases.mockImplementationOnce(() => {
+      closeOrder.push("agent-databases");
+    });
     const deps = createGatewayCloseTestDeps();
     const close = createGatewayCloseHandler(deps);
 
@@ -278,6 +295,8 @@ describe("createGatewayCloseHandler", () => {
     expect(deps.heartbeatRunner.stop).toHaveBeenCalledTimes(1);
     expect(deps.stopMediaCleanup).toHaveBeenCalledTimes(1);
     expect(deps.chatRunState.clear).toHaveBeenCalledTimes(1);
+    expect(mocks.closeOpenClawAgentDatabases).toHaveBeenCalledTimes(1);
+    expect(closeOrder).toStrictEqual(["runtime-owner", "agent-databases"]);
   });
 
   it("waits for in-flight media cleanup before shutdown completes", async () => {
@@ -351,6 +370,21 @@ describe("createGatewayCloseHandler", () => {
     await expect(close({ reason: "test" })).rejects.toThrow(
       "Failed to reset global singleton lifecycle state",
     );
+    expect(mocks.closeOpenClawAgentDatabases).toHaveBeenCalledOnce();
+    expect(clearSecretsRuntimeSnapshot).toHaveBeenCalledOnce();
+  });
+
+  it("rejects close but still clears secrets when an agent database cannot close", async () => {
+    const closeError = new Error("agent database close failed");
+    mocks.closeOpenClawAgentDatabases.mockImplementationOnce(() => {
+      throw closeError;
+    });
+    const clearSecretsRuntimeSnapshot = vi.fn();
+    const close = createGatewayCloseHandler(
+      createGatewayCloseTestDeps({ clearSecretsRuntimeSnapshot }),
+    );
+
+    await expect(close({ reason: "test" })).rejects.toThrow(closeError);
     expect(clearSecretsRuntimeSnapshot).toHaveBeenCalledOnce();
   });
 

@@ -488,6 +488,26 @@ describe("mcp connection resolver helpers", () => {
     ).resolves.toEqual(new Map([["user-mail", { url: "https://example.test/ok" }]]));
   });
 
+  it("diagnoses requester-required resolvers withheld from background runs", async () => {
+    const onUnavailable = vi.fn();
+    const resolve = vi.fn(async () => ({ url: "https://example.test/requester" }));
+    testing.setMcpServerConnectionResolversForTest([{ serverName: "requester-mail", resolve }]);
+
+    await expect(
+      resolveRequesterScopedMcpConnections({
+        serverNames: ["requester-mail"],
+        agentId: "main",
+        sessionKey: "agent:main:cron:resource-steward",
+        onUnavailable,
+      }),
+    ).resolves.toEqual(new Map());
+    expect(resolve).not.toHaveBeenCalled();
+    expect(onUnavailable).toHaveBeenCalledExactlyOnceWith({
+      serverName: "requester-mail",
+      reason: "requester identity required",
+    });
+  });
+
   it("allows a host-authorized resolver to serve background runs only with canonical run identity", async () => {
     const contexts: unknown[] = [];
     testing.setMcpServerConnectionResolversForTest([
@@ -597,6 +617,7 @@ describe("mcp connection resolver helpers", () => {
 
   it("contains per-server resolve throws without rejecting the map", async () => {
     const logWarn = vi.spyOn(await import("../logger.js"), "logWarn").mockImplementation(() => {});
+    const onUnavailable = vi.fn();
     testing.setMcpServerConnectionResolversForTest([
       {
         pluginId: "broken-plugin",
@@ -615,6 +636,7 @@ describe("mcp connection resolver helpers", () => {
       resolveRequesterScopedMcpConnections({
         serverNames: ["user-mail", "other"],
         requesterSenderId: "sender",
+        onUnavailable,
       }),
     ).resolves.toEqual(new Map([["other", { url: "https://example.test/other" }]]));
     expect(logWarn).toHaveBeenCalledWith(
@@ -624,6 +646,10 @@ describe("mcp connection resolver helpers", () => {
     expect(logged).not.toContain("secret-token");
     expect(logged).not.toContain("Bearer");
     expect(logged).not.toContain("Authorization");
+    expect(onUnavailable).toHaveBeenCalledExactlyOnceWith({
+      serverName: "user-mail",
+      reason: "error",
+    });
   });
 
   it("resolves stalled servers concurrently within one timeout window", async () => {
@@ -665,14 +691,20 @@ describe("mcp connection resolver helpers", () => {
       },
     ]);
     vi.useFakeTimers();
+    const onUnavailable = vi.fn();
     const pending = resolveRequesterScopedMcpConnections({
       serverNames: ["user-mail", "other"],
       requesterSenderId: "sender",
+      onUnavailable,
     });
     await vi.advanceTimersByTimeAsync(50);
     await expect(pending).resolves.toEqual(
       new Map([["other", { url: "https://example.test/other" }]]),
     );
+    expect(onUnavailable).toHaveBeenCalledExactlyOnceWith({
+      serverName: "user-mail",
+      reason: "timeout",
+    });
   });
 
   it("uses an ephemeral keyed digest, not a plain SHA-256 of credentials", async () => {

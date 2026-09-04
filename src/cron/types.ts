@@ -8,6 +8,7 @@ import type { HookExternalContentSource } from "../security/external-content.js"
 import type { CronRuntimeAuthority } from "./runtime-authority.js";
 import type {
   CronScheduledToolCallerOrigin,
+  CronScheduledMcpToolBinding,
   CronScheduledToolPolicy,
   CronToolsAllowExecTarget,
   CronToolsAllowExecTargetRequirement,
@@ -540,6 +541,8 @@ export type CronToolsAllowProvenance = {
   source: "final-executable-surface";
   /** Store-private creator origin; missing legacy facts normalize to unknown. */
   callerOrigin?: CronScheduledToolCallerOrigin;
+  /** Exact MCP identities behind the persisted policy names; absent on legacy rows. */
+  mcpToolBindings?: CronScheduledMcpToolBinding[];
 };
 
 /** Persisted row shape; public Gateway and wire contracts use CronJob. */

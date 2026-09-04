@@ -151,7 +151,6 @@ describe("appendDiscoveredRows projection", () => {
         configuredByKey: new Map(),
         discoveredKeys: new Set(),
         filter: { provider: "openai" },
-        skipRuntimeModelSuppression: true,
       },
     });
 

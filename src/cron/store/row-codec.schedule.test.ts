@@ -60,10 +60,16 @@ describe("canonical cron schedule JSON round-trip", () => {
         version: 1,
         source: "final-executable-surface",
         callerOrigin: { kind: "local" },
+        mcpToolBindings: [
+          { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+        ],
       },
     });
 
     expect(job.toolsAllowProvenance?.callerOrigin).toEqual({ kind: "local" });
+    expect(job.toolsAllowProvenance?.mcpToolBindings).toEqual([
+      { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+    ]);
   });
 
   it("keeps private runtime authority out of job_json", () => {

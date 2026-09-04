@@ -49,6 +49,7 @@ import {
   capCronJobToolsAllowOnCreate,
   cronCreateRequiresCreatorAuthority,
   resolveCronCreatorExecToolTarget,
+  resolveCronCreatorMcpToolBindingsForToolsAllow,
 } from "./cron-tool-creator-cap.js";
 import {
   assertCronPacingInput,
@@ -169,8 +170,8 @@ function isOlderGatewayWithoutCompactCronList(error: unknown): boolean {
 
 function buildCronToolDescription(params: { triggersEnabled: boolean }): string {
   const addFields = params.triggersEnabled
-    ? "{name?,schedule,payload,sessionTarget?,pacing?,trigger?,delivery?,enabled?}"
-    : "{name?,schedule,payload,sessionTarget?,pacing?,delivery?,enabled?}";
+    ? "{name?,schedule,payload,sessionTarget?,pacing?,trigger?,delivery?,failureAlert?,enabled?}"
+    : "{name?,schedule,payload,sessionTarget?,pacing?,delivery?,failureAlert?,enabled?}";
   const streamScheduleLine = params.triggersEnabled
     ? '\n- {kind:"stream",command:[argv],mode?:"line"|"match",match?}: fires on supervised process output; disabled only when cron.triggers.enabled=false.'
     : "";
@@ -206,7 +207,7 @@ ${triggerSection}
 
 DELIVERY {mode:"none"|"announce"|"webhook",channel?,to?,threadId?,bestEffort?,completionDestination?}: where detached run output goes. Omitted=announce (current=>canonical session commit, plus one normal channel send for external chats; isolated=>last route; set channel/to for a specific chat — no messaging tool inside the run). A current announce succeeds only after its history commit; WebChat observes that commit live and after reconnect without another user message.${silentWatcherCue} webhook posts finished-run event (successful empty summary is intentional silence, no POST) to URL in \`to\`. To keep announce delivery and also POST completion, use mode:"announce" with completionDestination:{mode:"webhook",to:"https://..."}.
 
-FAILURE ALERTS: jobs with a failure route default to alerting after 2 consecutive execution failures with a 1h cooldown. Route order: job failureAlert fields, delivery.failureDestination over global cron.failureAlert destination fields, then primary announce. failureAlert:false disables execution/delivery alerts, not the auto-disable safety notice; a failureAlert object activates/tunes. bestEffort suppresses inherited execution alerts. Required completion-delivery failure uses only an alternate route, bypasses after, and shares the execution-alert cooldown from the first failure; it does not increment the execution streak.
+FAILURE ALERTS: jobs with a failure route default to alerting after 2 consecutive execution failures with a 1h cooldown. Route order: job failureAlert fields, delivery.failureDestination over global cron.failureAlert destination fields, then primary announce. job.failureAlert:{enabled:false} disables execution/delivery alerts, not the auto-disable safety notice; another failureAlert object activates/tunes. bestEffort suppresses inherited execution alerts. Required completion-delivery failure uses only an alternate route, bypasses after, and shares the execution-alert cooldown from the first failure; it does not increment the execution streak.
 
 Job wakeMode (main jobs): "now"(default)|"next-heartbeat". Restricted automation-run sessions: self status/list/get/runs/remove + own next_check only. jobId canonical (id=compat). contextMessages 0-10 embeds recent chat lines into reminder text.`;
 }
@@ -236,7 +237,6 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
       };
       const runtimeConfig = getRuntimeConfig();
       const callerScope = resolveCronToolCallerScope(opts, runtimeConfig);
-      const creatorExecToolTarget = resolveCronCreatorExecToolTarget(opts?.creatorToolAllowlist);
       const callerIdentity =
         callerScope && opts?.agentSessionKey?.trim()
           ? {
@@ -245,13 +245,6 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
               turnSourceAccountId: opts.agentAccountId,
               ...(readCronSelfRemoveOnlyJobId(opts)
                 ? { cronSelfManagementJobId: readCronSelfRemoveOnlyJobId(opts) }
-                : {}),
-              ...(opts?.creatorToolAllowlistCaptureRef?.value?.version === 1 &&
-              opts.creatorToolAllowlistCaptureRef.value.source === "final-executable-surface"
-                ? {
-                    cronToolsAllowCapture: "final-executable-surface" as const,
-                    ...(creatorExecToolTarget ? { cronExecToolTarget: creatorExecToolTarget } : {}),
-                  }
                 : {}),
             }
           : undefined;
@@ -490,18 +483,36 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
                 }
               }
             }
-            const resolvedExecToolTarget = resolveCronCreatorExecToolTarget(
-              resolvedAuthority?.tools,
-            );
+            const writeAuthorityTools = resolvedAuthority?.tools ?? creatorToolAllowlist;
+            const writeAuthorityProvenance =
+              resolvedAuthority?.provenance ?? creatorToolAllowlistCaptureRef?.value;
+            const writePayload = isRecord((job as Record<string, unknown>).payload)
+              ? ((job as Record<string, unknown>).payload as Record<string, unknown>)
+              : undefined;
+            const writeToolsAllow = Array.isArray(writePayload?.toolsAllow)
+              ? writePayload.toolsAllow.filter(
+                  (entry): entry is string => typeof entry === "string",
+                )
+              : undefined;
+            const resolvedExecToolTarget = resolveCronCreatorExecToolTarget(writeAuthorityTools);
+            const resolvedMcpToolBindings = writeToolsAllow
+              ? resolveCronCreatorMcpToolBindingsForToolsAllow(writeAuthorityTools, writeToolsAllow)
+              : [];
             const writeCallerIdentity =
-              resolvedAuthority && callerIdentity
+              callerIdentity &&
+              writeAuthorityProvenance?.version === 1 &&
+              writeAuthorityProvenance.source === "final-executable-surface" &&
+              writeToolsAllow
                 ? {
                     ...callerIdentity,
                     cronToolsAllowCapture: "final-executable-surface" as const,
+                    cronMcpToolBindings: resolvedMcpToolBindings,
                     ...(resolvedExecToolTarget
                       ? { cronExecToolTarget: resolvedExecToolTarget }
                       : {}),
-                    cronCreatorAuthorityGrant: resolvedAuthority.grant,
+                    ...(resolvedAuthority
+                      ? { cronCreatorAuthorityGrant: resolvedAuthority.grant }
+                      : {}),
                   }
                 : callerIdentity;
             if (
@@ -570,19 +581,27 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
                 creatorToolAllowlist: opts?.creatorToolAllowlist,
                 creatorToolAllowlistCaptureRef: opts?.creatorToolAllowlistCaptureRef,
                 resolveCreatorToolAuthority: opts?.resolveCreatorToolAuthority,
-                withCreatorAuthorityProvenance: callerIdentity
+                withToolAuthorityProvenance: callerIdentity
                   ? async (authority, run) => {
                       const authorityExecToolTarget = resolveCronCreatorExecToolTarget(
                         authority.tools,
                       );
+                      const authorityMcpToolBindings =
+                        resolveCronCreatorMcpToolBindingsForToolsAllow(
+                          authority.tools,
+                          authority.toolsAllow,
+                        );
                       return await withGatewayToolCallerIdentity(
                         {
                           ...callerIdentity,
                           cronToolsAllowCapture: "final-executable-surface",
+                          cronMcpToolBindings: authorityMcpToolBindings,
                           ...(authorityExecToolTarget
                             ? { cronExecToolTarget: authorityExecToolTarget }
                             : {}),
-                          cronCreatorAuthorityGrant: authority.grant,
+                          ...(authority.grant
+                            ? { cronCreatorAuthorityGrant: authority.grant }
+                            : {}),
                         },
                         run,
                       );

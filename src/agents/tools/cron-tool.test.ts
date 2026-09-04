@@ -35,7 +35,7 @@ import {
   runWithCronCreatorAuthorityCapability,
   runWithCronCreatorAuthorityResolver,
 } from "../cron-creator-authority-context.js";
-import { createCronTool } from "./cron-tool.js";
+import { createCronTool, type CronCreatorToolAllowlistEntry } from "./cron-tool.js";
 import { getGatewayToolCallerIdentity } from "./gateway-caller-context.js";
 
 describe("cron tool", () => {
@@ -88,7 +88,7 @@ describe("cron tool", () => {
   }
 
   function resolvedCreatorAuthority(
-    tools: readonly (string | { name: string; pluginId?: string })[],
+    tools: readonly CronCreatorToolAllowlistEntry[],
     grant: CronCreatorAuthorityGrant = { runId: "run-test", token: "grant-test" },
   ) {
     return {
@@ -1411,6 +1411,24 @@ describe("cron tool", () => {
     expect(params?.failureAlert).toBe(false);
   });
 
+  it("canonicalizes model-safe failureAlert.enabled=false for add", async () => {
+    const tool = createTestCronTool();
+    await tool.execute("call-disable-alerts-object-add", {
+      action: "add",
+      job: {
+        name: "quiet monitor",
+        schedule: { at: new Date(123).toISOString() },
+        payload: { kind: "agentTurn", message: "check quietly" },
+        failureAlert: { enabled: false },
+      },
+    });
+
+    const params = expectSingleGatewayCallMethod("cron.add") as
+      | { failureAlert?: unknown }
+      | undefined;
+    expect(params?.failureAlert).toBe(false);
+  });
+
   it.each([
     ["canonical", "command"],
     ["mixed-case", "Command"],
@@ -1617,7 +1635,15 @@ describe("cron tool", () => {
       return { ok: true };
     });
     const resolveCreatorToolAuthority = vi.fn(async () =>
-      resolvedCreatorAuthority(["read", "cron", "configured__lookup"]),
+      resolvedCreatorAuthority([
+        "read",
+        "cron",
+        {
+          name: "configured__lookup",
+          pluginId: "bundle-mcp",
+          mcp: { serverName: "configured", operation: "tool", toolName: "lookup" },
+        },
+      ]),
     );
     const tool = createTestCronTool({
       agentSessionKey: "agent:main:main",
@@ -1638,8 +1664,72 @@ describe("cron tool", () => {
       },
     });
     expect(identities).toEqual([
-      expect.objectContaining({ cronToolsAllowCapture: "final-executable-surface" }),
+      expect.objectContaining({
+        cronToolsAllowCapture: "final-executable-surface",
+        cronMcpToolBindings: [
+          {
+            name: "configured__lookup",
+            serverName: "configured",
+            operation: "tool",
+            toolName: "lookup",
+          },
+        ],
+      }),
     ]);
+  });
+
+  it("does not attach a large MCP catalog to reads and signs only the concrete add cap", async () => {
+    const identities: unknown[] = [];
+    callGatewayMock.mockImplementation(async () => {
+      identities.push(getGatewayToolCallerIdentity());
+      return { ok: true };
+    });
+    const configuredTools: CronCreatorToolAllowlistEntry[] = Array.from(
+      { length: 300 },
+      (_, index) => ({
+        name: `configured__tool_${index}`,
+        pluginId: "bundle-mcp",
+        mcp: {
+          serverName: "configured",
+          operation: "tool",
+          toolName: `tool_${index}`,
+        },
+      }),
+    );
+    const tool = createTestCronTool({
+      agentSessionKey: "agent:main:main",
+      creatorToolAllowlist: ["cron", ...configuredTools],
+      creatorToolAllowlistCaptureRef: {
+        value: { version: 1, source: "final-executable-surface" },
+      },
+    });
+
+    await tool.execute("call-large-catalog-status", { action: "status" });
+    await tool.execute("call-large-catalog-add", {
+      action: "add",
+      job: {
+        ...buildReminderAgentTurnJob(),
+        payload: {
+          kind: "agentTurn",
+          message: "check one resource",
+          toolsAllow: ["configured__tool_299"],
+        },
+      },
+    });
+
+    expect(identities[0]).not.toHaveProperty("cronToolsAllowCapture");
+    expect(identities[0]).not.toHaveProperty("cronMcpToolBindings");
+    expect(identities[1]).toMatchObject({
+      cronToolsAllowCapture: "final-executable-surface",
+      cronMcpToolBindings: [
+        {
+          name: "configured__tool_299",
+          serverName: "configured",
+          operation: "tool",
+          toolName: "tool_299",
+        },
+      ],
+    });
   });
 
   it("does not write when the admitted run aborts while lazy authority resolves", async () => {
@@ -3059,14 +3149,14 @@ describe("cron tool", () => {
     expect(params?.patch?.sessionTarget).toBe("main");
     expect(params?.patch?.failureAlert).toEqual({ after: 3, cooldownMs: 60_000 });
   });
-  it("passes through failureAlert=false for update", async () => {
+  it("canonicalizes model-safe failureAlert.enabled=false for update", async () => {
     callGatewayMock.mockResolvedValueOnce({ ok: true });
 
     const tool = createTestCronTool();
     await tool.execute("call-update-disable-alerts", {
       action: "update",
       id: "job-4",
-      job: { failureAlert: false },
+      job: { failureAlert: { enabled: false } },
     });
 
     const params = expectSingleGatewayCallMethod("cron.update") as

@@ -394,6 +394,8 @@ describe("loadCodexBundleMcpThreadConfigCore", () => {
     expect(loaded.configPatch).toEqual(withoutScopedConfig.configPatch);
     expect(loaded.fingerprint).toBe(withoutScopedConfig.fingerprint);
     expect(loaded.staticServerNames).toEqual(["search"]);
+    expect(loaded.requesterScopedServerNames).toEqual(["user-mail"]);
+    expect(withoutScopedConfig.requesterScopedServerNames).toEqual([]);
   });
 
   it("keeps static projection byte-identical when no resolver exists", () => {

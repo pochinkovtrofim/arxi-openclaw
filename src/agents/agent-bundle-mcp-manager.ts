@@ -262,6 +262,16 @@ export function createSessionMcpRuntimeManager(
       );
       const hasHostAuthorizedRunIdentity =
         resolverRequesterServerNames.length > 0 && hasPotentialHostAuthorizedRunIdentity;
+      if (!requesterSenderId) {
+        for (const serverName of oauthRequesterServerNames) {
+          params.onResolverUnavailable?.({ serverName, reason: "per-requester OAuth required" });
+        }
+        if (!hasPotentialHostAuthorizedRunIdentity) {
+          for (const serverName of resolverRequesterServerNames) {
+            params.onResolverUnavailable?.({ serverName, reason: "background identity required" });
+          }
+        }
+      }
       const advertisedCatalogConfigFingerprint = loadSessionMcpConfig({
         ...configParams,
         loaded: fullConfig.loaded,

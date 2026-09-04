@@ -1,3 +1,4 @@
+import type { CronScheduledMcpToolBinding } from "../../cron/scheduled-tool-policy.js";
 import { isRecord } from "../../utils.js";
 import { readCronScheduledToolProjection } from "../exec-tool-target-pinning.js";
 import { createToolPolicyMatcher } from "../tool-policy-match.js";
@@ -14,7 +15,21 @@ type NormalizedCronCreatorTool = {
   pluginId?: string;
   aliasName?: string;
   execTarget?: { host: "gateway"; ask?: "always" };
+  mcp?: Omit<CronScheduledMcpToolBinding, "name">;
 };
+
+type CronCreatorToolMeta = {
+  pluginId?: string;
+  mcp?: Omit<CronScheduledMcpToolBinding, "name">;
+};
+
+function mcpBindingIdentity(
+  binding: Omit<CronScheduledMcpToolBinding, "name"> | undefined,
+): string | undefined {
+  return binding
+    ? JSON.stringify([binding.serverName, binding.operation, binding.toolName])
+    : undefined;
+}
 
 type CronJobUpdatePatchPlan =
   | { kind: "ready"; patch: Record<string, unknown> }
@@ -46,13 +61,14 @@ export function assertInheritedCronToolCaptureReady(
 export function replaceWithEffectiveCronCreatorToolAllowlist<T extends { name: string }>(
   target: CronCreatorToolAllowlistEntry[],
   tools: readonly T[],
-  toolMeta?: (tool: T) => { pluginId?: string } | undefined,
+  toolMeta?: (tool: T) => CronCreatorToolMeta | undefined,
 ): void {
   target.length = 0;
   // Host-created alias projections (for example a Codex gateway shell alias) are
   // recorded under their canonical core tool name so scheduled runtimes rebuild
   // the same capability. The alias name is kept for explicit-cap matching only.
   const indexByName = new Map<string, number>();
+  const ambiguousMcpNames = new Set<string>();
   for (const tool of tools) {
     const projection = readCronScheduledToolProjection(tool);
     const name = normalizeToolPolicyName(projection ? projection.targetTool : tool.name);
@@ -60,6 +76,14 @@ export function replaceWithEffectiveCronCreatorToolAllowlist<T extends { name: s
       continue;
     }
     const aliasName = projection ? normalizeToolPolicyName(tool.name) : undefined;
+    const meta = toolMeta?.(tool);
+    const mcp = meta?.mcp
+      ? {
+          serverName: meta.mcp.serverName,
+          operation: meta.mcp.operation,
+          toolName: meta.mcp.toolName,
+        }
+      : undefined;
     const existingIndex = indexByName.get(name);
     const existing = existingIndex === undefined ? undefined : target[existingIndex];
     if (existing !== undefined) {
@@ -79,9 +103,12 @@ export function replaceWithEffectiveCronCreatorToolAllowlist<T extends { name: s
       ) {
         delete existing.execTarget.ask;
       }
+      if (mcpBindingIdentity(existing.mcp) !== mcpBindingIdentity(mcp)) {
+        delete existing.mcp;
+        ambiguousMcpNames.add(name);
+      }
       continue;
     }
-    const meta = toolMeta?.(tool);
     const pluginId =
       typeof meta?.pluginId === "string" ? normalizeToolPolicyName(meta.pluginId) : undefined;
     indexByName.set(name, target.length);
@@ -90,6 +117,7 @@ export function replaceWithEffectiveCronCreatorToolAllowlist<T extends { name: s
       ...(pluginId ? { pluginId } : {}),
       ...(aliasName && aliasName !== name ? { aliasName } : {}),
       ...(projection?.execTarget ? { execTarget: { ...projection.execTarget } } : {}),
+      ...(mcp && !ambiguousMcpNames.has(name) ? { mcp } : {}),
     });
   }
 }
@@ -99,7 +127,7 @@ export function captureFinalEffectiveCronCreatorToolAllowlist<T extends { name: 
   target: CronCreatorToolAllowlistEntry[],
   captureRef: CronToolsAllowCaptureRef,
   tools: readonly T[],
-  toolMeta?: (tool: T) => { pluginId?: string } | undefined,
+  toolMeta?: (tool: T) => CronCreatorToolMeta | undefined,
 ): void {
   replaceWithEffectiveCronCreatorToolAllowlist(target, tools, toolMeta);
   captureRef.value = { version: 1, source: "final-executable-surface" };
@@ -145,14 +173,43 @@ function normalizeCronCreatorToolsAllow(
             ...(entry.execTarget.ask === "always" ? { ask: "always" as const } : {}),
           } as const)
         : undefined;
+    const mcp =
+      typeof entry !== "string" && entry.mcp
+        ? {
+            serverName: entry.mcp.serverName,
+            operation: entry.mcp.operation,
+            toolName: entry.mcp.toolName,
+          }
+        : undefined;
     normalized.push({
       name,
       ...(pluginId ? { pluginId } : {}),
       ...(aliasName && aliasName !== name ? { aliasName } : {}),
       ...(execTarget ? { execTarget } : {}),
+      ...(mcp ? { mcp } : {}),
     });
   }
   return normalized;
+}
+
+/** Canonical MCP identity map captured from the same final executable surface. */
+export function resolveCronCreatorMcpToolBindings(
+  entries: readonly CronCreatorToolAllowlistEntry[] | undefined,
+): CronScheduledMcpToolBinding[] {
+  return normalizeCronCreatorToolsAllow(entries ?? []).flatMap((tool) =>
+    tool.mcp ? [{ name: tool.name, ...tool.mcp }] : [],
+  );
+}
+
+/** Keep signed scheduled provenance no broader than the concrete persisted cap. */
+export function resolveCronCreatorMcpToolBindingsForToolsAllow(
+  entries: readonly CronCreatorToolAllowlistEntry[] | undefined,
+  toolsAllow: readonly string[],
+): CronScheduledMcpToolBinding[] {
+  const allowedNames = new Set(normalizeCronToolsAllow(toolsAllow));
+  return resolveCronCreatorMcpToolBindings(entries).filter((binding) =>
+    allowedNames.has(binding.name),
+  );
 }
 
 /** Restrict-only exec target present only when the creator's exec grant is host-pinned. */

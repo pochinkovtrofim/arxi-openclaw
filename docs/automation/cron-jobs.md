@@ -53,6 +53,7 @@ Manage automations with the `openclaw automations` CLI; `openclaw cron` remains 
 <AccordionGroup>
   <Accordion title="Isolated run hardening">
     - Isolated runs best-effort close tracked browser tabs/processes for their `cron:<jobId>` session on completion, and dispose any bundled MCP runtime instances created for the job through the same shared teardown path used by main-session and custom-session runs. Cleanup failures are ignored so the run result still wins.
+    - Account Automations created by an agent bind each allowed configured-MCP name to the canonical server, operation, and tool identity visible in that owner turn. A later run exposes the name only when the current catalog resolves to that exact identity. Missing, renamed, reassigned, or legacy-unbound tools fail closed with a diagnostic; reauthorize the job from a current owner turn instead of editing private provenance.
     - Isolated runs with the narrow automation self-cleanup grant can read scheduler status, a self-filtered list containing only their own job, and that job's run history, and may remove only their own job.
     - Isolated runs guard against stale acknowledgement replies: if the first result is only an interim status update (`on it`, `pulling everything together`, and similar hints) and no descendant subagent is still responsible for the final answer, OpenClaw re-prompts once for the actual result before delivery.
     - Structured execution-denial metadata (including node-host `UNAVAILABLE` wrappers whose nested error starts with `SYSTEM_RUN_DENIED` or `INVALID_REQUEST`) is recognized so a blocked command is not reported as a green run, while ordinary assistant prose is not mistaken for a denial.
@@ -462,6 +463,7 @@ Failure notification routes resolve in this order:
 3. The job's primary announce target.
 
 - `job.failureAlert: false` disables execution and required-delivery failure alerts for that job. The auto-disable safety notification remains active.
+- In the model-facing `automations` tool, use `job.failureAlert: { enabled: false }`; the tool canonicalizes that provider-compatible object to the same stored `false` value.
 - Global `cron.failureAlert.enabled: false` disables inherited notifications. A per-job `failureAlert` object explicitly re-enables that job; `enabled: true` explicitly enables the global policy.
 - A per-job `failureAlert` object or any global `cron.failureAlert` object activates and tunes the policy even when the job had no existing route.
 - `delivery.bestEffort: true` suppresses inherited/default execution-failure alerts. An explicit per-job `failureAlert` remains authoritative.

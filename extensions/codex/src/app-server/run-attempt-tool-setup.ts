@@ -7,7 +7,10 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   captureFinalCodexCronCreatorToolAllowlist,
+  hasExplicitFiniteCodexToolAllowlist,
   materializeStaticMcpToolsForScheduledHarnessRun,
+  resolveScheduledCodexMcpIdentityBindings,
+  shouldWithholdStaticCodexMcp,
 } from "openclaw/plugin-sdk/codex-mcp-projection";
 import { resolveCodexPluginsPolicy, shouldAutoApproveCodexAppServerApprovals } from "./config.js";
 import {
@@ -32,6 +35,7 @@ import {
   captureScheduledCodexAppAuthority,
   resolveScheduledCodexAppCreatorCaptureDecision,
 } from "./scheduled-app-authority.js";
+import { formatScheduledMcpIdentityMismatch } from "./scheduled-mcp-identity.js";
 
 function isAuthorityResolutionOperationAbort(error: unknown, signal: AbortSignal | undefined) {
   return signal?.aborted === true && error === signal.reason;
@@ -325,67 +329,193 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     ...(params.memberRoleIds?.length ? { roleIds: [...params.memberRoleIds] } : {}),
   };
   const hasRequester = Object.keys(requester).length > 0;
-  const scheduledConfiguredMcp = ownsScheduledConfiguredMcpSurface
-    ? await materializeStaticMcpToolsForScheduledHarnessRun({
-        sessionId: params.sessionId,
-        sessionKey: params.sessionKey,
-        workspaceDir: effectiveWorkspace,
-        agentDir: policyContext.agentDir,
-        cfg: params.config,
-        manifestRegistry: bundleManifestRegistry,
-        reservedToolNames,
-        toolsAllow: params.toolsAllow,
-        toolOverrides: codexMcpToolOverrides,
-        autoApproveCodexAppServerApprovals: shouldAutoApproveCodexAppServerApprovals(
-          connection.appServer,
-        ),
-        policyContext,
-        warn: (message) => embeddedAgentLog.warn(message),
-      })
-    : undefined;
+  const autoApproveScheduledMcp = shouldAutoApproveCodexAppServerApprovals(connection.appServer);
+  let scheduledConfiguredMcp:
+    | Awaited<ReturnType<typeof materializeStaticMcpToolsForScheduledHarnessRun>>
+    | undefined = undefined;
   // Requester-scoped MCP: dynamic tools on a shared thread (never harness-native MCP).
   // Specs come from the session advertised-catalog cache so fingerprints stay stable.
   let scopedMcpTools: Awaited<ReturnType<typeof materializeRequesterScopedMcpToolsForHarnessRun>> =
     undefined;
+  let rejectedScheduledMcpAuthorityNames = new Set<string>();
   try {
-    scopedMcpTools = authenticatedScheduledMode
-      ? undefined
-      : await materializeRequesterScopedMcpToolsForHarnessRun({
-          sessionId: params.sessionId,
-          sessionKey: params.sessionKey,
-          workspaceDir: effectiveWorkspace,
-          agentDir: policyContext.agentDir,
-          cfg: params.config,
-          manifestRegistry: bundleManifestRegistry,
-          toolOverrides: codexMcpToolOverrides,
-          requesterSenderId: params.senderId,
-          agentAccountId: params.agentAccountId,
-          messageChannel: params.messageChannel ?? params.messageProvider,
-          agentId: sessionAgentId,
-          chatType: params.chatType,
-          conversationId: params.chatId ?? params.groupId ?? params.messageTo,
-          runtimeGeneration: params.lifecycleGeneration,
-          traceId: params.diagnosticTrace?.traceId,
-          reservedToolNames,
-          toolsAllow: params.toolsAllow,
-          policyContext,
-          warn: (message) => embeddedAgentLog.warn(message),
-        });
+    const scheduledAccountMcp =
+      authenticatedScheduledMode && params.scheduledToolPolicy?.mode === "account";
+    const hasRequesterScopedMcp = bundleMcpThreadConfig.requesterScopedServerNames.length > 0;
+    const hasFiniteScheduledAccountCap = hasExplicitFiniteCodexToolAllowlist(params.toolsAllow);
+    const mayResolveBackgroundMcp =
+      scheduledAccountMcp && hasRequesterScopedMcp && hasFiniteScheduledAccountCap;
+    const missingScheduledAccountCap =
+      scheduledAccountMcp && hasRequesterScopedMcp && !hasFiniteScheduledAccountCap;
+    scopedMcpTools =
+      authenticatedScheduledMode && !mayResolveBackgroundMcp
+        ? missingScheduledAccountCap
+          ? {
+              tools: [],
+              advertisedTools: [],
+              allocatedToolNames: [],
+              diagnosticNotice:
+                "Configured MCP is incomplete for this scheduled run: the account automation has no explicit finite toolsAllow. Do not claim MCP-backed work succeeded; report this blocker to the operator.",
+              dispose: async () => undefined,
+            }
+          : undefined
+        : await materializeRequesterScopedMcpToolsForHarnessRun({
+            sessionId: params.sessionId,
+            sessionKey: params.sessionKey,
+            workspaceDir: effectiveWorkspace,
+            agentDir: policyContext.agentDir,
+            cfg: params.config,
+            manifestRegistry: bundleManifestRegistry,
+            toolOverrides: codexMcpToolOverrides,
+            // Account-owned scheduled runs may resolve only providers that explicitly
+            // accept canonical agent + session identity without a live requester.
+            // Never replay the creator's sender, account, channel, or conversation:
+            // per-requester OAuth and requester-required resolvers must stay closed.
+            ...(mayResolveBackgroundMcp
+              ? {}
+              : {
+                  requesterSenderId: params.senderId,
+                  agentAccountId: params.agentAccountId,
+                  messageChannel: params.messageChannel ?? params.messageProvider,
+                  chatType: params.chatType,
+                  conversationId: params.chatId ?? params.groupId ?? params.messageTo,
+                }),
+            agentId: sessionAgentId,
+            runtimeGeneration: params.lifecycleGeneration,
+            traceId: params.diagnosticTrace?.traceId,
+            reservedToolNames,
+            toolsAllow: params.toolsAllow,
+            policyContext,
+            ...(mayResolveBackgroundMcp
+              ? { scheduledCodexApproval: { autoApprove: autoApproveScheduledMcp } }
+              : {}),
+            warn: (message) => embeddedAgentLog.warn(message),
+          });
+    if (mayResolveBackgroundMcp && !scopedMcpTools) {
+      scopedMcpTools = {
+        tools: [],
+        advertisedTools: [],
+        allocatedToolNames: [],
+        diagnosticNotice:
+          "Configured MCP is incomplete for this scheduled run: the background connection catalog is unavailable. Do not claim MCP-backed work succeeded; report this blocker to the operator.",
+        dispose: async () => undefined,
+      };
+    }
+    const resolverAllocationIncomplete = shouldWithholdStaticCodexMcp({
+      scheduledAccountMcp,
+      hasRequesterScopedMcp,
+      toolsAllow: params.toolsAllow,
+      resolverDiagnosticNotice: scopedMcpTools?.diagnosticNotice,
+    });
+    // Resolver tools are allocated before static tools, matching ordinary owner turns
+    // where resolver tools are dynamic and static MCP remains native. A canonical
+    // cross-partition check below closes the remaining catalog-growth ambiguity.
+    // If any scoped resolver catalog is incomplete, do not project static MCP at
+    // all: an unreserved collision could otherwise transfer a persisted tool name
+    // (and its finite authority) between unrelated canonical tools across runs.
+    scheduledConfiguredMcp =
+      ownsScheduledConfiguredMcpSurface && !resolverAllocationIncomplete
+        ? await materializeStaticMcpToolsForScheduledHarnessRun({
+            sessionId: params.sessionId,
+            sessionKey: params.sessionKey,
+            workspaceDir: effectiveWorkspace,
+            agentDir: policyContext.agentDir,
+            cfg: params.config,
+            manifestRegistry: bundleManifestRegistry,
+            reservedToolNames: [
+              ...reservedToolNames,
+              ...(scopedMcpTools?.allocatedToolNames ?? []),
+            ],
+            nameOwnershipBaseReservedToolNames: reservedToolNames,
+            toolsAllow: params.toolsAllow,
+            toolOverrides: codexMcpToolOverrides,
+            autoApproveCodexAppServerApprovals: autoApproveScheduledMcp,
+            policyContext,
+            warn: (message) => embeddedAgentLog.warn(message),
+          })
+        : undefined;
+    if (scheduledAccountMcp) {
+      const mcpIdentityBindings = resolveScheduledCodexMcpIdentityBindings({
+        bindings: params.scheduledToolPolicy?.mcpToolBindings,
+        allocations: [
+          ...(scopedMcpTools?.mcpNameAllocations ?? []),
+          ...(scheduledConfiguredMcp?.mcpNameAllocations ?? []),
+        ],
+        exposedNames: [
+          ...(scopedMcpTools?.tools.map((tool) => tool.name) ?? []),
+          ...(scopedMcpTools?.advertisedTools.map((tool) => tool.name) ?? []),
+          ...(scheduledConfiguredMcp?.tools.map((tool) => tool.name) ?? []),
+        ],
+        persistedCapNames: params.toolsAllow,
+      });
+      rejectedScheduledMcpAuthorityNames = new Set(mcpIdentityBindings.rejectedNames);
+      if (scopedMcpTools) {
+        scopedMcpTools.tools = scopedMcpTools.tools.filter((tool) =>
+          mcpIdentityBindings.allowedNames.has(tool.name.trim().toLowerCase()),
+        );
+        scopedMcpTools.advertisedTools = scopedMcpTools.advertisedTools.filter((tool) =>
+          mcpIdentityBindings.allowedNames.has(tool.name.trim().toLowerCase()),
+        );
+      }
+      if (scheduledConfiguredMcp) {
+        scheduledConfiguredMcp.tools = scheduledConfiguredMcp.tools.filter((tool) =>
+          mcpIdentityBindings.allowedNames.has(tool.name.trim().toLowerCase()),
+        );
+      }
+      if (mcpIdentityBindings.rejectedNames.length > 0) {
+        const notice =
+          `Configured MCP is incomplete for this scheduled run: persisted tool identity no longer matches (${formatScheduledMcpIdentityMismatch(mcpIdentityBindings.rejectedNames)}). ` +
+          "No mismatched MCP tool was exposed; reauthorize the automation from a current owner turn.";
+        if (scopedMcpTools) {
+          scopedMcpTools.diagnosticNotice = [scopedMcpTools.diagnosticNotice, notice]
+            .filter(Boolean)
+            .join(" ");
+        } else if (scheduledConfiguredMcp) {
+          scheduledConfiguredMcp.diagnosticNotice = [
+            scheduledConfiguredMcp.diagnosticNotice,
+            notice,
+          ]
+            .filter(Boolean)
+            .join(" ");
+        } else {
+          scopedMcpTools = {
+            tools: [],
+            advertisedTools: [],
+            allocatedToolNames: [],
+            diagnosticNotice: notice,
+            dispose: async () => undefined,
+          };
+        }
+      }
+    }
     // Restricted dynamic-tool profiles (private QA, exclusion lists) gate scoped
     // MCP tools exactly like every other dynamic tool. Filter both lists with the
     // same rule so execution and advertised specs stay name-aligned.
     const scopedExecutable = filterCodexDynamicTools(
-      scheduledConfiguredMcp?.tools ?? scopedMcpTools?.tools ?? [],
+      [...(scheduledConfiguredMcp?.tools ?? []), ...(scopedMcpTools?.tools ?? [])],
       pluginConfig,
     );
     const scopedAdvertised = filterCodexDynamicTools(
-      scheduledConfiguredMcp?.tools ?? scopedMcpTools?.advertisedTools ?? [],
+      [...(scheduledConfiguredMcp?.tools ?? []), ...(scopedMcpTools?.advertisedTools ?? [])],
       pluginConfig,
     );
+    // A persisted MCP grant owns its allocated name across the complete dynamic
+    // surface. If MCP moves or disappears, do not let an ordinary dynamic tool
+    // inherit that exact authority-bearing name.
+    const executableBaseTools = tools.filter(
+      (tool) => !rejectedScheduledMcpAuthorityNames.has(tool.name.trim().toLowerCase()),
+    );
+    const advertisedBaseTools = registeredTools.filter(
+      (tool) => !rejectedScheduledMcpAuthorityNames.has(tool.name.trim().toLowerCase()),
+    );
     const toolsWithScopedMcp =
-      scopedExecutable.length > 0 ? [...tools, ...scopedExecutable] : tools;
+      scopedExecutable.length > 0
+        ? [...executableBaseTools, ...scopedExecutable]
+        : executableBaseTools;
     const registeredWithScopedMcp =
-      scopedAdvertised.length > 0 ? [...registeredTools, ...scopedAdvertised] : registeredTools;
+      scopedAdvertised.length > 0
+        ? [...advertisedBaseTools, ...scopedAdvertised]
+        : advertisedBaseTools;
     const hookContext = {
       agentId: sessionAgentId,
       config: params.config,

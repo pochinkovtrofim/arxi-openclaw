@@ -19,6 +19,8 @@ export type CodexBundleMcpThreadConfig = {
   fingerprint?: string;
   /** Enabled static servers across bundle defaults and owner config. */
   staticServerNames: string[];
+  /** Enabled requester/resolver-backed servers excluded from native thread config. */
+  requesterScopedServerNames: string[];
   /** Enabled static servers originating from owner `mcp.servers` config. */
   userStaticServerNames: string[];
 };

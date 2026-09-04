@@ -15,6 +15,7 @@ import type {
   McpServerConnectionResolveContext,
   OpenClawPluginMcpServerConnectionResolver,
 } from "../plugins/types.js";
+import type { McpResolverUnavailableDiagnostic } from "./agent-bundle-mcp-types.js";
 
 export type { McpServerConnectionResolved };
 
@@ -246,6 +247,7 @@ export async function resolveRequesterScopedMcpConnections(params: {
   conversationId?: string | null;
   runtimeGeneration?: string | null;
   traceId?: string | null;
+  onUnavailable?: (diagnostic: McpResolverUnavailableDiagnostic) => void;
 }): Promise<Map<string, McpServerConnectionResolved>> {
   const requesterSenderId = normalizeOptionalString(params.requesterSenderId);
   const resolved = new Map<string, McpServerConnectionResolved>();
@@ -290,11 +292,19 @@ export async function resolveRequesterScopedMcpConnections(params: {
         !requesterSenderId &&
         (entry.requiresRequesterIdentity !== false || !agentId || !sessionKey)
       ) {
+        params.onUnavailable?.({
+          serverName,
+          reason:
+            entry.requiresRequesterIdentity !== false
+              ? "requester identity required"
+              : "background identity required",
+        });
         return null;
       }
       try {
         const result = await raceWithTimeout(Promise.resolve(entry.resolve(ctx)), timeoutMs);
         if (!result || typeof result.url !== "string" || result.url.trim().length === 0) {
+          params.onUnavailable?.({ serverName, reason: "unavailable" });
           return null;
         }
         const headers =
@@ -319,6 +329,10 @@ export async function resolveRequesterScopedMcpConnections(params: {
         // Fixed classification only — no dynamic error text (plugin-controlled / secret-bearing).
         const kind =
           error instanceof McpResolverTimeoutError ? "resolver timeout" : "resolver error";
+        params.onUnavailable?.({
+          serverName,
+          reason: error instanceof McpResolverTimeoutError ? "timeout" : "error",
+        });
         logWarn(
           `bundle-mcp: connection resolver for server "${serverName}" (plugin "${entry.pluginId}") failed with ${kind}`,
         );

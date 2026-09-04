@@ -22,6 +22,7 @@ import {
 import { buildSessionCreationStamp } from "../../config/sessions/session-entry-provenance.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
+  normalizeCronScheduledMcpToolBindings,
   normalizeCronScheduledToolCallerOrigin,
   normalizeCronScheduledToolPolicy,
   normalizeCronToolsAllowExecTarget,
@@ -263,6 +264,9 @@ export async function persistAgentSessionPhase(params: {
                 requirement: marker.toolsAllowExecTargetRequirement,
                 execTarget: marker.toolsAllowExecTarget,
               });
+              const scheduledMcpToolBindings = normalizeCronScheduledMcpToolBindings(
+                marker.scheduledMcpToolBindings,
+              );
               restoredCronContinuation = {
                 ...params.restoredCronContinuationIdentity,
                 provider,
@@ -284,6 +288,7 @@ export async function persistAgentSessionPhase(params: {
                       ),
                     }
                   : {}),
+                ...(scheduledMcpToolBindings ? { scheduledMcpToolBindings } : {}),
                 ...(normalizeCronToolsAllowExecTarget(marker.toolsAllowExecTarget)
                   ? {
                       toolsAllowExecTarget: normalizeCronToolsAllowExecTarget(

@@ -108,6 +108,12 @@ function requireEmbeddedAgentCall(): {
     ownerSessionKey: string;
     ownerAccountId: string;
     ownerOrigin: { kind: "external"; channel: string } | { kind: "local" } | { kind: "unknown" };
+    mcpToolBindings?: Array<{
+      name: string;
+      serverName: string;
+      operation: "tool";
+      toolName: string;
+    }>;
   };
 } {
   const call = runEmbeddedAgentMock.mock.calls[0]?.[0] as
@@ -123,6 +129,12 @@ function requireEmbeddedAgentCall(): {
             | { kind: "external"; channel: string }
             | { kind: "local" }
             | { kind: "unknown" };
+          mcpToolBindings?: Array<{
+            name: string;
+            serverName: string;
+            operation: "tool";
+            toolName: string;
+          }>;
         };
       }
     | undefined;
@@ -229,6 +241,27 @@ describe("runCronIsolatedAgentTurn toolsAllow passthrough", () => {
         ownerAccountId: "default",
         ownerOrigin: { kind: "local" },
       });
+    },
+  );
+
+  it(
+    "passes store-private canonical MCP identity bindings into the scheduled runtime",
+    { timeout: RUN_TOOLS_ALLOW_TIMEOUT_MS },
+    async () => {
+      const params = makeParamsWithToolsAllow(["mail__read"]);
+      (
+        params.job as {
+          toolsAllowProvenance?: { mcpToolBindings?: unknown };
+        }
+      ).toolsAllowProvenance!.mcpToolBindings = [
+        { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+      ];
+
+      await runCronIsolatedAgentTurn(params);
+
+      expect(requireEmbeddedAgentCall().scheduledToolPolicy?.mcpToolBindings).toEqual([
+        { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+      ]);
     },
   );
 

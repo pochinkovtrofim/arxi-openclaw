@@ -18,6 +18,7 @@ import { closePluginStateDatabase } from "../plugin-state/plugin-state-store.js"
 import { clearActivePluginRegistry } from "../plugins/runtime.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
 import { drainGlobalSingletonLifecycleState } from "../shared/global-singleton.js";
+import { closeOpenClawAgentDatabases } from "../state/openclaw-agent-db.js";
 import {
   abortChatRunById,
   type ChatAbortControllerEntry,
@@ -1060,9 +1061,16 @@ export function createGatewayCloseHandler(
         await drainGlobalSingletonLifecycleState(restartExpectedMs === null ? "close" : "restart");
       } finally {
         try {
-          params.clearSecretsRuntimeSnapshot?.();
-        } catch {
-          /* ignore */
+          // In-process restarts retain the Node module graph. Close every agent
+          // SQLite handle after its runtime owners drain so a remounted state
+          // path cannot keep writing through a stale pre-restart inode.
+          closeOpenClawAgentDatabases();
+        } finally {
+          try {
+            params.clearSecretsRuntimeSnapshot?.();
+          } catch {
+            /* ignore */
+          }
         }
       }
     }

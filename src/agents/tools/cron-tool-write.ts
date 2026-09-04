@@ -145,8 +145,13 @@ export async function updateCronJobFromAgentTool(params: {
   resolveCreatorToolAuthority?: (options?: {
     signal?: AbortSignal;
   }) => Promise<CronCreatorToolAuthoritySnapshot>;
-  withCreatorAuthorityProvenance?: <T>(
-    authority: CronCreatorToolAuthoritySnapshot,
+  withToolAuthorityProvenance?: <T>(
+    authority: {
+      tools: readonly CronCreatorToolAllowlistEntry[];
+      provenance: { version: 1; source: "final-executable-surface" };
+      grant?: CronCreatorToolAuthoritySnapshot["grant"];
+      toolsAllow: readonly string[];
+    },
     run: () => Promise<T>,
   ) => Promise<T>;
   gatewayOpts: GatewayCallOptions;
@@ -187,7 +192,28 @@ export async function updateCronJobFromAgentTool(params: {
     ) {
       throw new Error(INCOMPLETE_CRON_CREATOR_AUTHORITY_MESSAGE);
     }
-    if (prepared.resolvedAuthority && !params.withCreatorAuthorityProvenance) {
+    const toolsAllow = Array.isArray(payload?.toolsAllow)
+      ? payload.toolsAllow.filter((entry): entry is string => typeof entry === "string")
+      : undefined;
+    const writeAuthority = prepared.resolvedAuthority
+      ? {
+          tools: prepared.resolvedAuthority.tools,
+          provenance: prepared.resolvedAuthority.provenance,
+          grant: prepared.resolvedAuthority.grant,
+        }
+      : captureSource === "final-executable-surface" && params.creatorToolAllowlist
+        ? {
+            tools: params.creatorToolAllowlist,
+            provenance: {
+              version: 1 as const,
+              source: "final-executable-surface" as const,
+            },
+          }
+        : undefined;
+    if (
+      prepared.resolvedAuthority &&
+      (!params.withToolAuthorityProvenance || toolsAllow === undefined)
+    ) {
       throw new Error(
         "fresh configured MCP cron authority requires an authenticated local agent run",
       );
@@ -203,8 +229,8 @@ export async function updateCronJobFromAgentTool(params: {
             : {}),
         });
       };
-      return prepared.resolvedAuthority && params.withCreatorAuthorityProvenance
-        ? await params.withCreatorAuthorityProvenance(prepared.resolvedAuthority, write)
+      return writeAuthority && toolsAllow && params.withToolAuthorityProvenance
+        ? await params.withToolAuthorityProvenance({ ...writeAuthority, toolsAllow }, write)
         : await write();
     } catch (error) {
       if (attempt === 0 && isCronJobConfigRevisionConflict(error)) {

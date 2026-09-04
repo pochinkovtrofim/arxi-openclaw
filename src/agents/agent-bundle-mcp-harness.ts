@@ -2,7 +2,7 @@
 import type { SessionToolOverrides } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
-import { getPluginToolMeta } from "../plugins/tool-metadata.js";
+import { copyPluginToolMeta, getPluginToolMeta } from "../plugins/tool-metadata.js";
 import {
   getAdvertisedScopedMcpCatalog,
   getOrCreateRequesterScopedMcpRuntime,
@@ -14,6 +14,7 @@ import {
   buildBundleMcpToolsFromCatalog,
   materializeBundleMcpToolsForRun,
 } from "./agent-bundle-mcp-materialize.js";
+import { buildSafeToolName, normalizeReservedToolNames } from "./agent-bundle-mcp-names.js";
 import { mergeMcpConnectCatalog } from "./agent-bundle-mcp-requester-connect.js";
 import type { McpToolCatalog, RequesterMcpConnect } from "./agent-bundle-mcp-types.js";
 import {
@@ -34,16 +35,54 @@ type RequesterScopedHarnessMcpTools = {
    * Identical for every sender once the session has observed a scoped catalog.
    */
   advertisedTools: AnyAgentTool[];
+  /** All stable allocated names, including tools later removed by scheduled policy. */
+  allocatedToolNames?: readonly string[];
+  /** Canonical identity bindings used to reject cross-partition name collisions. */
+  mcpNameAllocations?: readonly HarnessMcpNameAllocation[];
+  /** Bounded scheduled warning when resolver binding or approval policy was incomplete. */
+  diagnosticNotice?: string;
   dispose: () => Promise<void>;
 };
 
 type ScheduledStaticHarnessMcpTools = {
   /** Final executable static MCP tools for this scheduled turn. */
   tools: AnyAgentTool[];
+  /** Canonical identity bindings used to reject cross-partition name collisions. */
+  mcpNameAllocations?: readonly HarnessMcpNameAllocation[];
   /** Bounded model/operator warning when configured servers or final policy were incomplete. */
   diagnosticNotice?: string;
   dispose: () => Promise<void>;
 };
+
+type HarnessMcpNameAllocation = {
+  name: string;
+  baseName: string;
+  identity: string;
+};
+
+function buildMcpNameAllocations(
+  tools: readonly AnyAgentTool[],
+  baseReservedToolNames?: Iterable<string>,
+): HarnessMcpNameAllocation[] {
+  const initialReserved = normalizeReservedToolNames(baseReservedToolNames);
+  return tools.flatMap((tool) => {
+    const mcp = getPluginToolMeta(tool)?.mcp;
+    if (!mcp) {
+      return [];
+    }
+    return [
+      {
+        name: tool.name,
+        baseName: buildSafeToolName({
+          serverName: mcp.safeServerName,
+          toolName: mcp.toolName,
+          reservedNames: new Set(initialReserved),
+        }),
+        identity: JSON.stringify([mcp.serverName, mcp.operation, mcp.toolName]),
+      },
+    ];
+  });
+}
 
 function formatScheduledMcpDiagnosticNotice(messages: readonly string[]): string | undefined {
   const bounded = [...new Set(messages)]
@@ -107,6 +146,8 @@ type MaterializeRequesterScopedMcpToolsForHarnessRunParams = {
   conversationCapabilityProfile?: ResolvedConversationCapabilityProfile;
   /** Builds a capability profile when conversationCapabilityProfile is omitted. */
   policyContext?: Omit<ConversationCapabilityProfileParams, "runtimeToolAllowlist">;
+  /** Applies unattended Codex approval gating and surfaces resolver failures. */
+  scheduledCodexApproval?: { autoApprove: boolean };
   warn?: (message: string) => void;
 };
 
@@ -152,6 +193,19 @@ function applyHarnessToolPolicy(
   });
 }
 
+function canonicalMcpToolIdentity(tool: AnyAgentTool): string | undefined {
+  const mcp = getPluginToolMeta(tool)?.mcp;
+  return mcp ? JSON.stringify([mcp.serverName, mcp.operation, mcp.toolName]) : undefined;
+}
+
+function bindLiveMcpExecutor(advertised: AnyAgentTool, live: AnyAgentTool): AnyAgentTool {
+  const bound = { ...live, ...advertised, execute: live.execute };
+  // Stable names and schemas come from the advertised surface, but approval
+  // and side-effect metadata must always come from the current live binding.
+  copyPluginToolMeta(live, bound);
+  return bound;
+}
+
 function buildCatalogTools(
   catalog: McpToolCatalog,
   params: MaterializeRequesterScopedMcpToolsForHarnessRunParams,
@@ -183,6 +237,8 @@ export async function materializeStaticMcpToolsForScheduledHarnessRunCore(
     autoApproveCodexAppServerApprovals?: boolean;
     /** Mutation-only probes retire their isolated runtime after the snapshot. */
     retireSessionRuntimeAfterDispose?: boolean;
+    /** Names reserved before requester/static MCP partitions are allocated. */
+    nameOwnershipBaseReservedToolNames?: Iterable<string>;
   },
 ): Promise<ScheduledStaticHarnessMcpTools> {
   const runtime = await getOrCreateSessionMcpRuntime({
@@ -246,6 +302,10 @@ export async function materializeStaticMcpToolsForScheduledHarnessRunCore(
     let disposed = false;
     return {
       tools: allowed,
+      mcpNameAllocations: buildMcpNameAllocations(
+        liveRuntime.tools,
+        params.nameOwnershipBaseReservedToolNames ?? params.reservedToolNames,
+      ),
       ...(diagnosticNotice ? { diagnosticNotice } : {}),
       dispose: async () => {
         if (disposed) {
@@ -269,6 +329,7 @@ export async function materializeStaticMcpToolsForScheduledHarnessRunCore(
 export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
   params: MaterializeRequesterScopedMcpToolsForHarnessRunParams,
 ): Promise<RequesterScopedHarnessMcpTools | undefined> {
+  const scheduledWarnings: string[] = [];
   const scopedRuntimeHandle = await getOrCreateRequesterScopedMcpRuntime({
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
@@ -285,6 +346,15 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
     conversationId: params.conversationId,
     runtimeGeneration: params.runtimeGeneration,
     traceId: params.traceId,
+    ...(params.scheduledCodexApproval
+      ? {
+          onResolverUnavailable: (diagnostic) => {
+            scheduledWarnings.push(
+              `${diagnostic.serverName}: background connection ${diagnostic.reason}`,
+            );
+          },
+        }
+      : {}),
   });
   const scopedRuntime = scopedRuntimeHandle?.runtime;
 
@@ -298,19 +368,35 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
         reservedToolNames: params.reservedToolNames,
       });
       liveCatalog = scopedRuntime.peekCatalog() ?? (await scopedRuntime.getCatalog());
-      if (liveCatalog.tools.length > 0 && scopedRuntimeHandle) {
+      if (params.scheduledCodexApproval) {
+        scheduledWarnings.push(
+          ...(liveRuntime.diagnostics ?? []).map(
+            (diagnostic) => `${diagnostic.serverName}: ${diagnostic.message}`,
+          ),
+        );
+      }
+      if (scopedRuntimeHandle) {
         rememberAdvertisedScopedMcpCatalog(scopedRuntimeHandle, liveCatalog);
       }
     }
 
-    const advertisedCatalog =
-      getAdvertisedScopedMcpCatalog(params.sessionId) ??
-      (liveCatalog
-        ? mergeMcpConnectCatalog(liveCatalog, scopedRuntime?.requesterConnect)
-        : undefined);
-    if (!advertisedCatalog || advertisedCatalog.tools.length === 0) {
+    const advertisedBase = getAdvertisedScopedMcpCatalog(params.sessionId) ?? liveCatalog;
+    const advertisedCatalog = advertisedBase
+      ? mergeMcpConnectCatalog(advertisedBase, scopedRuntime?.requesterConnect)
+      : undefined;
+    if (!advertisedCatalog) {
       await liveRuntime?.dispose();
-      return undefined;
+      const diagnosticNotice = formatScheduledMcpDiagnosticNotice(scheduledWarnings);
+      return diagnosticNotice
+        ? {
+            tools: [],
+            advertisedTools: [],
+            allocatedToolNames: [],
+            mcpNameAllocations: [],
+            diagnosticNotice,
+            dispose: async () => undefined,
+          }
+        : undefined;
     }
 
     const reservedToolNames = params.reservedToolNames
@@ -321,20 +407,58 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
       { ...params, reservedToolNames },
       scopedRuntime?.requesterConnect,
     );
-    const liveByName = new Map((liveRuntime?.tools ?? []).map((tool) => [tool.name, tool]));
+    const liveByIdentity = new Map<string, AnyAgentTool>();
+    for (const tool of liveRuntime?.tools ?? []) {
+      const identity = canonicalMcpToolIdentity(tool);
+      if (identity) {
+        liveByIdentity.set(identity, tool);
+      }
+    }
     // Live tools supply execution; advertised catalog supplies the stable name/schema surface.
-    const tools = advertisedTools.map((tool) => liveByName.get(tool.name) ?? tool);
+    const tools = advertisedTools.map((tool) => {
+      const identity = canonicalMcpToolIdentity(tool);
+      const live = identity ? liveByIdentity.get(identity) : undefined;
+      return live ? bindLiveMcpExecutor(tool, live) : tool;
+    });
 
-    const filteredTools = applyHarnessToolPolicy(tools, params);
-    const filteredAdvertised = applyHarnessToolPolicy(advertisedTools, params);
-    // Policy must keep both lists aligned by name for fingerprint stability.
+    const applyScheduledPolicy = (candidates: AnyAgentTool[]) => {
+      const policyFiltered = applyHarnessToolPolicy(candidates, params);
+      return params.scheduledCodexApproval
+        ? filterScheduledCodexApproval(
+            policyFiltered,
+            params.scheduledCodexApproval.autoApprove,
+            (message) => scheduledWarnings.push(message),
+          )
+        : policyFiltered;
+    };
+    // A scheduled run may execute only a current live binding. Ordinary
+    // requester turns retain not-connected stubs for their sign-in UX.
+    const executableCandidates = params.scheduledCodexApproval
+      ? tools.filter((tool) => {
+          const identity = canonicalMcpToolIdentity(tool);
+          return identity !== undefined && liveByIdentity.has(identity);
+        })
+      : tools;
+    const filteredTools = applyScheduledPolicy(executableCandidates);
+    const policyAdvertised = applyScheduledPolicy(advertisedTools);
+    // Scheduled advertisement is the intersection with the current live,
+    // approval-safe surface. This prevents a stale permissive catalog row from
+    // making a newly destructive tool appear runnable.
+    const executableNames = new Set(filteredTools.map((tool) => tool.name));
+    const filteredAdvertised = params.scheduledCodexApproval
+      ? policyAdvertised.filter((tool) => executableNames.has(tool.name))
+      : policyAdvertised;
     const allowedNames = new Set(filteredAdvertised.map((tool) => tool.name));
     const executableTools = filteredTools.filter((tool) => allowedNames.has(tool.name));
+    const diagnosticNotice = formatScheduledMcpDiagnosticNotice(scheduledWarnings);
 
     let disposed = false;
     return {
       tools: executableTools,
       advertisedTools: filteredAdvertised,
+      allocatedToolNames: advertisedTools.map((tool) => tool.name),
+      mcpNameAllocations: buildMcpNameAllocations(advertisedTools, params.reservedToolNames),
+      ...(diagnosticNotice ? { diagnosticNotice } : {}),
       dispose: async () => {
         if (disposed) {
           return;

@@ -180,9 +180,7 @@ export async function prepareCodexAttemptRuntime(connection: CodexAttemptConnect
     toolOverrides: codexMcpToolOverrides,
   });
   const authenticatedScheduledMode =
-    params.trigger === "cron" &&
-    params.scheduledToolPolicy !== undefined &&
-    Array.isArray(params.toolsAllow);
+    params.trigger === "cron" && params.scheduledToolPolicy !== undefined;
   const ownsScheduledConfiguredMcpSurface =
     authenticatedScheduledMode &&
     (bundleMcpThreadConfig.staticServerNames.length > 0 ||

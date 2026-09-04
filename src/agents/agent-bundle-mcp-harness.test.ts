@@ -32,6 +32,10 @@ const mocks = vi.hoisted(() => {
     | ((params: {
         sessionId: string;
         requesterSenderId?: string | null;
+        onResolverUnavailable?: (diagnostic: {
+          serverName: string;
+          reason: "unavailable" | "timeout" | "error";
+        }) => void;
       }) => Promise<Runtime | undefined>)
     | undefined;
 
@@ -42,7 +46,14 @@ const mocks = vi.hoisted(() => {
       resolveImpl = impl;
     },
     getOrCreateRequesterScopedMcpRuntime: vi.fn(
-      async (params: { sessionId: string; requesterSenderId?: string | null }) => {
+      async (params: {
+        sessionId: string;
+        requesterSenderId?: string | null;
+        onResolverUnavailable?: (diagnostic: {
+          serverName: string;
+          reason: "unavailable" | "timeout" | "error";
+        }) => void;
+      }) => {
         if (resolveImpl) {
           const runtime = await resolveImpl(params);
           return runtime
@@ -58,7 +69,21 @@ const mocks = vi.hoisted(() => {
         handle: { runtime: Runtime },
         catalog: typeof advertised extends Map<string, infer V> ? V : never,
       ) => {
-        advertised.set(handle.runtime.sessionId, catalog);
+        const existing = advertised.get(handle.runtime.sessionId);
+        if (!existing) {
+          advertised.set(handle.runtime.sessionId, catalog);
+          return;
+        }
+        const updatedServers = new Set(Object.keys(catalog.servers));
+        advertised.set(handle.runtime.sessionId, {
+          version: catalog.version,
+          generatedAt: catalog.generatedAt,
+          servers: { ...existing.servers, ...catalog.servers },
+          tools: [
+            ...existing.tools.filter((tool) => !updatedServers.has(tool.serverName)),
+            ...catalog.tools,
+          ],
+        });
       },
     ),
     getAdvertisedScopedMcpCatalog: vi.fn((sessionId: string) => advertised.get(sessionId) ?? null),
@@ -589,6 +614,190 @@ describe("materializeRequesterScopedMcpToolsForHarnessRunCore", () => {
     expect(mocks.rememberAdvertisedScopedMcpCatalog).not.toHaveBeenCalled();
   });
 
+  it("surfaces a bounded diagnostic when a background-safe resolver is unavailable", async () => {
+    mocks.setResolveImpl(async (params) => {
+      params.onResolverUnavailable?.({ serverName: "user-mail", reason: "unavailable" });
+      return undefined;
+    });
+
+    const result = await materializeRequesterScopedMcpToolsForHarnessRunCore({
+      sessionId: "session-background-unavailable",
+      sessionKey: "agent:main:session-background-unavailable",
+      agentId: "main",
+      workspaceDir: "/workspace",
+      scheduledCodexApproval: { autoApprove: false },
+    });
+
+    expect(result).toMatchObject({ tools: [], advertisedTools: [] });
+    expect(result?.diagnosticNotice).toContain("user-mail: background connection unavailable");
+    expect(result?.diagnosticNotice).toContain("Do not claim MCP-backed work succeeded");
+    await result?.dispose();
+  });
+
+  it("keeps successful background bindings honest when one server fails tool discovery", async () => {
+    const runtime = makeRuntime({
+      sessionId: "session-background-partial-discovery",
+      requesterSenderId: "owner",
+    });
+    runtime.peekCatalog()!.diagnostics = [
+      {
+        serverName: "user-calendar",
+        safeServerName: "user-calendar",
+        launchSummary: "user-calendar",
+        message: "tools/list failed",
+      },
+    ];
+    runtime.peekCatalog()!.servers["user-mail"]!.codexApprovalMode = "approve";
+    mocks.setResolveImpl(async () => runtime);
+
+    const result = await materializeRequesterScopedMcpToolsForHarnessRunCore({
+      sessionId: "session-background-partial-discovery",
+      sessionKey: "agent:main:session-background-partial-discovery",
+      agentId: "main",
+      workspaceDir: "/workspace",
+      toolsAllow: ["user-mail__inbox"],
+      scheduledCodexApproval: { autoApprove: false },
+    });
+
+    expect(result?.tools.map((tool) => tool.name)).toEqual(["user-mail__inbox"]);
+    expect(result?.diagnosticNotice).toContain("user-calendar: tools/list failed");
+    expect(result?.diagnosticNotice).toContain("Do not claim MCP-backed work succeeded");
+    await result?.dispose();
+  });
+
+  it("binds partial live resolver catalogs to stable advertised names by canonical identity", async () => {
+    const first = makeRuntime({
+      sessionId: "session-resolver-collision",
+      requesterSenderId: "owner-a",
+    });
+    const firstCatalog = first.peekCatalog()!;
+    firstCatalog.servers = {
+      a: { serverName: "a", safeServerName: "a", launchSummary: "a", toolCount: 1 },
+      a__b: {
+        serverName: "a__b",
+        safeServerName: "a__b",
+        launchSummary: "a__b",
+        toolCount: 1,
+      },
+    };
+    firstCatalog.tools = [
+      {
+        serverName: "a",
+        safeServerName: "a",
+        toolName: "b__c",
+        inputSchema: { type: "object" },
+        fallbackDescription: "first collision owner",
+      },
+      {
+        serverName: "a__b",
+        safeServerName: "a__b",
+        toolName: "c",
+        inputSchema: { type: "object" },
+        fallbackDescription: "second collision owner",
+      },
+    ];
+    const second = makeRuntime({
+      sessionId: "session-resolver-collision",
+      requesterSenderId: "owner-b",
+    });
+    const secondCatalog = second.peekCatalog()!;
+    secondCatalog.servers = { a__b: firstCatalog.servers.a__b! };
+    secondCatalog.tools = [firstCatalog.tools[1]!];
+    const secondCall = vi.fn(async (serverName: string, toolName: string) => ({
+      content: [{ type: "text" as const, text: `live:${serverName}:${toolName}` }],
+      isError: false,
+    }));
+    second.callTool = secondCall;
+    let resolveCount = 0;
+    mocks.setResolveImpl(async () => (resolveCount++ === 0 ? first : second));
+
+    const initial = await materializeRequesterScopedMcpToolsForHarnessRunCore({
+      sessionId: "session-resolver-collision",
+      workspaceDir: "/workspace",
+      requesterSenderId: "owner-a",
+    });
+    expect(initial?.advertisedTools.map((tool) => tool.name)).toEqual(["a__b__c", "a__b__c-2"]);
+    await initial?.dispose();
+
+    const partial = await materializeRequesterScopedMcpToolsForHarnessRunCore({
+      sessionId: "session-resolver-collision",
+      workspaceDir: "/workspace",
+      requesterSenderId: "owner-b",
+    });
+    const firstOwner = partial?.tools.find((tool) => tool.name === "a__b__c");
+    const secondOwner = partial?.tools.find((tool) => tool.name === "a__b__c-2");
+    await expect(firstOwner?.execute("call-a", {})).resolves.toMatchObject({
+      details: { status: "error", mcpServer: "a", mcpTool: "b__c" },
+    });
+    await expect(secondOwner?.execute("call-b", {})).resolves.toMatchObject({
+      content: [{ text: "live:a__b:c" }],
+    });
+    expect(secondCall).toHaveBeenCalledOnce();
+    expect(secondCall).toHaveBeenCalledWith("a__b", "c", {});
+    await partial?.dispose();
+  });
+
+  it.each([
+    { mode: "prompt" as const, annotations: undefined },
+    {
+      mode: "auto" as const,
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+    },
+  ])(
+    "omits requester MCP tools that require unattended $mode approval",
+    async ({ mode, annotations }) => {
+      const runtime = makeRuntime({
+        sessionId: `session-background-${mode}`,
+        requesterSenderId: "owner",
+      });
+      const catalog = runtime.peekCatalog()!;
+      catalog.servers["user-mail"]!.codexApprovalMode = mode;
+      if (annotations) {
+        catalog.tools[0]!.codexAnnotations = annotations;
+      }
+      mocks.setResolveImpl(async () => runtime);
+      const callTool = vi.spyOn(runtime, "callTool");
+
+      const result = await materializeRequesterScopedMcpToolsForHarnessRunCore({
+        sessionId: `session-background-${mode}`,
+        sessionKey: `agent:main:session-background-${mode}`,
+        agentId: "main",
+        workspaceDir: "/workspace",
+        toolsAllow: ["user-mail__inbox"],
+        scheduledCodexApproval: { autoApprove: false },
+      });
+
+      expect(result?.tools).toEqual([]);
+      expect(result?.advertisedTools).toEqual([]);
+      expect(result?.diagnosticNotice).toContain("user-mail/inbox");
+      expect(callTool).not.toHaveBeenCalled();
+      await result?.dispose();
+    },
+  );
+
+  it("reserves static generated names while materializing requester tools", async () => {
+    const runtime = makeRuntime({
+      sessionId: "session-cross-partition-collision",
+      requesterSenderId: "owner",
+    });
+    const catalog = runtime.peekCatalog()!;
+    catalog.servers["user-mail"]!.safeServerName = "a__b";
+    catalog.tools[0]!.safeServerName = "a__b";
+    catalog.tools[0]!.toolName = "c";
+    mocks.setResolveImpl(async () => runtime);
+
+    const result = await materializeRequesterScopedMcpToolsForHarnessRunCore({
+      sessionId: "session-cross-partition-collision",
+      workspaceDir: "/workspace",
+      requesterSenderId: "owner",
+      reservedToolNames: ["a__b__c"],
+    });
+
+    expect(result?.tools.map((tool) => tool.name)).toEqual(["a__b__c-2"]);
+    expect(result?.advertisedTools.map((tool) => tool.name)).toEqual(["a__b__c-2"]);
+    await result?.dispose();
+  });
+
   it("forwards the host-admitted run identity to requester-scoped resolution", async () => {
     mocks.setResolveImpl(async () => undefined);
 
@@ -671,7 +880,7 @@ describe("materializeRequesterScopedMcpToolsForHarnessRunCore", () => {
       expect.objectContaining({ url: "https://mcp.example/rpc" }),
       { redirectUrl: "https://gateway.example/oauth/mcp/callback" },
     );
-    expect(mocks.rememberAdvertisedScopedMcpCatalog).not.toHaveBeenCalled();
+    expect(mocks.rememberAdvertisedScopedMcpCatalog).toHaveBeenCalledOnce();
     await result!.dispose();
   });
 

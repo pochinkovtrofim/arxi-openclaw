@@ -164,6 +164,18 @@ export type RequesterScopedMcpRuntimeHandle = {
   advertisedCatalogConfigFingerprint: string;
 };
 
+/** Fixed, non-secret classification for a configured resolver that did not bind. */
+export type McpResolverUnavailableDiagnostic = {
+  serverName: string;
+  reason:
+    | "unavailable"
+    | "timeout"
+    | "error"
+    | "requester identity required"
+    | "per-requester OAuth required"
+    | "background identity required";
+};
+
 /** Manager for session-scoped MCP runtimes and their idle lifecycle. */
 export type SessionMcpRuntimeManager = {
   getOrCreate: (params: {
@@ -182,6 +194,7 @@ export type SessionMcpRuntimeManager = {
     conversationId?: string | null;
     runtimeGeneration?: string | null;
     traceId?: string | null;
+    onResolverUnavailable?: (diagnostic: McpResolverUnavailableDiagnostic) => void;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }) => Promise<SessionMcpRuntime>;
   /**
@@ -203,6 +216,7 @@ export type SessionMcpRuntimeManager = {
     conversationId?: string | null;
     runtimeGeneration?: string | null;
     traceId?: string | null;
+    onResolverUnavailable?: (diagnostic: McpResolverUnavailableDiagnostic) => void;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }) => Promise<RequesterScopedMcpRuntimeHandle | undefined>;
   /**

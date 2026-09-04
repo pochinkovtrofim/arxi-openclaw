@@ -180,6 +180,36 @@ describe("requester MCP connect runtime", () => {
     await connected.dispose();
   });
 
+  it("diagnoses per-requester OAuth withheld from a background run", async () => {
+    const onResolverUnavailable = vi.fn();
+    await expect(
+      manager.getOrCreateRequesterScoped({
+        sessionId: "session-background-oauth",
+        sessionKey: "agent:main:cron:resource-steward",
+        agentId: "main",
+        workspaceDir: "/workspace",
+        onResolverUnavailable,
+        cfg: {
+          mcp: {
+            servers: {
+              calendar: {
+                url: "https://mcp.example/rpc",
+                transport: "streamable-http",
+                auth: "oauth",
+                oauth: { identity: "per-requester" },
+              },
+            },
+          },
+        },
+      }),
+    ).resolves.toBeUndefined();
+    expect(onResolverUnavailable).toHaveBeenCalledExactlyOnceWith({
+      serverName: "calendar",
+      reason: "per-requester OAuth required",
+    });
+    expect(created).toEqual([]);
+  });
+
   it("returns requester connection configuration failures as failed MCP guest results", async () => {
     const runtime = await manager.getOrCreate({
       sessionId: "session-connect-missing-origin",

@@ -1,6 +1,11 @@
 import path from "node:path";
 import { openFileBackedSessionManagerForTest } from "openclaw/plugin-sdk/agent-runtime-test-contracts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  appendOrdinaryDynamicToolFixtures,
+  materializeStaticMcpFixture,
+  resetConfiguredMcpFixtureState,
+} from "./run-attempt.configured-mcp.test-support.js";
 
 const mcpMocks = vi.hoisted(() => ({
   authorityResolvers: [] as Array<
@@ -22,14 +27,34 @@ const mcpMocks = vi.hoisted(() => ({
   staticFacade: vi.fn(),
   threadConfigFacade: vi.fn(),
   requesterCalls: 0,
+  materializationOrder: [] as string[],
   requesterParams: [] as Array<Record<string, unknown>>,
+  requesterScopedServerNames: [] as string[],
+  requesterToolNames: [] as string[],
+  requesterDiagnosticNotice: undefined as string | undefined,
+  requesterDispose: vi.fn(async () => undefined),
+  ordinaryToolNames: [] as string[],
   staticDiagnosticNotice: undefined as string | undefined,
   staticFailure: undefined as Error | undefined,
   staticFailureGate: undefined as Promise<void> | undefined,
   staticCalls: [] as Array<Record<string, unknown>>,
+  staticBaseToolName: "fake__show",
+  staticHonorToolsAllow: false,
+  staticProducedToolNames: [] as string[],
   staticToolExecutes: [] as ReturnType<typeof vi.fn>[],
   threadConfigCalls: [] as Array<Record<string, unknown>>,
 }));
+
+vi.mock("./dynamic-tool-build.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./dynamic-tool-build.js")>();
+  return {
+    ...actual,
+    buildDynamicTools: async (...args: Parameters<typeof actual.buildDynamicTools>) => {
+      const tools = await actual.buildDynamicTools(...args);
+      return appendOrdinaryDynamicToolFixtures(tools, mcpMocks.ordinaryToolNames);
+    },
+  };
+});
 
 vi.mock("openclaw/plugin-sdk/agent-harness-runtime", async (importOriginal) => {
   const actual = await importOriginal<typeof import("openclaw/plugin-sdk/agent-harness-runtime")>();
@@ -39,8 +64,34 @@ vi.mock("openclaw/plugin-sdk/agent-harness-runtime", async (importOriginal) => {
       ...args: Parameters<typeof actual.materializeRequesterScopedMcpToolsForHarnessRun>
     ) => {
       mcpMocks.requesterCalls += 1;
+      mcpMocks.materializationOrder.push("resolver");
       mcpMocks.requesterParams.push(args[0] as Record<string, unknown>);
-      return undefined;
+      if (mcpMocks.requesterToolNames.length === 0 && !mcpMocks.requesterDiagnosticNotice) {
+        return undefined;
+      }
+      const tools = mcpMocks.requesterToolNames.map((name) => ({
+        name,
+        description: `Requester-scoped fixture ${name}`,
+        parameters: { type: "object", properties: {} },
+        execute: vi.fn(async () => ({
+          content: [{ type: "text" as const, text: "requester-result" }],
+          details: { status: "ok" },
+        })),
+      }));
+      return {
+        tools,
+        advertisedTools: tools,
+        allocatedToolNames: tools.map((tool) => tool.name),
+        mcpNameAllocations: tools.map((tool) => ({
+          name: tool.name,
+          baseName: tool.name,
+          identity: JSON.stringify(["requester", "tool", tool.name]),
+        })),
+        ...(mcpMocks.requesterDiagnosticNotice
+          ? { diagnosticNotice: mcpMocks.requesterDiagnosticNotice }
+          : {}),
+        dispose: mcpMocks.requesterDispose,
+      };
     },
     loadCodexBundleMcpThreadConfig: async (
       ...args: Parameters<typeof actual.loadCodexBundleMcpThreadConfig>
@@ -59,6 +110,7 @@ vi.mock("openclaw/plugin-sdk/agent-harness-runtime", async (importOriginal) => {
         evaluated: true,
         fingerprint: staticServerNames.length > 0 ? "configured-mcp-test-fixture" : undefined,
         staticServerNames,
+        requesterScopedServerNames: [...mcpMocks.requesterScopedServerNames],
         userStaticServerNames: staticServerNames,
       };
     },
@@ -83,43 +135,7 @@ vi.mock("openclaw/plugin-sdk/codex-mcp-projection", async (importOriginal) => {
       return actual.runWithCronCreatorAuthorityCapabilityResolver(params as never);
     },
     materializeStaticMcpToolsForScheduledHarnessRun: async (params: Record<string, unknown>) => {
-      mcpMocks.staticCalls.push(params);
-      mcpMocks.staticFacade(params);
-      if (mcpMocks.staticFailure) {
-        await mcpMocks.staticFailureGate;
-        throw mcpMocks.staticFailure;
-      }
-      const execute = vi.fn(async () => ({
-        content: [{ type: "text" as const, text: "initial-result" }],
-        details: { status: "ok" },
-      }));
-      mcpMocks.staticToolExecutes.push(execute);
-      return {
-        tools: mcpMocks.staticDiagnosticNotice
-          ? []
-          : [
-              {
-                name: "fake__show",
-                description: "Show the configured MCP fixture result.",
-                parameters: { type: "object", properties: {} },
-                execute,
-              },
-            ],
-        appTools: [
-          {
-            name: "fake__app_only",
-            description: "App-view-only configured MCP fixture.",
-            parameters: { type: "object", properties: {} },
-            execute,
-          },
-        ],
-        ...(mcpMocks.staticDiagnosticNotice
-          ? { diagnosticNotice: mcpMocks.staticDiagnosticNotice }
-          : {}),
-        dispose: async () => {
-          await mcpMocks.dispose();
-        },
-      };
+      return materializeStaticMcpFixture(params, mcpMocks);
     },
     captureFinalCodexCronCreatorToolAllowlist: async (
       ...args: Parameters<typeof actual.captureFinalCodexCronCreatorToolAllowlist>
@@ -167,21 +183,7 @@ import {
 setupRunAttemptTestHooks();
 
 beforeEach(() => {
-  mcpMocks.authorityResolvers.length = 0;
-  mcpMocks.captureCalls.length = 0;
-  mcpMocks.captureRefs.length = 0;
-  mcpMocks.staticCalls.length = 0;
-  mcpMocks.staticToolExecutes.length = 0;
-  mcpMocks.requesterCalls = 0;
-  mcpMocks.requesterParams.length = 0;
-  mcpMocks.threadConfigCalls.length = 0;
-  mcpMocks.staticDiagnosticNotice = undefined;
-  mcpMocks.staticFailure = undefined;
-  mcpMocks.staticFailureGate = undefined;
-  mcpMocks.dispose.mockClear();
-  mcpMocks.captureFacade.mockClear();
-  mcpMocks.staticFacade.mockClear();
-  mcpMocks.threadConfigFacade.mockClear();
+  resetConfiguredMcpFixtureState(mcpMocks);
 });
 
 function configureFakeMcp(params: ReturnType<typeof createParams>): void {
@@ -319,6 +321,354 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(binding).toMatchObject({ configuredMcpOwnershipVersion: 1 });
     expect(binding).not.toHaveProperty("mcpServersFingerprint");
     expect(binding).not.toHaveProperty("userMcpServersFingerprint");
+  });
+
+  it("projects requesterless resolvers for account-owned scheduled runs without replaying requester identity", async () => {
+    const sessionFile = path.join(tempDir, "session-scheduled-background-resolver.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-scheduled-background-resolver"),
+    );
+    configureFakeMcp(params);
+    params.trigger = "cron";
+    params.toolsAllow = ["fake__show", "resolver__read"];
+    params.scheduledToolPolicy = {
+      version: 1,
+      mode: "account",
+      ownerSessionKey: "agent:main:external:owner-turn",
+      ownerAccountId: "default",
+      mcpToolBindings: [
+        {
+          name: "fake__show",
+          serverName: "static",
+          operation: "tool",
+          toolName: "fake__show",
+        },
+        {
+          name: "resolver__read",
+          serverName: "requester",
+          operation: "tool",
+          toolName: "resolver__read",
+        },
+      ],
+    };
+    params.senderId = "owner:must-not-be-replayed";
+    params.agentAccountId = "default";
+    params.messageChannel = "arxi";
+    params.chatType = "direct";
+    params.chatId = "telegram-chat:42";
+    mcpMocks.requesterScopedServerNames.push("resolver");
+    mcpMocks.requesterToolNames.push("resolver__read");
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: { approvalPolicy: "never", sandbox: "danger-full-access" },
+      },
+    });
+    await harness.waitForMethod("turn/start");
+
+    const threadStart = harness.requests.find((request) => request.method === "thread/start")
+      ?.params as { dynamicTools?: unknown } | undefined;
+    expect(JSON.stringify(threadStart?.dynamicTools ?? [])).toContain("fake__show");
+    expect(JSON.stringify(threadStart?.dynamicTools ?? [])).toContain("resolver__read");
+    expect(mcpMocks.staticCalls).toHaveLength(1);
+    expect(mcpMocks.requesterCalls).toBe(1);
+    expect(mcpMocks.requesterParams[0]).toMatchObject({
+      sessionKey: params.sessionKey,
+      agentId: "main",
+      toolsAllow: ["fake__show", "resolver__read"],
+      reservedToolNames: expect.not.arrayContaining(["fake__show"]),
+      scheduledCodexApproval: { autoApprove: true },
+    });
+    expect(mcpMocks.staticCalls[0]).toMatchObject({
+      reservedToolNames: expect.arrayContaining(["resolver__read"]),
+    });
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("requesterSenderId");
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("agentAccountId");
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("messageChannel");
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("chatType");
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("conversationId");
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await expect(run).resolves.toBeDefined();
+    expect(mcpMocks.requesterDispose).toHaveBeenCalledOnce();
+    expect(mcpMocks.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a configured tool that takes a disappeared resolver's persisted name", async () => {
+    const sessionFile = path.join(tempDir, "session-scheduled-background-collision.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-scheduled-background-collision"),
+    );
+    configureFakeMcp(params);
+    params.trigger = "cron";
+    params.toolsAllow = ["a__b__c", "resolver__other"];
+    params.scheduledToolPolicy = {
+      version: 1,
+      mode: "account",
+      ownerSessionKey: "agent:main:external:owner-turn",
+      ownerAccountId: "default",
+      mcpToolBindings: [
+        {
+          name: "a__b__c",
+          serverName: "requester",
+          operation: "tool",
+          toolName: "a__b__c",
+        },
+        {
+          name: "resolver__other",
+          serverName: "requester",
+          operation: "tool",
+          toolName: "resolver__other",
+        },
+      ],
+    };
+    mcpMocks.requesterScopedServerNames.push("resolver");
+    mcpMocks.requesterToolNames.push("resolver__other");
+    mcpMocks.staticBaseToolName = "a__b__c";
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: { approvalPolicy: "never", sandbox: "danger-full-access" },
+      },
+    });
+    await harness.waitForMethod("turn/start");
+
+    expect(mcpMocks.materializationOrder.slice(0, 2)).toEqual(["resolver", "static"]);
+    expect(mcpMocks.staticProducedToolNames).toEqual(["a__b__c"]);
+    expect(mcpMocks.requesterParams[0]).toMatchObject({
+      reservedToolNames: expect.not.arrayContaining(["resolver__other"]),
+    });
+    expect(mcpMocks.staticCalls[0]).toMatchObject({
+      reservedToolNames: expect.arrayContaining(["resolver__other"]),
+    });
+    const threadStart = harness.requests.find((request) => request.method === "thread/start")
+      ?.params as { dynamicTools?: unknown } | undefined;
+    expect(JSON.stringify(threadStart?.dynamicTools ?? [])).not.toContain("a__b__c");
+    expect(JSON.stringify(threadStart?.dynamicTools ?? [])).toContain("resolver__other");
+    expect(JSON.stringify(threadStart ?? {})).toContain(
+      "persisted tool identity no longer matches",
+    );
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await expect(run).resolves.toBeDefined();
+  });
+
+  it("does not transfer a persisted MCP name to an ordinary dynamic tool", async () => {
+    const sessionFile = path.join(tempDir, "session-scheduled-mcp-dynamic-takeover.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-scheduled-mcp-dynamic-takeover"),
+    );
+    configureFakeMcp(params);
+    params.trigger = "cron";
+    params.toolsAllow = ["automations"];
+    params.scheduledToolPolicy = {
+      version: 1,
+      mode: "account",
+      ownerSessionKey: "agent:main:external:owner-turn",
+      ownerAccountId: "default",
+      mcpToolBindings: [
+        {
+          name: "automations",
+          serverName: "static",
+          operation: "tool",
+          toolName: "automations",
+        },
+      ],
+    };
+    mcpMocks.staticBaseToolName = "automations";
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: { approvalPolicy: "never", sandbox: "danger-full-access" },
+      },
+    });
+    await harness.waitForMethod("turn/start");
+
+    expect(mcpMocks.staticProducedToolNames).toEqual(["automations-2"]);
+    const threadStart = harness.requests.find((request) => request.method === "thread/start")
+      ?.params as { dynamicTools?: Array<{ name?: string }> } | undefined;
+    const dynamicToolNames = threadStart?.dynamicTools?.map((tool) => tool.name) ?? [];
+    expect(dynamicToolNames).not.toContain("automations");
+    expect(dynamicToolNames).not.toContain("automations-2");
+    expect(JSON.stringify(threadStart ?? {})).toContain(
+      "persisted tool identity no longer matches",
+    );
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await expect(run).resolves.toBeDefined();
+  });
+
+  it("quarantines a legacy MCP-shaped name when an ordinary dynamic tool takes it", async () => {
+    const sessionFile = path.join(tempDir, "session-scheduled-legacy-mcp-takeover.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-scheduled-legacy-mcp-takeover"),
+    );
+    configureFakeMcp(params);
+    params.config = { ...params.config, mcp: { servers: {} } };
+    params.trigger = "cron";
+    params.toolsAllow = ["legacy__lookup"];
+    params.scheduledToolPolicy = {
+      version: 1,
+      mode: "account",
+      ownerSessionKey: "agent:main:external:owner-turn",
+      ownerAccountId: "default",
+    };
+    mcpMocks.ordinaryToolNames.push("legacy__lookup");
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: { approvalPolicy: "never", sandbox: "danger-full-access" },
+      },
+    });
+    await harness.waitForMethod("turn/start");
+
+    const threadStart = harness.requests.find((request) => request.method === "thread/start")
+      ?.params as { dynamicTools?: Array<{ name?: string }> } | undefined;
+    const dynamicToolNames = threadStart?.dynamicTools?.map((tool) => tool.name) ?? [];
+    expect(dynamicToolNames).not.toContain("legacy__lookup");
+    expect(mcpMocks.staticCalls).toEqual([]);
+    expect(JSON.stringify(threadStart ?? {})).toContain(
+      "persisted tool identity no longer matches",
+    );
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await expect(run).resolves.toBeDefined();
+  });
+
+  it("keeps background resolver failures visible to the scheduled agent", async () => {
+    const sessionFile = path.join(tempDir, "session-scheduled-background-resolver-failure.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-scheduled-background-resolver-failure"),
+    );
+    configureFakeMcp(params);
+    params.trigger = "cron";
+    params.toolsAllow = ["fake__show", "resolver__read"];
+    params.scheduledToolPolicy = {
+      version: 1,
+      mode: "account",
+      ownerSessionKey: "agent:main:external:owner-turn",
+      ownerAccountId: "default",
+      mcpToolBindings: [
+        {
+          name: "fake__show",
+          serverName: "static",
+          operation: "tool",
+          toolName: "fake__show",
+        },
+        {
+          name: "resolver__read",
+          serverName: "requester",
+          operation: "tool",
+          toolName: "resolver__read",
+        },
+      ],
+    };
+    mcpMocks.requesterScopedServerNames.push("resolver");
+    mcpMocks.requesterDiagnosticNotice =
+      "Configured MCP is incomplete for this scheduled run: resolver: background connection unavailable. " +
+      "Do not claim MCP-backed work succeeded; report this blocker to the operator.";
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: { approvalPolicy: "never", sandbox: "workspace-write" },
+      },
+    });
+    await harness.waitForMethod("turn/start");
+
+    const threadStart = harness.requests.find((request) => request.method === "thread/start");
+    expect(JSON.stringify(threadStart?.params)).toContain("background connection unavailable");
+    expect(mcpMocks.requesterParams[0]).toMatchObject({
+      scheduledCodexApproval: { autoApprove: false },
+    });
+    expect(mcpMocks.staticCalls).toEqual([]);
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await expect(run).resolves.toBeDefined();
+    expect(mcpMocks.requesterDispose).toHaveBeenCalledOnce();
+  });
+
+  it("keeps normalized wildcard account runs inside the scheduled boundary", async () => {
+    const sessionFile = path.join(tempDir, "session-scheduled-background-wildcard.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-scheduled-background-wildcard"),
+    );
+    configureFakeMcp(params);
+    params.trigger = "cron";
+    params.toolsAllow = undefined;
+    params.scheduledToolPolicy = {
+      version: 1,
+      mode: "account",
+      ownerSessionKey: "agent:main:external:owner-turn",
+      ownerAccountId: "default",
+    };
+    params.senderId = "owner:must-not-be-replayed";
+    params.agentAccountId = "default";
+    params.messageChannel = "arxi";
+    params.chatType = "direct";
+    params.chatId = "telegram-chat:42";
+    mcpMocks.requesterScopedServerNames.push("resolver");
+    mcpMocks.requesterToolNames.push("resolver__read");
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: { approvalPolicy: "never", sandbox: "workspace-write" },
+      },
+    });
+    await harness.waitForMethod("turn/start");
+
+    const threadStart = harness.requests.find((request) => request.method === "thread/start");
+    expect(mcpMocks.requesterCalls).toBe(0);
+    expect(JSON.stringify(threadStart?.params)).not.toContain("resolver__read");
+    expect(JSON.stringify(threadStart?.params)).toContain("no explicit finite toolsAllow");
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await expect(run).resolves.toBeDefined();
+    expect(mcpMocks.requesterDispose).not.toHaveBeenCalled();
+    expect(mcpMocks.staticCalls).toEqual([]);
+  });
+
+  it("does not invent a missing-cap resolver blocker when an account run has only static MCP", async () => {
+    const sessionFile = path.join(tempDir, "session-scheduled-static-wildcard.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-scheduled-static-wildcard"),
+    );
+    configureFakeMcp(params);
+    params.trigger = "cron";
+    params.toolsAllow = undefined;
+    params.scheduledToolPolicy = {
+      version: 1,
+      mode: "account",
+      ownerSessionKey: "agent:main:external:owner-turn",
+      ownerAccountId: "default",
+    };
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: { approvalPolicy: "never", sandbox: "workspace-write" },
+      },
+    });
+    await harness.waitForMethod("turn/start");
+
+    const threadStart = harness.requests.find((request) => request.method === "thread/start");
+    expect(mcpMocks.requesterCalls).toBe(0);
+    expect(JSON.stringify(threadStart?.params)).not.toContain("no explicit finite toolsAllow");
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await expect(run).resolves.toBeDefined();
   });
 
   it("preserves bounded canonical continuity when scheduled MCP replaces ordinary ownership", async () => {

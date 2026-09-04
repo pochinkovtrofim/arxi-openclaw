@@ -130,6 +130,7 @@ function startFixtureAttempt(
     evaluated: false,
     fingerprint: undefined,
     staticServerNames: [],
+    requesterScopedServerNames: [],
     userStaticServerNames: [],
   } satisfies CodexBundleMcpThreadConfig;
   return startCodexAttemptThread({
