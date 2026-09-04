@@ -540,19 +540,17 @@ function emptyPluginThreadConfig(params: {
   };
 }
 
-export function buildDisabledAppsConfigPatch(): JsonObject {
-  return {
-    "features.apps": false,
-    "features.plugins": false,
-    apps: {
-      _default: {
-        enabled: false,
-        destructive_enabled: false,
-        open_world_enabled: false,
-      },
+export const buildDisabledAppsConfigPatch = (): JsonObject => ({
+  "features.apps": false,
+  "features.plugins": false,
+  apps: {
+    _default: {
+      enabled: false,
+      destructive_enabled: false,
+      open_world_enabled: false,
     },
-  };
-}
+  },
+});
 
 function buildEnabledAppConfig(policy: {
   allowDestructiveActions: boolean;
@@ -768,5 +766,3 @@ function stableStringify(value: JsonValue | undefined): string {
   }
   return JSON.stringify(value);
 }
-
-/* oxlint-disable max-lines -- Upstream v2026.8.2 already exceeds the limit; Arxi adds two config keys. */

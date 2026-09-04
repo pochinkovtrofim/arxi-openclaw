@@ -46,7 +46,8 @@ import {
   adjustedParamsByToolCallId,
   buildAdjustedParamsKey,
   clearTrackedToolExecution,
-  preExecutionBlockedToolCallIds,
+  MAX_TRACKED_TOOL_CALLS,
+  recordPreExecutionBlockedToolCall,
   recordStructuredReplaySafeToolCall,
   recordToolExecutionStarted,
   recordToolExecutionTracked,
@@ -95,7 +96,6 @@ import {
 import type { AnyAgentTool } from "./tools/common.js";
 
 type ForwardedToolExecution = (...args: unknown[]) => ReturnType<AnyAgentTool["execute"]>;
-const MAX_TRACKED_ADJUSTED_PARAMS = 1024;
 const INTERNAL_DISPOSED_RESULT = {
   content: [],
   details: { status: "skipped", deniedReason: "internal-dispose" },
@@ -229,7 +229,7 @@ export function recordAdjustedParamsForToolCall(
   }
   const adjustedParamsKey = buildAdjustedParamsKey({ runId, toolCallId });
   adjustedParamsByToolCallId.set(adjustedParamsKey, cloneResult.value);
-  pruneMapToMaxSize(adjustedParamsByToolCallId, MAX_TRACKED_ADJUSTED_PARAMS);
+  pruneMapToMaxSize(adjustedParamsByToolCallId, MAX_TRACKED_TOOL_CALLS);
 }
 
 function cloneParamsForAdjustedReplay(
@@ -252,7 +252,7 @@ export function recordStructuredReplayTrustForToolCall(
     return;
   }
   recordStructuredReplaySafeToolCall(toolCallId, runId);
-  while (structuredReplaySafeToolCallIds.size > MAX_TRACKED_ADJUSTED_PARAMS) {
+  while (structuredReplaySafeToolCallIds.size > MAX_TRACKED_TOOL_CALLS) {
     const oldest = structuredReplaySafeToolCallIds.values().next().value;
     if (!oldest) {
       break;
@@ -744,19 +744,3 @@ export function rewrapToolWithBeforeToolCallHook(
   copyAgentToolSourceExecutionGuard(tool, rewrapSource);
   return wrapToolWithBeforeToolCallHook(rewrapSource, ctx ?? preservedContext, wrapperOptions);
 }
-
-function recordPreExecutionBlockedToolCall(toolCallId?: string, runId?: string): void {
-  if (!toolCallId) {
-    return;
-  }
-  preExecutionBlockedToolCallIds.add(buildAdjustedParamsKey({ runId, toolCallId }));
-  while (preExecutionBlockedToolCallIds.size > MAX_TRACKED_ADJUSTED_PARAMS) {
-    const oldest = preExecutionBlockedToolCallIds.values().next().value;
-    if (!oldest) {
-      break;
-    }
-    preExecutionBlockedToolCallIds.delete(oldest);
-  }
-}
-
-/* oxlint-disable max-lines -- Upstream v2026.8.2 already exceeds the limit; keep the execution-context delta local. */
