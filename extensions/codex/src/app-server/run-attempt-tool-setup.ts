@@ -348,38 +348,49 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   let scopedMcpTools: Awaited<ReturnType<typeof materializeRequesterScopedMcpToolsForHarnessRun>> =
     undefined;
   try {
-    scopedMcpTools = authenticatedScheduledMode
-      ? undefined
-      : await materializeRequesterScopedMcpToolsForHarnessRun({
-          sessionId: params.sessionId,
-          sessionKey: params.sessionKey,
-          workspaceDir: effectiveWorkspace,
-          agentDir: policyContext.agentDir,
-          cfg: params.config,
-          manifestRegistry: bundleManifestRegistry,
-          toolOverrides: codexMcpToolOverrides,
-          requesterSenderId: params.senderId,
-          agentAccountId: params.agentAccountId,
-          messageChannel: params.messageChannel ?? params.messageProvider,
-          agentId: sessionAgentId,
-          chatType: params.chatType,
-          conversationId: params.chatId ?? params.groupId ?? params.messageTo,
-          runtimeGeneration: params.lifecycleGeneration,
-          traceId: params.diagnosticTrace?.traceId,
-          reservedToolNames,
-          toolsAllow: params.toolsAllow,
-          policyContext,
-          warn: (message) => embeddedAgentLog.warn(message),
-        });
+    const mayResolveBackgroundMcp =
+      authenticatedScheduledMode && params.scheduledToolPolicy?.mode === "account";
+    scopedMcpTools =
+      authenticatedScheduledMode && !mayResolveBackgroundMcp
+        ? undefined
+        : await materializeRequesterScopedMcpToolsForHarnessRun({
+            sessionId: params.sessionId,
+            sessionKey: params.sessionKey,
+            workspaceDir: effectiveWorkspace,
+            agentDir: policyContext.agentDir,
+            cfg: params.config,
+            manifestRegistry: bundleManifestRegistry,
+            toolOverrides: codexMcpToolOverrides,
+            // Account-owned scheduled runs may resolve only providers that explicitly
+            // accept canonical agent + session identity without a live requester.
+            // Never replay the creator's sender, account, channel, or conversation:
+            // per-requester OAuth and requester-required resolvers must stay closed.
+            ...(mayResolveBackgroundMcp
+              ? {}
+              : {
+                  requesterSenderId: params.senderId,
+                  agentAccountId: params.agentAccountId,
+                  messageChannel: params.messageChannel ?? params.messageProvider,
+                  chatType: params.chatType,
+                  conversationId: params.chatId ?? params.groupId ?? params.messageTo,
+                }),
+            agentId: sessionAgentId,
+            runtimeGeneration: params.lifecycleGeneration,
+            traceId: params.diagnosticTrace?.traceId,
+            reservedToolNames,
+            toolsAllow: params.toolsAllow,
+            policyContext,
+            warn: (message) => embeddedAgentLog.warn(message),
+          });
     // Restricted dynamic-tool profiles (private QA, exclusion lists) gate scoped
     // MCP tools exactly like every other dynamic tool. Filter both lists with the
     // same rule so execution and advertised specs stay name-aligned.
     const scopedExecutable = filterCodexDynamicTools(
-      scheduledConfiguredMcp?.tools ?? scopedMcpTools?.tools ?? [],
+      [...(scheduledConfiguredMcp?.tools ?? []), ...(scopedMcpTools?.tools ?? [])],
       pluginConfig,
     );
     const scopedAdvertised = filterCodexDynamicTools(
-      scheduledConfiguredMcp?.tools ?? scopedMcpTools?.advertisedTools ?? [],
+      [...(scheduledConfiguredMcp?.tools ?? []), ...(scopedMcpTools?.advertisedTools ?? [])],
       pluginConfig,
     );
     const toolsWithScopedMcp =

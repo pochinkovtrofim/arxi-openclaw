@@ -23,6 +23,8 @@ const mcpMocks = vi.hoisted(() => ({
   threadConfigFacade: vi.fn(),
   requesterCalls: 0,
   requesterParams: [] as Array<Record<string, unknown>>,
+  requesterToolNames: [] as string[],
+  requesterDispose: vi.fn(async () => undefined),
   staticDiagnosticNotice: undefined as string | undefined,
   staticFailure: undefined as Error | undefined,
   staticFailureGate: undefined as Promise<void> | undefined,
@@ -40,7 +42,23 @@ vi.mock("openclaw/plugin-sdk/agent-harness-runtime", async (importOriginal) => {
     ) => {
       mcpMocks.requesterCalls += 1;
       mcpMocks.requesterParams.push(args[0] as Record<string, unknown>);
-      return undefined;
+      if (mcpMocks.requesterToolNames.length === 0) {
+        return undefined;
+      }
+      const tools = mcpMocks.requesterToolNames.map((name) => ({
+        name,
+        description: `Requester-scoped fixture ${name}`,
+        parameters: { type: "object", properties: {} },
+        execute: vi.fn(async () => ({
+          content: [{ type: "text" as const, text: "requester-result" }],
+          details: { status: "ok" },
+        })),
+      }));
+      return {
+        tools,
+        advertisedTools: tools,
+        dispose: mcpMocks.requesterDispose,
+      };
     },
     loadCodexBundleMcpThreadConfig: async (
       ...args: Parameters<typeof actual.loadCodexBundleMcpThreadConfig>
@@ -174,6 +192,8 @@ beforeEach(() => {
   mcpMocks.staticToolExecutes.length = 0;
   mcpMocks.requesterCalls = 0;
   mcpMocks.requesterParams.length = 0;
+  mcpMocks.requesterToolNames.length = 0;
+  mcpMocks.requesterDispose.mockClear();
   mcpMocks.threadConfigCalls.length = 0;
   mcpMocks.staticDiagnosticNotice = undefined;
   mcpMocks.staticFailure = undefined;
@@ -319,6 +339,59 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(binding).toMatchObject({ configuredMcpOwnershipVersion: 1 });
     expect(binding).not.toHaveProperty("mcpServersFingerprint");
     expect(binding).not.toHaveProperty("userMcpServersFingerprint");
+  });
+
+  it("projects requesterless resolvers for account-owned scheduled runs without replaying requester identity", async () => {
+    const sessionFile = path.join(tempDir, "session-scheduled-background-resolver.jsonl");
+    const params = createParams(
+      sessionFile,
+      path.join(tempDir, "workspace-scheduled-background-resolver"),
+    );
+    configureFakeMcp(params);
+    params.trigger = "cron";
+    params.toolsAllow = ["fake__show", "resolver__read"];
+    params.scheduledToolPolicy = {
+      version: 1,
+      mode: "account",
+      ownerSessionKey: "agent:main:external:owner-turn",
+      ownerAccountId: "default",
+    };
+    params.senderId = "owner:must-not-be-replayed";
+    params.agentAccountId = "default";
+    params.messageChannel = "arxi";
+    params.chatType = "direct";
+    params.chatId = "telegram-chat:42";
+    mcpMocks.requesterToolNames.push("resolver__read");
+
+    const harness = createStartedThreadHarness();
+    const run = runCodexAppServerAttempt(params, {
+      pluginConfig: {
+        appServer: { approvalPolicy: "never", sandbox: "danger-full-access" },
+      },
+    });
+    await harness.waitForMethod("turn/start");
+
+    const threadStart = harness.requests.find((request) => request.method === "thread/start")
+      ?.params as { dynamicTools?: unknown } | undefined;
+    expect(JSON.stringify(threadStart?.dynamicTools ?? [])).toContain("fake__show");
+    expect(JSON.stringify(threadStart?.dynamicTools ?? [])).toContain("resolver__read");
+    expect(mcpMocks.staticCalls).toHaveLength(1);
+    expect(mcpMocks.requesterCalls).toBe(1);
+    expect(mcpMocks.requesterParams[0]).toMatchObject({
+      sessionKey: params.sessionKey,
+      agentId: "main",
+      toolsAllow: ["fake__show", "resolver__read"],
+    });
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("requesterSenderId");
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("agentAccountId");
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("messageChannel");
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("chatType");
+    expect(mcpMocks.requesterParams[0]).not.toHaveProperty("conversationId");
+
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await expect(run).resolves.toBeDefined();
+    expect(mcpMocks.requesterDispose).toHaveBeenCalledOnce();
+    expect(mcpMocks.dispose).toHaveBeenCalledOnce();
   });
 
   it("preserves bounded canonical continuity when scheduled MCP replaces ordinary ownership", async () => {
