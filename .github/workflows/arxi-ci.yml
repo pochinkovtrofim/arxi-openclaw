@@ -130,6 +130,8 @@ jobs:
           extensions/codex/package.json
           extensions/codex/src/app-server/attempt-diagnostics.test.ts
           extensions/codex/src/app-server/attempt-diagnostics.ts
+          extensions/codex/src/app-server/attempt-startup-retry.test.ts
+          extensions/codex/src/app-server/attempt-startup.test.ts
           extensions/codex/src/app-server/dynamic-tool-build.test.ts
           extensions/codex/src/app-server/dynamic-tool-diagnostics.ts
           extensions/codex/src/app-server/dynamic-tool-profile.ts
@@ -140,10 +142,15 @@ jobs:
           extensions/codex/src/app-server/plugin-thread-config.test.ts
           extensions/codex/src/app-server/plugin-thread-config.ts
           extensions/codex/src/app-server/run-attempt-active-turn.ts
+          extensions/codex/src/app-server/run-attempt-runtime.ts
           extensions/codex/src/app-server/run-attempt-server-requests.ts
+          extensions/codex/src/app-server/run-attempt-start.ts
           extensions/codex/src/app-server/run-attempt-tool-setup.ts
+          extensions/codex/src/app-server/run-attempt.configured-mcp.test-support.ts
           extensions/codex/src/app-server/run-attempt.configured-mcp.test.ts
           extensions/codex/src/app-server/run-attempt.dynamic-tools.test.ts
+          extensions/codex/src/app-server/scheduled-mcp-identity.test.ts
+          extensions/codex/src/app-server/scheduled-mcp-identity.ts
           extensions/codex/src/app-server/turn-params.ts
           extensions/codex/src/app-server/version.ts
           extensions/diagnostics-otel/src/service-recorders-harness.ts
@@ -178,8 +185,11 @@ jobs:
           src/agents/agent-bundle-mcp-manager-install.ts
           src/agents/agent-bundle-mcp-manager-lifecycle.ts
           src/agents/agent-bundle-mcp-manager.ts
+          src/agents/agent-bundle-mcp-harness.background.test.ts
           src/agents/agent-bundle-mcp-harness.test.ts
           src/agents/agent-bundle-mcp-harness.ts
+          src/agents/agent-bundle-mcp-manager.lifecycle.test.ts
+          src/agents/agent-bundle-mcp-manager.requester-connect.test.ts
           src/agents/agent-bundle-mcp-runtime-shared.test.ts
           src/agents/agent-bundle-mcp-runtime-shared.ts
           src/agents/agent-bundle-mcp-runtime.test.ts
@@ -194,6 +204,7 @@ jobs:
           src/agents/auth-profiles/sqlite.ts
           src/agents/codex-mcp-config.test.ts
           src/agents/codex-mcp-config.ts
+          src/agents/codex-mcp-config.types.ts
           src/agents/command/attempt-execution.cli.test.ts
           src/agents/command/attempt-execution.ts
           src/agents/command/types.ts
@@ -214,7 +225,19 @@ jobs:
           src/agents/mcp-oauth-identity.test.ts
           src/agents/mcp-oauth-identity.ts
           src/agents/runtime-plan/types.ts
+          src/agents/scheduled-tool-policy.test.ts
+          src/agents/scheduled-tool-policy.ts
+          src/agents/tools/cron-tool-canonicalize.ts
+          src/agents/tools/cron-tool-creator-cap.test.ts
+          src/agents/tools/cron-tool-creator-cap.ts
+          src/agents/tools/cron-tool-schema.ts
+          src/agents/tools/cron-tool-write.ts
+          src/agents/tools/cron-tool.schema.test.ts
+          src/agents/tools/cron-tool.test.ts
+          src/agents/tools/cron-tool.ts
+          src/agents/tools/cron-tool.types.ts
           src/agents/tools/common.ts
+          src/agents/tools/gateway-caller-context.ts
           src/agents/tools/web-guarded-fetch.test.ts
           src/agents/tools/web-guarded-fetch.ts
           src/agents/tools/web-search-provider-common.ts
@@ -234,11 +257,25 @@ jobs:
           src/commands/models/list.rows.projection.test.ts
           src/commands/models/list.rows.ts
           src/commands/onboard-auth.test.ts
+          src/config/sessions/types.ts
+          src/cron/isolated-agent/run-executor.ts
+          src/cron/isolated-agent/run-prepare.ts
+          src/cron/isolated-agent/run-session-state.ts
+          src/cron/isolated-agent/run.tools-allow.test.ts
           src/cron/isolated-agent/run.diagnostic-events.test.ts
           src/cron/isolated-agent/run.ts
+          src/cron/normalize.ts
+          src/cron/scheduled-tool-policy.ts
           src/cron/service-contract.ts
           src/cron/service.ts
+          src/cron/service/jobs-tool-policy.ts
+          src/cron/service/ops.test.ts
           src/cron/service/ops-read.ts
+          src/cron/store/row-codec.schedule.test.ts
+          src/cron/types.ts
+          src/gateway/agent-runtime-identity-token-mcp.ts
+          src/gateway/agent-runtime-identity-token.test.ts
+          src/gateway/agent-runtime-identity-token.ts
           src/gateway/server-cron-lazy.test.ts
           src/gateway/server-cron-lazy.ts
           src/gateway/server-close.test.ts
@@ -246,8 +283,10 @@ jobs:
           src/gateway/agent-turn/agent-audio-understanding.ts
           src/gateway/agent-turn/agent-content-phase.audio.test.ts
           src/gateway/agent-turn/agent-content-phase.ts
+          src/gateway/agent-turn/agent-handler-helpers.ts
           src/gateway/agent-turn/agent-run-execution-phase.owner.test.ts
           src/gateway/agent-turn/agent-run-execution-phase.ts
+          src/gateway/agent-turn/agent-session-persist.ts
           src/gateway/agent-turn/agent-turn-service.ts
           src/gateway/local-request-context.ts
           src/gateway/server-methods/agent-run-handler.diagnostic-trace.test.ts
@@ -256,6 +295,9 @@ jobs:
           src/gateway/server-methods/agent.reset-and-identity.test-utils.ts
           src/gateway/server-methods/chat-metadata-runtime.test.ts
           src/gateway/server-methods/chat-metadata-runtime.ts
+          src/gateway/server-methods/cron-caller-scope.test.ts
+          src/gateway/server-methods/cron-caller-scope.ts
+          src/gateway/server-methods/cron.validation.test.ts
           src/gateway/server.chat-metadata-boundary.test.ts
           src/gateway/server-methods.suspension-admission.test.ts
           src/gateway/server-methods/agent-request-types.ts
@@ -303,6 +345,8 @@ jobs:
           src/plugins/tools.ts
           src/plugins/types.mcp-connection.ts
           src/plugin-sdk/media-mime.ts
+          src/plugin-sdk/codex-mcp-projection.test.ts
+          src/plugin-sdk/codex-mcp-projection.ts
           src/plugin-sdk/provider-web-search.ts
           src/plugins/contracts/scheduled-turns.contract.test.ts
           src/secrets/store/secret-store-database.ts
@@ -352,11 +396,14 @@ jobs:
         run: |
           pnpm test \
             extensions/codex/src/app-server/attempt-diagnostics.test.ts \
+            extensions/codex/src/app-server/attempt-startup-retry.test.ts \
+            extensions/codex/src/app-server/attempt-startup.test.ts \
             extensions/codex/src/app-server/dynamic-tool-build.test.ts \
             extensions/codex/src/app-server/event-projector.native-audit.test.ts \
             extensions/codex/src/app-server/plugin-thread-config.test.ts \
             extensions/codex/src/app-server/run-attempt.configured-mcp.test.ts \
             extensions/codex/src/app-server/run-attempt.dynamic-tools.test.ts \
+            extensions/codex/src/app-server/scheduled-mcp-identity.test.ts \
             extensions/codex/src/manifest.test.ts \
             extensions/diagnostics-otel/src/service.test.ts \
             extensions/exa/src/exa-web-search-provider.test.ts \
@@ -365,20 +412,35 @@ jobs:
             src/agents/auth-profiles/path-resolve.shared-store.test.ts \
             src/agents/embedded-agent-runner/run/attempt-setup.diagnostic-trace.test.ts \
             src/agents/embedded-agent-subscribe.handlers.tools.test.ts \
+            src/agents/agent-bundle-mcp-harness.background.test.ts \
+            src/agents/agent-bundle-mcp-harness.test.ts \
+            src/agents/agent-bundle-mcp-manager.lifecycle.test.ts \
+            src/agents/agent-bundle-mcp-manager.requester-connect.test.ts \
             src/agents/agent-bundle-mcp-runtime.test.ts \
+            src/agents/codex-mcp-config.test.ts \
             src/agents/harness/lifecycle.test.ts \
             src/agents/harness/selection.test.ts \
             src/agents/mcp-connection-resolver.test.ts \
             src/agents/mcp-oauth-identity.test.ts \
             src/agents/prepared-model-catalog-worker.integration.test.ts \
+            src/agents/scheduled-tool-policy.test.ts \
+            src/agents/tools/cron-tool-creator-cap.test.ts \
+            src/agents/tools/cron-tool.schema.test.ts \
+            src/agents/tools/cron-tool.test.ts \
             src/auto-reply/reply-payload.test.ts \
             src/commands/models/list.rows.projection.test.ts \
             src/commands/models/auth.test.ts \
+            src/cron/isolated-agent/run.tools-allow.test.ts \
+            src/cron/service/ops.test.ts \
+            src/cron/store/row-codec.schedule.test.ts \
+            src/gateway/agent-runtime-identity-token.test.ts \
             src/gateway/agent-turn/agent-content-phase.audio.test.ts \
             src/gateway/agent-turn/agent-run-execution-phase.owner.test.ts \
             src/gateway/server-methods/agent-run-handler.diagnostic-trace.test.ts \
             src/gateway/server-methods/agents-mutate.test.ts \
             src/gateway/server-methods/chat-metadata-runtime.test.ts \
+            src/gateway/server-methods/cron-caller-scope.test.ts \
+            src/gateway/server-methods/cron.validation.test.ts \
             src/gateway/server-close.test.ts \
             src/infra/gateway-lifecycle-inventory.test.ts \
             src/infra/gateway-suspend-coordinator.test.ts \
@@ -392,6 +454,7 @@ jobs:
             src/infra/state-migrations.media-persistence-targets.test.ts \
             src/plugins/plugin-metadata-snapshot.test.ts \
             src/plugins/registry-registrars-network.mcp-resolver.test.ts \
+            src/plugin-sdk/codex-mcp-projection.test.ts \
             src/system-agent/agent-turn.test.ts
           pnpm test \
             src/secrets/store/secret-store.test.ts \
