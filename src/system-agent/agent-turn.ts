@@ -314,7 +314,13 @@ async function runSystemAgentTurnWithDeps(
   );
   const shared = {
     sessionId: params.session.sessionId,
-    sessionKey: buildAgentMainSessionKey({ agentId: SYSTEM_AGENT_ID }),
+    // Each delegated OpenClaw chat owns an independent in-memory transcript and
+    // native thread. A shared agent-main key lets one caller supersede another
+    // caller's Codex binding even though both engines are still live.
+    sessionKey: buildAgentMainSessionKey({
+      agentId: SYSTEM_AGENT_ID,
+      mainKey: params.session.sessionId,
+    }),
     agentId: SYSTEM_AGENT_ID,
     trigger: "manual" as const,
     sessionFile: `in-memory:${params.session.sessionId}`,

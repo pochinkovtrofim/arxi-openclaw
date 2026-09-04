@@ -60,6 +60,7 @@ or runtime layers merely because they existed in the previous history.
 | Codex harness integration                      | Retain app-server lifecycle, explicit remote/native tool profile, diagnostic correlation, media, and MCP bridging.       | OpenClaw upstream ships the same supported Codex harness contract required by Arxi.               |
 | Managed-agent ownership                        | Retain explicit agent creation identity and correction of metadata owners at the authenticated gateway boundary.         | Upstream exposes equivalent owner-derived creation and repair semantics.                          |
 | Warm owner-state rebind                        | Retain agent SQLite handle closure after every drained Gateway lifecycle, before an in-process restart can reopen state. | Upstream closes agent database handles at the same drained restart boundary.                      |
+| Delegated system-agent session isolation       | Retain a distinct Codex binding key for each live delegated OpenClaw chat instead of sharing the system-agent main key.  | Upstream isolates concurrent delegated system-agent native bindings by their chat identity.       |
 | Shipped-surface fork gate                      | Retain exact Linux runtime, generated protocol, integration, and fork-pin coverage.                                      | An upstream or cross-repository gate proves every Arxi production seam on the exact candidate.    |
 
 ## Redesigned on current upstream seams
