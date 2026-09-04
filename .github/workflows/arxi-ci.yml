@@ -183,6 +183,7 @@ jobs:
           src/agents/agent-bundle-mcp-runtime.test.ts
           src/agents/agent-bundle-mcp-types.ts
           src/agents/agent-tool-definition-adapter.ts
+          src/agents/agent-tools.before-tool-call.state.ts
           src/agents/agent-tools.before-tool-call.wrapper.ts
           src/agents/auth-profiles/path-resolve.shared-store.test.ts
           src/agents/auth-profiles/path-resolve.ts
@@ -238,6 +239,8 @@ jobs:
           src/cron/service/ops-read.ts
           src/gateway/server-cron-lazy.test.ts
           src/gateway/server-cron-lazy.ts
+          src/gateway/server-close.test.ts
+          src/gateway/server-close.ts
           src/gateway/agent-turn/agent-audio-understanding.ts
           src/gateway/agent-turn/agent-content-phase.audio.test.ts
           src/gateway/agent-turn/agent-content-phase.ts
