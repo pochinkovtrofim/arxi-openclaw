@@ -375,6 +375,7 @@ jobs:
             src/gateway/server-methods/agent-run-handler.diagnostic-trace.test.ts \
             src/gateway/server-methods/agents-mutate.test.ts \
             src/gateway/server-methods/chat-metadata-runtime.test.ts \
+            src/gateway/server-close.test.ts \
             src/infra/gateway-lifecycle-inventory.test.ts \
             src/infra/gateway-suspend-coordinator.test.ts \
             src/infra/outbound/delivery-queue-media-spool.test.ts \
