@@ -365,6 +365,9 @@ describe("agent runtime identity token", () => {
       operationalRunInstance: run.operationalRunInstance,
       cronToolsAllowCapture: "final-executable-surface",
       cronExecToolTarget: { host: "gateway", ask: "always" },
+      cronMcpToolBindings: [
+        { name: "MAIL__READ", serverName: "mail", operation: "tool", toolName: "read" },
+      ],
     });
 
     await expect(runtimeToken.verifyAgentRuntimeIdentityToken(token)).resolves.toMatchObject({
@@ -374,7 +377,21 @@ describe("agent runtime identity token", () => {
       operationalRunInstance: run.operationalRunInstance,
       cronToolsAllowCapture: "final-executable-surface",
       cronExecToolTarget: { host: "gateway", ask: "always" },
+      cronMcpToolBindings: [
+        { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+      ],
     });
+
+    await expect(
+      runtimeToken.mintAgentRuntimeIdentityToken({
+        agentId: "main",
+        sessionKey: "agent:main:main",
+        operationalRunInstance: run.operationalRunInstance,
+        cronMcpToolBindings: [
+          { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+        ],
+      }),
+    ).rejects.toThrow("require final tool-surface provenance");
   });
 
   it("round-trips a signed private cron creator grant only with final provenance", async () => {

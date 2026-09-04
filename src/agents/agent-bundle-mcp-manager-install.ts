@@ -7,6 +7,7 @@ import type { SessionMcpRuntimeManagerLifecycle } from "./agent-bundle-mcp-manag
 import { createRequesterMcpConnect } from "./agent-bundle-mcp-requester-connect.js";
 import { loadSessionMcpConfig } from "./agent-bundle-mcp-runtime-config.js";
 import type {
+  McpResolverUnavailableDiagnostic,
   RequesterMcpConnect,
   SessionMcpRequesterScope,
   SessionMcpRuntime,
@@ -61,6 +62,7 @@ type SessionMcpRuntimeManagerInstall = {
     conversationId?: string | null;
     runtimeGeneration?: string | null;
     traceId?: string | null;
+    onResolverUnavailable?: (diagnostic: McpResolverUnavailableDiagnostic) => void;
     requesterScope: SessionMcpRequesterScope;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }) => Promise<SessionMcpRuntime | undefined>;
@@ -284,6 +286,7 @@ export function createSessionMcpRuntimeManagerInstall(
     conversationId?: string | null;
     runtimeGeneration?: string | null;
     traceId?: string | null;
+    onResolverUnavailable?: (diagnostic: McpResolverUnavailableDiagnostic) => void;
     requesterScope: SessionMcpRequesterScope;
     toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
   }): Promise<SessionMcpRuntime | undefined> => {
@@ -350,6 +353,7 @@ export function createSessionMcpRuntimeManagerInstall(
       conversationId: params.conversationId,
       runtimeGeneration: params.runtimeGeneration,
       traceId: params.traceId,
+      onUnavailable: params.onResolverUnavailable,
     });
     const activeNameSet = new Set([
       ...(requesterConnect?.authorizedServerNames ?? []),

@@ -177,6 +177,7 @@ export function loadCodexBundleMcpThreadConfigCore(
       diagnostics: [],
       evaluated: true,
       staticServerNames: [],
+      requesterScopedServerNames: [],
       userStaticServerNames: [],
     };
   }
@@ -214,10 +215,11 @@ export function loadCodexBundleMcpThreadConfigCore(
   );
   // The native thread projection has separate bundle and owner-config paths,
   // but scheduled ownership covers their one merged static execution surface.
-  const { staticServers: configuredStaticServers } = partitionMcpServersByConnectionScope({
-    ...effectiveConfig.mcpServers,
-    ...enabledConfiguredMcp,
-  });
+  const { staticServers: configuredStaticServers, requesterScopedServerNames } =
+    partitionMcpServersByConnectionScope({
+      ...effectiveConfig.mcpServers,
+      ...enabledConfiguredMcp,
+    });
   const { staticServers: userStaticServers } =
     partitionMcpServersByConnectionScope(enabledConfiguredMcp);
   const staticServerNames = Object.keys(configuredStaticServers).toSorted((left, right) =>
@@ -237,6 +239,7 @@ export function loadCodexBundleMcpThreadConfigCore(
       diagnostics,
       evaluated: true,
       staticServerNames,
+      requesterScopedServerNames,
       userStaticServerNames,
     };
   }
@@ -248,6 +251,7 @@ export function loadCodexBundleMcpThreadConfigCore(
     evaluated: true,
     fingerprint: fingerprintCodexMcpServersConfig(mcpServers),
     staticServerNames,
+    requesterScopedServerNames,
     userStaticServerNames,
   };
 }

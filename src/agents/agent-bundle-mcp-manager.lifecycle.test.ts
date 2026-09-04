@@ -3,7 +3,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../test/helpers/promise.js";
 import { createSessionMcpRuntimeManager } from "./agent-bundle-mcp-manager.js";
 import type { CreateSessionMcpRuntime } from "./agent-bundle-mcp-runtime-shared.js";
-import type { SessionMcpRuntime, SessionMcpRuntimeManager } from "./agent-bundle-mcp-types.js";
+import type {
+  McpToolCatalog,
+  SessionMcpRuntime,
+  SessionMcpRuntimeManager,
+} from "./agent-bundle-mcp-types.js";
 import { testing as resolverTesting } from "./mcp-connection-resolver.js";
 
 vi.mock("./agent-bundle-mcp-runtime.js", () => {
@@ -97,6 +101,113 @@ afterEach(async () => {
 });
 
 describe("MCP manager creation ownership", () => {
+  it("replaces cached approval metadata when a scoped tool becomes destructive", async () => {
+    resolverTesting.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "scoped",
+        requiresRequesterIdentity: false,
+        resolve: async () => ({ url: "https://mcp.example.test/scoped" }),
+      },
+    ]);
+    const manager = createManager(createRuntimeFixture);
+    const handle = await manager.getOrCreateRequesterScoped({
+      ...params,
+      agentId: "main",
+      cfg: { mcp: { servers: { scoped: { transport: "streamable-http" as const } } } },
+    });
+    expect(handle).toBeDefined();
+    const catalog: McpToolCatalog = {
+      version: 1,
+      generatedAt: 1,
+      servers: {
+        scoped: {
+          serverName: "scoped",
+          safeServerName: "scoped",
+          launchSummary: "scoped",
+          toolCount: 1,
+          codexApprovalMode: "auto",
+        },
+      },
+      tools: [
+        {
+          serverName: "scoped",
+          safeServerName: "scoped",
+          toolName: "read",
+          fallbackDescription: "read",
+          inputSchema: { type: "object" },
+          codexAnnotations: { readOnlyHint: true },
+        },
+      ],
+    };
+
+    manager.rememberAdvertisedScopedCatalog(handle!, catalog);
+    expect(
+      manager.getAdvertisedScopedCatalog(params.sessionId)?.tools[0]?.codexAnnotations,
+    ).toEqual({ readOnlyHint: true });
+
+    delete catalog.tools[0]!.codexAnnotations;
+    catalog.generatedAt = 2;
+    manager.rememberAdvertisedScopedCatalog(handle!, catalog);
+    expect(
+      manager.getAdvertisedScopedCatalog(params.sessionId)?.tools[0]?.codexAnnotations,
+    ).toBeUndefined();
+  });
+
+  it("replaces a healthy empty advertisement when resource and prompt capabilities change", async () => {
+    resolverTesting.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "scoped",
+        requiresRequesterIdentity: false,
+        resolve: async () => ({ url: "https://mcp.example.test/scoped" }),
+      },
+    ]);
+    const manager = createManager(createRuntimeFixture);
+    const handle = await manager.getOrCreateRequesterScoped({
+      ...params,
+      agentId: "main",
+      cfg: { mcp: { servers: { scoped: { transport: "streamable-http" as const } } } },
+    });
+    expect(handle).toBeDefined();
+    const catalog: McpToolCatalog = {
+      version: 1,
+      generatedAt: 1,
+      servers: {
+        scoped: {
+          serverName: "scoped",
+          safeServerName: "scoped",
+          launchSummary: "scoped",
+          toolCount: 0,
+        },
+      },
+      tools: [],
+    };
+
+    manager.rememberAdvertisedScopedCatalog(handle!, catalog);
+    expect(manager.getAdvertisedScopedCatalog(params.sessionId)?.servers.scoped).not.toHaveProperty(
+      "resources",
+    );
+
+    catalog.servers.scoped!.resources = { listChanged: true };
+    catalog.servers.scoped!.prompts = { listChanged: true };
+    catalog.generatedAt = 2;
+    manager.rememberAdvertisedScopedCatalog(handle!, catalog);
+    expect(manager.getAdvertisedScopedCatalog(params.sessionId)?.servers.scoped).toMatchObject({
+      resources: { listChanged: true },
+      prompts: { listChanged: true },
+    });
+
+    delete catalog.servers.scoped!.resources;
+    delete catalog.servers.scoped!.prompts;
+    catalog.generatedAt = 3;
+    manager.rememberAdvertisedScopedCatalog(handle!, catalog);
+    expect(manager.getAdvertisedScopedCatalog(params.sessionId)?.servers.scoped).not.toHaveProperty(
+      "resources",
+    );
+    expect(manager.getAdvertisedScopedCatalog(params.sessionId)?.servers.scoped).not.toHaveProperty(
+      "prompts",
+    );
+  });
+
   it("constructs and retires an empty manager without binding or importing transports", async () => {
     const manager = createManager();
 

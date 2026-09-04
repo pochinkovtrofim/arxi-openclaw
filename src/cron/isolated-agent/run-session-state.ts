@@ -16,6 +16,7 @@ import { isCronSessionKey } from "../../sessions/session-key-utils.js";
 import { isSessionWorkAdmissionActive } from "../../sessions/session-lifecycle-admission.js";
 import type { SkillSnapshot } from "../../skills/types.js";
 import {
+  normalizeCronScheduledMcpToolBindings,
   normalizeCronScheduledToolCallerOrigin,
   normalizeCronScheduledToolPolicy,
   normalizeCronToolsAllowExecTarget,
@@ -23,6 +24,7 @@ import {
   stripCronPinnedExecGrant,
 } from "../scheduled-tool-policy.js";
 import type {
+  CronScheduledMcpToolBinding,
   CronScheduledToolCallerOrigin,
   CronScheduledToolPolicy,
   CronToolsAllowExecTarget,
@@ -257,6 +259,7 @@ export function createCronRunContinuationSession(params: {
   toolsAllowIsDefault?: boolean;
   scheduledToolPolicy?: CronScheduledToolPolicy;
   scheduledToolCallerOrigin?: CronScheduledToolCallerOrigin;
+  scheduledMcpToolBindings?: CronScheduledMcpToolBinding[];
   toolsAllowExecTarget?: CronToolsAllowExecTarget;
   toolsAllowExecTargetRequirement?: CronToolsAllowExecTargetRequirement;
   cliSessionBindingFacts?: {
@@ -272,6 +275,9 @@ export function createCronRunContinuationSession(params: {
       : normalizeCronScheduledToolPolicy(params.scheduledToolPolicy);
   const scheduledToolCallerOrigin = normalizeCronScheduledToolCallerOrigin(
     params.scheduledToolCallerOrigin,
+  );
+  const scheduledMcpToolBindings = normalizeCronScheduledMcpToolBindings(
+    params.scheduledMcpToolBindings,
   );
   const toolsAllowExecTarget =
     params.toolsAllow === undefined
@@ -292,6 +298,9 @@ export function createCronRunContinuationSession(params: {
     ...(params.toolsAllowIsDefault === true ? { toolsAllowIsDefault: true } : {}),
     ...(scheduledToolPolicy ? { scheduledToolPolicy } : {}),
     ...(scheduledToolPolicy?.mode === "account" ? { scheduledToolCallerOrigin } : {}),
+    ...(scheduledMcpToolBindings
+      ? { scheduledMcpToolBindings: structuredClone(scheduledMcpToolBindings) }
+      : {}),
     ...(toolsAllowExecTarget ? { toolsAllowExecTarget } : {}),
     ...(toolsAllowExecTargetRequirement ? { toolsAllowExecTargetRequirement } : {}),
     ...(params.cliSessionBindingFacts

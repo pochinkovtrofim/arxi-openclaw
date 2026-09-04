@@ -382,9 +382,18 @@ describe("createCronToolSchema", () => {
     ).toBe(true);
   });
 
-  it("job.failureAlert exposes after, channel, to, cooldownMs, includeSkipped, mode, accountId", () => {
+  it("job.failureAlert exposes enabled, after, channel, to, cooldownMs, includeSkipped, mode, accountId", () => {
     expect(keysAt(schemaRecord, "job.failureAlert")).toEqual(
-      ["accountId", "after", "channel", "cooldownMs", "includeSkipped", "mode", "to"].toSorted(),
+      [
+        "accountId",
+        "after",
+        "channel",
+        "cooldownMs",
+        "enabled",
+        "includeSkipped",
+        "mode",
+        "to",
+      ].toSorted(),
     );
   });
 
@@ -399,8 +408,18 @@ describe("createCronToolSchema", () => {
     // Must be a plain "object" type — not a type array — so providers that
     // enforce an OpenAPI 3.0 subset (e.g. Gemini via GitHub Copilot) accept it.
     expect(failureAlertSchema?.type).toBe("object");
-    // The description must mention "false" so LLMs know they can disable alerts.
-    expect(failureAlertSchema?.description).toMatch(/false/i);
+    // The description must expose the provider-compatible object form.
+    expect(failureAlertSchema?.description).toMatch(/enabled:false/i);
+  });
+
+  it("accepts the provider-compatible per-job failure-alert opt-out", () => {
+    expect(
+      Value.Check(schema, {
+        action: "update",
+        jobId: "job-1",
+        job: { failureAlert: { enabled: false } },
+      }),
+    ).toBe(true);
   });
 
   it("accepts nullable cron update clears in the runtime schema", () => {

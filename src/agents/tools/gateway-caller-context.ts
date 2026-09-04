@@ -1,6 +1,7 @@
 // Ambient trusted caller context for model-mediated Gateway tool calls.
 import { AsyncLocalStorage } from "node:async_hooks";
 import type { ExecutionIdentityAdmissionToken } from "../../audit/execution-identity-admission.js";
+import type { CronScheduledMcpToolBinding } from "../../cron/scheduled-tool-policy.js";
 import type { CronCreatorAuthorityGrant } from "../../gateway/cron-creator-authority-grant.js";
 import type {
   GatewayContextResolver,
@@ -43,6 +44,8 @@ type GatewayToolCallerIdentity = {
   /** Host-signed capability for the scheduled run's existing self-management surface. */
   cronSelfManagementJobId?: string;
   cronToolsAllowCapture?: "final-executable-surface";
+  /** Canonical MCP identities captured with the final executable tool surface. */
+  cronMcpToolBindings?: readonly CronScheduledMcpToolBinding[];
   /** Restrict-only policy enforced by exec on the captured creator surface. */
   cronExecToolTarget?: { host: "gateway"; ask?: "always" };
   /** One-shot Gateway-owned proof for a freshly resolved configured-MCP cap. */
@@ -214,6 +217,7 @@ export async function withGatewayToolCallerIdentity<T>(
     identity.cronSelfManagementJobId?.trim() ?? inheritedOwner?.cronSelfManagementJobId;
   const cronToolsAllowCapture =
     identity.cronToolsAllowCapture ?? inheritedOwner?.cronToolsAllowCapture;
+  const cronMcpToolBindings = identity.cronMcpToolBindings ?? inheritedOwner?.cronMcpToolBindings;
   const cronExecToolTarget = identity.cronExecToolTarget ?? inheritedOwner?.cronExecToolTarget;
   const cronCreatorAuthorityGrant =
     identity.cronCreatorAuthorityGrant ?? inheritedOwner?.cronCreatorAuthorityGrant;
@@ -236,6 +240,9 @@ export async function withGatewayToolCallerIdentity<T>(
       ...(signedAgentRuntimeIdentityToken ? { signedAgentRuntimeIdentityToken } : {}),
       ...(cronSelfManagementJobId ? { cronSelfManagementJobId } : {}),
       ...(cronToolsAllowCapture ? { cronToolsAllowCapture } : {}),
+      ...(cronToolsAllowCapture && cronMcpToolBindings
+        ? { cronMcpToolBindings: structuredClone(cronMcpToolBindings) }
+        : {}),
       ...(cronExecToolTarget ? { cronExecToolTarget } : {}),
       ...(cronCreatorAuthorityGrant ? { cronCreatorAuthorityGrant } : {}),
       ...(executionIdentityToken ? { executionIdentityToken } : {}),

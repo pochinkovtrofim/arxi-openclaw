@@ -450,6 +450,7 @@ export function startAgentRunExecution(params: {
                     scheduledToolPolicy: params.restoredCronContinuation.scheduledToolPolicy,
                     callerOrigin: params.restoredCronContinuation.scheduledToolCallerOrigin,
                     execTarget: params.restoredCronContinuation.toolsAllowExecTarget,
+                    mcpToolBindings: params.restoredCronContinuation.scheduledMcpToolBindings,
                   })
                 : undefined,
               requireExplicitMessageTarget:

@@ -259,8 +259,9 @@ function createCronDeliverySchema(): TSchema {
   );
 }
 
-// Omitting `failureAlert` means "leave defaults/unchanged"; `false` disables regular alerts.
-// Runtime handles `failureAlert === false` in cron/service/failure-alerts.ts.
+// Omitting `failureAlert` means "leave defaults/unchanged". The model-safe
+// `{ enabled: false }` form is canonicalized to the runtime's `false` sentinel.
+// Raw API callers may still use `failureAlert: false` directly.
 // The schema declares `type: "object"` to stay compatible with providers that
 // enforce an OpenAPI 3.0 subset (e.g. Gemini via GitHub Copilot).  The
 // description tells the LLM that `false` is also accepted.
@@ -269,6 +270,11 @@ function createCronFailureAlertSchema(): TSchema {
     Type.Unsafe<Record<string, unknown> | false>({
       type: "object",
       properties: {
+        enabled: Type.Optional(
+          Type.Boolean({
+            description: "Set false to disable regular execution and delivery alerts.",
+          }),
+        ),
         after: optionalPositiveIntegerSchema({
           description:
             "Consecutive execution failures before alert; delivery failures bypass this threshold",
@@ -282,7 +288,7 @@ function createCronFailureAlertSchema(): TSchema {
       },
       additionalProperties: true,
       description:
-        "Failure alert policy/route override. Route-backed jobs default to after=2 for execution failures and cooldownMs=3600000 for all failure alerts; false disables execution/delivery alerts but not the auto-disable safety notice.",
+        "Failure alert policy/route override. Route-backed jobs default to after=2 for execution failures and cooldownMs=3600000 for all failure alerts; {enabled:false} disables execution/delivery alerts but not the auto-disable safety notice.",
     }),
   );
 }

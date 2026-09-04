@@ -78,6 +78,7 @@ it("keeps a native plugin MCP server requester-scoped when the plugin registers 
     manifestRegistry,
   });
   expect(threadConfig.staticServerNames).toEqual([]);
+  expect(threadConfig.requesterScopedServerNames).toEqual(["google_workspace"]);
   expect(threadConfig.configPatch).toBeUndefined();
   expect(
     shouldLoadRequesterScopedMcpHarnessRuntime({

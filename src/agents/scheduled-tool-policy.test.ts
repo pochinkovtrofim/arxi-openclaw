@@ -88,6 +88,49 @@ describe("resolveScheduledToolPolicyContext", () => {
       ownerOrigin: { kind: "unknown" },
     });
   });
+
+  it("normalizes and preserves canonical scheduled MCP identity bindings", () => {
+    const first = resolveScheduledToolPolicyContext({
+      toolsAllow: ["MAIL__READ"],
+      scheduledToolPolicy: {
+        version: 1,
+        mode: "account",
+        ownerSessionKey: "agent:main:main",
+        ownerAccountId: "work",
+      },
+      mcpToolBindings: [
+        {
+          name: " MAIL__READ ",
+          serverName: " mail ",
+          operation: "tool",
+          toolName: " read ",
+        },
+      ],
+    });
+    expect(first?.mcpToolBindings).toEqual([
+      { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+    ]);
+
+    expect(
+      resolveScheduledToolPolicyContext({
+        toolsAllow: ["mail__read"],
+        scheduledToolPolicy: first,
+      })?.mcpToolBindings,
+    ).toEqual(first?.mcpToolBindings);
+  });
+
+  it("drops an ambiguous scheduled MCP identity map", () => {
+    expect(
+      resolveScheduledToolPolicyContext({
+        toolsAllow: ["mail__read"],
+        scheduledToolPolicy: { version: 1, mode: "trusted" },
+        mcpToolBindings: [
+          { name: "mail__read", serverName: "a", operation: "tool", toolName: "read" },
+          { name: "mail__read", serverName: "b", operation: "tool", toolName: "read" },
+        ],
+      })?.mcpToolBindings,
+    ).toBeUndefined();
+  });
 });
 
 describe("resolveScheduledToolCallerContext", () => {

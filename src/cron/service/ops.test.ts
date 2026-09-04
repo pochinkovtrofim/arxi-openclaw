@@ -217,6 +217,47 @@ describe("scheduled tool policy provenance", () => {
       payload: { kind: "agentTurn", toolsAllow: ["read"] },
     });
     expect(explicit.toolsAllowProvenance).toBeUndefined();
+
+    const exactBound = await add(
+      state,
+      {
+        ...base,
+        name: "exact-bound",
+        payload: {
+          kind: "agentTurn",
+          message: "run",
+          toolsAllow: ["notes__read"],
+        },
+      },
+      {
+        toolsAllowProvenance: {
+          version: 1,
+          source: "final-executable-surface",
+          mcpToolBindings: [
+            {
+              name: "notes__read",
+              serverName: "notes",
+              operation: "tool",
+              toolName: "read",
+            },
+            {
+              name: "notes__write",
+              serverName: "notes",
+              operation: "tool",
+              toolName: "write",
+            },
+          ],
+        },
+      },
+    );
+    expect(exactBound.toolsAllowProvenance?.mcpToolBindings).toEqual([
+      {
+        name: "notes__read",
+        serverName: "notes",
+        operation: "tool",
+        toolName: "read",
+      },
+    ]);
     if (state.timer) {
       clearTimeout(state.timer);
     }

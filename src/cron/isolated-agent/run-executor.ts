@@ -328,6 +328,7 @@ function createCronPromptExecutor(params: {
     scheduledToolPolicy: validatedScheduledToolPolicy,
     callerOrigin: params.job.toolsAllowProvenance?.callerOrigin,
     execTarget: params.job.toolsAllowExecTarget,
+    mcpToolBindings: params.job.toolsAllowProvenance?.mcpToolBindings,
   });
   const { sourceDelivery } = params;
   const sourceReplyDeliveryMode = sourceDelivery.sourceReplyDeliveryMode;

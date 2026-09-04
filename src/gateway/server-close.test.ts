@@ -277,7 +277,9 @@ describe("createGatewayCloseHandler", () => {
     resolveGlobalSingleton(
       Symbol("openclaw.test.gatewayCloseAgentDatabaseOrder"),
       () => ({}),
-      () => closeOrder.push("runtime-owner"),
+      () => {
+        closeOrder.push("runtime-owner");
+      },
     );
     mocks.closeOpenClawAgentDatabases.mockImplementationOnce(() => {
       closeOrder.push("agent-databases");

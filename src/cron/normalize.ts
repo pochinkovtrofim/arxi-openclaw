@@ -18,6 +18,7 @@ import { normalizeCronRuntimeAuthority } from "./runtime-authority.js";
 import { coerceFiniteScheduleNumber } from "./schedule-number.js";
 import {
   normalizeCronScheduledToolCallerOrigin,
+  normalizeCronScheduledMcpToolBindings,
   normalizeCronScheduledToolPolicy,
   normalizeCronToolsAllowExecTarget,
   normalizeCronToolsAllowExecTargetRequirement,
@@ -414,10 +415,12 @@ export function normalizeCronJobInput(
       provenance.version === 1 &&
       provenance.source === "final-executable-surface"
     ) {
+      const mcpToolBindings = normalizeCronScheduledMcpToolBindings(provenance.mcpToolBindings);
       next.toolsAllowProvenance = {
         version: 1,
         source: "final-executable-surface",
         callerOrigin: normalizeCronScheduledToolCallerOrigin(provenance.callerOrigin),
+        ...(mcpToolBindings ? { mcpToolBindings } : {}),
       };
     } else {
       delete next.toolsAllowProvenance;

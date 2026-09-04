@@ -300,6 +300,21 @@ function repairPaddedCronKeys(value: Record<string, unknown>): void {
   }
 }
 
+function canonicalizeCronFailureAlert(value: Record<string, unknown>): void {
+  if (!isRecord(value.failureAlert)) {
+    return;
+  }
+  const failureAlert = { ...value.failureAlert };
+  if (failureAlert.enabled === false) {
+    value.failureAlert = false;
+    return;
+  }
+  if (failureAlert.enabled === true) {
+    delete failureAlert.enabled;
+    value.failureAlert = failureAlert;
+  }
+}
+
 /** Converts model-friendly cron tool shorthands into the nested gateway job/patch shape. */
 export function canonicalizeCronToolObject(
   value: Record<string, unknown>,
@@ -310,6 +325,7 @@ export function canonicalizeCronToolObject(
   repairConcatenatedCronToolKeys(next);
   canonicalizeCronToolSchedule(next);
   canonicalizeCronToolPayload(next);
+  canonicalizeCronFailureAlert(next);
   return next;
 }
 

@@ -10,6 +10,8 @@ import {
   planCronJobUpdatePatch,
   replaceWithEffectiveCronCreatorToolAllowlist,
   resolveCronCreatorExecToolTarget,
+  resolveCronCreatorMcpToolBindings,
+  resolveCronCreatorMcpToolBindingsForToolsAllow,
 } from "./cron-tool-creator-cap.js";
 import type { CronCreatorToolAllowlistEntry } from "./cron-tool.types.js";
 
@@ -44,6 +46,29 @@ function readReadyPatch(plan: CronJobUpdatePatchPlan): Record<string, unknown> {
 }
 
 describe("cron tool creator cap", () => {
+  it("intersects signed MCP bindings with the concrete scheduled cap", () => {
+    const target = Array.from({ length: 300 }, (_, index) => ({
+      name: `configured__tool_${index}`,
+      pluginId: "bundle-mcp",
+      mcp: {
+        serverName: "configured",
+        operation: "tool" as const,
+        toolName: `tool_${index}`,
+      },
+    }));
+
+    expect(
+      resolveCronCreatorMcpToolBindingsForToolsAllow(target, ["configured__tool_299"]),
+    ).toEqual([
+      {
+        name: "configured__tool_299",
+        serverName: "configured",
+        operation: "tool",
+        toolName: "tool_299",
+      },
+    ]);
+  });
+
   it("caps trigger-script creates without changing transport-only jobs", () => {
     const triggerJob = {
       trigger: { script: "return true" },
@@ -205,6 +230,37 @@ describe("cron tool creator cap", () => {
 
     expect(target).toEqual([{ name: "gateway_exec" }]);
     expect(resolveCronCreatorExecToolTarget(target)).toBeUndefined();
+  });
+
+  it("captures canonical MCP identity with its final allocated policy name", () => {
+    const target: CronCreatorToolAllowlistEntry[] = [];
+    const tool = testTool("mail__read-2");
+
+    replaceWithEffectiveCronCreatorToolAllowlist(target, [tool], () => ({
+      pluginId: "bundle-mcp",
+      mcp: { serverName: "mail", operation: "tool", toolName: "read" },
+    }));
+
+    expect(resolveCronCreatorMcpToolBindings(target)).toEqual([
+      { name: "mail__read-2", serverName: "mail", operation: "tool", toolName: "read" },
+    ]);
+  });
+
+  it("drops canonical MCP identity when duplicate grants disagree", () => {
+    const target: CronCreatorToolAllowlistEntry[] = [];
+    const first = testTool("mail__read");
+    const second = testTool("mail__read");
+
+    replaceWithEffectiveCronCreatorToolAllowlist(target, [first, second], (tool) => ({
+      pluginId: "bundle-mcp",
+      mcp: {
+        serverName: tool === first ? "mail" : "calendar",
+        operation: "tool",
+        toolName: "read",
+      },
+    }));
+
+    expect(resolveCronCreatorMcpToolBindings(target)).toEqual([]);
   });
 
   it("drops the restrict-only pin when a direct unpinned exec grant also exists", () => {

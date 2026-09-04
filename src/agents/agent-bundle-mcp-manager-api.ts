@@ -8,6 +8,7 @@ import { createSessionMcpRuntimeManager } from "./agent-bundle-mcp-manager.js";
 import { SESSION_MCP_RUNTIME_MANAGER_KEY } from "./agent-bundle-mcp-runtime-shared.js";
 import type {
   McpToolCatalog,
+  McpResolverUnavailableDiagnostic,
   RequesterScopedMcpRuntimeHandle,
   SessionMcpRuntime,
   SessionMcpRuntimeManager,
@@ -39,6 +40,7 @@ export async function getOrCreateSessionMcpRuntime(params: {
   conversationId?: string | null;
   runtimeGeneration?: string | null;
   traceId?: string | null;
+  onResolverUnavailable?: (diagnostic: McpResolverUnavailableDiagnostic) => void;
   toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
 }): Promise<SessionMcpRuntime> {
   return await getSessionMcpRuntimeManager().getOrCreate(params);
@@ -63,6 +65,7 @@ export async function getOrCreateRequesterScopedMcpRuntime(params: {
   conversationId?: string | null;
   runtimeGeneration?: string | null;
   traceId?: string | null;
+  onResolverUnavailable?: (diagnostic: McpResolverUnavailableDiagnostic) => void;
   toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
 }): Promise<RequesterScopedMcpRuntimeHandle | undefined> {
   return await getSessionMcpRuntimeManager().getOrCreateRequesterScoped(params);

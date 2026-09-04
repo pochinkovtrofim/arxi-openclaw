@@ -334,6 +334,7 @@ message requester gets their own transport:
 ```ts
 api.registerMcpServerConnectionResolver({
   serverName: "user-email",
+  requiresRequesterIdentity: true,
   resolve: async (ctx) => {
     // ctx.requesterSenderId is host-trusted; never invent sender identity here.
     const token = await lookupUserToken(ctx.requesterSenderId);
@@ -350,9 +351,12 @@ api.registerMcpServerConnectionResolver({
 
 Contract notes:
 
-- Resolver context carries trusted host identity only (`requesterSenderId`,
-  optional `agentAccountId` / `messageChannel`). Future trusted fields (for
-  example cron/subagent user context) can be added additively.
+- Resolver context carries trusted host identity only: optional
+  `requesterSenderId`, `agentAccountId`, `messageChannel`, `agentId`,
+  `sessionKey`, `chatType`, `conversationId`, `runtimeGeneration`, and
+  `traceId`. A normal requester resolver should keep
+  `requiresRequesterIdentity: true` (the default) and authorize from the trusted
+  requester fields.
 - One plugin owns one server name: a duplicate
   `registerMcpServerConnectionResolver` for the same `serverName` from another
   plugin is rejected with an error diagnostic (first registration wins), so
@@ -362,15 +366,39 @@ Contract notes:
   verify that different requester endpoints serve identical tool schemas; a
   resolver must point every requester at the same logical service, or tool
   schemas (and prompt-cache stability) diverge per requester.
-- Runs without a trusted `requesterSenderId` (cron, subagent, heartbeat, public
-  gateway) never materialize requester-scoped servers. There is no shared
-  fallback connection.
-- `resolve` is bounded at 10 seconds per server; a timeout or throw omits that
-  server for the run without failing static MCP.
-- Resolved connections are revalidated at most every 5 minutes per requester:
+- Runs without a trusted `requesterSenderId` normally never materialize
+  resolver-backed servers, and there is no shared fallback connection. A plugin
+  may explicitly set `requiresRequesterIdentity: false` for a host-authorized
+  background provider. Such a resolver runs only when core supplies canonical
+  `agentId` and `sessionKey`; it must authorize that identity itself. Account
+  Automations do not replay the creator's sender, account, channel,
+  conversation, or per-requester OAuth context, and their finite captured tool
+  ceiling still applies.
+- An account Automation resolves configured MCP only under an effective
+  `toolsAllow` intersection with at least one exact finite layer. Bare or mixed
+  `*`, glob-only, and `group:*`-style ceilings fail closed. If a background
+  resolver catalog is unavailable or incomplete, the harness also withholds
+  static configured MCP for that run so a colliding generated name cannot move
+  between canonical tools. The scheduled model receives a bounded diagnostic;
+  requester-required resolvers and per-requester OAuth are reported as unavailable
+  rather than silently disappearing.
+- Agent-created account Automations privately persist the final executable
+  name-to-identity binding for every allowed configured-MCP capability: canonical
+  server name, MCP operation, and canonical tool/resource/prompt name. Scheduled
+  projection requires the current allocation to match exactly. Catalog
+  disappearance, renaming, suffix reassignment, or a legacy job without that
+  binding withholds the affected MCP names and asks for fresh authorization from
+  a current owner turn; public Automation reads never disclose or accept this
+  provenance.
+- `resolve` is bounded at 10 seconds per server; for ordinary requester turns a
+  timeout or throw omits that server without failing static MCP. A scheduled
+  account run with captured requester-scoped authority instead withholds static
+  MCP for that run, because an incomplete resolver catalog cannot prove stable
+  cross-partition tool-name ownership.
+- Resolved connections are revalidated at most every 60 seconds per requester:
   rotation rebuilds the transport with fresh credentials, and a `null` result
   revokes it (the cached runtime is disposed even mid-session). A revoked or
-  rotated credential can therefore stay in use for up to 5 minutes.
+  rotated credential can therefore stay in use for up to 60 seconds.
 - Resolved `headers` are never logged or persisted; core keeps only an ephemeral
   in-memory keyed digest (process-local HMAC) to detect credential rotation, and
   registers resolved header/URL credential values with the log/debug-capture

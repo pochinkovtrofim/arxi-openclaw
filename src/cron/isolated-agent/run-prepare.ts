@@ -658,6 +658,7 @@ export async function prepareCronRunContext(params: {
             owner: input.job.owner,
           }),
           scheduledToolCallerOrigin: input.job.toolsAllowProvenance?.callerOrigin,
+          scheduledMcpToolBindings: input.job.toolsAllowProvenance?.mcpToolBindings,
           toolsAllowExecTarget: input.job.toolsAllowExecTarget,
           toolsAllowExecTargetRequirement: input.job.toolsAllowExecTargetRequirement,
           cliSessionBindingFacts: {

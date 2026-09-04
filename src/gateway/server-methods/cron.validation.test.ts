@@ -410,6 +410,9 @@ function callerClient(
 function callerClientWithCronCreatorAuthority(grant: CronCreatorAuthorityGrant): GatewayClient {
   const client = callerClient("ops");
   client.internal!.agentRuntimeIdentity!.cronToolsAllowCapture = "final-executable-surface";
+  client.internal!.agentRuntimeIdentity!.cronMcpToolBindings = [
+    { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+  ];
   client.internal!.agentRuntimeIdentity!.cronCreatorAuthorityGrant = grant;
   return client;
 }
@@ -1441,6 +1444,15 @@ describe("cron method validation", () => {
     const first = await invokeCron("cron.add", agentTurnCronParams(), { context, client });
     expectCronSuccess(first.respond);
     expect(context.committedAdds).toHaveLength(1);
+    expect(context.cron.add.mock.calls[0]?.[1]).toMatchObject({
+      toolsAllowProvenance: {
+        version: 1,
+        source: "final-executable-surface",
+        mcpToolBindings: [
+          { name: "mail__read", serverName: "mail", operation: "tool", toolName: "read" },
+        ],
+      },
+    });
 
     const replay = await invokeCron("cron.add", agentTurnCronParams(), { context, client });
     expectResponseError(replay.respond, {

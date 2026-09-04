@@ -2,6 +2,7 @@ import { resolveCronJobEffectiveAgentId } from "../../cron/agent-id.js";
 import {
   createAccountCronScheduledToolPolicy,
   createTrustedCronScheduledToolPolicy,
+  normalizeCronScheduledMcpToolBindings,
   type CronScheduledToolPolicy,
 } from "../../cron/scheduled-tool-policy.js";
 import type {
@@ -47,6 +48,7 @@ export function readCronCallerScope(
     : identity.turnSourceLocal === true
       ? ({ kind: "local" } as const)
       : ({ kind: "unknown" } as const);
+  const mcpToolBindings = normalizeCronScheduledMcpToolBindings(identity.cronMcpToolBindings);
   return {
     kind: "agentTool",
     agentId: normalizeAgentId(identity.agentId),
@@ -59,6 +61,7 @@ export function readCronCallerScope(
             version: 1 as const,
             source: "final-executable-surface" as const,
             callerOrigin,
+            ...(mcpToolBindings ? { mcpToolBindings } : {}),
           },
           ...(identity.cronExecToolTarget?.host === "gateway"
             ? {

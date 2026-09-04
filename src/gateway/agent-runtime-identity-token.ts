@@ -11,6 +11,10 @@ import { normalizeChatType } from "../channels/chat-type.js";
 import type { ChannelId } from "../channels/plugins/types.public.js";
 import type { InternalChannelThreadingToolContext } from "../channels/threading-tool-context-internal.js";
 import {
+  normalizeCronScheduledMcpToolBindings,
+  type CronScheduledMcpToolBinding,
+} from "../cron/scheduled-tool-policy.js";
+import {
   getActiveAgentRunDelegatedAuthority,
   validateAgentRunDelegatedAuthority,
   type AgentRunDelegatedAuthority,
@@ -23,6 +27,7 @@ import {
   redeemAgentRuntimeExecutionLineageHandoff,
   withAgentRuntimeExecutionLineageRedemption,
 } from "./agent-runtime-execution-lineage.js";
+import { cronScheduledMcpToolBindingSchema } from "./agent-runtime-identity-token-mcp.js";
 import type { AgentRuntimeSessionSpawnContext } from "./agent-runtime-session-spawn-context.js";
 import type { CronCreatorAuthorityGrant } from "./cron-creator-authority-grant.js";
 import {
@@ -58,6 +63,7 @@ export type AgentRuntimeIdentity = {
   messageActionContext?: AgentRuntimeMessageActionContext;
   cronSelfManagementContext?: AgentRuntimeCronSelfManagementContext;
   cronToolsAllowCapture?: "final-executable-surface";
+  cronMcpToolBindings?: CronScheduledMcpToolBinding[];
   cronExecToolTarget?: { host: "gateway"; ask?: "always" };
   cronCreatorAuthorityGrant?: CronCreatorAuthorityGrant;
   sessionSpawnContext?: AgentRuntimeSessionSpawnContext;
@@ -90,6 +96,7 @@ type AgentRuntimeIdentityTokenPayload = {
   messageActionContext?: AgentRuntimeMessageActionContext;
   cronSelfManagementContext?: AgentRuntimeCronSelfManagementContext;
   cronToolsAllowCapture?: "final-executable-surface";
+  cronMcpToolBindings?: CronScheduledMcpToolBinding[];
   cronExecToolTarget?: { host: "gateway"; ask?: "always" };
   cronCreatorAuthorityGrant?: CronCreatorAuthorityGrant;
   sessionSpawnContext?: AgentRuntimeSessionSpawnContext;
@@ -229,6 +236,7 @@ const agentRuntimeIdentityTokenPayloadSchema = z.object({
   messageActionContext: messageActionContextSchema.optional(),
   cronSelfManagementContext: cronSelfManagementContextSchema.optional(),
   cronToolsAllowCapture: z.literal("final-executable-surface").optional(),
+  cronMcpToolBindings: z.array(cronScheduledMcpToolBindingSchema).max(256).optional(),
   cronExecToolTarget: z
     .object({ host: z.literal("gateway"), ask: z.literal("always").optional() })
     .optional(),
@@ -377,9 +385,10 @@ function decodePayload(value: string, nowMs: number): AgentRuntimeIdentityTokenP
     const sessionSpawnContext = raw.sessionSpawnContext;
     const executionLineageHandoffId = raw.executionLineageHandoffId;
     const cronToolsAllowCapture = raw.cronToolsAllowCapture;
+    const cronMcpToolBindings = cronToolsAllowCapture ? raw.cronMcpToolBindings : undefined;
     const cronExecToolTarget = cronToolsAllowCapture ? raw.cronExecToolTarget : undefined;
     const cronCreatorAuthorityGrant = raw.cronCreatorAuthorityGrant;
-    if (cronCreatorAuthorityGrant && !cronToolsAllowCapture) {
+    if ((cronCreatorAuthorityGrant || raw.cronMcpToolBindings) && !cronToolsAllowCapture) {
       return undefined;
     }
     let executionIdentity: ExecutionIdentityAdmissionToken | undefined;
@@ -410,6 +419,7 @@ function decodePayload(value: string, nowMs: number): AgentRuntimeIdentityTokenP
       ...(sessionSpawnContext ? { sessionSpawnContext } : {}),
       ...(executionLineageHandoffId ? { executionLineageHandoffId } : {}),
       ...(cronToolsAllowCapture ? { cronToolsAllowCapture } : {}),
+      ...(cronMcpToolBindings ? { cronMcpToolBindings } : {}),
       ...(cronExecToolTarget ? { cronExecToolTarget } : {}),
       ...(cronCreatorAuthorityGrant ? { cronCreatorAuthorityGrant } : {}),
       ...(executionIdentity ? { executionIdentity } : {}),
@@ -433,6 +443,7 @@ export type AgentRuntimeIdentityTokenParams = {
   messageActionContext?: AgentRuntimeMessageActionContext;
   cronSelfManagementJobId?: string;
   cronToolsAllowCapture?: "final-executable-surface";
+  cronMcpToolBindings?: readonly CronScheduledMcpToolBinding[];
   cronExecToolTarget?: { host: "gateway"; ask?: "always" };
   cronCreatorAuthorityGrant?: CronCreatorAuthorityGrant;
   sessionSpawnContext?: AgentRuntimeSessionSpawnContext;
@@ -490,6 +501,19 @@ function prepareAgentRuntimeIdentityTokenPayload(params: AgentRuntimeIdentityTok
     throw new Error("cron creator authority grants require final tool-surface provenance");
   }
   if (
+    params.cronMcpToolBindings !== undefined &&
+    params.cronToolsAllowCapture !== "final-executable-surface"
+  ) {
+    throw new Error("cron MCP bindings require final tool-surface provenance");
+  }
+  const cronMcpToolBindings =
+    params.cronMcpToolBindings === undefined
+      ? undefined
+      : normalizeCronScheduledMcpToolBindings(params.cronMcpToolBindings);
+  if (params.cronMcpToolBindings !== undefined && !cronMcpToolBindings) {
+    throw new Error("cron MCP bindings violate their bounded canonical contract");
+  }
+  if (
     params.messageActionContext?.sourceReplyFinal === true &&
     !normalizeOptionalString(params.messageActionContext.sourceReplyToolCallId)
   ) {
@@ -544,6 +568,9 @@ function prepareAgentRuntimeIdentityTokenPayload(params: AgentRuntimeIdentityTok
     ...(cronSelfManagementContext ? { cronSelfManagementContext } : {}),
     ...(params.cronToolsAllowCapture === "final-executable-surface"
       ? { cronToolsAllowCapture: params.cronToolsAllowCapture }
+      : {}),
+    ...(params.cronToolsAllowCapture === "final-executable-surface" && cronMcpToolBindings
+      ? { cronMcpToolBindings }
       : {}),
     ...(params.cronToolsAllowCapture === "final-executable-surface" &&
     params.cronExecToolTarget?.host === "gateway"
@@ -638,6 +665,7 @@ export async function verifyAgentRuntimeIdentityToken(
     ...(payload.cronToolsAllowCapture
       ? { cronToolsAllowCapture: payload.cronToolsAllowCapture }
       : {}),
+    ...(payload.cronMcpToolBindings ? { cronMcpToolBindings: payload.cronMcpToolBindings } : {}),
     ...(payload.cronExecToolTarget ? { cronExecToolTarget: payload.cronExecToolTarget } : {}),
     ...(payload.cronCreatorAuthorityGrant
       ? { cronCreatorAuthorityGrant: payload.cronCreatorAuthorityGrant }

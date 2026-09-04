@@ -136,8 +136,23 @@ export type SessionMcpRuntimeManagerLifecycle = {
   ) => void;
 };
 
-function scopedCatalogToolsSignature(tools: readonly McpCatalogTool[]): string {
-  return JSON.stringify(
+function scopedCatalogServerSignature(
+  server: McpServerCatalog,
+  tools: readonly McpCatalogTool[],
+): string {
+  return JSON.stringify([
+    server.serverName,
+    server.safeServerName ?? null,
+    server.launchSummary,
+    server.toolCount,
+    server.codexApprovalMode ?? null,
+    server.resources ?? null,
+    server.prompts ?? null,
+    server.tools ?? null,
+    server.requestTimeoutMs ?? null,
+    server.supportsParallelToolCalls ?? null,
+    server.toolFilter ?? null,
+    server.deniedToolNames ?? null,
     tools.map((tool) => [
       tool.serverName,
       tool.safeServerName,
@@ -148,8 +163,9 @@ function scopedCatalogToolsSignature(tools: readonly McpCatalogTool[]): string {
       tool.inputSchema,
       tool.uiResourceUri ?? "",
       tool.uiVisibility ?? null,
+      tool.codexAnnotations ?? null,
     ]),
-  );
+  ]);
 }
 
 export function createSessionMcpRuntimeManagerLifecycle(
@@ -367,8 +383,10 @@ export function createSessionMcpRuntimeManagerLifecycle(
       const tools = (toolsByServerName.get(serverName) ?? []).toSorted((a, b) =>
         a.toolName.localeCompare(b.toolName),
       );
-      const signature = scopedCatalogToolsSignature(tools);
-      // Identity compare: overwrite only when the listed tool surface changes.
+      const signature = scopedCatalogServerSignature(server, tools);
+      // Approval metadata is part of the executable surface. A server that
+      // becomes more restrictive must replace the cached advertisement before
+      // unattended policy is evaluated.
       if (entry.signaturesByServer.get(serverName) === signature) {
         continue;
       }

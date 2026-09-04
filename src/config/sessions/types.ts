@@ -14,6 +14,7 @@ import type { SessionObserverDigest } from "../../../packages/gateway-protocol/s
 import type { SessionAgentStatus } from "../../../packages/gateway-protocol/src/session-agent-status.js";
 import type { ChatType } from "../../channels/chat-type.js";
 import type {
+  CronScheduledMcpToolBinding,
   CronScheduledToolCallerOrigin,
   CronScheduledToolPolicy,
   CronToolsAllowExecTarget,
@@ -466,6 +467,8 @@ type SessionEntryCore = SessionRestartRecoveryState &
       toolsAllowExecTargetRequirement?: CronToolsAllowExecTargetRequirement;
       /** Store-private origin paired with an account scheduled-tool policy. */
       scheduledToolCallerOrigin?: CronScheduledToolCallerOrigin;
+      /** Store-private MCP name identities copied from the owning cron authority. */
+      scheduledMcpToolBindings?: CronScheduledMcpToolBinding[];
       cliSessionBindingFacts?: {
         extraSystemPromptStatic?: string;
         sourceReplyDeliveryMode?: "automatic" | "message_tool_only";

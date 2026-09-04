@@ -1,6 +1,7 @@
 // Cron tool type declarations shared with the cron tool implementation.
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { CronRuntimeAuthority } from "../../cron/runtime-authority.js";
+import type { CronScheduledMcpToolBinding } from "../../cron/scheduled-tool-policy.js";
 import type { CronCreatorAuthorityGrant } from "../../gateway/cron-creator-authority-grant.js";
 import type { DeliveryContext } from "../../utils/delivery-context.shared.js";
 import type { callGatewayTool } from "./gateway.js";
@@ -15,6 +16,8 @@ export type CronCreatorToolAllowlistEntry =
       aliasName?: string;
       /** Restrict-only execution policy carried by a host-created alias projection. */
       execTarget?: { host: "gateway"; ask?: "always" };
+      /** Canonical MCP identity behind this model-facing policy name. */
+      mcp?: Omit<CronScheduledMcpToolBinding, "name">;
     };
 
 type CronToolsAllowCaptureProvenance = {

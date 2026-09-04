@@ -134,6 +134,7 @@ const bundleMcpThreadConfig = {
   evaluated: false,
   fingerprint: undefined,
   staticServerNames: [],
+  requesterScopedServerNames: [],
   userStaticServerNames: [],
 } satisfies CodexBundleMcpThreadConfig;
 
