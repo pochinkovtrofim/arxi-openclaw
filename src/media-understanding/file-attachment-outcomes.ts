@@ -1,5 +1,9 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { DocumentExtractedImage } from "../plugins/document-extractor-types.js";
+import {
+  documentExtractionFailureMessage,
+  type DocumentExtractedImage,
+  type DocumentExtractionFailure,
+} from "../plugins/document-extractor-types.js";
 import { wrapExternalContent } from "../security/external-content.js";
 
 // Reject inputs with trailing junk after the type/subtype to defend against
@@ -45,7 +49,7 @@ export type FileAttachmentOutcome =
   // Operator-pinned allowlist rejection: policy, not capability — the marker
   // must not claim PDF/text support the active configuration disables.
   | { kind: "policy-rejected"; mime?: string }
-  | { kind: "read-failure" }
+  | { kind: "read-failure"; reason?: DocumentExtractionFailure }
   | { kind: "url-sources-disabled" }
   // Routed to the image/audio/video stages, which own the outcome from there.
   // Delivery is not verified here; delivery-derived claims are a tracked follow-up.
@@ -131,7 +135,9 @@ export function renderFileAttachmentOutcome(
       return mime ? `[Attachment type not allowed: ${mime}]` : "[Attachment type not allowed]";
     }
     case "read-failure":
-      return "[Attachment could not be read]";
+      return outcome.reason
+        ? `[${documentExtractionFailureMessage(outcome.reason)}]`
+        : "[Attachment could not be read]";
     case "url-sources-disabled":
       return "[Attachment skipped: URL file sources are disabled]";
     case "claimed-elsewhere":

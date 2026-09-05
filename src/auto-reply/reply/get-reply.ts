@@ -158,6 +158,7 @@ function hasLinkCandidate(ctx: MsgContext): boolean {
 }
 
 async function applyMediaUnderstandingIfNeeded(params: {
+  signal?: AbortSignal;
   ctx: MsgContext;
   cfg: OpenClawConfig;
   agentId?: string;
@@ -585,6 +586,7 @@ export async function getReplyFromConfig(
     if (!utilityModelSelectionLocked || shouldApplyLockedAudio) {
       const mediaResult = await traceGetReplyPhase("reply.apply_media_understanding", () =>
         applyMediaUnderstandingIfNeeded({
+          signal: internalOptsWithSkillFilter?.abortSignal,
           ctx: finalized,
           cfg,
           agentId,

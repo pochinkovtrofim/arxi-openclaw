@@ -6,7 +6,12 @@ import {
 } from "@openclaw/media-core/attachment-classify";
 import { canonicalizeBase64, estimateBase64DecodedBytes } from "@openclaw/media-core/base64";
 import { parseMediaContentLength } from "@openclaw/media-core/content-length";
-import { detectMime, normalizeMimeType } from "@openclaw/media-core/mime";
+import {
+  detectMime,
+  normalizeMimeType,
+  OFFICE_DOCUMENT_FORMATS,
+  officeDocumentFormat,
+} from "@openclaw/media-core/mime";
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
@@ -15,6 +20,7 @@ import { readResponseWithLimit } from "../infra/http-body.js";
 import { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
 import type { SsrFPolicy } from "../infra/net/ssrf.js";
 import { logWarn } from "../logger.js";
+import { extractDocumentContent } from "./document-extractors.runtime.js";
 import { convertHeicToJpeg } from "./media-services.js";
 import { extractPdfContent, type PdfExtractedImage } from "./pdf-extract.js";
 
@@ -117,6 +123,7 @@ export const DEFAULT_INPUT_IMAGE_MIMES = [
 ];
 /** Default MIME allowlist for input_file text/PDF extraction. */
 const DEFAULT_INPUT_FILE_MIMES = [
+  ...Object.keys(OFFICE_DOCUMENT_FORMATS),
   "text/plain",
   "text/markdown",
   "text/html",
@@ -444,6 +451,7 @@ export async function extractFileContentFromBuffer(params: {
   limits: InputFileLimits;
   config?: OpenClawConfig;
   classification?: AttachmentClassification;
+  signal?: AbortSignal;
 }): Promise<InputFileExtractResult> {
   const { buffer, limits } = params;
   const filename = params.filename || "file";
@@ -464,6 +472,22 @@ export async function extractFileContentFromBuffer(params: {
   }
   if (!limits.allowedMimes.has(mimeType)) {
     throw new Error(`Unsupported file MIME type: ${mimeType}`);
+  }
+
+  if (officeDocumentFormat(mimeType)) {
+    const extracted = await extractDocumentContent({
+      buffer,
+      mimeType,
+      ...limits.pdf,
+      maxChars: limits.maxChars,
+      timeoutMs: limits.timeoutMs,
+      signal: params.signal,
+      config: params.config,
+    });
+    if (!extracted) {
+      throw new Error("Local document extraction is unavailable.");
+    }
+    return { filename, text: clampText(extracted.text, limits.maxChars) };
   }
 
   if (mimeType === "application/pdf") {

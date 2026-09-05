@@ -6,6 +6,57 @@ import { extnameFromAnyPath } from "./file-name.js";
 /** Maximum byte prefix passed to dependency MIME sniffers for bounded memory/CPU work. */
 export const FILE_TYPE_SNIFF_MAX_BYTES = 1024 * 1024;
 
+// Local document extraction candidates. Byte detection and the parser still
+// arbitrate; an extension or MIME claim alone never establishes readable content.
+export const OFFICE_DOCUMENT_FORMATS = {
+  "application/msword": { extension: ".doc", container: "cfb" },
+  "application/vnd.ms-powerpoint": { extension: ".ppt", container: "cfb" },
+  "application/vnd.ms-excel": { extension: ".xls", container: "cfb" },
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {
+    extension: ".docx",
+    container: "zip",
+  },
+  "application/vnd.ms-word.document.macroenabled.12": {
+    extension: ".docm",
+    container: "zip",
+  },
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation": {
+    extension: ".pptx",
+    container: "zip",
+  },
+  "application/vnd.ms-powerpoint.presentation.macroenabled.12": {
+    extension: ".pptm",
+    container: "zip",
+  },
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": {
+    extension: ".xlsx",
+    container: "zip",
+  },
+  "application/vnd.ms-excel.sheet.macroenabled.12": {
+    extension: ".xlsm",
+    container: "zip",
+  },
+  "application/vnd.ms-excel.sheet.binary.macroenabled.12": {
+    extension: ".xlsb",
+    container: "zip",
+  },
+  "application/vnd.oasis.opendocument.text": { extension: ".odt", container: "zip" },
+  "application/vnd.oasis.opendocument.spreadsheet": {
+    extension: ".ods",
+    container: "zip",
+  },
+  "application/vnd.oasis.opendocument.presentation": {
+    extension: ".odp",
+    container: "zip",
+  },
+  "application/rtf": { extension: ".rtf", container: "rtf" },
+  "application/epub+zip": { extension: ".epub", container: "zip" },
+} as const;
+
+export function officeDocumentFormat(mime: string) {
+  return Object.entries(OFFICE_DOCUMENT_FORMATS).find(([type]) => type === mime)?.[1];
+}
+
 // Map common mimes to preferred file extensions.
 const EXT_BY_MIME: Record<string, string> = {
   "image/avif": ".avif",
@@ -53,12 +104,9 @@ const EXT_BY_MIME: Record<string, string> = {
   "application/x-tar": ".tar",
   "application/x-7z-compressed": ".7z",
   "application/vnd.rar": ".rar",
-  "application/msword": ".doc",
-  "application/vnd.ms-excel": ".xls",
-  "application/vnd.ms-powerpoint": ".ppt",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+  ...Object.fromEntries(
+    Object.entries(OFFICE_DOCUMENT_FORMATS).map(([mime, entry]) => [mime, entry.extension]),
+  ),
   "text/csv": ".csv",
   "text/plain": ".txt",
   "text/markdown": ".md",
@@ -112,6 +160,9 @@ const AMBIGUOUS_VIDEO_MIME_BY_AUDIO_MIME: Readonly<Record<string, string>> = {
 // file-type can return generic ZIP when package metadata is outside its sniff window.
 // Only ZIP-backed MIME families may refine that result; arbitrary headers cannot.
 const ZIP_CONTAINER_MIMES = new Set([
+  ...Object.entries(OFFICE_DOCUMENT_FORMATS)
+    .filter(([, entry]) => entry.container === "zip")
+    .map(([mime]) => mime),
   "application/java-archive",
   "application/vnd.android.package-archive",
   "application/vnd.apple.keynote",
@@ -158,6 +209,8 @@ export function isZipContainerMime(mime: string): boolean {
 // allowlists and byte classification always compare the same value; without
 // this an operator's existing text/yaml allowlist stops matching .yaml files.
 const MIME_SYNONYMS: Record<string, string> = {
+  "text/rtf": "application/rtf",
+  "application/x-rtf": "application/rtf",
   "image/apng": "image/png",
   "text/yaml": "application/yaml",
   "application/x-yaml": "application/yaml",
@@ -256,6 +309,18 @@ export async function detectMime(opts: {
     .filter((mime): mime is string => Boolean(mime));
   const headerMime = mimeHints[0];
   const sniffed = await sniffMime(opts.buffer);
+  // A compound-file signature cannot be refined into text by sender metadata.
+  // Full stream identity is checked by the bounded document parser, not here.
+  if (opts.buffer?.subarray(0, 8).equals(Buffer.from("d0cf11e0a1b11ae1", "hex"))) {
+    return (
+      [sniffed, extMime, ...mimeHints].find(
+        (mime) => mime && officeDocumentFormat(mime)?.container === "cfb",
+      ) ?? "application/x-cfb"
+    );
+  }
+  if (opts.buffer?.subarray(0, 5).toString("ascii") === "{\\rtf") {
+    return "application/rtf";
+  }
   const sniffedGenericContainer =
     sniffed === "application/octet-stream" || sniffed === "application/zip";
 
