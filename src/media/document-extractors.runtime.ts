@@ -5,6 +5,10 @@ import type {
   DocumentExtractionRequest,
   DocumentExtractionResult,
 } from "../plugins/document-extractor-types.js";
+import {
+  DocumentExtractionError,
+  documentExtractionFailureFromError,
+} from "../plugins/document-extractor-types.js";
 import { resolvePluginDocumentExtractors } from "../plugins/document-extractors.runtime.js";
 import { createConfigScopedPromiseLoader } from "../plugins/plugin-cache-primitives.js";
 
@@ -27,6 +31,9 @@ export async function extractDocumentContent(
     maxPages: params.maxPages,
     maxPixels: params.maxPixels,
     minTextChars: params.minTextChars,
+    maxChars: params.maxChars,
+    timeoutMs: params.timeoutMs,
+    signal: params.signal,
     ...(params.password ? { password: params.password } : {}),
     ...(params.pageNumbers ? { pageNumbers: params.pageNumbers } : {}),
     ...(params.onImageExtractionError
@@ -54,6 +61,11 @@ export async function extractDocumentContent(
     }
   }
   if (errors.length > 0) {
+    const extractionFailure =
+      errors.length === 1 ? documentExtractionFailureFromError(errors[0]) : undefined;
+    if (extractionFailure) {
+      throw new DocumentExtractionError(extractionFailure);
+    }
     throw new Error(`Document extraction failed for ${mimeType || "unknown MIME type"}`, {
       cause: errors.length === 1 ? errors[0] : new AggregateError(errors),
     });

@@ -160,6 +160,10 @@ describe("renderFileAttachmentOutcome", () => {
     },
     { outcome: { kind: "read-failure" }, expected: "[Attachment could not be read]" },
     {
+      outcome: { kind: "read-failure", reason: "unavailable" },
+      expected: "[Local document extraction is unavailable in this runtime.]",
+    },
+    {
       outcome: { kind: "url-sources-disabled" },
       expected: "[Attachment skipped: URL file sources are disabled]",
     },

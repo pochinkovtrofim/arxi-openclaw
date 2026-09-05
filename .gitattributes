@@ -1,4 +1,6 @@
 * text=auto eol=lf
+# Preserve the upstream macro source fixture byte-for-byte, including CRLF.
+extensions/document-extract/fixtures/apache-poi/SimpleMacro.vba -text whitespace=cr-at-eol,-blank-at-eof
 CLAUDE.md -text
 src/gateway/server-methods/CLAUDE.md -text
 ui/src/i18n/.i18n/* linguist-generated

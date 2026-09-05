@@ -4,7 +4,11 @@ import {
   attachmentClassFromMime,
   type AttachmentClassification,
 } from "@openclaw/media-core/attachment-classify";
-import { mimeTypeFromFilePath, normalizeMimeType } from "@openclaw/media-core/mime";
+import {
+  mimeTypeFromFilePath,
+  normalizeMimeType,
+  officeDocumentFormat,
+} from "@openclaw/media-core/mime";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import pMap from "p-map";
 import type { ActiveMediaModel } from "../../packages/media-understanding-common/src/active-model.js";
@@ -19,6 +23,7 @@ import { logVerbose, shouldLogVerbose } from "../globals.js";
 import { renderFileContextBlock } from "../media/file-context.js";
 import { extractFileContentFromBuffer } from "../media/input-files.js";
 import { classifyMediaReferenceSource } from "../media/media-reference.js";
+import { documentExtractionFailureFromError } from "../plugins/document-extractor-types.js";
 import { runMediaCapability } from "./apply-capability.js";
 import { resolveAttachmentKind } from "./attachments.js";
 import { DEFAULT_ECHO_TRANSCRIPT_FORMAT, sendTranscriptEcho } from "./echo-transcript.js";
@@ -114,6 +119,7 @@ async function classifyFileAttachment(params: {
   cfg: OpenClawConfig;
   limits: FileExtractionLimits;
   skipAttachmentIndexes?: Set<number>;
+  signal?: AbortSignal;
 }): Promise<ClassifiedFileAttachment> {
   const { attachment, cache, cfg, limits, skipAttachmentIndexes } = params;
   const attachmentFilename =
@@ -170,7 +176,10 @@ async function classifyFileAttachment(params: {
   const selfServeLocalPath = bufferResult.localPath;
   if (
     classification.class !== "text" &&
-    !(classification.class === "document" && classification.mime === "application/pdf")
+    !(
+      classification.class === "document" &&
+      (classification.mime === "application/pdf" || officeDocumentFormat(classification.mime ?? ""))
+    )
   ) {
     // An operator-pinned allowlist that excludes this type is a policy "no";
     // it must win before any self-serve directive can name the file.
@@ -242,12 +251,23 @@ async function classifyFileAttachment(params: {
       limits: { ...baseLimits, allowedMimes },
       config: cfg,
       classification,
+      signal: params.signal,
     });
   } catch (err) {
+    const extractionFailure = documentExtractionFailureFromError(err);
     if (shouldLogVerbose()) {
-      logVerbose(`media: file attachment skipped (extract): ${String(err)}`);
+      logVerbose(
+        `media: file attachment skipped (extract): ${extractionFailure ?? "unexpected failure"}`,
+      );
     }
-    return { outcome: { kind: "read-failure" }, filename, mimeType };
+    return {
+      outcome: {
+        kind: "read-failure",
+        ...(extractionFailure ? { reason: extractionFailure } : {}),
+      },
+      filename,
+      mimeType,
+    };
   }
   const text = extracted?.text?.trim() ?? "";
   const extractedImages = extracted?.images ?? [];
@@ -267,6 +287,7 @@ async function extractFileContext(params: {
   limits: FileExtractionLimits;
   skipAttachmentIndexes?: Set<number>;
   selfServePathsEnabled: boolean;
+  signal?: AbortSignal;
 }) {
   const { attachments, cache, cfg, limits, skipAttachmentIndexes } = params;
   if (!attachments || attachments.length === 0) {
@@ -285,6 +306,7 @@ async function extractFileContext(params: {
       cfg,
       limits,
       skipAttachmentIndexes,
+      signal: params.signal,
     });
     if (outcome.kind === "extracted" || outcome.kind === "rendered-to-images") {
       images.push(
@@ -416,6 +438,7 @@ function applyAttachmentMarkerBudget(blocks: AttachmentContextBlock[]): string[]
 }
 
 export async function applyMediaUnderstanding(params: {
+  signal?: AbortSignal;
   ctx: MsgContext;
   cfg: OpenClawConfig;
   agentId?: string;
@@ -544,6 +567,7 @@ export async function applyMediaUnderstanding(params: {
       params.processingMode === "audio-only"
         ? { blocks: [], images: [], localPathSelfServeUpgrades: [] }
         : await extractFileContext({
+            signal: params.signal,
             attachments,
             cache,
             cfg,

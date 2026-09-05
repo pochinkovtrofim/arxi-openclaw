@@ -8,6 +8,9 @@ describe("attachmentClassFromMime", () => {
     ["application/vnd.api+json", "text"],
     ["application/pdf", "document"],
     ["application/msword", "document"],
+    ["application/rtf", "document"],
+    ["text/rtf", "document"],
+    ["application/epub+zip", "document"],
     ["image/png", "image"],
     ["audio/mpeg", "audio"],
     ["video/mp4", "video"],
@@ -19,6 +22,33 @@ describe("attachmentClassFromMime", () => {
 });
 
 describe("classifyAttachmentBytes", () => {
+  it.each([
+    { name: "misleading.txt", declaredMime: "text/plain", mime: "application/x-cfb" },
+    { name: "legacy.doc", declaredMime: "text/plain", mime: "application/msword" },
+    {
+      name: "legacy.bin",
+      declaredMime: "application/vnd.ms-excel",
+      mime: "application/vnd.ms-excel",
+    },
+  ])("never decodes compound bytes as text ($name)", async ({ name, declaredMime, mime }) => {
+    await expect(
+      classifyAttachmentBytes({
+        buffer: Buffer.from("d0cf11e0a1b11ae1", "hex"),
+        name,
+        declaredMime,
+      }),
+    ).resolves.toEqual({ mime, class: "document" });
+  });
+
+  it("routes RTF bytes into document extraction despite a text MIME and name", async () => {
+    await expect(
+      classifyAttachmentBytes({
+        buffer: Buffer.from("{\\rtf1 bounded document}"),
+        name: "notes.txt",
+        declaredMime: "text/plain",
+      }),
+    ).resolves.toEqual({ mime: "application/rtf", class: "document" });
+  });
   it("infers delimited text from otherwise untyped bytes", async () => {
     await expect(
       classifyAttachmentBytes({ buffer: Buffer.from("name,value\nopenclaw,1"), name: "data.bin" }),
