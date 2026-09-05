@@ -183,6 +183,7 @@ jobs:
           packages/gateway-protocol/src/public-schema.ts
           packages/gateway-protocol/src/schema/agent.ts
           packages/gateway-protocol/src/schema/agents-models-skills.ts
+          packages/gateway-protocol/src/schema/agents-models-skills.test.ts
           packages/gateway-protocol/src/schema/gateway-suspend.ts
           packages/gateway-protocol/src/schema/protocol-schema-fragment-transport.ts
           src/agents/prepared-model-catalog-worker.integration.test.ts
@@ -311,6 +312,9 @@ jobs:
           src/gateway/server-methods/agent.test-harness.ts
           src/gateway/server-methods/agents-mutate.test.ts
           src/gateway/server-methods/agents.ts
+          src/gateway/server-methods/models-list-public-projection.ts
+          src/gateway/server-methods/models-list-result.ts
+          src/gateway/server-methods/models.test.ts
           src/gateway/server-methods/suspend.ts
           src/gateway/server/plugins-http.suspension-admission.test.ts
           src/infra/diagnostic-events.ts
@@ -403,6 +407,8 @@ jobs:
       - name: Test fork seams consumed by Arxi
         run: |
           pnpm test \
+            packages/gateway-protocol/src/schema/agents-models-skills.test.ts \
+            src/gateway/server-methods/models.test.ts \
             extensions/codex/src/app-server/attempt-diagnostics.test.ts \
             extensions/codex/src/app-server/attempt-startup-retry.test.ts \
             extensions/codex/src/app-server/attempt-startup.test.ts \

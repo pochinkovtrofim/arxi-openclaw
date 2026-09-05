@@ -237,6 +237,7 @@ describe("ModelsListParamsSchema", () => {
       },
       {
         agentId: "research",
+        includeInput: true,
         includeProviderCapabilities: true,
       },
       {
@@ -251,6 +252,7 @@ describe("ModelsListParamsSchema", () => {
       ModelsListParamsSchema,
       { view: "provider-route" },
       { agentId: "" },
+      { includeInput: "true" },
       { preparedOnly: true, refresh: true },
     );
   });

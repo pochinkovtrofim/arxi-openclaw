@@ -3482,6 +3482,8 @@ public struct AgentParams: Codable, Sendable {
     public let groupid: String?
     public let groupchannel: String?
     public let groupspace: String?
+    public let admittedconversationid: String?
+    public let admittedrequestersenderid: String?
     public let timeout: Int?
     public let besteffortdeliver: Bool?
     public let lane: String?
@@ -3532,6 +3534,8 @@ public struct AgentParams: Codable, Sendable {
         groupid: String? = nil,
         groupchannel: String? = nil,
         groupspace: String? = nil,
+        admittedconversationid: String? = nil,
+        admittedrequestersenderid: String? = nil,
         timeout: Int? = nil,
         besteffortdeliver: Bool? = nil,
         lane: String? = nil,
@@ -3581,6 +3585,8 @@ public struct AgentParams: Codable, Sendable {
         self.groupid = groupid
         self.groupchannel = groupchannel
         self.groupspace = groupspace
+        self.admittedconversationid = admittedconversationid
+        self.admittedrequestersenderid = admittedrequestersenderid
         self.timeout = timeout
         self.besteffortdeliver = besteffortdeliver
         self.lane = lane
@@ -3632,6 +3638,8 @@ public struct AgentParams: Codable, Sendable {
         case groupid = "groupId"
         case groupchannel = "groupChannel"
         case groupspace = "groupSpace"
+        case admittedconversationid = "admittedConversationId"
+        case admittedrequestersenderid = "admittedRequesterSenderId"
         case timeout
         case besteffortdeliver = "bestEffortDeliver"
         case lane
@@ -14249,6 +14257,7 @@ public struct AgentSummary: Codable, Sendable {
 }
 
 public struct AgentsCreateParams: Codable, Sendable {
+    public let agentid: String?
     public let name: String
     public let workspace: String?
     public let model: String?
@@ -14256,17 +14265,28 @@ public struct AgentsCreateParams: Codable, Sendable {
     public let avatar: String?
 
     public init(
+        agentid: String? = nil,
         name: String,
         workspace: String? = nil,
         model: String? = nil,
         emoji: String? = nil,
         avatar: String? = nil)
     {
+        self.agentid = agentid
         self.name = name
         self.workspace = workspace
         self.model = model
         self.emoji = emoji
         self.avatar = avatar
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case agentid = "agentId"
+        case name
+        case workspace
+        case model
+        case emoji
+        case avatar
     }
 }
 
@@ -15124,6 +15144,7 @@ public struct ModelsAuthStatusParams: Codable, Sendable {
 
 public struct ModelsListParams: Codable, Sendable {
     public let agentid: String?
+    public let includeinput: Bool?
     public let includeprovidercapabilities: Bool?
     public let preparedonly: Bool?
     public let refresh: Bool?
@@ -15131,12 +15152,14 @@ public struct ModelsListParams: Codable, Sendable {
 
     public init(
         agentid: String? = nil,
+        includeinput: Bool? = nil,
         includeprovidercapabilities: Bool? = nil,
         preparedonly: Bool? = nil,
         refresh: Bool? = nil,
         view: AnyCodable? = nil)
     {
         self.agentid = agentid
+        self.includeinput = includeinput
         self.includeprovidercapabilities = includeprovidercapabilities
         self.preparedonly = preparedonly
         self.refresh = refresh
@@ -15145,6 +15168,7 @@ public struct ModelsListParams: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case agentid = "agentId"
+        case includeinput = "includeInput"
         case includeprovidercapabilities = "includeProviderCapabilities"
         case preparedonly = "preparedOnly"
         case refresh

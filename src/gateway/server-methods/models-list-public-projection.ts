@@ -1,4 +1,5 @@
 import { asPositiveSafeInteger as resolvePositiveSafeInteger } from "@openclaw/normalization-core/number-coercion";
+import { normalizeUniqueTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
 import type {
   ModelCatalogProviderOutcome,
   ModelChoice,
@@ -24,9 +25,29 @@ type ModelsListEntry = Pick<
   | "tags"
 > & { available?: boolean; supportsTools?: boolean };
 
+type PublicModelInput = NonNullable<ModelChoice["input"]>[number];
+const PUBLIC_MODEL_INPUTS = new Set<PublicModelInput>([
+  "text",
+  "image",
+  "audio",
+  "video",
+  "document",
+]);
+
+function normalizePublicModelInputs(value: unknown): PublicModelInput[] | undefined {
+  const inputs = normalizeUniqueTrimmedStringList(value).filter(
+    (input): input is PublicModelInput => PUBLIC_MODEL_INPUTS.has(input as PublicModelInput),
+  );
+  return inputs.length > 0 ? inputs : undefined;
+}
+
 /** Keeps concrete route, auth, cost, and provider parameters out of public model rows. */
-export function buildPublicModelProjection(entry: ModelCatalogEntry): ModelsListEntry {
+export function buildPublicModelProjection(
+  entry: ModelCatalogEntry,
+  options?: { includeInput?: boolean },
+): ModelsListEntry {
   const contextWindow = resolvePositiveSafeInteger(entry.contextWindow);
+  const input = options?.includeInput ? normalizePublicModelInputs(entry.input) : undefined;
   return {
     id: entry.id,
     name: entry.name,
@@ -39,6 +60,7 @@ export function buildPublicModelProjection(entry: ModelCatalogEntry): ModelsList
     ...(typeof entry.compat?.supportsTools === "boolean"
       ? { supportsTools: entry.compat.supportsTools }
       : {}),
+    ...(input ? { input } : {}),
   };
 }
 

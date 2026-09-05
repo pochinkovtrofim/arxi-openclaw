@@ -1220,6 +1220,10 @@ Two optional controls separate automatic reads from operator-requested discovery
 `preparedOnly: true` and `refresh: true` are mutually exclusive because one forbids discovery
 while the other requests it.
 
+Pass `includeInput: true` when a read needs the public input modalities returned by the
+selected catalog view. The field is omitted by default.
+The `provider-config` view already includes public input modalities.
+
 ## Exec approvals
 
 - When an exec request needs approval, the gateway broadcasts

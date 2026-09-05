@@ -273,6 +273,7 @@ function requestModelsList(params: {
     workspaceDir?: string;
   }) => Promise<Array<Record<string, unknown>>>;
   reqId?: string;
+  includeInput?: boolean;
   includeProviderCapabilities?: boolean;
   deferredAuth?: Promise<PreparedModelRuntimeAuth>;
   preparedAuthModes?: PreparedModelRuntimeAuth["authModes"];
@@ -343,12 +344,14 @@ function requestModelsList(params: {
       params: {
         view: params.view,
         ...(params.agentId ? { agentId: params.agentId } : {}),
+        ...(params.includeInput ? { includeInput: true } : {}),
         ...(params.includeProviderCapabilities ? { includeProviderCapabilities: true } : {}),
       },
     },
     params: {
       view: params.view,
       ...(params.agentId ? { agentId: params.agentId } : {}),
+      ...(params.includeInput ? { includeInput: true } : {}),
       ...(params.includeProviderCapabilities ? { includeProviderCapabilities: true } : {}),
     },
     respond: respond as RespondFn,
@@ -2510,6 +2513,44 @@ describe("models.list", () => {
             available: false,
             unavailableReason: "missing-auth",
             contextWindow: 128_000,
+          },
+        ],
+      },
+      undefined,
+    );
+  });
+
+  it("returns normalized model input metadata when explicitly requested", async () => {
+    const { request, respond } = requestModelsList({
+      view: "all",
+      loadGatewayModelCatalog: vi.fn(() =>
+        Promise.resolve([
+          {
+            id: "vision-model",
+            name: "Vision Model",
+            provider: "demo-provider",
+            contextWindow: 128_000,
+            input: [" text ", "image", "private-runtime-capability", "image", "video"],
+          },
+        ]),
+      ),
+      includeInput: true,
+      reqId: "req-models-list-public-capabilities-visible",
+    });
+    await request;
+
+    expect(respond).toHaveBeenCalledWith(
+      true,
+      {
+        models: [
+          {
+            id: "vision-model",
+            name: "Vision Model",
+            provider: "demo-provider",
+            available: false,
+            unavailableReason: "missing-auth",
+            contextWindow: 128_000,
+            input: ["text", "image", "video"],
           },
         ],
       },

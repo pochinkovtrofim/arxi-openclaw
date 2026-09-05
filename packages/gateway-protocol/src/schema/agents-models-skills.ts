@@ -278,6 +278,8 @@ export const AgentsFilesSetResultSchema = closedObject({
 export const ModelsListParamsSchema = Type.Object(
   {
     agentId: Type.Optional(NonEmptyString),
+    /** Include public input modalities for each returned model. */
+    includeInput: Type.Optional(Type.Boolean()),
     includeProviderCapabilities: Type.Optional(Type.Boolean()),
     /** Reuse prepared/cached facts without starting provider discovery. */
     preparedOnly: Type.Optional(Type.Boolean()),

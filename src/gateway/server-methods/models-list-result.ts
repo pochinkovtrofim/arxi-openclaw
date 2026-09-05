@@ -323,7 +323,7 @@ function createPublicModelsListProjector(params: {
         model: entry.id,
       });
       preparedEntry = {
-        ...buildPublicModelProjection(publicEntry),
+        ...buildPublicModelProjection(publicEntry, { includeInput: params.includeInput }),
         ...(configuredEntry?.tags.size ? { tags: [...configuredEntry.tags] } : {}),
         ...(agentRuntime ? { agentRuntime } : {}),
         ...thinkingProfile,
@@ -333,7 +333,6 @@ function createPublicModelsListProjector(params: {
               apiKeySupported: params.apiKeyCapabilities.providers.get(capabilityProvider) === true,
             }
           : {}),
-        ...(params.includeInput && entry.input?.length ? { input: entry.input } : {}),
       };
       prepared.set(entry, preparedEntry);
     }
@@ -571,6 +570,7 @@ export async function prepareModelsListResult(
   // Only that paired generation may turn an absent synthetic credential into missing-auth.
   const preparedSyntheticAuthComplete = ownerSnapshot?.catalogComplete === true;
   const includeProviderCapabilities = params.params.includeProviderCapabilities === true;
+  const includeInput = params.params.includeInput === true;
   const capableProviders = includeProviderCapabilities
     ? apiKeyProviderCapabilities({ cfg, metadataSnapshot, workspaceDir })
     : undefined;
@@ -700,6 +700,7 @@ export async function prepareModelsListResult(
     cfg,
     agentId,
     configuredEntriesByKey,
+    ...(includeInput ? { includeInput } : {}),
     ...(capableProviders ? { apiKeyCapabilities: capableProviders } : {}),
   });
   return {
