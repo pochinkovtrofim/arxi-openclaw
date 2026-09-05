@@ -1,4 +1,10 @@
-import { detectMime, isZipContainerMime, mimeTypeFromFilePath, normalizeMimeType } from "./mime.js";
+import {
+  detectMime,
+  isZipContainerMime,
+  mimeTypeFromFilePath,
+  normalizeMimeType,
+  officeDocumentFormat,
+} from "./mime.js";
 
 export type AttachmentClass =
   | "text"
@@ -26,6 +32,9 @@ export function attachmentClassFromMime(mime?: string | null): AttachmentClass {
   const normalized = normalizeMimeType(mime);
   if (!normalized) {
     return "binary";
+  }
+  if (officeDocumentFormat(normalized)) {
+    return "document";
   }
   if (
     normalized.startsWith("text/") ||

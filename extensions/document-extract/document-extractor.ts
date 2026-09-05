@@ -7,6 +7,8 @@ import type {
   DocumentExtractorPlugin,
 } from "openclaw/plugin-sdk/document-extractor";
 
+export { createOfficeDocumentExtractor } from "./office-extractor.js";
+
 const MAX_EXTRACTED_TEXT_CHARS = 200_000;
 const MAX_RENDER_DIMENSION = 10_000;
 
