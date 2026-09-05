@@ -141,6 +141,8 @@ jobs:
           extensions/codex/src/app-server/event-projector.ts
           extensions/codex/src/app-server/plugin-thread-config.test.ts
           extensions/codex/src/app-server/plugin-thread-config.ts
+          extensions/codex/src/app-server/protocol-generated/json/v2/CodexAppServerProtocolDefinitions.json
+          extensions/codex/src/app-server/protocol.ts
           extensions/codex/src/app-server/run-attempt-active-turn.ts
           extensions/codex/src/app-server/run-attempt-runtime.ts
           extensions/codex/src/app-server/run-attempt-server-requests.ts
@@ -151,8 +153,13 @@ jobs:
           extensions/codex/src/app-server/run-attempt.dynamic-tools.test.ts
           extensions/codex/src/app-server/scheduled-mcp-identity.test.ts
           extensions/codex/src/app-server/scheduled-mcp-identity.ts
+          extensions/codex/src/app-server/thread-lifecycle.binding.test.ts
+          extensions/codex/src/app-server/thread-lifecycle.restricted-mcp.real-binary.live.test.ts
+          extensions/codex/src/app-server/thread-lifecycle.test.ts
+          extensions/codex/src/app-server/thread-requests.ts
           extensions/codex/src/app-server/turn-params.ts
           extensions/codex/src/app-server/version.ts
+          extensions/codex/src/native-thread-coexistence.live.test.ts
           extensions/diagnostics-otel/src/service-recorders-harness.ts
           extensions/diagnostics-otel/src/service.test.ts
           extensions/telegram/src/bot-message-context.session.ts
@@ -358,6 +365,7 @@ jobs:
           config/assertion-safety-baseline.txt
           scripts/ci-changed-scope.mjs
           scripts/AGENTS.md
+          scripts/check-codex-app-server-protocol.ts
           scripts/e2e/lib/codex-media-path/fake-codex-app-server.mjs
           scripts/e2e/lib/codex-release-package-assertions.mjs
           scripts/plugin-sdk-surface-report.mts
@@ -404,6 +412,8 @@ jobs:
             extensions/codex/src/app-server/run-attempt.configured-mcp.test.ts \
             extensions/codex/src/app-server/run-attempt.dynamic-tools.test.ts \
             extensions/codex/src/app-server/scheduled-mcp-identity.test.ts \
+            extensions/codex/src/app-server/thread-lifecycle.binding.test.ts \
+            extensions/codex/src/app-server/thread-lifecycle.test.ts \
             extensions/codex/src/manifest.test.ts \
             extensions/diagnostics-otel/src/service.test.ts \
             extensions/exa/src/exa-web-search-provider.test.ts \
@@ -466,6 +476,11 @@ jobs:
             -t 'retains the exact agent run on a useful heartbeat delivery'
           pnpm exec vitest run src/plugins/tools.optional.test.ts \
             -t 'preserves tool-owned execution preparation across the descriptor cache'
+          OPENCLAW_LIVE_TEST=1 OPENCLAW_LIVE_CODEX_RESTRICTED_MCP=1 \
+            OPENCLAW_LIVE_CODEX_THREAD_COEXISTENCE=1 \
+            node scripts/run-vitest.mjs run --config test/vitest/vitest.live.config.ts \
+            extensions/codex/src/app-server/thread-lifecycle.restricted-mcp.real-binary.live.test.ts \
+            extensions/codex/src/native-thread-coexistence.live.test.ts
           OPENCLAW_E2E_SKIP_BUILD=1 node scripts/run-vitest.mjs run --config test/vitest/vitest.e2e.config.ts \
             src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts \
             -t 'records the operation owned by an admitted heartbeat run'

@@ -99,8 +99,11 @@ channel is the communication surface.
 
 - The official `@openclaw/codex` plugin installed. Include `codex` in
   `plugins.allow` if your config uses an allowlist.
-- Managed Codex app-server `0.152.1`. The plugin ships and manages
-  `@openai/codex` `0.152.1` by default, so a `codex` command on `PATH` does not
+- Managed Codex app-server `0.153.4`. Its 2026-09-05 credential-free `model/list`
+  snapshot includes `gpt-6-astra` with text/image input and default effort `low`;
+  see the [catalog snapshot](/plugins/codex-harness-reference#model-discovery)
+  for the account-availability boundary. The plugin ships and manages
+  `@openai/codex` `0.153.4` by default, so a `codex` command on `PATH` does not
   affect normal startup. Explicit custom, remote, and macOS desktop-owned
   app-servers must report a parseable semantic version of `0.149.0` or newer.
   Newer versions continue with a compatibility warning and normal runtime
@@ -332,8 +335,9 @@ for agent-scoped connections and simply does not hand it to the native home. Use
 
 Owner turns gain the `codex_threads` tool: list, search, read, fork, rename,
 archive, and restore native threads. Fork a thread to continue it in
-OpenClaw; the fork attaches to the current OpenClaw session and stays
-visible to other native Codex clients. Archiving requires explicit
+OpenClaw; the fork attaches to the current OpenClaw session and remains readable
+by ID from other native Codex clients. It appears in native thread lists after
+its first user turn. Archiving requires explicit
 confirmation that the thread is closed elsewhere. When supervision is also
 enabled, transcript fields and mutations require the matching
 `supervision.allowRawTranscripts` or `supervision.allowWriteControls` opt-in.

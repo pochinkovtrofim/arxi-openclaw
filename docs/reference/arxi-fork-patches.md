@@ -13,12 +13,18 @@ title: "Arxi fork patch ledger"
 
 Arxi is pinned to the stable OpenClaw `v2026.8.2` release at exact upstream
 commit `0965053fe6b9341776df147a6934b7485c60b5ca`. The release contains the broad
-upstream bug-fix set selected for this update; Arxi does not cherry-pick a newer
-unreleased OpenClaw commit on top.
+upstream bug-fix set selected for this update. The narrow Codex compatibility
+backport described below is the only newer upstream feature carried here.
 
 The bundled Codex app-server client is independently pinned to
-`@openai/codex@0.152.1`. Its harness protocol was checked against the exact
-`rust-v0.152.1` source at commit `5adb68a49933ae446bf11935662c83dba55a0804`.
+`@openai/codex@0.153.4`, whose bundled catalog exposes Astra. Its harness protocol
+uses exact `rust-v0.153.4` source at commit
+`3d2ee51ca2d5db578f328aa75e20aa22c0197c9a`. The compatibility backport comes from
+OpenClaw commits `1a2bd291dc2d328947cb1f7de3087bf408042d2c` and
+`06cd20d60b3ca6cd51f29c20bbf9a4bdb2ab58ea`: aligned binary/ACP/provider-client
+pins, generated protocol, typed thread requests, restricted context-management
+feature policy, and native lifecycle coverage. The second commit's independent
+plugin-inventory deadline hardening is outside this backport.
 
 Each update is reviewed as a tree delta against the selected tag, not as a
 mechanical replay of old commits. `Retain` means an Arxi-only production contract
