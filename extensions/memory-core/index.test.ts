@@ -212,6 +212,11 @@ describe("buildPromptSection", () => {
       expect(text).toContain("MEMORY.md, USER.md");
       expect(text).toContain("recursively under memory/");
       expect(text.includes("configured extra paths")).toBe(sourceCase.extraPaths.length > 0);
+      expect(text).toContain("Never treat partial or unavailable recall as complete");
+      expect(text).toContain("successful durable write is distinct from searchable recall");
+      expect(text).toContain("materially affects the answer");
+      expect(text).toContain("unless technical diagnostics are explicitly requested");
+      expect(text).not.toMatch(/must be surfaced to the user|tell the user and include/i);
       expect(text.length).toBeLessThan(3_000);
     }
     expect(lazy.search.description.includes("indexed session transcripts")).toBe(
