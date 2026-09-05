@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import {
   getEmbeddingProvider,
@@ -10,6 +12,8 @@ import {
   DEFAULT_LLAMA_CPP_EMBEDDING_CACHE_FILE,
   DEFAULT_LLAMA_CPP_EMBEDDING_MODEL,
   DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID,
+  DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SHA256,
+  DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SIZE_BYTES,
   LLAMA_CPP_PROVIDER_ID,
   resolveLegacyLlamaCppModelCacheDir,
   resolveLlamaCppEmbeddingModel,
@@ -31,6 +35,62 @@ type LlamaCppLocalOptions = {
 
 const LOCAL_EMBEDDING_RUNTIME_FACTS = Symbol.for("openclaw.localEmbeddingRuntimeFacts");
 const preparedEmbeddingServers = new Map<string, Promise<void>>();
+let verifiedDefaultFile: { fingerprint: string; path: string } | undefined;
+
+function resolveVerifiedDefaultFile(cachePath: string): string | undefined {
+  let descriptor: number | undefined;
+  try {
+    const resolved = fs.realpathSync(cachePath);
+    const stat = fs.statSync(resolved, { bigint: true });
+    if (!stat.isFile() || stat.size !== BigInt(DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SIZE_BYTES)) {
+      return undefined;
+    }
+    const fingerprint = [resolved, stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.ctimeNs].join(
+      ":",
+    );
+    // Identity checks need a cold, synchronous answer. Hash once per exact file
+    // generation; retargets and replacements must never reuse a verified alias.
+    if (verifiedDefaultFile?.fingerprint === fingerprint) {
+      return verifiedDefaultFile.path;
+    }
+    descriptor = fs.openSync(resolved, "r");
+    const opened = fs.fstatSync(descriptor, { bigint: true });
+    if (opened.dev !== stat.dev || opened.ino !== stat.ino || opened.size !== stat.size) {
+      return undefined;
+    }
+    const hash = createHash("sha256");
+    const buffer = Buffer.alloc(64 * 1024);
+    let remaining = DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SIZE_BYTES;
+    while (remaining > 0) {
+      const count = fs.readSync(descriptor, buffer, 0, Math.min(buffer.length, remaining), null);
+      if (count === 0) {
+        return undefined;
+      }
+      hash.update(buffer.subarray(0, count));
+      remaining -= count;
+    }
+    const after = fs.fstatSync(descriptor, { bigint: true });
+    if (
+      after.size !== stat.size ||
+      after.mtimeNs !== stat.mtimeNs ||
+      after.ctimeNs !== stat.ctimeNs ||
+      fs.realpathSync(cachePath) !== resolved ||
+      hash.digest("hex") !== DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SHA256
+    ) {
+      return undefined;
+    }
+    verifiedDefaultFile = { fingerprint, path: resolved };
+    return resolved;
+  } catch {
+    // Missing/unreadable/unverified weights get no compatibility alias. The
+    // normal provider setup retains ownership of installation diagnostics.
+    return undefined;
+  } finally {
+    if (descriptor !== undefined) {
+      fs.closeSync(descriptor);
+    }
+  }
+}
 
 type LlamaCppModelIdentity = {
   model: string;
@@ -84,6 +144,10 @@ function resolveModelIdentity(
     legacyDefaultPath,
     DEFAULT_LLAMA_CPP_EMBEDDING_CACHE_FILE,
   ]);
+  const verifiedFile = resolveVerifiedDefaultFile(currentDefaultPath);
+  if (verifiedFile) {
+    aliases.add(verifiedFile);
+  }
   if (embeddingModel.source !== DEFAULT_LLAMA_CPP_EMBEDDING_MODEL) {
     aliases.add(embeddingModel.source);
   }
