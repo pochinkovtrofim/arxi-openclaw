@@ -6,6 +6,8 @@ const CHROME_EPOCH_OFFSET_MS = 11_644_473_600_000;
 const DEFAULT_HISTORY_LIMIT = 20;
 const MAX_HISTORY_LIMIT = 100;
 const MAX_HISTORY_QUERY_LENGTH = 256;
+const MAX_HISTORY_TITLE_LENGTH = 256;
+const MAX_HISTORY_URL_LENGTH = 2048;
 
 type ChromeHistoryRow = {
   title: string | null;
@@ -36,6 +38,24 @@ function normalizeHistoryQuery(value: string | undefined): string | undefined {
 
 function escapeSqliteLike(value: string): string {
   return value.replaceAll("\\", "\\\\").replaceAll("%", "\\%").replaceAll("_", "\\_");
+}
+
+function truncateHistoryText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  let end = maxLength - 1;
+  const lastIncluded = value.charCodeAt(end - 1);
+  const firstExcluded = value.charCodeAt(end);
+  if (
+    lastIncluded >= 0xd800 &&
+    lastIncluded <= 0xdbff &&
+    firstExcluded >= 0xdc00 &&
+    firstExcluded <= 0xdfff
+  ) {
+    end -= 1;
+  }
+  return `${value.slice(0, end)}…`;
 }
 
 function chromeVisitTimeToIso(value: number | bigint): string | null {
@@ -80,7 +100,18 @@ export function readManagedChromeHistory(params: {
     const rows = statement.all(...bindings) as unknown as ChromeHistoryRow[];
     return rows.flatMap((row) => {
       const visitedAt = chromeVisitTimeToIso(row.visit_time);
-      return visitedAt ? [{ title: row.title, url: row.url, visitedAt }] : [];
+      return visitedAt
+        ? [
+            {
+              title:
+                row.title === null
+                  ? null
+                  : truncateHistoryText(row.title, MAX_HISTORY_TITLE_LENGTH),
+              url: truncateHistoryText(row.url, MAX_HISTORY_URL_LENGTH),
+              visitedAt,
+            },
+          ]
+        : [];
     });
   } finally {
     database.close();

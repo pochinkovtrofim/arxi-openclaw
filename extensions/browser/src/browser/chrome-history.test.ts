@@ -55,4 +55,39 @@ describe("readManagedChromeHistory", () => {
       },
     ]);
   });
+
+  it("bounds long titles and URLs before returning them to the caller", async () => {
+    const userDataDir = await createHistoryDatabase();
+    const database = new DatabaseSync(path.join(userDataDir, "Default", "History"));
+    database
+      .prepare("UPDATE urls SET title = ?, url = ? WHERE id = 2")
+      .run("t".repeat(300), `https://example.com/${"u".repeat(2100)}`);
+    database.close();
+
+    const [entry] = readManagedChromeHistory({ userDataDir, limit: 1 });
+
+    expect(entry?.title).toHaveLength(256);
+    expect(entry?.title).toMatch(/…$/u);
+    expect(entry?.url).toHaveLength(2048);
+    expect(entry?.url).toMatch(/…$/u);
+  });
+
+  it("preserves empty titles and valid Unicode when bounding history metadata", async () => {
+    const userDataDir = await createHistoryDatabase();
+    const database = new DatabaseSync(path.join(userDataDir, "Default", "History"));
+    database
+      .prepare("UPDATE urls SET title = ?, url = ? WHERE id = 2")
+      .run(`${"t".repeat(254)}😀x`, "https://example.com/empty-title");
+    database.close();
+
+    const [unicodeEntry] = readManagedChromeHistory({ userDataDir, limit: 1 });
+    expect(unicodeEntry?.title).toBe(`${"t".repeat(254)}…`);
+
+    const emptyTitleDatabase = new DatabaseSync(path.join(userDataDir, "Default", "History"));
+    emptyTitleDatabase.prepare("UPDATE urls SET title = '' WHERE id = 2").run();
+    emptyTitleDatabase.close();
+
+    const [emptyTitleEntry] = readManagedChromeHistory({ userDataDir, limit: 1 });
+    expect(emptyTitleEntry?.title).toBe("");
+  });
 });
