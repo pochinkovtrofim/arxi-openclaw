@@ -2,7 +2,10 @@
  * Projects OpenClaw context-engine assemblies into Codex prompt text while
  * preserving safety boundaries and redacting tool payloads.
  */
-import type { AgentMessage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  readPersistedMediaFacts,
+  type AgentMessage,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
 import { redactSensitiveFieldValue, redactToolPayloadText } from "openclaw/plugin-sdk/logging-core";
 import { sliceUtf16Safe, truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
 
@@ -11,6 +14,7 @@ type CodexContextProjection = {
   promptText: string;
   promptContextRange?: CodexProjectedContextRange;
   assembledMessages: AgentMessage[];
+  retainedMessages: Array<{ message: AgentMessage; contextStart: number }>;
   prePromptMessageCount: number;
 };
 
@@ -61,15 +65,31 @@ export function projectContextEngineAssemblyForCodex(params: {
   const prompt = params.prompt.trim();
   const contextMessages = dropDuplicateTrailingPrompt(params.assembledMessages, prompt);
   const maxRenderedContextChars = normalizeRenderedContextMaxChars(params.maxRenderedContextChars);
+  const renderedMessages = renderMessagesForCodexContext(contextMessages, {
+    maxTextPartChars: resolveTextPartMaxChars(maxRenderedContextChars),
+    toolPayloadMode: params.toolPayloadMode ?? "elide",
+  });
   const renderedContext = neutralizeCodexExplicitMentionSigils(
-    renderMessagesForCodexContext(contextMessages, {
-      maxTextPartChars: resolveTextPartMaxChars(maxRenderedContextChars),
-      toolPayloadMode: params.toolPayloadMode ?? "elide",
-    }),
+    renderedMessages.map((entry) => entry.text).join("\n\n"),
   );
-  const boundedContext = renderedContext
-    ? truncateOlderContext(renderedContext, maxRenderedContextChars)
-    : undefined;
+  const bounded = truncateOlderContextWithOffset(renderedContext, maxRenderedContextChars);
+  const boundedContext = bounded.text || undefined;
+  // Keep media attached to its retained message, never to a URI mention in
+  // another message. A partially clipped boundary entry remains text-only.
+  let messageOffset = 0;
+  const retainedMessages = renderedMessages.flatMap((entry) => {
+    const retained = messageOffset >= bounded.start;
+    messageOffset += entry.text.length + 2;
+    return retained
+      ? [
+          {
+            message: entry.message,
+            contextStart:
+              messageOffset - entry.text.length - 2 + bounded.text.length - renderedContext.length,
+          },
+        ]
+      : [];
+  });
   const promptPrefix = boundedContext
     ? [CONTEXT_HEADER, CONTEXT_SAFETY_NOTE, "", CONTEXT_OPEN].join("\n") + "\n"
     : undefined;
@@ -87,6 +107,7 @@ export function projectContextEngineAssemblyForCodex(params: {
     promptText,
     ...(promptContextRange ? { promptContextRange } : {}),
     assembledMessages: params.assembledMessages,
+    retainedMessages,
     prePromptMessageCount: params.originalHistoryMessages.length,
   };
 }
@@ -220,6 +241,7 @@ export function fitCodexProjectedContextForTurnStart(params: {
   requestRange?: CodexProjectedContextRange;
   preservedRange?: CodexProjectedContextRange;
   maxChars?: number;
+  onContextRetainedFrom?: (start: number) => void;
 }): string {
   const maxChars =
     typeof params.maxChars === "number" && Number.isFinite(params.maxChars)
@@ -248,6 +270,11 @@ export function fitCodexProjectedContextForTurnStart(params: {
     return `${truncateOlderContext(beforeRange, maxChars - preservedText.length)}${preservedText}`;
   }
 
+  const fitContext = (text: string, budget: number): string => {
+    const fitted = truncateOlderContextWithOffset(text, budget);
+    params.onContextRetainedFrom?.(fitted.start);
+    return fitted.text;
+  };
   const beforeContext = params.promptText.slice(0, range.start);
   const context = params.promptText.slice(range.start, range.end);
   const afterContext = params.promptText.slice(range.end);
@@ -262,6 +289,7 @@ export function fitCodexProjectedContextForTurnStart(params: {
   ) {
     const request = params.promptText.slice(requestRange.start, requestRange.end);
     if (request.length >= maxChars) {
+      params.onContextRetainedFrom?.(context.length);
       return truncateOlderContext(request, maxChars);
     }
     const appendedContext = params.promptText.slice(requestRange.end);
@@ -270,14 +298,14 @@ export function fitCodexProjectedContextForTurnStart(params: {
     // the hard boundary that must survive a bounded turn/start input.
     const fittedAppendedContext = truncateOlderContext(appendedContext, maxChars - request.length);
     const contextBudget = maxChars - request.length - fittedAppendedContext.length;
-    const fittedContext = truncateOlderContext(context, contextBudget);
+    const fittedContext = fitContext(context, contextBudget);
     const beforeContextBudget =
       maxChars - fittedContext.length - request.length - fittedAppendedContext.length;
     return `${truncateOlderContext(beforeContext, beforeContextBudget)}${fittedContext}${request}${fittedAppendedContext}`;
   }
   const contextBudget = maxChars - beforeContext.length - afterContext.length;
   if (contextBudget > 0) {
-    const fittedContext = truncateOlderContext(context, contextBudget);
+    const fittedContext = fitContext(context, contextBudget);
     return `${beforeContext}${fittedContext}${afterContext}`;
   }
   // Hook-added prefixes can make the non-context text exceed the limit. Keep
@@ -285,7 +313,7 @@ export function fitCodexProjectedContextForTurnStart(params: {
   // a duplicated earlier projection crowd out the newest assembled context.
   const afterContextText = truncateOlderContext(afterContext, maxChars);
   const contextBudgetAfterRequest = maxChars - afterContextText.length;
-  const fittedContext = truncateOlderContext(context, contextBudgetAfterRequest);
+  const fittedContext = fitContext(context, contextBudgetAfterRequest);
   return `${fittedContext}${afterContextText}`;
 }
 
@@ -342,14 +370,13 @@ function dropDuplicateTrailingPrompt(messages: AgentMessage[], prompt: string): 
 function renderMessagesForCodexContext(
   messages: AgentMessage[],
   options: { maxTextPartChars: number; toolPayloadMode: "elide" | "preserve" },
-): string {
+): Array<{ message: AgentMessage; text: string }> {
   return messages
     .map((message) => {
       const text = renderMessageBody(message, options);
-      return text ? `[${message.role}]\n${text}` : undefined;
+      return text ? { message, text: `[${message.role}]\n${text}` } : undefined;
     })
-    .filter((value): value is string => Boolean(value))
-    .join("\n\n");
+    .filter((value): value is { message: AgentMessage; text: string } => Boolean(value));
 }
 
 function renderMessageBody(
@@ -364,16 +391,39 @@ function renderMessageBody(
     return "";
   }
   if (typeof message.content === "string") {
-    return truncateText(message.content.trim(), options.maxTextPartChars);
+    return appendPersistedMediaReferences(
+      truncateText(message.content.trim(), options.maxTextPartChars),
+      message,
+    );
   }
   if (!Array.isArray(message.content)) {
     return "[non-text content omitted]";
   }
-  return message.content
-    .map((part: unknown) => renderMessagePart(part, options))
-    .filter((value): value is string => value.length > 0)
-    .join("\n")
-    .trim();
+  return appendPersistedMediaReferences(
+    message.content
+      .map((part: unknown) => renderMessagePart(part, options))
+      .filter((value): value is string => value.length > 0)
+      .join("\n")
+      .trim(),
+    message,
+  );
+}
+
+/** Keeps opaque durable media references in quoted continuity text without embedding bytes. */
+function appendPersistedMediaReferences(text: string, message: AgentMessage): string {
+  const references = (readPersistedMediaFacts(message) ?? [])
+    .flatMap((fact, index) => {
+      const reference = fact.url?.startsWith("media://inbound/") ? fact.url : undefined;
+      return reference
+        ? [
+            `[historical attachment ${index + 1}: ${reference}${
+              fact.contentType ? `; ${fact.contentType}` : fact.kind ? `; ${fact.kind}` : ""
+            }]`,
+          ]
+        : [];
+    })
+    .join("\n");
+  return [text, references].filter(Boolean).join("\n").trim();
 }
 
 function renderMessagePart(
@@ -579,11 +629,18 @@ function truncateText(text: string, maxChars: number): string {
 }
 
 function truncateOlderContext(text: string, maxChars: number): string {
+  return truncateOlderContextWithOffset(text, maxChars).text;
+}
+
+function truncateOlderContextWithOffset(
+  text: string,
+  maxChars: number,
+): { text: string; start: number } {
   if (text.length <= maxChars) {
-    return text;
+    return { text, start: 0 };
   }
   if (maxChars <= 0) {
-    return "";
+    return { text: "", start: text.length };
   }
 
   const buildMarker = (omittedChars: number): string =>
@@ -592,8 +649,9 @@ function truncateOlderContext(text: string, maxChars: number): string {
   let tailChars = Math.max(0, maxChars - marker.length);
   marker = buildMarker(text.length - tailChars);
   if (marker.length >= maxChars) {
-    return marker.slice(0, maxChars);
+    return { text: marker.slice(0, maxChars), start: text.length };
   }
   tailChars = maxChars - marker.length;
-  return `${marker}${sliceUtf16Safe(text, -tailChars).trimStart()}`;
+  const tail = sliceUtf16Safe(text, -tailChars).trimStart();
+  return { text: `${marker}${tail}`, start: text.length - tail.length };
 }

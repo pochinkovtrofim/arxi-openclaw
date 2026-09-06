@@ -29,6 +29,43 @@ function summaryMessages(type: "compaction" | "branch_summary", summary: string)
 }
 
 describe("projectContextEngineAssemblyForCodex", () => {
+  it("tracks retained message ownership through both projection and final fitting", () => {
+    const old = textMessage("user", "old photo " + "x".repeat(600));
+    const recent = textMessage("user", "recent photo");
+    const projection = projectContextEngineAssemblyForCodex({
+      assembledMessages: [old, recent],
+      originalHistoryMessages: [old, recent],
+      prompt: "check again",
+      maxRenderedContextChars: 400,
+    });
+    expect(projection.retainedMessages.map((entry) => entry.message)).toEqual([recent]);
+    const entry = projection.retainedMessages[0]!;
+    const range = projection.promptContextRange!;
+    expect(projection.promptText.slice(range.start + entry.contextStart)).toMatch(
+      /^\[user\]\nrecent photo/,
+    );
+    let retainedFrom = 0;
+    const fitted = fitCodexProjectedContextForTurnStart({
+      promptText: projection.promptText,
+      contextRange: range,
+      maxChars: 350,
+      onContextRetainedFrom: (start) => {
+        retainedFrom = start;
+      },
+    });
+    expect(fitted).toContain("recent photo");
+    expect(entry.contextStart).toBeGreaterThanOrEqual(retainedFrom);
+    fitCodexProjectedContextForTurnStart({
+      promptText: projection.promptText,
+      contextRange: range,
+      maxChars: 20,
+      onContextRetainedFrom: (start) => {
+        retainedFrom = start;
+      },
+    });
+    expect(entry.contextStart).toBeLessThan(retainedFrom);
+  });
+
   it("produces stable output for identical inputs", () => {
     const params = {
       assembledMessages: [

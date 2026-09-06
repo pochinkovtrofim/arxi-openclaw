@@ -17,8 +17,9 @@ import { upsertSessionEntry } from "openclaw/plugin-sdk/session-store-runtime";
 import { readSessionTranscriptEvents } from "openclaw/plugin-sdk/session-transcript-runtime";
 import { formatSqliteSessionFileMarker } from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { readStringValue } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { withEnvAsync } from "openclaw/plugin-sdk/test-env";
 // Codex tests cover run attempt.context engine plugin behavior.
-import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
+import { createRequireRecord, createSolidPngBuffer } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it, vi } from "vitest";
 import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
 import { shouldEnableCodexAppServerNativeToolSurface } from "./dynamic-tool-build.js";
@@ -262,6 +263,160 @@ function getRequestInputTextAt(
 setupRunAttemptTestHooks();
 
 describe("runCodexAppServerAttempt context-engine lifecycle", () => {
+  it("rehydrates a persisted inbound photo into a fresh-thread continuity turn", async () => {
+    const sessionFile = path.join(tempDir, "photo-history-session.jsonl");
+    const workspaceDir = path.join(tempDir, "photo-history-workspace");
+    const stateDir = path.join(tempDir, "photo-history-state");
+    const photoName = "history-photo.png";
+    const secondPhotoName = "history-second.png";
+    const photoPath = path.join(stateDir, "media", "inbound", photoName);
+    const secondPhotoPath = path.join(stateDir, "media", "inbound", secondPhotoName);
+    const photoBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    );
+    const secondPhotoBytes = createSolidPngBuffer(1, 1, { r: 0, g: 255, b: 0 });
+    const currentPhotoBytes = createSolidPngBuffer(1, 1, { r: 0, g: 0, b: 255 });
+    await fs.mkdir(path.dirname(photoPath), { recursive: true });
+    await fs.writeFile(photoPath, photoBytes);
+    await fs.writeFile(secondPhotoPath, secondPhotoBytes);
+    openFileBackedSessionManagerForTest(sessionFile, { sessionId: "session-1" }).appendMessage({
+      role: "user",
+      content: "[Telegram photo]",
+      __openclaw: {
+        media: [
+          { url: "media://inbound/suppressed.png", contentType: "image/png" },
+          { url: `media://inbound/${photoName}`, contentType: "image/png" },
+          { url: `media://inbound/${secondPhotoName}`, contentType: "image/png" },
+        ],
+        mediaImageLayout: {
+          slots: [
+            { kind: "offloaded", factIndex: 2 },
+            { kind: "offloaded", factIndex: 1 },
+            { kind: "offloaded", factIndex: 0 },
+          ],
+          suppressedFactIndexes: [0],
+        },
+      },
+      timestamp: Date.now() - 1,
+    } as unknown as AgentMessage);
+    const harness = createStartedThreadHarness();
+    const params = createParams(sessionFile, workspaceDir);
+    params.prompt = "нет";
+    params.model = { ...params.model, input: ["text", "image"] };
+    params.images = [
+      { type: "image", data: currentPhotoBytes.toString("base64"), mimeType: "image/png" },
+    ];
+
+    await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
+      const run = runCodexAppServerAttempt(params);
+      await harness.waitForMethod("turn/start");
+
+      const request = requireRequestParams(harness, "turn/start");
+      const input = requireArray(request.input, "turn/start input");
+      expect(
+        input.filter((entry) => requireRecord(entry, "turn/start input entry").type === "image"),
+      ).toEqual([
+        { type: "image", url: `data:image/png;base64,${currentPhotoBytes.toString("base64")}` },
+        { type: "image", url: `data:image/png;base64,${secondPhotoBytes.toString("base64")}` },
+        { type: "image", url: `data:image/png;base64,${photoBytes.toString("base64")}` },
+      ]);
+      expect(getRequestInputText(harness)).toContain(`media://inbound/${photoName}`);
+      expect(getRequestInputText(harness)).toContain(`media://inbound/${secondPhotoName}`);
+      expect(getRequestInputText(harness)).toContain("media://inbound/suppressed.png");
+
+      await harness.completeTurn();
+      await run;
+    });
+  });
+
+  it("rehydrates retained stale-binding photos but does not need a fresh native thread", async () => {
+    const sessionFile = path.join(tempDir, "stale-photo-session.jsonl");
+    const workspaceDir = path.join(tempDir, "stale-photo-workspace");
+    const stateDir = path.join(tempDir, "stale-photo-state");
+    const photoName = "stale-photo.png";
+    const photoBytes = createSolidPngBuffer(1, 1, { r: 255, g: 0, b: 0 });
+    await fs.mkdir(path.join(stateDir, "media", "inbound"), { recursive: true });
+    await fs.writeFile(path.join(stateDir, "media", "inbound", photoName), photoBytes);
+
+    await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
+      // Create the binding through the same state-root, skills-isolation and tool-policy
+      // path as the resumed turn. A hand-written binding lacks those fingerprints and is
+      // deliberately rotated before resume.
+      const initialHarness = createStartedThreadHarness(async (method) =>
+        method === "thread/start" ? threadStartResult("thread-resumed") : undefined,
+      );
+      const initialParams = createParams(sessionFile, workspaceDir);
+      const initialRun = runCodexAppServerAttempt(initialParams);
+      await initialHarness.waitForMethod("turn/start");
+      await initialHarness.completeTurn("completed", "thread-resumed");
+      await initialRun;
+      const initialCompletedAt = Date.now();
+      await vi.waitFor(() => expect(Date.now()).toBeGreaterThan(initialCompletedAt));
+
+      const params = createParams(sessionFile, workspaceDir);
+      params.prompt = "нет";
+      params.model = { ...params.model, input: ["text", "image"] };
+      openFileBackedSessionManagerForTest(sessionFile, { sessionId: "session-1" }).appendMessage({
+        role: "user",
+        content: "[Telegram photo]",
+        timestamp: Date.now(),
+        __openclaw: {
+          media: [{ url: `media://inbound/${photoName}`, contentType: "image/png" }],
+          mediaImageLayout: { slots: [{ kind: "offloaded", factIndex: 0 }] },
+        },
+      } as unknown as AgentMessage);
+
+      await expect(readCodexAppServerBinding(sessionFile)).resolves.toMatchObject({
+        threadId: "thread-resumed",
+      });
+      const harness = createStartedThreadHarness(async (method) =>
+        method === "thread/resume" ? threadStartResult("thread-resumed") : undefined,
+      );
+      const run = runCodexAppServerAttempt(params);
+      await harness.waitForMethod("turn/start");
+      expect(
+        harness.requests
+          .map((request) => request.method)
+          .filter((method) => method.startsWith("thread/") || method === "turn/start"),
+      ).toEqual(["thread/resume", "turn/start"]);
+      const input = requireArray(
+        requireRequestParams(harness, "turn/start").input,
+        "turn/start input",
+      );
+      expect(
+        input.filter((entry) => requireRecord(entry, "turn/start input entry").type === "image"),
+      ).toEqual([{ type: "image", url: `data:image/png;base64,${photoBytes.toString("base64")}` }]);
+      await harness.completeTurn("completed", "thread-resumed");
+      await run;
+
+      const noReplayHarness = createStartedThreadHarness(async (method) =>
+        method === "thread/resume" ? threadStartResult("thread-resumed") : undefined,
+      );
+      const noReplayParams = createParams(sessionFile, workspaceDir);
+      noReplayParams.prompt = "следующее сообщение без фотографии";
+      noReplayParams.model = { ...noReplayParams.model, input: ["text", "image"] };
+      const noReplayRun = runCodexAppServerAttempt(noReplayParams);
+      await noReplayHarness.waitForMethod("turn/start");
+      expect(
+        noReplayHarness.requests
+          .map((request) => request.method)
+          .filter((method) => method.startsWith("thread/") || method === "turn/start"),
+      ).toEqual(["thread/resume", "turn/start"]);
+      const noReplayInput = requireArray(
+        requireRequestParams(noReplayHarness, "turn/start").input,
+        "turn/start input",
+      );
+      expect(
+        noReplayInput.filter(
+          (entry) => requireRecord(entry, "turn/start input entry").type === "image",
+        ),
+      ).toEqual([]);
+      await noReplayHarness.completeTurn("completed", "thread-resumed");
+      await noReplayRun;
+    });
+  });
+
   it("keeps the fixture thread persistent while denying web search", () => {
     const params = withPersistentCodexTestToolPolicy(
       createParams(path.join(tempDir, "policy.jsonl"), path.join(tempDir, "workspace")),
