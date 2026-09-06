@@ -60,6 +60,7 @@ export {
   browserCloseTab,
   browserDoctor,
   browserFocusTab,
+  browserHistory,
   browserImportProfile,
   normalizeBrowserTabsResult,
   browserOpenTab,

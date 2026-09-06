@@ -7,6 +7,7 @@
 import type { BrowserRouteContext } from "../server-context.js";
 import { registerBrowserAgentRoutes } from "./agent.js";
 import { registerBrowserBasicRoutes } from "./basic.js";
+import { registerBrowserHistoryRoutes } from "./history.js";
 import { registerBrowserPermissionRoutes } from "./permissions.js";
 import { registerBrowserTabRoutes } from "./tabs.js";
 import type { BrowserRouteRegistrar } from "./types.js";
@@ -14,6 +15,7 @@ import type { BrowserRouteRegistrar } from "./types.js";
 /** Register every browser control route group. */
 export function registerBrowserRoutes(app: BrowserRouteRegistrar, ctx: BrowserRouteContext) {
   registerBrowserBasicRoutes(app, ctx);
+  registerBrowserHistoryRoutes(app, ctx);
   registerBrowserTabRoutes(app, ctx);
   registerBrowserPermissionRoutes(app, ctx);
   registerBrowserAgentRoutes(app, ctx);

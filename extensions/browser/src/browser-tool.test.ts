@@ -20,6 +20,7 @@ const browserClientMocks = vi.hoisted(() => ({
     },
   })),
   browserFocusTab: vi.fn(async (..._args: unknown[]) => ({})),
+  browserHistory: vi.fn(async (..._args: unknown[]) => ({ entries: [] })),
   browserImportProfile: vi.fn(async (..._args: unknown[]) => ({
     ok: true,
     systemProfile: "Default",
@@ -867,6 +868,33 @@ describe("browser tool snapshot maxChars", () => {
     expect(opts.timeoutMs).toBeUndefined();
     expect(result?.details).toMatchObject({ profiles: [], systemProfiles: [] });
     expect(result?.details).not.toHaveProperty("systemProfilesUnavailable");
+  });
+
+  it("reads bounded managed-browser history", async () => {
+    browserClientMocks.browserHistory.mockResolvedValueOnce({
+      entries: [
+        {
+          title: "Quarterly report",
+          url: "https://example.com/report",
+          visitedAt: "2026-09-06T12:00:00.000Z",
+        },
+      ],
+    });
+
+    const result = await createBrowserTool().execute?.("call-1", {
+      action: "history",
+      query: "report",
+      limit: 5,
+    });
+
+    expect(browserClientMocks.browserHistory).toHaveBeenCalledWith(undefined, {
+      profile: undefined,
+      query: "report",
+      limit: 5,
+      timeoutMs: undefined,
+      signal: undefined,
+    });
+    expect(result?.details).toMatchObject({ entries: [{ title: "Quarterly report" }] });
   });
 
   it("keeps sandbox profiles while reporting disabled host profile discovery", async () => {

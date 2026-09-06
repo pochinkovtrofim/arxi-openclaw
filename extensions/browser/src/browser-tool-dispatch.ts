@@ -24,6 +24,7 @@ import {
   browserArmFileChooser,
   browserCloseTab,
   browserFocusTab,
+  browserHistory,
   browserNavigate,
   browserOpenTab,
   browserPdfSave,
@@ -108,6 +109,28 @@ export async function executeBrowserTabAction(context: {
     return jsonResult(result);
   };
   switch (action) {
+    case "history": {
+      const query = readStringParam(params, "query");
+      const limit = readPositiveIntegerParam(params, "limit", {
+        message: "limit must be a positive integer.",
+      });
+      const result = proxyRequest
+        ? await proxyRequest({
+            method: "GET",
+            path: "/history",
+            profile,
+            query: { query, limit },
+            timeoutMs: toolTimeoutMs,
+          })
+        : await browserHistory(baseUrl, {
+            profile,
+            query,
+            limit,
+            timeoutMs: toolTimeoutMs,
+            signal,
+          });
+      return jsonResult(result);
+    }
     case "tabs":
       return await executeTabsAction({
         baseUrl,
