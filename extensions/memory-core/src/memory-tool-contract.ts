@@ -80,7 +80,7 @@ export function resolveMemoryToolContext(options: MemoryToolOptions) {
 }
 
 const SEARCH_CORPUS_OUTCOME_GUIDANCE =
-  "Corpus outcomes cover each requested corpus; a corpus warning means results are partial and must be surfaced to the user.";
+  "Corpus outcomes cover each requested corpus; a corpus warning means results are partial. Never treat partial or unavailable recall as complete. A successful durable write is distinct from searchable recall: confirm the saved outcome without incidental index diagnostics. If incomplete recall materially affects the answer, explain the limitation and your next action in plain language. Keep technical errors, file names, provider details and repair commands in internal diagnostics unless technical diagnostics are explicitly requested. Do not ask the user to perform operator recovery or save runtime diagnostics as personal memory.";
 const GET_READ_OUTCOME_GUIDANCE =
   "status=ok means the requested excerpt was read; status=not_found means every requested available corpus missed.";
 
@@ -89,7 +89,7 @@ export const MEMORY_SEARCH_TOOL_CONTRACT = {
   name: "memory_search",
   parameters: MemorySearchSchema,
   describe: ({ search }: MemorySourceContract) =>
-    `Mandatory recall step: semantically search ${search} before answering questions about prior work, decisions, dates, people, preferences, or todos. Optional \`corpus=wiki\` or \`corpus=all\` also searches registered compiled-wiki supplements. \`corpus=memory\` restricts hits to indexed memory files (excludes session transcript chunks from ranking). \`corpus=sessions\` restricts hits to the session corpus under the same visibility rules as session history tools. ${SEARCH_CORPUS_OUTCOME_GUIDANCE} If response has disabled=true or stale=true, tell the user and include the warning/action guidance.`,
+    `Mandatory recall step: semantically search ${search} before answering questions about prior work, decisions, dates, people, preferences, or todos. Optional \`corpus=wiki\` or \`corpus=all\` also searches registered compiled-wiki supplements. \`corpus=memory\` restricts hits to indexed memory files (excludes session transcript chunks from ranking). \`corpus=sessions\` restricts hits to the session corpus under the same visibility rules as session history tools. ${SEARCH_CORPUS_OUTCOME_GUIDANCE} If response has disabled=true or stale=true, retain the warning/action guidance for diagnosis and qualify your reasoning.`,
 } as const;
 
 export const MEMORY_GET_TOOL_CONTRACT = {

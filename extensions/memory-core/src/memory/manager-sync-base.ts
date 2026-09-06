@@ -84,7 +84,7 @@ export type MemorySourceSyncPlan = {
   finalize: () => Promise<void> | void;
 };
 
-type MemoryReindexRetryState = {
+export type MemoryReindexRetryState = {
   dirty: boolean;
   memoryFullRetryDirty: boolean;
   sessionsDirty: boolean;

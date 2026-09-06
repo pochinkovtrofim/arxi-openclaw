@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
@@ -42,6 +43,13 @@ vi.mock("./src/managed-server.js", async (importOriginal) => ({
 vi.mock("./src/external-server/discovery.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./src/external-server/discovery.js")>()),
   discoverLlamaServer: mocks.discoverServer,
+}));
+
+vi.mock("./src/defaults.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./src/defaults.js")>()),
+  DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SIZE_BYTES: 5,
+  DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SHA256:
+    "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
 }));
 
 import llamaCppPlugin from "./index.js";
@@ -451,5 +459,56 @@ describe("llama.cpp provider plugin", () => {
       },
       aliases: [],
     });
+  });
+
+  it("recognizes only the default cache's actual file as a legacy index identity", async () => {
+    const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "llama-identity-")));
+    try {
+      const bundledModel = path.join(root, "bundled.gguf");
+      const unrelatedModel = path.join(root, "unrelated.gguf");
+      const modelCacheDir = path.join(root, "cache");
+      const cachePath = path.join(modelCacheDir, DEFAULT_LLAMA_CPP_EMBEDDING_CACHE_FILE);
+      await fs.mkdir(modelCacheDir);
+      await fs.writeFile(bundledModel, "hello");
+      await fs.writeFile(unrelatedModel, "other");
+      await fs.symlink(bundledModel, cachePath);
+      const options = configuredOptions();
+      Object.assign(options.config.models.providers[LLAMA_CPP_PROVIDER_ID], {
+        params: { modelCacheDir },
+      });
+      const identity = llamaCppEmbeddingProviderAdapter.resolveIndexIdentity?.({
+        ...options,
+        local: { modelPath: cachePath },
+      });
+      expect(identity?.aliases).toContainEqual({
+        model: bundledModel,
+        cacheKeyData: { provider: "local", model: bundledModel },
+      });
+      expect(identity?.aliases?.map((entry) => entry.model)).not.toContain(unrelatedModel);
+      const custom = llamaCppEmbeddingProviderAdapter.resolveIndexIdentity?.({
+        ...options,
+        local: { modelPath: unrelatedModel },
+      });
+      expect(custom?.model).toBe(unrelatedModel);
+      expect(custom?.aliases).toEqual([]);
+      await fs.unlink(cachePath);
+      await fs.symlink(unrelatedModel, cachePath);
+      const retargeted = llamaCppEmbeddingProviderAdapter.resolveIndexIdentity?.({
+        ...options,
+        local: { modelPath: cachePath },
+      });
+      expect(retargeted?.aliases?.map((entry) => entry.model)).not.toContain(bundledModel);
+      expect(retargeted?.aliases?.map((entry) => entry.model)).not.toContain(unrelatedModel);
+      await fs.unlink(cachePath);
+      await fs.symlink(bundledModel, cachePath);
+      await fs.writeFile(bundledModel, "other");
+      const replaced = llamaCppEmbeddingProviderAdapter.resolveIndexIdentity?.({
+        ...options,
+        local: { modelPath: cachePath },
+      });
+      expect(replaced?.aliases?.map((entry) => entry.model)).not.toContain(bundledModel);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
   });
 });
