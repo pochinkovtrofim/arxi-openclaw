@@ -12,6 +12,14 @@ installs, and scripts execute only in a synchronized isolated workspace on
 cheap preflight, and never fall back locally when remote execution is blocked.
 Later command examples select what to run, not the physical execution host.
 
+## Arxi fork execution infrastructure
+
+- Run all builds, tests, benchmarks, artifact qualification, deployment, and other compute workloads on the Arxi production server. Do not run GitHub Actions or GitHub-hosted runners for this fork.
+- The production host currently serves only the owner's test account and has sufficient resources for the complete release workflow.
+- GitHub hosts source and pull requests. Retain server-side check evidence with exact source revisions.
+- Workflow definitions are preserved in `.github/workflows-disabled/` for upstream comparison. Keep `.github/workflows/` absent when adopting upstream changes so pushes, PRs, comments, and schedules cannot launch hosted workloads.
+- These Arxi execution rules override upstream local/Crabbox/Testbox compute routing. Preserve review, source-trust, and live GitHub merge enforcement.
+
 ## Start
 
 - Repo: `https://github.com/openclaw/openclaw`
