@@ -97,6 +97,7 @@ export function readManagedChromeHistory(params: {
           normalizeHistoryLimit(params.limit),
         ]
       : [normalizeHistoryLimit(params.limit)];
+    // SAFETY: the fixed SELECT list above defines this SQLite result shape.
     const rows = statement.all(...bindings) as unknown as ChromeHistoryRow[];
     return rows.flatMap((row) => {
       const visitedAt = chromeVisitTimeToIso(row.visit_time);
