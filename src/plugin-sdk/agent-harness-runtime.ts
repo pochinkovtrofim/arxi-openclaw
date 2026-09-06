@@ -335,6 +335,10 @@ export type {
   LoadCodexBundleMcpThreadConfigParams,
 } from "../agents/codex-mcp-config.types.js";
 export { normalizeProviderToolSchemas } from "../agents/embedded-agent-runner/tool-schema-runtime.js";
+/** Canonical durable media facts attached to persisted user-turn transcript messages. */
+export { readPersistedMediaFacts } from "../media/media-facts.js";
+export { readPersistedMediaImageLayout } from "../agents/embedded-agent-runner/run/prompt-image-metadata.js";
+export { selectRecentCompletedTurnMediaHistory } from "../agents/embedded-agent-runner/run/history-image-prune.js";
 
 /** Detect prompt image references and load them through the same limits used by embedded runs. */
 export async function detectAndLoadAgentHarnessPromptImages(params: {
@@ -344,6 +348,7 @@ export async function detectAndLoadAgentHarnessPromptImages(params: {
   model: { input?: string[] };
   existingImages?: ImageContent[];
   imageOrder?: PromptImageOrderEntry[];
+  mediaImageLayout?: import("../agents/embedded-agent-runner/run/prompt-image-metadata.js").MediaImageLayout;
   media?: import("../media/media-facts.js").MediaFact[];
   config?: import("../config/types.openclaw.js").OpenClawConfig;
   workspaceOnly?: boolean;
@@ -369,6 +374,7 @@ export async function detectAndLoadAgentHarnessPromptImages(params: {
     model: params.model,
     existingImages: params.existingImages,
     imageOrder: params.imageOrder,
+    mediaImageLayout: params.mediaImageLayout,
     media: params.media,
     userTurnTranscriptRecorder: params.userTurnTranscriptRecorder,
     maxBytes: MAX_IMAGE_BYTES,

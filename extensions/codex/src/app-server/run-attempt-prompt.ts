@@ -1,8 +1,12 @@
 import {
   assembleHarnessContextEngine,
   CODEX_APP_SERVER_CONTEXT_ENGINE_HOST,
+  detectAndLoadAgentHarnessPromptImages,
   embeddedAgentLog,
   formatErrorMessage,
+  readPersistedMediaFacts,
+  readPersistedMediaImageLayout,
+  selectRecentCompletedTurnMediaHistory,
   resolveAgentHarnessBeforePromptBuildResult,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
@@ -35,6 +39,47 @@ import {
 import { hasCodexMirrorOrigin } from "./transcript-mirror-attestation.js";
 import { readMirrorIdentity } from "./upstream-prompt-provenance.js";
 
+async function hydrateContinuityHistoryImages(params: {
+  messages: Array<{
+    message: CodexAttemptContext["historyState"]["messages"][number];
+    contextStart: number;
+  }>;
+  workspaceDir: string;
+  model: CodexAttemptContext["runtime"]["runtimeParams"]["model"];
+  config: CodexAttemptContext["runtime"]["runtimeParams"]["config"];
+}): Promise<NonNullable<CodexAttemptContext["promptState"]["continuityImages"]>> {
+  const recent = new Set(
+    selectRecentCompletedTurnMediaHistory(params.messages.map((entry) => entry.message)),
+  );
+  const candidates = params.messages
+    .filter(({ message }) => recent.has(message) && message.role === "user")
+    .flatMap(({ message, contextStart }) => {
+      const layout = readPersistedMediaImageLayout(message);
+      const media = readPersistedMediaFacts(message) ?? [];
+      return media.some(
+        (fact) =>
+          fact.contentType?.toLowerCase().startsWith("image/") ||
+          fact.kind === "image" ||
+          fact.kind === "sticker",
+      )
+        ? [{ media, layout, contextStart }]
+        : [];
+    });
+  const images: NonNullable<CodexAttemptContext["promptState"]["continuityImages"]> = [];
+  for (const candidate of candidates) {
+    const result = await detectAndLoadAgentHarnessPromptImages({
+      prompt: "",
+      media: candidate.media,
+      mediaImageLayout: candidate.layout,
+      workspaceDir: params.workspaceDir,
+      model: params.model,
+      config: params.config,
+    });
+    images.push({ contextStart: candidate.contextStart, images: result.images });
+  }
+  return images;
+}
+
 function isRestrictivePromptToolsAllow(toolsAllow: string[] | undefined): boolean {
   return toolsAllow !== undefined && !toolsAllow.some((name) => name.trim() === "*");
 }
@@ -56,6 +101,7 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
   } = context;
   const {
     connection,
+    runtimeParams,
     buildActiveRunAttemptParams,
     effectiveContextTokenBudget,
     effectiveRuntimeModelId,
@@ -76,7 +122,7 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
     sandbox,
   } = connection;
   const { toolBridge } = attemptTools;
-  const applyFreshThreadContinuityProjection = () => {
+  const applyFreshThreadContinuityProjection = async () => {
     const projection = projectContextEngineAssemblyForCodex({
       assembledMessages: historyState.messages,
       originalHistoryMessages: historyState.messages,
@@ -86,6 +132,12 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
     promptState.promptText = projection.promptText;
     promptState.promptContextRange = projection.promptContextRange;
     promptState.prePromptMessageCount = projection.prePromptMessageCount;
+    promptState.continuityImages = await hydrateContinuityHistoryImages({
+      messages: projection.retainedMessages,
+      workspaceDir: effectiveWorkspace,
+      model: runtimeParams.model,
+      config: runtimeParams.config,
+    });
     promptState.noEngineContinuityProjectionApplied = true;
   };
   const applyActiveContextEngineProjection = async (
@@ -166,6 +218,14 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
     promptState.promptText = projectionDecision.project ? projection.promptText : params.prompt;
     promptState.promptContextRange = projectionDecision.project
       ? projection.promptContextRange
+      : undefined;
+    promptState.continuityImages = projectionDecision.project
+      ? await hydrateContinuityHistoryImages({
+          messages: projection.retainedMessages,
+          workspaceDir: effectiveWorkspace,
+          model: runtimeParams.model,
+          config: runtimeParams.config,
+        })
       : undefined;
     promptState.developerInstructions = joinPresentSections(
       baseDeveloperInstructions,
@@ -301,11 +361,17 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
         promptInputRange: promptBuildResult.promptInputRange,
         decoratedPrompt: turnPromptText,
       });
+    promptState.continuityContextStart = projectedRanges?.contextRange
+      ? 0
+      : Number.POSITIVE_INFINITY;
     return fitCodexProjectedContextForTurnStart({
       promptText: turnPromptText,
       contextRange: projectedRanges?.contextRange,
       requestRange: projectedRanges?.requestRange,
       preservedRange,
+      onContextRetainedFrom: (start) => {
+        promptState.continuityContextStart = start;
+      },
     });
   };
   const firstPromptBuild = await buildPromptFromCurrentInputs();
@@ -363,7 +429,7 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
       );
     });
   };
-  const applyResumeStaleBindingContinuityProjection = (
+  const applyResumeStaleBindingContinuityProjection = async (
     binding: NonNullable<typeof mutable.startupBinding>,
   ) => {
     const newerVisibleMessages = selectNewerVisibleHistoryAfterBinding(binding);
@@ -379,10 +445,16 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
     promptState.promptText = projection.promptText;
     promptState.promptContextRange = projection.promptContextRange;
     promptState.prePromptMessageCount = projection.prePromptMessageCount;
+    promptState.continuityImages = await hydrateContinuityHistoryImages({
+      messages: projection.retainedMessages,
+      workspaceDir: effectiveWorkspace,
+      model: runtimeParams.model,
+      config: runtimeParams.config,
+    });
     promptState.noEngineContinuityProjectionApplied = true;
     return true;
   };
-  const precomputeNoContextEngineStaleBindingProjection = () => {
+  const precomputeNoContextEngineStaleBindingProjection = async () => {
     promptState.precomputedStaleBindingContinuityProjectionApplied = false;
     promptState.staleBindingContinuityForcedFreshStart = false;
     const binding = mutable.startupBinding;
@@ -393,11 +465,11 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
       promptState.inactiveThreadBootstrapBindingForcedFreshStart = true;
       return false;
     }
-    const projected = applyResumeStaleBindingContinuityProjection(binding);
+    const projected = await applyResumeStaleBindingContinuityProjection(binding);
     promptState.precomputedStaleBindingContinuityProjectionApplied = projected;
     return projected;
   };
-  const applyNoContextEngineContinuityProjection = (
+  const applyNoContextEngineContinuityProjection = async (
     action: "started" | "resumed" | "forked",
     binding?: NonNullable<typeof mutable.startupBinding>,
   ) => {
@@ -422,15 +494,15 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
       return false;
     }
     if (action === "resumed" && binding) {
-      return applyResumeStaleBindingContinuityProjection(binding);
+      return await applyResumeStaleBindingContinuityProjection(binding);
     }
     if (action === "started") {
-      applyFreshThreadContinuityProjection();
+      await applyFreshThreadContinuityProjection();
       return true;
     }
     return false;
   };
-  if (precomputeNoContextEngineStaleBindingProjection()) {
+  if (await precomputeNoContextEngineStaleBindingProjection()) {
     await rebuildCodexPromptBuildFromCurrentProjection();
   }
   const rotateStartupBindingForProjectedTurn = async () => {
@@ -464,7 +536,7 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
       promptState.precomputedStaleBindingContinuityProjectionApplied &&
       !promptState.inactiveThreadBootstrapBindingForcedFreshStart;
     if (promptState.staleBindingContinuityForcedFreshStart) {
-      applyFreshThreadContinuityProjection();
+      await applyFreshThreadContinuityProjection();
     }
     if (activeContextEngine) {
       promptState.contextEngineProjection = undefined;

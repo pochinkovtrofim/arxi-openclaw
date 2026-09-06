@@ -29,7 +29,8 @@ export async function prepareCodexAttemptTurnRequest(
 ) {
   const { prompt, state: resourceState, releaseCurrentRoute } = resources;
   const { context, turnState, buildRenderedCodexDeveloperInstructions } = prompt;
-  const { runtime, attemptTools, hookContextWindowFields, workspaceBootstrapContext } = context;
+  const { runtime, promptState, attemptTools, hookContextWindowFields, workspaceBootstrapContext } =
+    context;
   const { connection, runtimeParams, effectiveRuntimeProviderId, effectiveRuntimeModelId } =
     runtime;
   const { tools } = attemptTools;
@@ -112,6 +113,16 @@ export async function prepareCodexAttemptTurnRequest(
       cwd: resourceState.codexExecutionCwd,
       appServer: turnAppServer,
       promptText: turnState.codexTurnPromptText,
+      ...(promptState.continuityImages?.length
+        ? {
+            images: [
+              ...(runtimeParams.images ?? []),
+              ...promptState.continuityImages
+                .filter((group) => group.contextStart >= promptState.continuityContextStart)
+                .flatMap((group) => group.images),
+            ],
+          }
+        : {}),
       explicitSkillInputs,
       sandboxPolicy: resourceState.codexSandboxPolicy,
       environmentSelection: resourceState.codexEnvironmentSelection,

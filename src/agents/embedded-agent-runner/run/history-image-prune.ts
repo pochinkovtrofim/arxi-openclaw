@@ -76,6 +76,12 @@ function resolvePruneBeforeIndex(messages: AgentMessage[]): number {
   return completedTurnStarts.at(-PRESERVE_RECENT_COMPLETED_TURNS) ?? -1;
 }
 
+/** Selects the same recent completed-turn window whose media remains replayable in prompt history. */
+export function selectRecentCompletedTurnMediaHistory(messages: AgentMessage[]): AgentMessage[] {
+  const pruneBeforeIndex = resolvePruneBeforeIndex(messages);
+  return pruneBeforeIndex < 0 ? messages : messages.slice(pruneBeforeIndex);
+}
+
 function resolveMessageMediaFacts(message: AgentMessage): MediaFact[] {
   const runtimeMedia = readRuntimePromptMediaFacts(message);
   if (runtimeMedia) {

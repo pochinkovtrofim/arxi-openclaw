@@ -333,7 +333,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: manifest-owned plugin capability secret availability guard.
       // +1: canonical diagnostic flag checker through its focused subpath.
       // Restore the two v2026.8.1 conversation-binding inspection exports.
-      4358,
+      // +3: harness continuity uses canonical media facts, layout, and replay-window selection.
+      4361,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -441,7 +442,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: manifest-owned plugin capability secret availability guard.
       // +1: canonical diagnostic flag checker through its focused subpath.
       // Restore the v2026.8.1 read-only inspection callable.
-      2593,
+      // +3: canonical persisted-media readers and replay-window selector for harnesses.
+      2596,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
