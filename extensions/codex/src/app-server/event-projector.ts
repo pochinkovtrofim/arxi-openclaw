@@ -343,7 +343,7 @@ export class CodexAppServerEventProjector {
         await this.handleTurnCompleted(params);
         break;
       case "rawResponse/completed":
-        this.responseCompletions.record(params, this.params.hostCapabilities.reportOutputTokens);
+        this.responseCompletions.record(params, this.params, this.options.modelCallTrace);
         break;
       case "rawResponseItem/completed":
         await this.handleRawResponseItemCompleted(params);
