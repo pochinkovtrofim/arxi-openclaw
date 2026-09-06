@@ -57,6 +57,7 @@ export function buildTurnStartParams(
     cwd: string;
     appServer: CodexAppServerRuntimeOptions;
     promptText?: string;
+    images?: EmbeddedRunAttemptParams["images"];
     explicitSkillInputs?: Array<Extract<CodexUserInput, { type: "skill" }>>;
     sandboxPolicy?: CodexSandboxPolicy;
     environmentSelection?: CodexTurnEnvironmentParams[];
@@ -100,7 +101,7 @@ export function buildTurnStartParams(
     // UserInput::Skill; skills/src/selection.rs:60-92 blocks those names from duplicate text
     // selection while leaving unmatched Codex-native-only names scannable.
     input: [
-      ...buildCodexUserInput(options.promptText ?? params.prompt, params.images),
+      ...buildCodexUserInput(options.promptText ?? params.prompt, options.images ?? params.images),
       ...(options.explicitSkillInputs ?? []),
     ],
     ...(additionalContext ? { additionalContext } : {}),

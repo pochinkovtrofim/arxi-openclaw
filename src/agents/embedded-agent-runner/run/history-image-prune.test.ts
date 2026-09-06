@@ -16,6 +16,7 @@ import { createHostSandboxFsBridge } from "../../test-helpers/host-sandbox-fs-br
 import {
   installHistoryImagePruneContextTransform,
   pruneProcessedHistoryImages,
+  selectRecentCompletedTurnMediaHistory,
 } from "./history-image-prune.js";
 
 const PRUNED_HISTORY_IMAGE_MARKER = "[image data removed - already processed by model]";
@@ -96,6 +97,18 @@ describe("pruneProcessedHistoryImages", () => {
   const image: ImageContent = { type: "image", data: "abc", mimeType: "image/png" };
   const assistantTurn = () => castAgentMessage({ role: "assistant", content: "ack" });
   const userText = () => castAgentMessage({ role: "user", content: "more" });
+
+  it("keeps media from exactly the last three completed turns", () => {
+    const turn = (label: string): AgentMessage[] => [
+      castAgentMessage({ role: "user", content: label }),
+      assistantTurn(),
+    ];
+    const messages = [...turn("turn-1"), ...turn("turn-2"), ...turn("turn-3"), ...turn("turn-4")];
+
+    expect(
+      selectRecentCompletedTurnMediaHistory(messages).map((message) => message.content),
+    ).toEqual(["turn-2", "ack", "turn-3", "ack", "turn-4", "ack"]);
+  });
 
   it("prunes image blocks from user messages older than 3 assistant turns", () => {
     const messages: AgentMessage[] = [

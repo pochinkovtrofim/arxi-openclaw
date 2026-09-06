@@ -194,6 +194,14 @@ export async function prepareCodexAttemptContext(
     noEngineContinuityProjectionApplied: false,
     inactiveThreadBootstrapBindingForcedFreshStart:
       initialInactiveThreadBootstrapBindingForcedFreshStart,
+    // SAFETY: prompt preparation initializes these groups before turn input is built.
+    continuityImages: undefined as
+      | Array<{
+          contextStart: number;
+          images: NonNullable<CodexAttemptRuntime["runtimeParams"]["images"]>;
+        }>
+      | undefined,
+    continuityContextStart: 0,
   };
   const codexContextProjectionMaxChars = resolveCodexContextEngineProjectionMaxChars({
     contextTokenBudget: effectiveContextTokenBudget,
