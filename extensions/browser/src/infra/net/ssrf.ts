@@ -3,6 +3,7 @@
  */
 export {
   SsrFBlockedError,
+  assertHostnameAllowedWithPolicy,
   isPrivateNetworkAllowedByPolicy,
   resolvePinnedHostnameWithPolicy,
   type LookupFn,
