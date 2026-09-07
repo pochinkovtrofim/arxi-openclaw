@@ -28,6 +28,47 @@ beforeEach(() => {
 });
 
 describe("native catalog thinking ownership", () => {
+  it("honors an explicit reasoning opt-out over native capabilities", () => {
+    const catalog = [
+      {
+        provider: "openai",
+        id: "native-model",
+        nativeRuntime: "codex",
+        reasoning: true,
+        compat: { supportedReasoningEfforts: ["low", "high"] },
+      },
+    ];
+    expect(
+      isThinkingLevelSupported({
+        provider: "openai",
+        model: "native-model",
+        catalog,
+        agentRuntime: "codex",
+        configuredReasoning: false,
+        level: "high",
+      }),
+    ).toBe(false);
+    expect(
+      listThinkingLevels(
+        "openai",
+        "native-model",
+        [{ ...catalog[0], compat: { supportedReasoningEfforts: [] } }],
+        "codex",
+      ),
+    ).toEqual(["off"]);
+  });
+  it.each([[], ["low", "high"]])("preserves a native reasoning opt-out: %j", (...efforts) => {
+    const catalog = [
+      {
+        provider: "openai",
+        id: "native-model",
+        nativeRuntime: "codex",
+        reasoning: false,
+        compat: { supportedReasoningEfforts: efforts },
+      },
+    ];
+    expect(listThinkingLevels("openai", "native-model", catalog, "codex")).toEqual(["off"]);
+  });
   it.each([["low", "medium", "high", "xhigh", "max", "ultra"], ["medium"], ["none", "high"]])(
     "uses the observed native efforts instead of the host provider profile: %j",
     (...efforts) => {

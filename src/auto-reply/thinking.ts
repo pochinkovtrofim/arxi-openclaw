@@ -227,6 +227,9 @@ export function resolveThinkingProfile(params: {
     context.catalogEntry.nativeRuntime === params.agentRuntime &&
     context.compat?.supportedReasoningEfforts
   ) {
+    if (context.reasoning === false || context.compat.supportedReasoningEfforts.length === 0) {
+      return buildOffOnlyThinkingProfile();
+    }
     return normalizeThinkingProfile({
       levels: context.compat.supportedReasoningEfforts.flatMap((effort) => {
         const id = normalizeThinkLevel(effort);
