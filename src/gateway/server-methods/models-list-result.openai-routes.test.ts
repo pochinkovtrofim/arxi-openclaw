@@ -48,6 +48,19 @@ function emptyPreparedOwner(config: OpenClawConfig) {
 }
 
 describe("models.list OpenAI routes", () => {
+  it("preserves discovered input capabilities without inventing unknown modalities", async () => {
+    const result = await listModels({
+      catalog: [
+        { ...providerCatalogEntry("ollama", "vision"), input: ["text", "image"] },
+        providerCatalogEntry("ollama", "unknown"),
+      ],
+    });
+    expect(result.models.find((entry) => entry.id === "vision")).toMatchObject({
+      input: ["text", "image"],
+    });
+    expect(result.models.find((entry) => entry.id === "unknown")).not.toHaveProperty("input");
+  });
+
   it("does not reuse a preloaded catalog owned by another agent", async () => {
     const config = {
       agents: {

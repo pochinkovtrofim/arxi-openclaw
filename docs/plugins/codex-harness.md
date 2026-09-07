@@ -121,6 +121,11 @@ report `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; Luna reports
 `low` through `max`. Live account discovery remains authoritative for the
 models and reasoning levels available to a signed-in account.
 
+If a delayed native login notification changes the account revision during
+discovery, the harness repeats the model and account reads once within the
+original timeout. A second revision change leaves the catalog unavailable;
+models from the previous account are never published.
+
 ## Quickstart
 
 Install the official plugin, then sign in with Codex OAuth:

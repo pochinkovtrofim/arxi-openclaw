@@ -700,6 +700,7 @@ export async function prepareModelsListResult(
     cfg,
     agentId,
     configuredEntriesByKey,
+    includeInput: true,
     ...(capableProviders ? { apiKeyCapabilities: capableProviders } : {}),
   });
   return {

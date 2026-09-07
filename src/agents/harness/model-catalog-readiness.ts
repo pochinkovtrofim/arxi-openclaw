@@ -44,7 +44,7 @@ export function createAgentHarnessCatalogEvaluator(
     if (
       params.preferredProfileId ||
       params.lockedProfileId ||
-      (host.selectedAuthMode && (host.evidence !== "runtime" || entry.nativeRuntime !== runtime)) ||
+      (host.selectedAuthMode && entry.nativeRuntime !== runtime) ||
       configured?.api ||
       configured?.baseUrl ||
       configured?.apiKey ||

@@ -98,20 +98,30 @@ export function createCodexAppServerModelCatalog(runtime: string) {
       const result = await withCodexAppServerJsonClient(
         { startOptions: start, config: params.config, agentDir: params.agentDir, timeoutMs },
         async (request, client) => {
-          const isCurrent = captureSharedCodexAppServerCatalogLifetime(client);
-          const listed = await listAllCodexAppServerModels({ request, limit: 100 });
-          const account = await request<CodexGetAccountResponse>({
-            method: "account/read",
-            requestParams: { refreshToken: false },
-          });
-          const observedType = isJsonObject(account.account) ? account.account.type : undefined;
-          const accountType =
-            account.requiresOpenaiAuth === true
-              ? observedType === "apiKey" || observedType === "chatgpt"
-                ? observedType
-                : undefined
-              : undefined;
-          return { models: listed.models, isCurrent, accountType } as const;
+          const readSnapshot = async () => {
+            const isCurrent = captureSharedCodexAppServerCatalogLifetime(client);
+            const listed = await listAllCodexAppServerModels({ request, limit: 100 });
+            const account = await request<CodexGetAccountResponse>({
+              method: "account/read",
+              requestParams: { refreshToken: false },
+            });
+            const observedType = isJsonObject(account.account) ? account.account.type : undefined;
+            const accountType =
+              account.requiresOpenaiAuth === true
+                ? observedType === "apiKey" || observedType === "chatgpt"
+                  ? observedType
+                  : undefined
+                : undefined;
+            return { models: listed.models, isCurrent, accountType } as const;
+          };
+          let snapshot = await readSnapshot();
+          // Native login can acknowledge before its account/updated notification
+          // arrives. Re-read both facts once under the same request deadline;
+          // never publish the catalog captured before that account revision.
+          if (!snapshot.isCurrent() && !disposed && observations.get(key) === observation) {
+            snapshot = await readSnapshot();
+          }
+          return snapshot;
         },
       );
       // Publish only after the bounded operation settles; a late timed-out callback cannot publish.

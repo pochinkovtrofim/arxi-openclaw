@@ -36,6 +36,8 @@ export type ThinkingCatalogEntry = {
   contextTokens?: number;
   reasoning?: boolean;
   configuredReasoning?: boolean;
+  /** Native discovery owns the exact effort set for this runtime. */
+  nativeRuntime?: string;
   /** Concrete runtime owner of thinking policy; internal and never project to clients. */
   thinkingPolicyProvider?: string;
   thinkingLevelMap?: ThinkingLevelMap;
