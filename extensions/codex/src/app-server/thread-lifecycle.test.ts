@@ -1043,6 +1043,30 @@ function expectSingleLogMessage(
 }
 
 describe("Codex app-server native code mode config", () => {
+  it("uses the dynamic image loader when it can reopen durable inbound media", () => {
+    const request = buildThreadStartParams(createAttemptParams({ provider: "openai" }), {
+      cwd: "/repo",
+      dynamicTools: [
+        {
+          type: "namespace",
+          name: "openclaw",
+          description: "",
+          tools: [
+            {
+              type: "function",
+              name: "view_image",
+              description: "Inspect an image",
+              inputSchema: { type: "object" },
+            },
+          ],
+        },
+      ],
+      appServer: createAppServerOptions() as never,
+    });
+
+    expect(request.config?.["features.view_image"]).toBe(false);
+  });
+
   it("keeps credential collection out of transcript-bearing developer instructions", () => {
     const instructions = buildDeveloperInstructions({
       provider: "codex",
@@ -1873,13 +1897,15 @@ describe("Codex app-server native code mode config", () => {
   });
 
   it.each([
-    { nativeCodeModeOnlyEnabled: false, configured: false },
-    { nativeCodeModeOnlyEnabled: true, configured: false },
-    { nativeCodeModeOnlyEnabled: false, configured: true },
-    { nativeCodeModeOnlyEnabled: true, configured: true },
+    { nativeCodeModeOnlyEnabled: false, configured: false, restricted: false },
+    { nativeCodeModeOnlyEnabled: true, configured: false, restricted: false },
+    { nativeCodeModeOnlyEnabled: false, configured: true, restricted: false },
+    { nativeCodeModeOnlyEnabled: true, configured: true, restricted: false },
+    { nativeCodeModeOnlyEnabled: false, configured: false, restricted: true },
+    { nativeCodeModeOnlyEnabled: true, configured: false, restricted: true },
   ])(
-    "keeps direct-only dynamic namespaces model-visible when code-mode-only=$nativeCodeModeOnlyEnabled, configured=$configured",
-    ({ nativeCodeModeOnlyEnabled, configured }) => {
+    "keeps direct-only dynamic namespaces model-visible when code-mode-only=$nativeCodeModeOnlyEnabled, configured=$configured, restricted=$restricted",
+    ({ nativeCodeModeOnlyEnabled, configured, restricted }) => {
       const dynamicTools = [
         {
           type: "namespace" as const,
@@ -1898,26 +1924,30 @@ describe("Codex app-server native code mode config", () => {
             },
           }
         : undefined;
-      const startRequest = buildThreadStartParams(createAttemptParams({ provider: "openai" }), {
+      const params = createAttemptParams({ provider: "openai" });
+      params.pluginHarnessToolPolicyRestricted = restricted;
+      const startRequest = buildThreadStartParams(params, {
         cwd: "/repo",
         dynamicTools,
         appServer: createAppServerOptions() as never,
         developerInstructions: "test instructions",
         nativeCodeModeOnlyEnabled,
+        nativeCodeModeEnabled: !restricted,
         config,
       });
-      const resumeRequest = buildThreadResumeParams(createAttemptParams({ provider: "openai" }), {
+      const resumeRequest = buildThreadResumeParams(params, {
         threadId: "thread-1",
         dynamicTools,
         appServer: createAppServerOptions() as never,
         developerInstructions: "test instructions",
         nativeCodeModeOnlyEnabled,
+        nativeCodeModeEnabled: !restricted,
         config,
       });
 
       for (const request of [startRequest, resumeRequest]) {
         expect(request.config?.["features.code_mode"]).toEqual({
-          enabled: true,
+          enabled: !restricted,
           ...(configured
             ? {
                 default_exec_yield_time_ms: 10000,
@@ -1930,7 +1960,9 @@ describe("Codex app-server native code mode config", () => {
           ],
         });
         expect(request.config?.["code_mode.direct_only_tool_namespaces"]).toBeUndefined();
-        expect(request.config?.["features.code_mode_only"]).toBe(nativeCodeModeOnlyEnabled);
+        expect(request.config?.["features.code_mode_only"]).toBe(
+          nativeCodeModeOnlyEnabled && !restricted,
+        );
       }
     },
   );

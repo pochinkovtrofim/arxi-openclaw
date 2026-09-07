@@ -624,10 +624,10 @@ describe("Codex app-server dynamic tool build", () => {
   });
 
   it.each([
-    { nativeToolSurfaceEnabled: true, expected: ["message"] },
+    { nativeToolSurfaceEnabled: true, expected: ["view_image", "message"] },
     { nativeToolSurfaceEnabled: false, expected: ["view_image", "message"] },
   ])(
-    "uses the active native image loader when native tools are $nativeToolSurfaceEnabled",
+    "keeps the media-aware image loader when native tools are $nativeToolSurfaceEnabled",
     async ({ nativeToolSurfaceEnabled, expected }) => {
       const workspaceDir = path.join(tempDir, "workspace");
       const params = createParams(path.join(tempDir, "session.jsonl"), workspaceDir);

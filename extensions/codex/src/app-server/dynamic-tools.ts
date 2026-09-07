@@ -1139,7 +1139,8 @@ function createCodexDynamicToolSpecs(params: {
     specs.push({
       type: "namespace",
       name: CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
-      description: "",
+      description:
+        "Call these tools directly, outside exec and tools.*. Their results enter model context automatically; image results must remain structured images.",
       tools: directOnlyNamespaceTools,
     });
   }
