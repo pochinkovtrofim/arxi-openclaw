@@ -362,23 +362,12 @@ export function buildCodexRuntimeThreadConfig(
     delete disabledConfig["features.apply_patch_streaming_events"];
     return disabledConfig;
   }
-  if (options.nativeCodeModeOnlyEnabled === true) {
-    const merged = expectDefined(
-      mergeCodexThreadConfigs(
-        codeModeConfig,
-        configured,
-        CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG,
-        { "features.code_mode_only": true },
-      ),
-      "Codex code mode only config",
-    );
-    return ensureDirectOnlyToolNamespaces(merged, options.directOnlyToolNamespaces);
-  }
   const merged = expectDefined(
     mergeCodexThreadConfigs(
       codeModeConfig,
       configured,
       CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG,
+      options.nativeCodeModeOnlyEnabled === true ? { "features.code_mode_only": true } : undefined,
     ),
     "Codex code mode config",
   );
