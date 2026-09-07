@@ -122,13 +122,17 @@ export async function prepareAgentCommandExecution(
     );
   }
 
-  const cfg = await resolveAgentRuntimeConfig(runtime, {
-    runtimeTargetsChannelSecrets: opts.deliver === true,
-    runtimeChannelSecretScope:
-      opts.deliver !== true && shouldResolveExplicitRecipientSession && recipientChannel
-        ? { channel: recipientChannel, accountId: opts.accountId }
-        : undefined,
-  });
+  // Gateway admission pairs this config with its plugin generation. Reading ambient
+  // config again can mix a later publication with the already-admitted runtime.
+  const cfg =
+    runtimeContext?.config ??
+    (await resolveAgentRuntimeConfig(runtime, {
+      runtimeTargetsChannelSecrets: opts.deliver === true,
+      runtimeChannelSecretScope:
+        opts.deliver !== true && shouldResolveExplicitRecipientSession && recipientChannel
+          ? { channel: recipientChannel, accountId: opts.accountId }
+          : undefined,
+    }));
   const normalizedSpawned = normalizeSpawnedRunMetadata({
     spawnedBy: opts.spawnedBy,
     groupId: opts.groupId,

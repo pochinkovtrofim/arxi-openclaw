@@ -3,7 +3,10 @@ import type { ModelCatalogEntry, ModelCatalogSnapshot } from "../../agents/model
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { loadManifestMetadataSnapshot } from "../../plugins/manifest-contract-eligibility.js";
 import { withEnvAsync } from "../../test-utils/env.js";
-import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
+import {
+  type OpenClawTestState,
+  withOpenClawTestState,
+} from "../../test-utils/openclaw-test-state.js";
 import { buildModelsListResult } from "./models-list-result.js";
 import {
   catalogEntry,
@@ -45,6 +48,17 @@ function emptyPreparedOwner(config: OpenClawConfig) {
     routeVariants: [],
     ...preparedOwnerFacts(config),
   } as never;
+}
+
+async function withOpenAIAuthState(
+  prefix: string,
+  run: (state: OpenClawTestState) => Promise<void>,
+) {
+  await withEnvAsync(
+    WITHOUT_OPENAI_ENV_AUTH,
+    async () =>
+      await withOpenClawTestState({ layout: "state-only", prefix, agentEnv: "main" }, run),
+  );
 }
 
 describe("models.list OpenAI routes", () => {
@@ -513,44 +527,35 @@ describe("models.list OpenAI routes", () => {
     expect(resolveRoutes).toHaveBeenCalledTimes(2);
   });
   it("keeps exhaustive Codex rows visible but unavailable when the route artifact is missing", async () => {
-    await withEnvAsync(WITHOUT_OPENAI_ENV_AUTH, async () => {
-      await withOpenClawTestState(
-        {
-          layout: "state-only",
-          prefix: "openclaw-models-list-openai-null-artifact-oauth-",
-          agentEnv: "main",
+    await withOpenAIAuthState("openclaw-models-list-openai-null-artifact-oauth-", async (state) => {
+      await state.writeAuthProfiles({
+        version: 1,
+        profiles: {
+          "openai:chatgpt": {
+            type: "oauth",
+            provider: "openai",
+            access: "chatgpt-access",
+            refresh: "chatgpt-refresh",
+            expires: Date.now() + 30 * 60_000,
+          },
         },
-        async (state) => {
-          await state.writeAuthProfiles({
-            version: 1,
-            profiles: {
-              "openai:chatgpt": {
-                type: "oauth",
-                provider: "openai",
-                access: "chatgpt-access",
-                refresh: "chatgpt-refresh",
-                expires: Date.now() + 30 * 60_000,
-              },
-            },
-          });
-          await expect(
-            listModels({
-              catalog: [catalogEntry("gpt-5.4-codex", "openai-responses")],
-              routeResolverFactory: () => () => null,
-            }),
-          ).resolves.toEqual({
-            models: [
-              {
-                id: "gpt-5.4-codex",
-                name: "gpt-5.4-codex",
-                provider: "openai",
-                agentRuntime: IMPLICIT_CODEX_RUNTIME,
-                available: false,
-              },
-            ],
-          });
-        },
-      );
+      });
+      await expect(
+        listModels({
+          catalog: [catalogEntry("gpt-5.4-codex", "openai-responses")],
+          routeResolverFactory: () => () => null,
+        }),
+      ).resolves.toEqual({
+        models: [
+          {
+            id: "gpt-5.4-codex",
+            name: "gpt-5.4-codex",
+            provider: "openai",
+            agentRuntime: IMPLICIT_CODEX_RUNTIME,
+            available: false,
+          },
+        ],
+      });
     });
   });
 
@@ -717,138 +722,129 @@ describe("models.list OpenAI routes", () => {
     });
   });
   it("uses auth.order to project one logical route and its capabilities", async () => {
-    await withEnvAsync(WITHOUT_OPENAI_ENV_AUTH, async () => {
-      await withOpenClawTestState(
-        {
-          layout: "state-only",
-          prefix: "openclaw-models-list-openai-auth-order-",
-          agentEnv: "main",
+    await withOpenAIAuthState("openclaw-models-list-openai-auth-order-", async (state) => {
+      await state.writeAuthProfiles({
+        version: 1,
+        profiles: {
+          "openai:chatgpt": {
+            type: "oauth",
+            provider: "openai",
+            access: "chatgpt-access",
+            refresh: "chatgpt-refresh",
+            expires: Date.now() + 30 * 60_000,
+          },
+          "openai:key": {
+            type: "api_key",
+            provider: "openai",
+            key: "test-key",
+          },
         },
-        async (state) => {
-          await state.writeAuthProfiles({
-            version: 1,
-            profiles: {
-              "openai:chatgpt": {
-                type: "oauth",
-                provider: "openai",
-                access: "chatgpt-access",
-                refresh: "chatgpt-refresh",
-                expires: Date.now() + 30 * 60_000,
-              },
-              "openai:key": {
-                type: "api_key",
-                provider: "openai",
-                key: "test-key",
-              },
+      });
+      const cfg = {
+        auth: { order: { openai: ["openai:chatgpt", "openai:key"] } },
+      } as unknown as OpenClawConfig;
+      const row = {
+        ...catalogEntry("gpt-5.5", "openai-responses"),
+        baseUrl: "https://api.openai.com/v1",
+        contextWindow: 1_000_000,
+        reasoning: true,
+      } as ModelCatalogEntry;
+
+      await expect(listModels({ catalog: [row], cfg })).resolves.toEqual({
+        models: [
+          expect.objectContaining({
+            id: "gpt-5.5",
+            name: "gpt-5.5",
+            provider: "openai",
+            agentRuntime: IMPLICIT_CODEX_RUNTIME,
+            available: true,
+          }),
+        ],
+      });
+
+      const chatGPTRow = {
+        ...catalogEntry("gpt-5.5", "openai-chatgpt-responses"),
+        baseUrl: "https://chatgpt.com/backend-api/codex",
+        contextWindow: 400_000,
+        params: { apiKey: "private" },
+        compat: { supportsStore: false },
+        mediaInput: { image: { maxBytes: 42 } },
+        reasoning: true,
+      } as ModelCatalogEntry;
+      const subscriptionProjection = {
+        models: [
+          expect.objectContaining({
+            id: "gpt-5.5",
+            name: "gpt-5.5",
+            provider: "openai",
+            agentRuntime: IMPLICIT_CODEX_RUNTIME,
+            contextWindow: 400_000,
+            reasoning: true,
+            available: true,
+          }),
+        ],
+      };
+      await expect(listModels({ catalog: [row, chatGPTRow], cfg })).resolves.toEqual(
+        subscriptionProjection,
+      );
+      await expect(listModels({ catalog: [chatGPTRow, row], cfg })).resolves.toEqual(
+        subscriptionProjection,
+      );
+
+      const inventoryConfig = {
+        ...cfg,
+        models: {
+          providers: {
+            openai: {
+              models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
             },
-          });
-          const cfg = {
-            auth: { order: { openai: ["openai:chatgpt", "openai:key"] } },
-          } as unknown as OpenClawConfig;
-          const row = {
-            ...catalogEntry("gpt-5.5", "openai-responses"),
-            baseUrl: "https://api.openai.com/v1",
+          },
+        },
+      } as unknown as OpenClawConfig;
+      await expect(
+        listModels({
+          catalog: [
+            { ...row, input: ["text", "image"] },
+            { ...chatGPTRow, input: ["text", "video"] },
+          ],
+          cfg: inventoryConfig,
+          view: "provider-config",
+        }),
+      ).resolves.toEqual({
+        models: [
+          expect.objectContaining({
+            id: "gpt-5.5",
+            name: "GPT-5.5",
+            provider: "openai",
+            agentRuntime: IMPLICIT_CODEX_RUNTIME,
+            contextWindow: 400_000,
+            reasoning: true,
+            input: ["text", "video"],
+            available: true,
+          }),
+        ],
+      });
+
+      await expect(
+        listModels({ catalog: [row, chatGPTRow], cfg, view: "default" }),
+      ).resolves.toEqual(subscriptionProjection);
+
+      const apiKeyFirst = {
+        auth: { order: { openai: ["openai:key", "openai:chatgpt"] } },
+      } as unknown as OpenClawConfig;
+      await expect(listModels({ catalog: [row], cfg: apiKeyFirst })).resolves.toEqual({
+        models: [
+          expect.objectContaining({
+            id: "gpt-5.5",
+            name: "gpt-5.5",
+            provider: "openai",
+            agentRuntime: IMPLICIT_CODEX_RUNTIME,
             contextWindow: 1_000_000,
             reasoning: true,
-          } as ModelCatalogEntry;
-
-          await expect(listModels({ catalog: [row], cfg })).resolves.toEqual({
-            models: [
-              expect.objectContaining({
-                id: "gpt-5.5",
-                name: "gpt-5.5",
-                provider: "openai",
-                agentRuntime: IMPLICIT_CODEX_RUNTIME,
-                available: true,
-              }),
-            ],
-          });
-
-          const chatGPTRow = {
-            ...catalogEntry("gpt-5.5", "openai-chatgpt-responses"),
-            baseUrl: "https://chatgpt.com/backend-api/codex",
-            contextWindow: 400_000,
-            params: { apiKey: "private" },
-            compat: { supportsStore: false },
-            mediaInput: { image: { maxBytes: 42 } },
-            reasoning: true,
-          } as ModelCatalogEntry;
-          const subscriptionProjection = {
-            models: [
-              expect.objectContaining({
-                id: "gpt-5.5",
-                name: "gpt-5.5",
-                provider: "openai",
-                agentRuntime: IMPLICIT_CODEX_RUNTIME,
-                contextWindow: 400_000,
-                reasoning: true,
-                available: true,
-              }),
-            ],
-          };
-          await expect(listModels({ catalog: [row, chatGPTRow], cfg })).resolves.toEqual(
-            subscriptionProjection,
-          );
-          await expect(listModels({ catalog: [chatGPTRow, row], cfg })).resolves.toEqual(
-            subscriptionProjection,
-          );
-
-          const inventoryConfig = {
-            ...cfg,
-            models: {
-              providers: {
-                openai: {
-                  models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
-                },
-              },
-            },
-          } as unknown as OpenClawConfig;
-          await expect(
-            listModels({
-              catalog: [
-                { ...row, input: ["text", "image"] },
-                { ...chatGPTRow, input: ["text", "video"] },
-              ],
-              cfg: inventoryConfig,
-              view: "provider-config",
-            }),
-          ).resolves.toEqual({
-            models: [
-              expect.objectContaining({
-                id: "gpt-5.5",
-                name: "GPT-5.5",
-                provider: "openai",
-                agentRuntime: IMPLICIT_CODEX_RUNTIME,
-                contextWindow: 400_000,
-                reasoning: true,
-                input: ["text", "video"],
-                available: true,
-              }),
-            ],
-          });
-
-          await expect(
-            listModels({ catalog: [row, chatGPTRow], cfg, view: "default" }),
-          ).resolves.toEqual(subscriptionProjection);
-
-          const apiKeyFirst = {
-            auth: { order: { openai: ["openai:key", "openai:chatgpt"] } },
-          } as unknown as OpenClawConfig;
-          await expect(listModels({ catalog: [row], cfg: apiKeyFirst })).resolves.toEqual({
-            models: [
-              expect.objectContaining({
-                id: "gpt-5.5",
-                name: "gpt-5.5",
-                provider: "openai",
-                agentRuntime: IMPLICIT_CODEX_RUNTIME,
-                contextWindow: 1_000_000,
-                reasoning: true,
-                available: true,
-              }),
-            ],
-          });
-        },
-      );
+            available: true,
+          }),
+        ],
+      });
     });
   });
   it("keeps configured provider rows visible when unavailable", async () => {
@@ -943,49 +939,40 @@ describe("models.list OpenAI routes", () => {
   });
 
   it("keeps configured fallback rows visible when their route is unavailable", async () => {
-    await withEnvAsync(WITHOUT_OPENAI_ENV_AUTH, async () => {
-      await withOpenClawTestState(
-        {
-          layout: "state-only",
-          prefix: "openclaw-models-list-openai-fallback-",
-          agentEnv: "main",
+    await withOpenAIAuthState("openclaw-models-list-openai-fallback-", async () => {
+      const cfg = {
+        agents: {
+          defaults: {
+            model: {
+              primary: "anthropic/claude-test",
+              fallbacks: ["openai/chat-latest"],
+            },
+          },
         },
-        async () => {
-          const cfg = {
-            agents: {
-              defaults: {
-                model: {
-                  primary: "anthropic/claude-test",
-                  fallbacks: ["openai/chat-latest"],
-                },
-              },
+        models: {
+          providers: {
+            openai: {
+              api: "openai-chatgpt-responses",
+              baseUrl: "https://chatgpt.com/backend-api/codex",
+              models: [],
             },
-            models: {
-              providers: {
-                openai: {
-                  api: "openai-chatgpt-responses",
-                  baseUrl: "https://chatgpt.com/backend-api/codex",
-                  models: [],
-                },
-              },
-            },
-          } as unknown as OpenClawConfig;
-          const result = await listModels({
-            cfg,
-            view: "configured",
-            catalog: [catalogEntry("chat-latest", "openai-chatgpt-responses")],
-          });
+          },
+        },
+      } as unknown as OpenClawConfig;
+      const result = await listModels({
+        cfg,
+        view: "configured",
+        catalog: [catalogEntry("chat-latest", "openai-chatgpt-responses")],
+      });
 
-          expect(result.models).toContainEqual({
-            id: "chat-latest",
-            name: "chat-latest",
-            provider: "openai",
-            agentRuntime: IMPLICIT_OPENCLAW_RUNTIME,
-            available: false,
-            tags: ["fallback#1"],
-          });
-        },
-      );
+      expect(result.models).toContainEqual({
+        id: "chat-latest",
+        name: "chat-latest",
+        provider: "openai",
+        agentRuntime: IMPLICIT_OPENCLAW_RUNTIME,
+        available: false,
+        tags: ["fallback#1"],
+      });
     });
   });
 
