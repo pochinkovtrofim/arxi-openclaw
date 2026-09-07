@@ -106,7 +106,12 @@ describe("pruneProcessedHistoryImages", () => {
     const messages = [...turn("turn-1"), ...turn("turn-2"), ...turn("turn-3"), ...turn("turn-4")];
 
     expect(
-      selectRecentCompletedTurnMediaHistory(messages).map((message) => message.content),
+      selectRecentCompletedTurnMediaHistory(messages).map((message) => {
+        if (!("content" in message)) {
+          throw new Error("expected retained completed-turn message content");
+        }
+        return message.content;
+      }),
     ).toEqual(["turn-2", "ack", "turn-3", "ack", "turn-4", "ack"]);
   });
 

@@ -85,7 +85,7 @@ describe("browser client", () => {
   });
 
   it("requests managed browser history with bounded query parameters", async () => {
-    const fetch = vi.fn(async () => jsonResponse({ entries: [] }));
+    const fetch = vi.fn(async (_url: RequestInfo | URL) => jsonResponse({ entries: [] }));
     vi.stubGlobal("fetch", fetch);
 
     await expect(
@@ -96,7 +96,7 @@ describe("browser client", () => {
       }),
     ).resolves.toEqual({ entries: [] });
 
-    expect(String(fetch.mock.calls[0]?.[0])).toBe(
+    expect(fetch.mock.calls[0]?.[0]).toBe(
       "http://127.0.0.1:18791/history?profile=openclaw&query=report&limit=5",
     );
   });

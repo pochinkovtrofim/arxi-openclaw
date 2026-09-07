@@ -20,7 +20,13 @@ const browserClientMocks = vi.hoisted(() => ({
     },
   })),
   browserFocusTab: vi.fn(async (..._args: unknown[]) => ({})),
-  browserHistory: vi.fn(async (..._args: unknown[]) => ({ entries: [] })),
+  browserHistory: vi.fn(
+    async (
+      ..._args: unknown[]
+    ): Promise<{
+      entries: Array<{ title: string | null; url: string; visitedAt: string }>;
+    }> => ({ entries: [] }),
+  ),
   browserImportProfile: vi.fn(async (..._args: unknown[]) => ({
     ok: true,
     systemProfile: "Default",
