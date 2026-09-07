@@ -16,6 +16,7 @@ import { buildCodexProjectDocThreadConfig } from "./project-doc-thread-config.js
 import {
   CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
   isJsonObject,
+  flattenCodexDynamicToolFunctions,
   type CodexConfigReadResponse,
   type CodexConfigRequirementsReadResponse,
   type CodexDynamicToolSpec,
@@ -46,13 +47,16 @@ const CODEX_CODE_MODE_THREAD_CONFIG: JsonObject = {
   suppress_unstable_features_warning: true,
 };
 
-const CODEX_GOAL_CONTINUATION_DISABLED_THREAD_CONFIG: JsonObject = {
+const CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG: JsonObject = {
   "features.goals": false,
-};
-
-const CODEX_NATIVE_UPDATE_PLAN_DISABLED_THREAD_CONFIG: JsonObject = {
   // OpenClaw owns the durable progress card; Codex's native checklist would create a second owner.
   "tools.update_plan.enabled": false,
+};
+
+const CODEX_NATIVE_VIEW_IMAGE_DISABLED_THREAD_CONFIG: JsonObject = {
+  // OpenClaw's dynamic view_image resolves durable owner-scoped media:// references;
+  // Codex's native loader is limited to files reachable from its execution cwd.
+  "features.view_image": false,
 };
 
 const CODEX_CODE_MODE_DISABLED_THREAD_CONFIG: JsonObject = {
@@ -212,7 +216,7 @@ export function buildThreadStartParams(
       nativeCodeModeEnabled: options.nativeCodeModeEnabled,
       nativeProviderWebSearchSupport: options.nativeProviderWebSearchSupport,
       nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-      directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
+      dynamicTools: options.dynamicTools,
       webSearchAllowed: options.webSearchAllowed,
       appServer: options.appServer,
       hostSystemAgentActive: options.hostSystemAgentActive,
@@ -307,7 +311,7 @@ export function buildThreadResumeParams(
       nativeCodeModeEnabled: options.nativeCodeModeEnabled,
       nativeProviderWebSearchSupport: options.nativeProviderWebSearchSupport,
       nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-      directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
+      dynamicTools: options.dynamicTools,
       webSearchAllowed: options.webSearchAllowed,
       appServer: options.appServer,
       hostSystemAgentActive: options.hostSystemAgentActive,
@@ -327,10 +331,17 @@ export function buildCodexRuntimeThreadConfig(
   options: {
     nativeCodeModeEnabled?: boolean;
     nativeCodeModeOnlyEnabled?: boolean;
+    disableNativeViewImage?: boolean;
     directOnlyToolNamespaces?: readonly string[];
   } = {},
 ): JsonObject {
-  const configured = buildCodexProjectDocThreadConfig(config);
+  const configured = expectDefined(
+    mergeCodexThreadConfigs(
+      buildCodexProjectDocThreadConfig(config),
+      options.disableNativeViewImage ? CODEX_NATIVE_VIEW_IMAGE_DISABLED_THREAD_CONFIG : undefined,
+    ),
+    "Codex runtime config",
+  );
   // Native goal RPCs remain available through app-server, but the Codex goals
   // feature also starts autonomous turns. Keep it disabled until a run owner exists.
   const codeModeConfig: JsonObject = {
@@ -342,8 +353,7 @@ export function buildCodexRuntimeThreadConfig(
       mergeCodexThreadConfigs(
         configured,
         CODEX_CODE_MODE_DISABLED_THREAD_CONFIG,
-        CODEX_GOAL_CONTINUATION_DISABLED_THREAD_CONFIG,
-        CODEX_NATIVE_UPDATE_PLAN_DISABLED_THREAD_CONFIG,
+        CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG,
       ),
       "Codex disabled code mode config",
     );
@@ -357,8 +367,7 @@ export function buildCodexRuntimeThreadConfig(
       mergeCodexThreadConfigs(
         codeModeConfig,
         configured,
-        CODEX_GOAL_CONTINUATION_DISABLED_THREAD_CONFIG,
-        CODEX_NATIVE_UPDATE_PLAN_DISABLED_THREAD_CONFIG,
+        CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG,
         { "features.code_mode_only": true },
       ),
       "Codex code mode only config",
@@ -369,8 +378,7 @@ export function buildCodexRuntimeThreadConfig(
     mergeCodexThreadConfigs(
       codeModeConfig,
       configured,
-      CODEX_GOAL_CONTINUATION_DISABLED_THREAD_CONFIG,
-      CODEX_NATIVE_UPDATE_PLAN_DISABLED_THREAD_CONFIG,
+      CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG,
     ),
     "Codex code mode config",
   );
@@ -405,12 +413,11 @@ function ensureDirectOnlyToolNamespaces(
 function resolveDirectOnlyToolNamespaces(
   dynamicTools: readonly CodexDynamicToolSpec[] | undefined,
 ): string[] {
-  return (dynamicTools ?? [])
-    .filter(
-      (tool) =>
-        tool.type === "namespace" && tool.name === CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
-    )
-    .map((tool) => tool.name);
+  return (dynamicTools ?? []).flatMap((tool) =>
+    tool.type === "namespace" && tool.name === CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE
+      ? [tool.name]
+      : [],
+  );
 }
 
 export function buildCodexRuntimeThreadConfigForRun(
@@ -420,7 +427,7 @@ export function buildCodexRuntimeThreadConfigForRun(
     nativeCodeModeEnabled?: boolean;
     nativeProviderWebSearchSupport?: CodexNativeWebSearchSupport;
     nativeCodeModeOnlyEnabled?: boolean;
-    directOnlyToolNamespaces?: readonly string[];
+    dynamicTools?: readonly CodexDynamicToolSpec[];
     webSearchAllowed?: boolean;
     appServer?: Pick<CodexAppServerRuntimeOptions, "networkProxy">;
     hostSystemAgentActive?: boolean;
@@ -458,7 +465,13 @@ export function buildCodexRuntimeThreadConfigForRun(
   }).threadConfig;
   const baseConfig = buildCodexRuntimeThreadConfig(
     mergeCodexThreadConfigs(config, webSearchConfig),
-    options,
+    {
+      ...options,
+      directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
+      disableNativeViewImage: flattenCodexDynamicToolFunctions(options.dynamicTools).some(
+        (tool) => tool.name === "view_image",
+      ),
+    },
   );
   const runtimeConfig =
     mergeCodexThreadConfigs(

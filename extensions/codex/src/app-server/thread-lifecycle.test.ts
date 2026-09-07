@@ -1043,6 +1043,30 @@ function expectSingleLogMessage(
 }
 
 describe("Codex app-server native code mode config", () => {
+  it("uses the dynamic image loader when it can reopen durable inbound media", () => {
+    const request = buildThreadStartParams(createAttemptParams({ provider: "openai" }), {
+      cwd: "/repo",
+      dynamicTools: [
+        {
+          type: "namespace",
+          name: "openclaw",
+          description: "",
+          tools: [
+            {
+              type: "function",
+              name: "view_image",
+              description: "Inspect an image",
+              inputSchema: { type: "object" },
+            },
+          ],
+        },
+      ],
+      appServer: createAppServerOptions() as never,
+    });
+
+    expect(request.config?.["features.view_image"]).toBe(false);
+  });
+
   it("keeps credential collection out of transcript-bearing developer instructions", () => {
     const instructions = buildDeveloperInstructions({
       provider: "codex",
