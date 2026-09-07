@@ -222,6 +222,18 @@ export function resolveThinkingProfile(params: {
   if (!context.normalizedProvider) {
     return buildBaseThinkingProfile();
   }
+  if (
+    context.catalogEntry?.nativeRuntime &&
+    context.catalogEntry.nativeRuntime === params.agentRuntime &&
+    context.compat?.supportedReasoningEfforts
+  ) {
+    return normalizeThinkingProfile({
+      levels: context.compat.supportedReasoningEfforts.flatMap((effort) => {
+        const id = normalizeThinkLevel(effort);
+        return id ? [{ id }] : [];
+      }),
+    });
+  }
   const providerContext = {
     provider: context.normalizedProvider,
     modelId: context.modelId,

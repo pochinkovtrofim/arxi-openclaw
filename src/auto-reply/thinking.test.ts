@@ -27,6 +27,34 @@ beforeEach(() => {
   providerRuntimeMocks.resolveProviderThinkingProfile.mockReturnValue(undefined);
 });
 
+describe("native catalog thinking ownership", () => {
+  it.each([["low", "medium", "high", "xhigh", "max", "ultra"], ["medium"], ["none", "high"]])(
+    "uses the observed native efforts instead of the host provider profile: %j",
+    (...efforts) => {
+      providerRuntimeMocks.resolveProviderThinkingProfile.mockReturnValue({
+        levels: [{ id: "off" }, { id: "minimal" }, { id: "high" }],
+      });
+      const catalog = [
+        {
+          provider: "openai",
+          id: "native-model",
+          nativeRuntime: "codex",
+          reasoning: true,
+          compat: { supportedReasoningEfforts: efforts },
+        },
+      ];
+      expect(listThinkingLevels("openai", "native-model", catalog, "codex")).toEqual(
+        efforts.map((level) => (level === "none" ? "off" : level)),
+      );
+      expect(listThinkingLevels("openai", "native-model", catalog, "openclaw")).toEqual([
+        "off",
+        "minimal",
+        "high",
+      ]);
+    },
+  );
+});
+
 describe("normalizeThinkLevel", () => {
   it("normalizes the documented none alias to off", () => {
     expect(normalizeThinkLevel("none")).toBe("off");
