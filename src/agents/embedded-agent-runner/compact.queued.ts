@@ -462,6 +462,7 @@ async function compactResolvedContextEngine(
     pluginRegistry: requireActivePluginRegistry(),
   });
   const { resolution: modelResolution } = await resolveTieredModel({
+    agentRuntimeId: selectedHarnessRuntime,
     provider: ceRuntimeProvider,
     modelId: ceModelId,
     agentDir,
@@ -505,6 +506,7 @@ async function compactResolvedContextEngine(
       providerUsesProfileScopedModelMetadata && Boolean(runtimeAuthPlan.selectedAuthMode),
     resolveModel: async ({ config, authProfileId, authProfileMode }) => {
       const resolved = await resolveModelAsync(ceRuntimeProvider, ceModelId, agentDir, config, {
+        agentRuntimeId: selectedPreparedHarness.id,
         authStorage,
         modelRegistry,
         preparedModelRuntime,

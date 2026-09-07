@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { selectAgentHarness } from "../harness/selection.js";
 import {
   prepareModelRunCapabilities,
   resolvePreparedModelThinkingCompat,
@@ -284,6 +285,29 @@ describe("embedded model resolution consistency", () => {
         modelId: "modern-model",
       },
     });
+  });
+
+  it("carries an unlocked native harness into model resolution", async () => {
+    vi.mocked(selectAgentHarness).mockReturnValueOnce({ id: "codex" } as never);
+    const result = await resolveEmbeddedRunModelSetup({
+      runParams: { prompt: "hello", sessionId: "runtime-session", agentId: "main" } as never,
+      provider: "openai",
+      modelId: "runtime-only-test-model",
+      agentDir: "/test/agent",
+      workspaceDir: "/test/workspace",
+      globalLane: "test",
+      hookRunner: undefined,
+      hookContext: {} as never,
+      onHooksResolved: vi.fn(),
+    });
+    expect(result.nativeModelOwned).toBe(false);
+    expect(resolveModelAsyncMock).toHaveBeenCalledWith(
+      "openai",
+      "runtime-only-test-model",
+      "/test/agent",
+      undefined,
+      expect.objectContaining({ agentRuntimeId: "codex", skipAgentDiscovery: true }),
+    );
   });
 
   it("resolves the same undated configured model for chat and manual compaction", async () => {

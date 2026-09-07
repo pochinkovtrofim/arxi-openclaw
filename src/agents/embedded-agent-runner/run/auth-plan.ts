@@ -185,6 +185,7 @@ export async function prepareEmbeddedRunAuthPlan(params: {
       providerUsesProfileScopedModelMetadata,
       resolveModel: ({ config, authProfileId, authProfileMode }) =>
         resolveModelAsync(params.provider, params.modelId, params.agentDir, config, {
+          agentRuntimeId: params.getAgentHarness().id,
           authStorage: params.authStorage,
           modelRegistry: params.modelRegistry,
           skipAgentDiscovery: true,

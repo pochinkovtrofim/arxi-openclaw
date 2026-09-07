@@ -84,6 +84,7 @@ export async function prepareDirectCompactionAttempt(
     runtimePolicySessionKey,
     runtimePolicyAgentId,
     boundHarnessRuntime,
+    selectedHarnessRuntime,
     selectedHarnessRuntimeOverride,
     runtimeModelAuth: { plan: reusableRuntimeAuthPlan, authProfileId, modelAuth: initialModelAuth },
     provider,
@@ -139,6 +140,7 @@ export async function prepareDirectCompactionAttempt(
   };
   const preparedModelRuntime = params.preparedModelRuntime;
   const { resolution: modelResolution } = await resolveTieredModel({
+    agentRuntimeId: selectedHarnessRuntime,
     provider: runtimeProvider,
     modelId,
     agentDir,
@@ -190,6 +192,7 @@ export async function prepareDirectCompactionAttempt(
     Parameters<typeof materializePreparedRuntimeModel<ProviderRuntimeModel>>[0]["resolveModel"]
   >[0]) =>
     resolveModelAsync(runtimeProvider, modelId, agentDir, config, {
+      agentRuntimeId: selectedPreparedHarness.id,
       ...modelResolutionOptions,
       skipAgentDiscovery: true,
       allowBundledStaticCatalogFallback: true,

@@ -325,15 +325,10 @@ function resolveCodexForwardCompatModel(ctx: ProviderResolveDynamicModelContext)
       maxTokens: OPENAI_CODEX_GPT_54_MAX_TOKENS,
       cost: OPENAI_CODEX_GPT_54_MINI_COST,
     };
-  } else if (
-    ctx.agentRuntimeId === "codex" &&
-    ctx.authProfileId === undefined &&
-    ctx.authProfileMode === undefined &&
-    ctx.providerConfig?.auth === undefined
-  ) {
+  } else if (ctx.agentRuntimeId === "codex" && ctx.providerConfig?.auth === undefined) {
     // Codex owns its account-scoped model catalog. When that catalog is not yet
-    // available, keep the requested identity intact and let the native runtime
-    // decide whether the account can actually use it.
+    // available, keep the requested identity through credential-scoped resolution;
+    // the native runtime decides whether the selected account can actually use it.
     templateIds = OPENAI_CODEX_GPT_56_MODEL_IDS;
     patch = {
       reasoning: true,
