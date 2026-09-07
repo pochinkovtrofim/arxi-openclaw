@@ -360,7 +360,7 @@ export function buildCodexRuntimeThreadConfig(
     // Native patch streaming is part of native code mode, so do not send it
     // when runtime policy disables that tool surface.
     delete disabledConfig["features.apply_patch_streaming_events"];
-    return disabledConfig;
+    return ensureDirectOnlyToolNamespaces(disabledConfig, options.directOnlyToolNamespaces);
   }
   const merged = expectDefined(
     mergeCodexThreadConfigs(
@@ -456,7 +456,6 @@ export function buildCodexRuntimeThreadConfigForRun(
     mergeCodexThreadConfigs(config, webSearchConfig),
     {
       ...options,
-      directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
       disableNativeViewImage: flattenCodexDynamicToolFunctions(options.dynamicTools).some(
         (tool) => tool.name === "view_image",
       ),
@@ -492,7 +491,12 @@ export function buildCodexRuntimeThreadConfigForRun(
     ...(params.bootstrapContextMode === "lightweight" ? CODEX_NO_PROJECT_DOCS_CONFIG : {}),
   };
   return applyCodexManagedShellEnvironment(
-    contextConfig,
+    // Model tool_mode can select Code Mode even when its feature is disabled.
+    // Preserve direct image delivery after restricted policy replaces the feature table.
+    ensureDirectOnlyToolNamespaces(
+      contextConfig,
+      resolveDirectOnlyToolNamespaces(options.dynamicTools),
+    ),
     options.shellEnvironment,
     options.disableLoginShell,
   );

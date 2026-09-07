@@ -32,6 +32,11 @@ import {
 } from "./session-binding.test-helpers.js";
 import { createClientHarness, createCodexTestModel } from "./test-support.js";
 
+const directCodeModeConfig = {
+  enabled: true,
+  direct_only_tool_namespaces: ["openclaw_direct"],
+};
+
 const readCodexAppServerBindingMock = vi.fn();
 const isCodexAppServerNativeAuthProfileMock = vi.fn();
 const getSharedCodexAppServerClientMock = vi.fn();
@@ -673,7 +678,7 @@ describe("runCodexAppServerSideQuestion", () => {
       project_doc_max_bytes: 131_072,
       "features.goals": false,
       "tools.update_plan.enabled": false,
-      "features.code_mode": true,
+      "features.code_mode": directCodeModeConfig,
       "features.code_mode_only": false,
       "features.view_image": false,
       "features.apply_patch_streaming_events": true,
@@ -1354,7 +1359,7 @@ describe("runCodexAppServerSideQuestion", () => {
     expect(forkParams?.approvalsReviewer).toBe("auto_review");
     const config = forkParams?.config as Record<string, unknown> | undefined;
     expect(config).not.toHaveProperty("approvals_reviewer");
-    expect(config?.["features.code_mode"]).toBe(true);
+    expect(config?.["features.code_mode"]).toEqual(directCodeModeConfig);
     expect(config?.apps).toEqual({
       _default: {
         enabled: false,
@@ -1784,7 +1789,7 @@ describe("runCodexAppServerSideQuestion", () => {
     const forkParams = mockCall(client.request)[1] as Record<string, unknown> | undefined;
     const config = forkParams?.config as Record<string, unknown> | undefined;
     expect(config?.["features.hooks"]).toBe(true);
-    expect(config?.["features.code_mode"]).toBe(true);
+    expect(config?.["features.code_mode"]).toEqual(directCodeModeConfig);
     expect(config?.["features.code_mode_only"]).toBe(false);
     expect(config?.["hooks.PermissionRequest"]).toEqual([]);
     const preToolUseHooks = config?.["hooks.PreToolUse"] as
@@ -2036,7 +2041,7 @@ describe("runCodexAppServerSideQuestion", () => {
     const config = forkParams?.config as Record<string, unknown> | undefined;
     expect(config).toMatchObject({
       "features.hooks": false,
-      "features.code_mode": true,
+      "features.code_mode": directCodeModeConfig,
       "features.code_mode_only": false,
       "features.apply_patch_streaming_events": true,
       "hooks.PreToolUse": [],
@@ -2059,7 +2064,7 @@ describe("runCodexAppServerSideQuestion", () => {
 
     const forkParams = mockCall(client.request)[1] as Record<string, unknown> | undefined;
     const config = forkParams?.config as Record<string, unknown> | undefined;
-    expect(config?.["features.code_mode"]).toBe(true);
+    expect(config?.["features.code_mode"]).toEqual(directCodeModeConfig);
     expect(config?.["features.code_mode_only"]).toBe(true);
   });
 
@@ -2106,7 +2111,7 @@ describe("runCodexAppServerSideQuestion", () => {
         },
       },
     });
-    expect(config?.["features.code_mode"]).toBe(true);
+    expect(config?.["features.code_mode"]).toEqual(directCodeModeConfig);
     expect(config?.["features.code_mode_only"]).toBe(false);
   });
 
@@ -2155,7 +2160,7 @@ describe("runCodexAppServerSideQuestion", () => {
         modelProviderOverride: "lmstudio",
       }),
     );
-    expect(config?.["features.code_mode"]).toBe(true);
+    expect(config?.["features.code_mode"]).toEqual(directCodeModeConfig);
     expect(config?.["features.code_mode_only"]).toBe(true);
   });
 
@@ -2200,7 +2205,7 @@ describe("runCodexAppServerSideQuestion", () => {
     expect(forkParams?.approvalPolicy).toBe("on-request");
     expect(forkParams?.sandbox).toBe("workspace-write");
     expect(forkParams?.approvalsReviewer).toBe("user");
-    expect(config?.["features.code_mode"]).toBe(true);
+    expect(config?.["features.code_mode"]).toEqual(directCodeModeConfig);
     expect(config?.["features.code_mode_only"]).toBe(true);
   });
 

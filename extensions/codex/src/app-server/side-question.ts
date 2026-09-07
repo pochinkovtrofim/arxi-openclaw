@@ -97,6 +97,7 @@ import {
   readCodexTurn,
 } from "./protocol-validators.js";
 import {
+  CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
   isJsonObject,
   type CodexServerNotification,
   type CodexThreadForkParams,
@@ -714,6 +715,7 @@ export async function runCodexAppServerSideQuestion(
       nativeCodeModeEnabled: nativeToolSurfaceEnabled,
       nativeCodeModeOnlyEnabled: appServer.codeModeOnly,
       disableNativeViewImage: true,
+      directOnlyToolNamespaces: [CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE],
     });
     // Codex reloads config for thread/fork, so replay the persisted app policy or
     // app-scoped reviewers disappear while sibling apps inherit the thread reviewer.
