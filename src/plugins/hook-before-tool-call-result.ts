@@ -37,6 +37,8 @@ export type PluginHookBeforeToolCallResult = {
     /** Override timeout text and return the timeout as a blocked tool result. */
     timeoutReason?: string;
     allowedDecisions?: Array<"allow-once" | "allow-always" | "deny">;
+    /** Opaque plugin-owned JSON retained with the approval, never common presentation. */
+    pluginData?: Record<string, unknown>;
     pluginId?: string;
     onResolution?: (decision: PluginApprovalResolution) => Promise<void> | void;
     beforeApprovedExecution?: (approval: PluginApprovedToolExecution) => Promise<void> | void;

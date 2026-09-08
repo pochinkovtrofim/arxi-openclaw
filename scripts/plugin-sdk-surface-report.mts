@@ -333,9 +333,10 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: manifest-owned plugin capability secret availability guard.
       // +1: canonical diagnostic flag checker through its focused subpath.
       // +8: scoped channel approval-resolution capability and its exact-target contract.
+      // +2: opaque bounded plugin approval payload and its canonical validator.
       // Restore the two v2026.8.1 conversation-binding inspection exports.
       // +3: harness continuity uses canonical media facts, layout, and replay-window selection.
-      4369,
+      4371,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -443,9 +444,10 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: manifest-owned plugin capability secret availability guard.
       // +1: canonical diagnostic flag checker through its focused subpath.
       // +2: scoped channel approval-resolution capability call signatures.
+      // +1: bounded plugin approval payload validator.
       // Restore the v2026.8.1 read-only inspection callable.
       // +3: canonical persisted-media readers and replay-window selector for harnesses.
-      2598,
+      2599,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(
@@ -464,7 +466,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       //     (voice-call/matrix runtime-doctor repair names, WhatsApp ack policy,
       //     Slack progress-draft render) so installed plugins survive upgrade (#124041 class).
       // -18: retire the expired August compatibility exports and messaging-targets subpath.
-      1134,
+      // +2: plugin approval payload compatibility projections.
+      1136,
       env,
     ),
     publicWildcardReexports: readPluginSdkSurfaceBudgetEnv(

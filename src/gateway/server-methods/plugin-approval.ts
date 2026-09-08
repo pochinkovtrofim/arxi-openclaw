@@ -23,6 +23,7 @@ import type {
 import {
   PLUGIN_APPROVAL_DESCRIPTION_MAX_LENGTH,
   PLUGIN_APPROVAL_TITLE_MAX_LENGTH,
+  normalizePluginApprovalData,
   resolvePluginApprovalTimeoutMs,
   truncatePluginApprovalDetail,
 } from "../../infra/plugin-approvals.js";
@@ -86,6 +87,7 @@ export function createPluginApprovalHandlers(
       }
       const p = params as {
         pluginId?: string | null;
+        pluginData?: Record<string, unknown>;
         title: string;
         description: string;
         detail?: string | null;
@@ -106,6 +108,20 @@ export function createPluginApprovalHandlers(
       };
       const twoPhase = p.twoPhase === true;
       const timeoutMs = resolvePluginApprovalTimeoutMs(p.timeoutMs);
+      let pluginData: Record<string, unknown> | undefined;
+      try {
+        pluginData = normalizePluginApprovalData(p.pluginData);
+      } catch (error) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            error instanceof Error ? error.message : "invalid plugin approval data",
+          ),
+        );
+        return;
+      }
       const trustedAgentRuntime = client?.internal?.agentRuntimeIdentity;
 
       if (
@@ -189,6 +205,7 @@ export function createPluginApprovalHandlers(
           : sanitizeExecApprovalDisplayText(normalizeTrimmedString(value)!);
       const request: PluginApprovalRequestPayload = {
         pluginId: trustedAgentRuntime?.approvalOwnerPluginId ?? sanitizeMeta(p.pluginId),
+        ...(pluginData ? { pluginData } : {}),
         title: sanitizedTitle,
         description: sanitizedDescription,
         scope: p.scope ? sanitizeApprovalScope(p.scope) : null,

@@ -18,6 +18,7 @@ import { resolveCanonicalPluginApprovalRequestAllowedDecisions } from "../infra/
 import {
   DEFAULT_PLUGIN_APPROVAL_TIMEOUT_MS,
   MAX_PLUGIN_APPROVAL_TIMEOUT_MS,
+  normalizePluginApprovalData,
 } from "../infra/plugin-approvals.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { cloneHookIsolationValue } from "../plugins/hook-isolation.js";
@@ -41,7 +42,6 @@ import { callGatewayTool } from "./tools/gateway.js";
 
 type PluginApprovalRequest = NonNullable<PluginHookBeforeToolCallResult["requireApproval"]>;
 const log = createSubsystemLogger("agents/tools");
-
 function pluginApprovalDeniedOutcome(baseParams: unknown): HookOutcome {
   return {
     blocked: true,
@@ -253,6 +253,7 @@ async function requestPluginToolApproval(params: {
   overrideParams?: unknown;
 }): Promise<HookOutcome> {
   const approval = params.approval;
+  const pluginData = normalizePluginApprovalData(approval.pluginData);
   const timeoutMs = resolvePluginToolApprovalTimeoutMs(approval);
   const gatewayTimeoutMs = resolvePluginToolApprovalGatewayTimeoutMs(timeoutMs);
   const allowedDecisions = resolveCanonicalPluginApprovalRequestAllowedDecisions(approval);
@@ -263,6 +264,7 @@ async function requestPluginToolApproval(params: {
       const result = await embeddedApprovalBroker.request({
         request: {
           pluginId: approval.pluginId,
+          ...(pluginData ? { pluginData } : {}),
           title: approval.title,
           description: approval.description,
           ...(approval.scope ? { scope: sanitizeApprovalScope(approval.scope) } : {}),
@@ -358,6 +360,7 @@ async function requestPluginToolApproval(params: {
           { timeoutMs: gatewayTimeoutMs },
           {
             title: approval.title,
+            ...(pluginData ? { pluginData } : {}),
             description: approval.description,
             ...(approval.scope ? { scope: approval.scope } : {}),
             severity: approval.severity,
