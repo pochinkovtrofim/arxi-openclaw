@@ -1697,10 +1697,12 @@ describe("handlePendingApprovalRequest", () => {
     const foreign = manager.create({ command: "foreign" }, 60_000, "approval-prefix-foreign");
     void manager.register(owned, 60_000);
     void manager.register(foreign, 60_000);
+    const authorizes = vi.fn(
+      (request: { request: { command: string } }) => request.request.command === "owned",
+    );
     prepareApprovalChannelCustodyMock.mockReturnValueOnce({
       resolverId: "telegram:ops",
-      authorizes: (request: { request: { command: string } }) =>
-        request.request.command === "owned",
+      authorizes,
     });
     const respond = vi.fn();
 
@@ -1723,6 +1725,10 @@ describe("handlePendingApprovalRequest", () => {
     expect(respond).toHaveBeenCalledWith(true, { ok: true }, undefined);
     expect(manager.getSnapshot(owned.id)?.decision).toBe("deny");
     expect(manager.getSnapshot(foreign.id)?.decision).toBeUndefined();
+    expect(authorizes).toHaveBeenLastCalledWith(owned, {
+      approvalId: owned.id,
+      decision: "deny",
+    });
   });
 
   it("targets resolved approval events to visible approval clients when available", async () => {

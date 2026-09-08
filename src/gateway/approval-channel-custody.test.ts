@@ -4,6 +4,8 @@ import { prepareApprovalChannelCustody } from "./approval-channel-custody.js";
 
 const mocks = vi.hoisted(() => ({
   authorize: vi.fn(),
+  authorizeResolution: vi.fn(),
+  strictResolution: false,
   listAccountIds: vi.fn(),
   defaultAccountId: vi.fn(),
 }));
@@ -15,7 +17,10 @@ vi.mock("../channels/plugins/index.js", () => ({
       defaultAccountId: mocks.defaultAccountId,
     },
   }),
-  resolveChannelApprovalCapability: () => ({ authorizeActorAction: mocks.authorize }),
+  resolveChannelApprovalCapability: () => ({
+    authorizeActorAction: mocks.authorize,
+    ...(mocks.strictResolution ? { authorizeApprovalResolution: mocks.authorizeResolution } : {}),
+  }),
 }));
 
 const reviewer = (accountId: string) => ({
@@ -33,6 +38,8 @@ const request = (payload: {
 describe("prepareApprovalChannelCustody", () => {
   beforeEach(() => {
     mocks.authorize.mockReset().mockReturnValue({ authorized: true });
+    mocks.authorizeResolution.mockReset();
+    mocks.strictResolution = false;
     mocks.listAccountIds.mockReset().mockReturnValue(["default", "ops"]);
     mocks.defaultAccountId.mockReset().mockReturnValue("default");
   });
@@ -109,5 +116,35 @@ describe("prepareApprovalChannelCustody", () => {
         reviewer: reviewer("ops"),
       })?.authorizes(request({ command: "printf approval" })),
     ).toBe(false);
+  });
+
+  it("binds an optional channel proof to the canonical approval and decision", () => {
+    mocks.strictResolution = true;
+    mocks.authorizeResolution.mockImplementation(({ target }) => ({
+      authorized: target.approvalId === "approval-1" && target.decision === "allow-once",
+    }));
+    const custody = prepareApprovalChannelCustody({
+      cfg: {},
+      approvalKind: "exec",
+      reviewer: reviewer("ops"),
+    });
+    const approval = request({
+      command: "printf approval",
+      turnSourceChannel: "telegram",
+      turnSourceAccountId: "ops",
+    });
+
+    // Gateway may use the structural channel binding to locate the record;
+    // the proof is only evaluated with the canonical resolved target below.
+    expect(custody?.authorizes(approval)).toBe(true);
+    expect(
+      custody?.authorizes(approval, { approvalId: "approval-1", decision: "allow-once" }),
+    ).toBe(true);
+    expect(
+      custody?.authorizes(approval, { approvalId: "approval-2", decision: "allow-once" }),
+    ).toBe(false);
+    expect(custody?.authorizes(approval, { approvalId: "approval-1", decision: "deny" })).toBe(
+      false,
+    );
   });
 });

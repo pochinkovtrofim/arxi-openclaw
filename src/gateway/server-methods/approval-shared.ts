@@ -574,6 +574,20 @@ export async function handleApprovalResolve<
     return;
   }
 
+  // The account filter above deliberately runs before resolving a prefix.
+  // Bind an optional channel proof only after that lookup selected the
+  // canonical record and decision passed the owning approval policy.
+  if (
+    custody &&
+    !custody.authorizes(resolved.snapshot, {
+      approvalId: resolved.approvalId,
+      decision: params.decision,
+    })
+  ) {
+    respondUnknownOrExpiredApproval(params.respond);
+    return;
+  }
+
   const resolvedBy =
     params.client?.connect?.client?.displayName ?? params.client?.connect?.client?.id ?? null;
   const resolver = custody ? ({ kind: "channel", id: custody.resolverId } as const) : undefined;

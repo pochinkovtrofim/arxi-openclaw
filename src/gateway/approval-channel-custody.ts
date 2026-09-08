@@ -9,10 +9,14 @@ import {
   type ApprovalRequestLike,
 } from "../infra/approval-request-account-binding.js";
 import type { ChannelApprovalKind } from "../infra/approval-types.js";
+import type { ExecApprovalDecision } from "../infra/exec-approvals.js";
 
 type PreparedApprovalChannelCustody = {
   resolverId: string;
-  authorizes: (request: ApprovalRequestLike) => boolean;
+  authorizes: (
+    request: ApprovalRequestLike,
+    target?: { approvalId: string; decision: ExecApprovalDecision },
+  ) => boolean;
 };
 
 export function prepareApprovalChannelCustody(params: {
@@ -49,14 +53,29 @@ export function prepareApprovalChannelCustody(params: {
   }
   return {
     resolverId: `${channel}:${accountId}`,
-    authorizes: (request) =>
-      doesApprovalRequestSelectChannelAccount({
+    authorizes: (request, target) => {
+      if (
+        !doesApprovalRequestSelectChannelAccount({
+          cfg: params.cfg,
+          request,
+          channel,
+          accountId,
+          defaultAccountId: plugin.config.defaultAccountId?.(params.cfg) ?? "",
+          eligibleAccountIds,
+        })
+      ) {
+        return false;
+      }
+      if (!capability.authorizeApprovalResolution || target === undefined) {
+        return true;
+      }
+      return capability.authorizeApprovalResolution({
         cfg: params.cfg,
-        request,
-        channel,
         accountId,
-        defaultAccountId: plugin.config.defaultAccountId?.(params.cfg) ?? "",
-        eligibleAccountIds,
-      }),
+        senderId,
+        approvalKind: params.approvalKind,
+        target,
+      }).authorized;
+    },
   };
 }
