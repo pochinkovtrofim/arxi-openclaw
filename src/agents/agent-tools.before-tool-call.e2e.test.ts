@@ -51,6 +51,7 @@ import {
   runBeforeToolCallHook,
   wrapToolWithBeforeToolCallHook,
 } from "./agent-tools.before-tool-call.js";
+import { finalizeApprovedPluginToolExecution } from "./agent-tools.before-tool-call.approval.js";
 import { createOpenClawCodingTools } from "./agent-tools.js";
 import { createExecTool } from "./bash-tools.exec-run.js";
 import { createWriteTool } from "./sessions/index.js";
@@ -3198,7 +3199,7 @@ describe("before_tool_call requireApproval handling", () => {
       expect(beforeApprovedExecution).toHaveBeenCalledWith({
         approvalId: "server-id-attested",
         decision: "allow-once",
-        toolName: "bash",
+        toolName: "exec",
         params: { command: "echo approved" },
       });
     });
@@ -3234,26 +3235,19 @@ describe("before_tool_call requireApproval handling", () => {
     expect(result).toMatchObject({ blocked: true, deniedReason: "plugin-approval" });
   });
 
-  it("blocks a tool whose params change after approval without calling the binding", async () => {
+  it("blocks a tool whose final params change after approval without calling the binding", async () => {
     const beforeApprovedExecution = vi.fn();
-    hookRunner.runBeforeToolCall.mockResolvedValue({
-      params: { command: "echo changed" },
-      requireApproval: {
-        title: "Attested approval",
-        description: "Bind the exact reviewed action",
-        beforeApprovedExecution,
-      } as never,
-    });
-    mockCallGateway.mockResolvedValueOnce({ id: "server-id-param-change", status: "accepted" });
-    mockCallGateway.mockResolvedValueOnce({
-      id: "server-id-param-change",
-      decision: "allow-once",
-    });
-
-    const result = await runBeforeToolCallHook({
-      toolName: "bash",
-      params: { command: "echo reviewed" },
-      ctx: { agentId: "main", sessionKey: "main" },
+    const result = await finalizeApprovedPluginToolExecution({
+      pending: {
+        callback: beforeApprovedExecution,
+        approved: Object.freeze({
+          approvalId: "server-id-param-change",
+          decision: "allow-once",
+          toolName: "exec",
+          params: Object.freeze({ command: "echo reviewed" }),
+        }),
+      },
+      finalParams: { command: "echo changed" },
     });
 
     expect(result).toMatchObject({
