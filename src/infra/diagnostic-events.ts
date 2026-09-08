@@ -15,6 +15,7 @@ import {
   type CoreModelRequestLifecycleProvenance,
 } from "./diagnostic-model-request-provenance.js";
 import { isTrustedOtelDiagnosticListener } from "./diagnostic-otel-listener-provenance.js";
+import { resetDiagnosticSpanBindingsForTest } from "./diagnostic-span-bindings.js";
 import { consumeHostPluginUsageDiagnosticEvent } from "./diagnostic-plugin-usage-provenance.js";
 import {
   consumeCoreSemanticRunProgressDiagnosticEvent,
@@ -1651,5 +1652,6 @@ export function resetDiagnosticEventsForTest(): void {
   state.asyncDroppedUntrustedEvents = 0;
   state.asyncDroppedPriorityEvents = 0;
   resetDiagnosticTracePropagationForTest();
+  resetDiagnosticSpanBindingsForTest();
 }
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

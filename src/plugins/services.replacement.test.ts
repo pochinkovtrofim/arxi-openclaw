@@ -470,6 +470,9 @@ describe("plugin service replacement", () => {
         resolveTraceContext: () => undefined,
       }),
     ).toThrow("no longer active");
+    expect(() => context?.internalDiagnostics?.createSpanBindingEmitter?.()).toThrow(
+      "no longer active",
+    );
     (
       context?.internalDiagnostics as
         | (NonNullable<OpenClawPluginServiceContext["internalDiagnostics"]> & {

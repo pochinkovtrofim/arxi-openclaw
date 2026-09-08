@@ -54,6 +54,7 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
         parentContext: activeTrustedParentContext(evt, metadata),
         startTimeMs: evt.ts,
       }),
+      "harness.run",
     );
   };
 
@@ -111,6 +112,7 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
       completeTrackedLifecycleSpan(trustedTrace, trackedSpan, evt.ts);
       return;
     }
+    runtime.bindTrustedSpan(evt, metadata, span, "harness.run");
     span.end(evt.ts);
   };
 
@@ -158,6 +160,7 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
       completeTrackedLifecycleSpan(trustedTrace, trackedSpan, evt.ts);
       return;
     }
+    runtime.bindTrustedSpan(evt, metadata, span, "harness.run");
     span.end(evt.ts);
   };
 

@@ -8,6 +8,7 @@ import {
   waitForDiagnosticEventsDrained,
 } from "../infra/diagnostic-events.js";
 import { markTrustedOtelDiagnosticListener } from "../infra/diagnostic-otel-listener-provenance.js";
+import { createTrustedDiagnosticSpanBindingEmitter } from "../infra/diagnostic-span-bindings.js";
 import { registerDiagnosticTracePropagationBridge } from "../infra/diagnostic-trace-propagation.js";
 import {
   recordDiagnosticExporterHealth,
@@ -118,6 +119,25 @@ function createServiceContext(params: {
             params.lease.assertActive("diagnostic trace propagation bridge");
             return params.lease.retain(registerDiagnosticTracePropagationBridge(bridge));
           },
+          ...(isOtelExporter
+            ? {
+                createSpanBindingEmitter: () => {
+                  params.lease.assertActive("diagnostic span binding emitter");
+                  const emitter = createTrustedDiagnosticSpanBindingEmitter();
+                  params.lease.retain(emitter.retire);
+                  return Object.freeze({
+                    emit: (binding) => {
+                      params.lease.assertActive("diagnostic span binding emitter");
+                      emitter.emit(binding);
+                    },
+                    retire: () => {
+                      params.lease.assertActive("diagnostic span binding emitter");
+                      emitter.retire();
+                    },
+                  });
+                },
+              }
+            : {}),
           reportExporterHealth: (update) => {
             if (params.lease.isActive()) {
               recordDiagnosticExporterHealth(params.service.service.id, update);

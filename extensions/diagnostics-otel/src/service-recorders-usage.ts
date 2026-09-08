@@ -368,6 +368,7 @@ export function createUsageRecorders(runtime: DiagnosticsRecorderRuntime) {
         parentContext: activeTrustedParentContext(evt, metadata),
         startTimeMs: evt.ts,
       }),
+      "run",
     );
     const parentSpanId = trustedTraceContext(evt, metadata)?.parentSpanId;
     if (parentSpanId && !activeTrustedSpans.has(parentSpanId)) {
