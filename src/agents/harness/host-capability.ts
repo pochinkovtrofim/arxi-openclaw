@@ -239,7 +239,10 @@ export function createAgentHarnessHostCapabilities(params: {
       coreTtsToolResults.add(result);
     }
   };
+  const conversationId = attempt.chatId ?? attempt.groupId ?? attempt.messageTo;
   const requester = {
+    ...(conversationId ? { conversationId } : {}),
+    ...(attempt.chatType ? { chatType: attempt.chatType } : {}),
     ...((attempt.messageChannel ?? attempt.messageProvider)
       ? { channel: attempt.messageChannel ?? attempt.messageProvider ?? undefined }
       : {}),
