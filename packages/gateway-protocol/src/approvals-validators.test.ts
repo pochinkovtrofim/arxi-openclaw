@@ -183,21 +183,33 @@ describe("unified approval protocol validators", () => {
     ).toBe(false);
   });
 
-  it("accepts only complete channel reviewer facts on every resolve surface", () => {
+  it("accepts only complete channel reviewer facts and bounded proofs on every resolve surface", () => {
     const reviewer = { channel: "telegram", accountId: "ops", senderId: "owner" };
+    const resolutionProof = "host-signed-proof";
     expect(
       validateApprovalResolveParams({
         id: execRecord.id,
         kind: "exec",
         decision: "deny",
         reviewer,
+        resolutionProof,
       }),
     ).toBe(true);
     expect(
-      validateExecApprovalResolveParams({ id: execRecord.id, decision: "deny", reviewer }),
+      validateExecApprovalResolveParams({
+        id: execRecord.id,
+        decision: "deny",
+        reviewer,
+        resolutionProof,
+      }),
     ).toBe(true);
     expect(
-      validatePluginApprovalResolveParams({ id: pluginRecord.id, decision: "deny", reviewer }),
+      validatePluginApprovalResolveParams({
+        id: pluginRecord.id,
+        decision: "deny",
+        reviewer,
+        resolutionProof,
+      }),
     ).toBe(true);
     expect(
       validateApprovalResolveParams({
@@ -205,6 +217,28 @@ describe("unified approval protocol validators", () => {
         kind: "exec",
         decision: "deny",
         reviewer: { channel: "telegram", accountId: "ops" },
+      }),
+    ).toBe(false);
+    expect(
+      validateApprovalResolveParams({
+        id: execRecord.id,
+        kind: "exec",
+        decision: "deny",
+        resolutionProof: "",
+      }),
+    ).toBe(false);
+    expect(
+      validateExecApprovalResolveParams({
+        id: execRecord.id,
+        decision: "deny",
+        resolutionProof: "x".repeat(4097),
+      }),
+    ).toBe(false);
+    expect(
+      validatePluginApprovalResolveParams({
+        id: pluginRecord.id,
+        decision: "deny",
+        resolutionProof: 1,
       }),
     ).toBe(false);
   });

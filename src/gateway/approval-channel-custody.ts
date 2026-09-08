@@ -16,6 +16,7 @@ type PreparedApprovalChannelCustody = {
   authorizes: (
     request: ApprovalRequestLike,
     target?: { approvalId: string; decision: ExecApprovalDecision },
+    resolutionProof?: string,
   ) => boolean;
 };
 
@@ -53,7 +54,7 @@ export function prepareApprovalChannelCustody(params: {
   }
   return {
     resolverId: `${channel}:${accountId}`,
-    authorizes: (request, target) => {
+    authorizes: (request, target, resolutionProof) => {
       if (
         !doesApprovalRequestSelectChannelAccount({
           cfg: params.cfg,
@@ -75,6 +76,7 @@ export function prepareApprovalChannelCustody(params: {
         senderId,
         approvalKind: params.approvalKind,
         target,
+        ...(resolutionProof ? { resolutionProof } : {}),
       }).authorized;
     },
   };

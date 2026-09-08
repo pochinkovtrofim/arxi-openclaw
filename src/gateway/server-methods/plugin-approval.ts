@@ -314,7 +314,7 @@ export function createPluginApprovalHandlers(
       if (!resolveParams) {
         return;
       }
-      const { inputId, decision, reviewer } = resolveParams;
+      const { inputId, decision, reviewer, resolutionProof } = resolveParams;
       await handleApprovalResolve({
         approvalKind: "plugin",
         manager,
@@ -324,6 +324,7 @@ export function createPluginApprovalHandlers(
         context,
         client,
         reviewer,
+        resolutionProof,
         exposeAmbiguousPrefixError: false,
         validateDecision: (snapshot) =>
           resolveCanonicalPluginApprovalRequestAllowedDecisions(snapshot.request).includes(decision)

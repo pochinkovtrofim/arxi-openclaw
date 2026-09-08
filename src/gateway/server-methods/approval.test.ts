@@ -343,10 +343,13 @@ describe("unified approval handlers", () => {
       request: { turnSourceChannel: "telegram", turnSourceAccountId: "ops" },
       reviewerDeviceIds: [],
     });
+    const authorizes = vi.fn(
+      (request: { request: ExecApprovalRequestPayload }) =>
+        request.request.turnSourceAccountId === "ops",
+    );
     prepareApprovalChannelCustodyMock.mockReturnValue({
       resolverId: "telegram:ops",
-      authorizes: (request: { request: ExecApprovalRequestPayload }) =>
-        request.request.turnSourceAccountId === "ops",
+      authorizes,
     });
     const handlers = createApprovalHandlers({
       execApprovalManager: managers.exec,
@@ -362,6 +365,7 @@ describe("unified approval handlers", () => {
         kind: "exec",
         decision: "deny",
         reviewer: { channel: "telegram", accountId: "ops", senderId: "owner" },
+        resolutionProof: "host-signed-proof",
       },
       client: createClient({ internal: true }),
     });
@@ -374,6 +378,11 @@ describe("unified approval handlers", () => {
       kind: "channel",
       id: "telegram:ops",
     });
+    expect(authorizes).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: pending.record.id }),
+      { approvalId: pending.record.id, decision: "deny" },
+      "host-signed-proof",
+    );
   });
 
   it("returns mapped terminal history with attribution and a next cursor", async () => {

@@ -474,10 +474,14 @@ export function createApprovalHandlers(
         custody &&
         (!requestedDecision ||
           forceMalformedDeny ||
-          !custody.authorizes(liveRecord!, {
-            approvalId: liveRecord!.id,
-            decision: requestedDecision,
-          }))
+          !custody.authorizes(
+            liveRecord!,
+            {
+              approvalId: liveRecord!.id,
+              decision: requestedDecision,
+            },
+            resolveParams?.resolutionProof,
+          ))
       ) {
         respondApprovalNotFound(respond);
         return;

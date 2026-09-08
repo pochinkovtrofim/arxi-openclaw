@@ -101,6 +101,7 @@ describe("resolveApprovalOverGateway", () => {
           channel: "telegram",
           accountId: "ops",
           senderId: "owner",
+          resolutionProof: "host-signed-proof",
         }),
       ),
     ).resolves.toEqual({ applied: true, approval: recordedApproval });
@@ -109,6 +110,7 @@ describe("resolveApprovalOverGateway", () => {
       kind: "exec",
       decision: "deny",
       reviewer: { channel: "telegram", accountId: "ops", senderId: "owner" },
+      resolutionProof: "host-signed-proof",
     });
   });
 
@@ -132,6 +134,22 @@ describe("resolveApprovalOverGateway", () => {
     expect(hoisted.clientRequest).not.toHaveBeenCalled();
     expect(hoisted.withOperatorApprovalsGatewayClient).not.toHaveBeenCalled();
   });
+
+  it.each(["", "x".repeat(4097), 1])(
+    "rejects an invalid channel proof",
+    async (resolutionProof) => {
+      await expect(
+        resolveApprovalOverGateway({
+          cfg: {} as never,
+          approvalId: "approval-1",
+          approvalKind: "exec",
+          decision: "deny",
+          resolutionProof: resolutionProof as never,
+        }),
+      ).rejects.toThrow("approval resolution requires a bounded channel proof");
+      expect(hoisted.clientRequest).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ["signal", "Signal"],

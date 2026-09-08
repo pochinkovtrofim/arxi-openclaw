@@ -635,6 +635,8 @@ export type ChannelApprovalCapability = ChannelApprovalAdapter & {
     senderId?: string | null;
     approvalKind: ChannelApprovalKind;
     target: { approvalId: string; decision: ExecApprovalDecision };
+    /** Opaque proof issued by the channel transport for this target. */
+    resolutionProof?: string;
   }) => {
     authorized: boolean;
     reason?: string;

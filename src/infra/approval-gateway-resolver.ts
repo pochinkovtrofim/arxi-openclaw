@@ -21,6 +21,8 @@ type ResolveApprovalOverGatewayBaseParams = {
   channel?: string;
   accountId?: string | null;
   senderId?: string | null;
+  /** Opaque channel proof for this exact canonical approval resolution. */
+  resolutionProof?: string;
   gatewayUrl?: string;
   clientDisplayName?: string;
 };
@@ -117,6 +119,15 @@ export async function resolveApprovalOverGateway(
   }
   const reviewer: ApprovalChannelReviewer | undefined =
     channel && accountId && senderId ? { channel, accountId, senderId } : undefined;
+  const resolutionProof = params.resolutionProof;
+  if (
+    resolutionProof !== undefined &&
+    (typeof resolutionProof !== "string" ||
+      resolutionProof.length === 0 ||
+      resolutionProof.length > 4096)
+  ) {
+    throw new Error("approval resolution requires a bounded channel proof");
+  }
   // Channel manifests own operator-facing labels; using their generated metadata
   // keeps approval clients aligned without importing plugin runtime or hardcoding ids.
   const channelLabel = channel ? (findChatChannelLabel(channel) ?? channel) : undefined;
@@ -136,6 +147,7 @@ export async function resolveApprovalOverGateway(
         kind: canonicalKind,
         decision: params.decision,
         ...(reviewer ? { reviewer } : {}),
+        ...(resolutionProof ? { resolutionProof } : {}),
       },
       { clientDisplayName },
     );
@@ -153,6 +165,7 @@ export async function resolveApprovalOverGateway(
         kind: canonicalKind,
         decision: params.decision,
         ...(reviewer ? { reviewer } : {}),
+        ...(resolutionProof ? { resolutionProof } : {}),
       };
       return await gatewayClient.request<ApprovalResolveResult>("approval.resolve", resolveParams);
     }
@@ -164,6 +177,7 @@ export async function resolveApprovalOverGateway(
         id: approvalId,
         decision: params.decision,
         ...(reviewer ? { reviewer } : {}),
+        ...(resolutionProof ? { resolutionProof } : {}),
       });
     };
     if (legacyMethod === "plugin" || (!legacyMethod && approvalId.startsWith("plugin:"))) {

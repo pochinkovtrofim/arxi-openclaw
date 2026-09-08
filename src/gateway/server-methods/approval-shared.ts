@@ -77,6 +77,7 @@ type ApprovalResolveParams = {
   id: string;
   decision: string;
   reviewer?: ApprovalChannelReviewer;
+  resolutionProof?: string;
 };
 
 type ApprovalResolveParamsValidator<TParams extends ApprovalResolveParams> = ((
@@ -169,6 +170,7 @@ export function resolveApprovalDecisionParams<TParams extends ApprovalResolvePar
   inputId: string;
   decision: ExecApprovalDecision;
   reviewer?: ApprovalChannelReviewer;
+  resolutionProof?: string;
 } | null {
   const rawParams = params.rawParams;
   if (!assertValidParams(rawParams, params.validate, params.methodName, params.respond)) {
@@ -182,6 +184,7 @@ export function resolveApprovalDecisionParams<TParams extends ApprovalResolvePar
     inputId: rawParams.id,
     decision: rawParams.decision,
     ...(rawParams.reviewer ? { reviewer: rawParams.reviewer } : {}),
+    ...(rawParams.resolutionProof ? { resolutionProof: rawParams.resolutionProof } : {}),
   };
 }
 
@@ -489,6 +492,7 @@ export async function handleApprovalResolve<
   context: GatewayRequestContext;
   client: GatewayClient | null;
   reviewer?: ApprovalChannelReviewer;
+  resolutionProof?: string;
   exposeAmbiguousPrefixError?: boolean;
   validateDecision?: (snapshot: ExecApprovalRecord<TPayload>) =>
     | {
@@ -579,10 +583,14 @@ export async function handleApprovalResolve<
   // canonical record and decision passed the owning approval policy.
   if (
     custody &&
-    !custody.authorizes(resolved.snapshot, {
-      approvalId: resolved.approvalId,
-      decision: params.decision,
-    })
+    !custody.authorizes(
+      resolved.snapshot,
+      {
+        approvalId: resolved.approvalId,
+        decision: params.decision,
+      },
+      params.resolutionProof,
+    )
   ) {
     respondUnknownOrExpiredApproval(params.respond);
     return;

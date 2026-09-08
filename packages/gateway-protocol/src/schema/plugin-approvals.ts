@@ -15,6 +15,7 @@ import { NonEmptyString } from "./primitives.js";
 const MAX_PLUGIN_APPROVAL_TIMEOUT_MS = 600_000;
 const PLUGIN_APPROVAL_TITLE_MAX_LENGTH = 80;
 const PLUGIN_APPROVAL_DESCRIPTION_MAX_LENGTH = 512;
+const ApprovalResolutionProofSchema = Type.String({ minLength: 1, maxLength: 4096 });
 
 type SingleTypeSchema = TSchema & { type: string; enum?: readonly (string | null)[] };
 
@@ -84,6 +85,7 @@ export const PluginApprovalResolveParamsSchema = closedObject({
   id: NonEmptyString,
   decision: NonEmptyString,
   reviewer: Type.Optional(ApprovalChannelReviewerSchema),
+  resolutionProof: Type.Optional(ApprovalResolutionProofSchema),
 });
 
 // Owner-local wire types derived directly from local schema consts so the

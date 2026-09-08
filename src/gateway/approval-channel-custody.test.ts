@@ -118,10 +118,13 @@ describe("prepareApprovalChannelCustody", () => {
     ).toBe(false);
   });
 
-  it("binds an optional channel proof to the canonical approval and decision", () => {
+  it("binds a channel proof to the canonical approval and decision", () => {
     mocks.strictResolution = true;
-    mocks.authorizeResolution.mockImplementation(({ target }) => ({
-      authorized: target.approvalId === "approval-1" && target.decision === "allow-once",
+    mocks.authorizeResolution.mockImplementation(({ target, resolutionProof }) => ({
+      authorized:
+        target.approvalId === "approval-1" &&
+        target.decision === "allow-once" &&
+        resolutionProof === "host-signed-proof",
     }));
     const custody = prepareApprovalChannelCustody({
       cfg: {},
@@ -138,13 +141,53 @@ describe("prepareApprovalChannelCustody", () => {
     // the proof is only evaluated with the canonical resolved target below.
     expect(custody?.authorizes(approval)).toBe(true);
     expect(
-      custody?.authorizes(approval, { approvalId: "approval-1", decision: "allow-once" }),
+      custody?.authorizes(
+        approval,
+        { approvalId: "approval-1", decision: "allow-once" },
+        "host-signed-proof",
+      ),
     ).toBe(true);
     expect(
-      custody?.authorizes(approval, { approvalId: "approval-2", decision: "allow-once" }),
+      custody?.authorizes(
+        approval,
+        { approvalId: "approval-2", decision: "allow-once" },
+        "host-signed-proof",
+      ),
     ).toBe(false);
-    expect(custody?.authorizes(approval, { approvalId: "approval-1", decision: "deny" })).toBe(
-      false,
-    );
+    expect(
+      custody?.authorizes(
+        approval,
+        { approvalId: "approval-1", decision: "deny" },
+        "host-signed-proof",
+      ),
+    ).toBe(false);
+    expect(
+      custody?.authorizes(approval, { approvalId: "approval-1", decision: "allow-once" }),
+    ).toBe(false);
+    expect(
+      custody?.authorizes(
+        approval,
+        { approvalId: "approval-1", decision: "allow-once" },
+        "invalid-proof",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps channels without a strict proof hook compatible", () => {
+    const custody = prepareApprovalChannelCustody({
+      cfg: {},
+      approvalKind: "exec",
+      reviewer: reviewer("ops"),
+    });
+    expect(
+      custody?.authorizes(
+        request({
+          command: "printf approval",
+          turnSourceChannel: "telegram",
+          turnSourceAccountId: "ops",
+        }),
+        { approvalId: "approval-1", decision: "allow-once" },
+      ),
+    ).toBe(true);
   });
 });

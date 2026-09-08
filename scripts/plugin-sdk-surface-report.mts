@@ -332,9 +332,10 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +2: strict session-agent resolution aliases preserve shipped Plugin SDK behavior.
       // +1: manifest-owned plugin capability secret availability guard.
       // +1: canonical diagnostic flag checker through its focused subpath.
+      // +8: scoped channel approval-resolution capability and its exact-target contract.
       // Restore the two v2026.8.1 conversation-binding inspection exports.
       // +3: harness continuity uses canonical media facts, layout, and replay-window selection.
-      4361,
+      4369,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(
@@ -441,9 +442,10 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +2: strict session-agent resolution aliases preserve shipped Plugin SDK behavior.
       // +1: manifest-owned plugin capability secret availability guard.
       // +1: canonical diagnostic flag checker through its focused subpath.
+      // +2: scoped channel approval-resolution capability call signatures.
       // Restore the v2026.8.1 read-only inspection callable.
       // +3: canonical persisted-media readers and replay-window selector for harnesses.
-      2596,
+      2598,
       env,
     ),
     publicDeprecatedExports: readPluginSdkSurfaceBudgetEnv(

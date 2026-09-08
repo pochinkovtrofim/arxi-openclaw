@@ -1712,6 +1712,7 @@ describe("handlePendingApprovalRequest", () => {
       inputId: "approval-prefix",
       decision: "deny",
       reviewer: { channel: "telegram", accountId: "ops", senderId: "owner" },
+      resolutionProof: "host-signed-proof",
       respond,
       context: {
         broadcast: vi.fn(),
@@ -1725,10 +1726,14 @@ describe("handlePendingApprovalRequest", () => {
     expect(respond).toHaveBeenCalledWith(true, { ok: true }, undefined);
     expect(manager.getSnapshot(owned.id)?.decision).toBe("deny");
     expect(manager.getSnapshot(foreign.id)?.decision).toBeUndefined();
-    expect(authorizes).toHaveBeenLastCalledWith(owned, {
-      approvalId: owned.id,
-      decision: "deny",
-    });
+    expect(authorizes).toHaveBeenLastCalledWith(
+      owned,
+      {
+        approvalId: owned.id,
+        decision: "deny",
+      },
+      "host-signed-proof",
+    );
   });
 
   it("targets resolved approval events to visible approval clients when available", async () => {
