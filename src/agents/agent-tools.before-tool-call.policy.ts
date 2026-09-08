@@ -31,6 +31,7 @@ import {
 import { isPlainObject } from "../utils.js";
 import {
   mergeParamsWithApprovalOverrides,
+  finalizeApprovedPluginToolExecution,
   resolveBeforeToolCallApprovalOutcome,
   resolveSkillWorkshopApprovalForFinalParams,
 } from "./agent-tools.before-tool-call.approval.js";
@@ -45,6 +46,7 @@ import type {
   BeforeToolCallPolicyDiagnosticState,
   HookContext,
   HookOutcome,
+  PendingApprovedPluginToolExecution,
 } from "./agent-tools.before-tool-call.types.js";
 import {
   getCodeModeExecBeforeHookMetadataForToolKind,
@@ -63,6 +65,17 @@ function markPrivateDecision(
   marker: "genericDecision" | "ownerDecision",
 ): void {
   Object.defineProperty(outcome, marker, { value: true });
+}
+
+async function finalizeApprovedExecutions(params: {
+  pending: readonly PendingApprovedPluginToolExecution[];
+  finalParams: unknown;
+}): Promise<HookOutcome | undefined> {
+  for (const pending of params.pending) {
+    const blocked = await finalizeApprovedPluginToolExecution({ pending, finalParams: params.finalParams });
+    if (blocked) return blocked;
+  }
+  return undefined;
 }
 
 export function getBeforeToolCallPolicyDiagnosticState(): BeforeToolCallPolicyDiagnosticState {
@@ -276,6 +289,7 @@ export async function runBeforeToolCallHook(args: {
     }
     let trustedApprovalParams: unknown;
     let trustedApprovalResolution: PluginApprovalResolution | undefined;
+    const pendingApprovedExecutions: PendingApprovedPluginToolExecution[] = [];
     if (trustedPolicyResult?.requireApproval) {
       const approvalOutcome = await resolveBeforeToolCallApprovalOutcome({
         result: trustedPolicyResult,
@@ -295,6 +309,9 @@ export async function runBeforeToolCallHook(args: {
         }
         trustedApprovalParams = approvalOutcome.params;
         trustedApprovalResolution = approvalOutcome.approvalResolution;
+        if (approvalOutcome.pendingApprovedExecution) {
+          pendingApprovedExecutions.push(approvalOutcome.pendingApprovedExecution);
+        }
       }
     }
     const policyAdjustedParams = trustedApprovalParams ?? trustedPolicyResult?.params ?? params;
@@ -318,11 +335,22 @@ export async function runBeforeToolCallHook(args: {
         signal: args.signal,
       });
       if (finalApprovalOutcome) {
-        return finalApprovalOutcome;
+        if (finalApprovalOutcome.blocked || finalApprovalOutcome.deferredApproval) {
+          return finalApprovalOutcome;
+        }
+        if (finalApprovalOutcome.pendingApprovedExecution) {
+          pendingApprovedExecutions.push(finalApprovalOutcome.pendingApprovedExecution);
+        }
       }
+      const finalParams = finalApprovalOutcome?.params ?? policyAdjustedParams;
+      const bindingBlocked = await finalizeApprovedExecutions({
+        pending: pendingApprovedExecutions,
+        finalParams,
+      });
+      if (bindingBlocked) return bindingBlocked;
       const allowed: HookOutcome = {
         blocked: false as const,
-        params: policyAdjustedParams,
+        params: finalParams,
       };
       if (trustedApprovalResolution) {
         markPrivateDecision(allowed, "ownerDecision");
@@ -389,6 +417,9 @@ export async function runBeforeToolCallHook(args: {
         }
         finalParams = approvalOutcome.params;
         finalApprovalResolution = approvalOutcome.approvalResolution ?? finalApprovalResolution;
+        if (approvalOutcome.pendingApprovedExecution) {
+          pendingApprovedExecutions.push(approvalOutcome.pendingApprovedExecution);
+        }
       }
     }
 
@@ -409,8 +440,19 @@ export async function runBeforeToolCallHook(args: {
       signal: args.signal,
     });
     if (finalApprovalOutcome) {
-      return finalApprovalOutcome;
+      if (finalApprovalOutcome.blocked || finalApprovalOutcome.deferredApproval) {
+        return finalApprovalOutcome;
+      }
+      finalParams = finalApprovalOutcome.params;
+      if (finalApprovalOutcome.pendingApprovedExecution) {
+        pendingApprovedExecutions.push(finalApprovalOutcome.pendingApprovedExecution);
+      }
     }
+    const bindingBlocked = await finalizeApprovedExecutions({
+      pending: pendingApprovedExecutions,
+      finalParams,
+    });
+    if (bindingBlocked) return bindingBlocked;
     const allowed: HookOutcome = {
       blocked: false as const,
       params: finalParams,

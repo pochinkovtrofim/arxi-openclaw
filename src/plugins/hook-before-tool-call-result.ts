@@ -11,6 +11,14 @@ export const PluginApprovalResolutions = {
 export type PluginApprovalResolution =
   (typeof PluginApprovalResolutions)[keyof typeof PluginApprovalResolutions];
 
+export type PluginApprovedToolExecution = Readonly<{
+  approvalId: string;
+  decision: "allow-once" | "allow-always";
+  toolName: string;
+  toolCallId?: string;
+  params: unknown;
+}>;
+
 export type PluginHookBeforeToolCallResult = {
   params?: Record<string, unknown>;
   block?: boolean;
@@ -31,5 +39,6 @@ export type PluginHookBeforeToolCallResult = {
     allowedDecisions?: Array<"allow-once" | "allow-always" | "deny">;
     pluginId?: string;
     onResolution?: (decision: PluginApprovalResolution) => Promise<void> | void;
+    beforeApprovedExecution?: (approval: PluginApprovedToolExecution) => Promise<void> | void;
   };
 };

@@ -4,6 +4,7 @@
  * timeout classification, and owner-provided approval outcomes.
  */
 import { addTimerTimeoutGraceMs } from "@openclaw/normalization-core/number-coercion";
+import { isDeepStrictEqual } from "node:util";
 import { GatewayClientRequestError } from "../gateway/client.js";
 import { sanitizeApprovalScope } from "../infra/approval-scope.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
@@ -22,6 +23,7 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import { cloneHookIsolationValue } from "../plugins/hook-isolation.js";
 import {
   PluginApprovalResolutions,
+  type PluginApprovedToolExecution,
   type PluginApprovalResolution,
   type PluginHookBeforeToolCallResult,
 } from "../plugins/types.js";
@@ -32,6 +34,7 @@ import type {
   DeferredPluginToolApproval,
   HookContext,
   HookOutcome,
+  PendingApprovedPluginToolExecution,
 } from "./agent-tools.before-tool-call.types.js";
 import { withGatewayToolApprovalOwner } from "./tools/gateway-caller-context.js";
 import { callGatewayTool } from "./tools/gateway.js";
@@ -113,6 +116,50 @@ function notifyPluginApprovalResolution(
     });
   } catch (err) {
     log.warn(`plugin onResolution callback failed: ${String(err)}`);
+  }
+}
+
+function freezeApprovedParams(value: unknown, seen = new WeakSet<object>()): unknown {
+  if (!value || typeof value !== "object" || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) freezeApprovedParams(child, seen);
+  return Object.freeze(value);
+}
+
+function pendingApprovedExecution(params: {
+  approval: PluginApprovalRequest;
+  approvalId: string;
+  decision: "allow-once" | "allow-always";
+  toolName: string;
+  toolCallId?: string;
+  params: unknown;
+}): PendingApprovedPluginToolExecution | undefined {
+  if (typeof params.approval.beforeApprovedExecution !== "function") return undefined;
+  return {
+    callback: params.approval.beforeApprovedExecution,
+    approved: Object.freeze({
+      approvalId: params.approvalId,
+      decision: params.decision,
+      toolName: params.toolName,
+      ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+      params: freezeApprovedParams(cloneHookIsolationValue("before_tool_call", params.params)),
+    }) as PluginApprovedToolExecution,
+  };
+}
+
+export async function finalizeApprovedPluginToolExecution(params: {
+  pending: PendingApprovedPluginToolExecution;
+  finalParams: unknown;
+}): Promise<HookOutcome | undefined> {
+  if (!isDeepStrictEqual(params.pending.approved.params, params.finalParams)) {
+    return { blocked: true, kind: "failure", disposition: "blocked", deniedReason: "plugin-approval", reason: "Tool parameters changed after approval", params: params.finalParams };
+  }
+  try {
+    await params.pending.callback(params.pending.approved);
+    return undefined;
+  } catch (err) {
+    log.warn(`plugin beforeApprovedExecution callback failed; blocking tool call: ${String(err)}`);
+    return { blocked: true, kind: "failure", disposition: "failed", deniedReason: "plugin-approval", reason: "Plugin approved-execution binding failed", params: params.finalParams };
   }
 }
 
@@ -240,10 +287,23 @@ async function requestPluginToolApproval(params: {
         resolution === PluginApprovalResolutions.ALLOW_ONCE ||
         resolution === PluginApprovalResolutions.ALLOW_ALWAYS
       ) {
+        const approvedParams = mergeParamsWithApprovalOverrides(
+          params.baseParams,
+          params.overrideParams,
+        );
+        const pending = pendingApprovedExecution({
+          approval,
+          approvalId: result.id,
+          decision: resolution,
+          toolName: params.toolName,
+          ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+          params: approvedParams,
+        });
         return {
           blocked: false,
-          params: mergeParamsWithApprovalOverrides(params.baseParams, params.overrideParams),
+          params: approvedParams,
           approvalResolution: resolution,
+          ...(pending ? { pendingApprovedExecution: pending } : {}),
         };
       }
       if (resolution === PluginApprovalResolutions.DENY) {
@@ -375,10 +435,13 @@ async function requestPluginToolApproval(params: {
       resolution === PluginApprovalResolutions.ALLOW_ONCE ||
       resolution === PluginApprovalResolutions.ALLOW_ALWAYS
     ) {
+      const approvedParams = mergeParamsWithApprovalOverrides(params.baseParams, params.overrideParams);
+      const pending = pendingApprovedExecution({ approval, approvalId: id, decision: resolution, toolName: params.toolName, ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}), params: approvedParams });
       return {
         blocked: false,
-        params: mergeParamsWithApprovalOverrides(params.baseParams, params.overrideParams),
+        params: approvedParams,
         approvalResolution: resolution,
+        ...(pending ? { pendingApprovedExecution: pending } : {}),
       };
     }
     if (resolution === PluginApprovalResolutions.DENY) {
@@ -446,7 +509,7 @@ export async function requestDeferredPluginToolApproval(params: {
   signal?: AbortSignal;
 }): Promise<HookOutcome> {
   const deferred = params.deferredApproval;
-  return requestPluginToolApproval({
+  const outcome = await requestPluginToolApproval({
     approval: deferred.approval,
     toolName: deferred.toolName,
     ...(deferred.toolCallId ? { toolCallId: deferred.toolCallId } : {}),
@@ -455,6 +518,11 @@ export async function requestDeferredPluginToolApproval(params: {
     baseParams: deferred.baseParams,
     overrideParams: deferred.overrideParams,
   });
+  if (outcome.blocked || !outcome.pendingApprovedExecution) return outcome;
+  return (await finalizeApprovedPluginToolExecution({
+    pending: outcome.pendingApprovedExecution,
+    finalParams: outcome.params,
+  })) ?? outcome;
 }
 
 /** Notify plugin approval callbacks that a deferred approval was cancelled. */
