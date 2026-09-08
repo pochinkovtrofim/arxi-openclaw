@@ -410,6 +410,27 @@ describe("createOpenClawCodingTools", () => {
     expect(resolve).toHaveBeenCalledTimes(1);
   });
 
+  it("retains only self-scoped Automations for a senderless cron run", () => {
+    vi.mocked(createOpenClawTools).mockClear();
+
+    const tools = createOpenClawCodingTools({
+      trigger: "cron",
+      jobId: "cron-current",
+      senderIsOwner: false,
+    });
+
+    const names = toolNameList(tools);
+    expect(names).toContain("automations");
+    expect(names).not.toContain("gateway");
+    expect(names).not.toContain("nodes");
+    expect(names).not.toContain("openclaw");
+    expect(latestCreateOpenClawToolsOptions().cronSelfRemoveOnlyJobId).toBe("cron-current");
+
+    expect(
+      toolNameList(createOpenClawCodingTools({ trigger: "cron", senderIsOwner: false })),
+    ).not.toContain("automations");
+  });
+
   it("drops senderless Automations retention when exact authority aborts or errors", async () => {
     const resolve = async () => ({
       tools: ["read"],

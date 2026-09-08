@@ -11,7 +11,11 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { GroupToolPolicyConfig } from "../../config/types.tools.js";
 import type { ChannelApprovalNativeRuntimeAdapter } from "../../infra/approval-handler-runtime-types.js";
 import type { ChannelApprovalKind } from "../../infra/approval-types.js";
-import type { ExecApprovalRequest, ExecApprovalResolved } from "../../infra/exec-approvals.js";
+import type {
+  ExecApprovalDecision,
+  ExecApprovalRequest,
+  ExecApprovalResolved,
+} from "../../infra/exec-approvals.js";
 import type {
   PluginApprovalRequest,
   PluginApprovalResolved,
@@ -616,6 +620,23 @@ export type ChannelApprovalCapability = ChannelApprovalAdapter & {
     senderId?: string | null;
     action: "approve";
     approvalKind: ChannelApprovalKind;
+  }) => {
+    authorized: boolean;
+    reason?: string;
+  };
+  /**
+   * Optionally binds a channel review credential to the canonical approval
+   * selected by Gateway. This runs only after Gateway has loaded the live
+   * approval record and validated the requested decision.
+   */
+  authorizeApprovalResolution?: (params: {
+    cfg: OpenClawConfig;
+    accountId?: string | null;
+    senderId?: string | null;
+    approvalKind: ChannelApprovalKind;
+    target: { approvalId: string; decision: ExecApprovalDecision };
+    /** Opaque proof issued by the channel transport for this target. */
+    resolutionProof?: string;
   }) => {
     authorized: boolean;
     reason?: string;

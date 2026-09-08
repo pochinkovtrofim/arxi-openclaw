@@ -15,6 +15,7 @@ import { NonEmptyString } from "./primitives.js";
 const MAX_PLUGIN_APPROVAL_TIMEOUT_MS = 600_000;
 const PLUGIN_APPROVAL_TITLE_MAX_LENGTH = 80;
 const PLUGIN_APPROVAL_DESCRIPTION_MAX_LENGTH = 512;
+const ApprovalResolutionProofSchema = Type.String({ minLength: 1, maxLength: 4096 });
 
 type SingleTypeSchema = TSchema & { type: string; enum?: readonly (string | null)[] };
 
@@ -31,6 +32,11 @@ function nullableMetadata<T extends SingleTypeSchema>(schema: T) {
 /** Approval request raised by a plugin before a sensitive tool action proceeds. */
 export const PluginApprovalRequestParamsSchema = closedObject({
   pluginId: Type.Optional(nullableMetadata(NonEmptyString)),
+  pluginData: Type.Optional(
+    Type.Record(Type.String({ minLength: 1, maxLength: 128 }), Type.Unknown(), {
+      maxProperties: 32,
+    }),
+  ),
   title: Type.String({ minLength: 1, maxLength: PLUGIN_APPROVAL_TITLE_MAX_LENGTH }),
   description: Type.String({ minLength: 1, maxLength: PLUGIN_APPROVAL_DESCRIPTION_MAX_LENGTH }),
   detail: Type.Optional(
@@ -84,6 +90,7 @@ export const PluginApprovalResolveParamsSchema = closedObject({
   id: NonEmptyString,
   decision: NonEmptyString,
   reviewer: Type.Optional(ApprovalChannelReviewerSchema),
+  resolutionProof: Type.Optional(ApprovalResolutionProofSchema),
 });
 
 // Owner-local wire types derived directly from local schema consts so the

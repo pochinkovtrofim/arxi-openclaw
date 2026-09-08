@@ -17,6 +17,8 @@ export type PluginApprovalActionView = {
 /** Request payload supplied by plugin approval callers. */
 export type PluginApprovalRequestPayload = {
   pluginId?: string | null;
+  /** Opaque plugin-owned JSON retained for its native approval handler; never rendered by core. */
+  pluginData?: Record<string, unknown> | null;
   title: string;
   description: string;
   detail?: string | null;
@@ -66,12 +68,65 @@ export const MAX_PLUGIN_APPROVAL_TIMEOUT_MS = 600_000;
 export const PLUGIN_APPROVAL_TITLE_MAX_LENGTH = 80;
 export const PLUGIN_APPROVAL_DESCRIPTION_MAX_LENGTH = 512;
 export const PLUGIN_APPROVAL_DETAIL_MAX_LENGTH = 16_384;
+/** Maximum serialized size of opaque plugin-owned approval data. */
+export const PLUGIN_APPROVAL_DATA_MAX_BYTES = 16_384;
 const PLUGIN_APPROVAL_DETAIL_TRUNCATION_SUFFIX = "…[truncated]";
 export const DEFAULT_PLUGIN_APPROVAL_DECISIONS = [
   "allow-once",
   "allow-always",
   "deny",
 ] as const satisfies readonly ExecApprovalDecision[];
+
+function isJsonValue(value: unknown, depth = 0): boolean {
+  if (depth > 32 || value === null) {
+    return depth <= 32;
+  }
+  switch (typeof value) {
+    case "string":
+    case "boolean":
+      return true;
+    case "number":
+      return Number.isFinite(value);
+    case "object":
+      if (Array.isArray(value)) {
+        return value.every((entry) => isJsonValue(entry, depth + 1));
+      }
+      if (
+        Object.getPrototypeOf(value) !== Object.prototype &&
+        Object.getPrototypeOf(value) !== null
+      ) {
+        return false;
+      }
+      return Object.values(value).every((entry) => isJsonValue(entry, depth + 1));
+    default:
+      return false;
+  }
+}
+
+/**
+ * Validates and canonicalizes opaque plugin-owned data before it crosses an
+ * approval boundary. Core never renders this value; the plugin's native
+ * approval handler may read the retained request payload.
+ */
+export function normalizePluginApprovalData(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (
+    value === null ||
+    Array.isArray(value) ||
+    typeof value !== "object" ||
+    Object.getPrototypeOf(value) !== Object.prototype ||
+    !isJsonValue(value)
+  ) {
+    throw new Error("plugin approval data must be a JSON object");
+  }
+  const encoded = JSON.stringify(value);
+  if (Buffer.byteLength(encoded, "utf8") > PLUGIN_APPROVAL_DATA_MAX_BYTES) {
+    throw new Error("plugin approval data exceeds the 16 KiB limit");
+  }
+  return JSON.parse(encoded) as Record<string, unknown>;
+}
 
 /** Caps reviewer-only plugin detail by Unicode code point without splitting surrogate pairs. */
 export function truncatePluginApprovalDetail(value: string): string {

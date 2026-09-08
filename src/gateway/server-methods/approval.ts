@@ -470,6 +470,22 @@ export function createApprovalHandlers(
           ));
       const kindMatches = resolveParams?.kind === record.presentation.kind;
       const forceMalformedDeny = !validParams || !kindMatches || !decisionAllowed;
+      if (
+        custody &&
+        (!requestedDecision ||
+          forceMalformedDeny ||
+          !custody.authorizes(
+            liveRecord!,
+            {
+              approvalId: liveRecord!.id,
+              decision: requestedDecision,
+            },
+            resolveParams?.resolutionProof,
+          ))
+      ) {
+        respondApprovalNotFound(respond);
+        return;
+      }
       let resolution:
         | ApplyApprovalDecisionResult<ExecApprovalRequestPayload>
         | ApplyApprovalDecisionResult<PluginApprovalRequestPayload>
