@@ -1033,7 +1033,10 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
   options?.recordToolPrepStage?.("authorization-policy");
   const turnSourceChannel = options?.messageChannel ?? options?.messageProvider;
   const turnSourceTo = options?.currentMessagingTarget ?? options?.currentChannelId;
+  const conversationId = options?.nativeChannelId ?? options?.groupId ?? options?.messageTo;
   const requester = {
+    ...(conversationId ? { conversationId } : {}),
+    ...(options?.chatType ? { chatType: options.chatType } : {}),
     ...(turnSourceChannel ? { channel: turnSourceChannel } : {}),
     ...(options?.agentAccountId ? { accountId: options.agentAccountId } : {}),
     ...(options?.senderId ? { senderId: options.senderId } : {}),

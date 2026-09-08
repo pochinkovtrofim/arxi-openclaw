@@ -916,3 +916,8 @@ subpath yet. Bundled examples:
     Deep architecture and capability model.
   </Card>
 </CardGroup>
+
+Tool hooks receive the host-admitted conversation in `ctx.requester.conversationId`
+and its kind in `ctx.requester.chatType`, alongside the trusted sender. These
+optional fields use the same inbound route as requester-scoped MCP resolution;
+approval plugins must not derive them from tool arguments or delivery targets.
