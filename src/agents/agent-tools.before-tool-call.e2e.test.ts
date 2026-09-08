@@ -3168,6 +3168,72 @@ describe("before_tool_call requireApproval handling", () => {
     }
   });
 
+  it("awaits approved execution before unblocking an allowed tool call", async () => {
+    const gate = createDeferredCore<void>();
+    const beforeApprovedExecution = vi.fn(async () => await gate.promise);
+    hookRunner.runBeforeToolCall.mockResolvedValue({
+      requireApproval: {
+        title: "Attested approval",
+        description: "Bind the allowed action before execution",
+        beforeApprovedExecution,
+      } as never,
+    });
+    mockCallGateway.mockResolvedValueOnce({ id: "server-id-attested", status: "accepted" });
+    mockCallGateway.mockResolvedValueOnce({
+      id: "server-id-attested",
+      decision: "allow-once",
+    });
+
+    let completed = false;
+    const pending = runBeforeToolCallHook({
+      toolName: "bash",
+      params: { command: "echo approved" },
+      ctx: { agentId: "main", sessionKey: "main" },
+    }).then((result) => {
+      completed = true;
+      return result;
+    });
+
+    await vi.waitFor(() => {
+      expect(beforeApprovedExecution).toHaveBeenCalledWith({
+        approvalId: "server-id-attested",
+        decision: "allow-once",
+        toolName: "bash",
+        params: { command: "echo approved" },
+      });
+    });
+    expect(completed).toBe(false);
+    gate.resolve();
+    await expect(pending).resolves.toMatchObject({ blocked: false });
+  });
+
+  it("fails closed when approved execution binding rejects", async () => {
+    const beforeApprovedExecution = vi.fn(async () => {
+      throw new Error("attestation unavailable");
+    });
+    hookRunner.runBeforeToolCall.mockResolvedValue({
+      requireApproval: {
+        title: "Attested approval",
+        description: "Bind the allowed action before execution",
+        beforeApprovedExecution,
+      } as never,
+    });
+    mockCallGateway.mockResolvedValueOnce({ id: "server-id-binding-failure", status: "accepted" });
+    mockCallGateway.mockResolvedValueOnce({
+      id: "server-id-binding-failure",
+      decision: "allow-once",
+    });
+
+    const result = await runBeforeToolCallHook({
+      toolName: "bash",
+      params: { command: "echo should-not-run" },
+      ctx: { agentId: "main", sessionKey: "main" },
+    });
+
+    expect(beforeApprovedExecution).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ blocked: true, deniedReason: "plugin-approval" });
+  });
+
   it("calls onResolution with deny on denial", async () => {
     const onResolution = vi.fn();
 
