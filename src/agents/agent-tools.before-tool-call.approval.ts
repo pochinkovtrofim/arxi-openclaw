@@ -1,10 +1,10 @@
+import { isDeepStrictEqual } from "node:util";
 /**
  * Approval transport for before_tool_call policy decisions.
  * Owns request/wait routing, embedded approval bridging, deferred approvals,
  * timeout classification, and owner-provided approval outcomes.
  */
 import { addTimerTimeoutGraceMs } from "@openclaw/normalization-core/number-coercion";
-import { isDeepStrictEqual } from "node:util";
 import { GatewayClientRequestError } from "../gateway/client.js";
 import { sanitizeApprovalScope } from "../infra/approval-scope.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
@@ -152,14 +152,28 @@ export async function finalizeApprovedPluginToolExecution(params: {
   finalParams: unknown;
 }): Promise<HookOutcome | undefined> {
   if (!isDeepStrictEqual(params.pending.approved.params, params.finalParams)) {
-    return { blocked: true, kind: "failure", disposition: "blocked", deniedReason: "plugin-approval", reason: "Tool parameters changed after approval", params: params.finalParams };
+    return {
+      blocked: true,
+      kind: "failure",
+      disposition: "blocked",
+      deniedReason: "plugin-approval",
+      reason: "Tool parameters changed after approval",
+      params: params.finalParams,
+    };
   }
   try {
     await params.pending.callback(params.pending.approved);
     return undefined;
   } catch (err) {
     log.warn(`plugin beforeApprovedExecution callback failed; blocking tool call: ${String(err)}`);
-    return { blocked: true, kind: "failure", disposition: "failed", deniedReason: "plugin-approval", reason: "Plugin approved-execution binding failed", params: params.finalParams };
+    return {
+      blocked: true,
+      kind: "failure",
+      disposition: "failed",
+      deniedReason: "plugin-approval",
+      reason: "Plugin approved-execution binding failed",
+      params: params.finalParams,
+    };
   }
 }
 
@@ -438,8 +452,18 @@ async function requestPluginToolApproval(params: {
       resolution === PluginApprovalResolutions.ALLOW_ONCE ||
       resolution === PluginApprovalResolutions.ALLOW_ALWAYS
     ) {
-      const approvedParams = mergeParamsWithApprovalOverrides(params.baseParams, params.overrideParams);
-      const pending = pendingApprovedExecution({ approval, approvalId: id, decision: resolution, toolName: params.toolName, ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}), params: approvedParams });
+      const approvedParams = mergeParamsWithApprovalOverrides(
+        params.baseParams,
+        params.overrideParams,
+      );
+      const pending = pendingApprovedExecution({
+        approval,
+        approvalId: id,
+        decision: resolution,
+        toolName: params.toolName,
+        ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+        params: approvedParams,
+      });
       return {
         blocked: false,
         params: approvedParams,
@@ -522,10 +546,12 @@ export async function requestDeferredPluginToolApproval(params: {
     overrideParams: deferred.overrideParams,
   });
   if (outcome.blocked || !outcome.pendingApprovedExecution) return outcome;
-  return (await finalizeApprovedPluginToolExecution({
-    pending: outcome.pendingApprovedExecution,
-    finalParams: outcome.params,
-  })) ?? outcome;
+  return (
+    (await finalizeApprovedPluginToolExecution({
+      pending: outcome.pendingApprovedExecution,
+      finalParams: outcome.params,
+    })) ?? outcome
+  );
 }
 
 /** Notify plugin approval callbacks that a deferred approval was cancelled. */

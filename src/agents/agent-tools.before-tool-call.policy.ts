@@ -72,7 +72,10 @@ async function finalizeApprovedExecutions(params: {
   finalParams: unknown;
 }): Promise<HookOutcome | undefined> {
   for (const pending of params.pending) {
-    const blocked = await finalizeApprovedPluginToolExecution({ pending, finalParams: params.finalParams });
+    const blocked = await finalizeApprovedPluginToolExecution({
+      pending,
+      finalParams: params.finalParams,
+    });
     if (blocked) return blocked;
   }
   return undefined;
