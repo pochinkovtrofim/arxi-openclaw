@@ -110,6 +110,7 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
         parentContext: activeTrustedParentContext(evt, metadata),
         startTimeMs: evt.ts,
       }),
+      "model.call",
     ).spanContext();
   };
 
@@ -140,8 +141,9 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
     assignModelCallPromptStatsAttrs(spanAttrs, evt);
     assignModelCallUsageAttrs(spanAttrs, evt);
     assignOtelModelContentAttributes(spanAttrs, modelContent, contentCapturePolicy);
+    const trackedSpan = takeTrackedTrustedSpan(evt, metadata);
     const span =
-      takeTrackedTrustedSpan(evt, metadata) ??
+      trackedSpan ??
       spanWithDuration(modelCallSpanName(evt), spanAttrs, evt.durationMs, {
         kind: modelCallSpanKind(),
         parentContext: activeTrustedParentContext(evt, metadata),
@@ -149,6 +151,9 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
       });
     setSpanAttrs(span, spanAttrs);
     addUpstreamRequestIdSpanEvent(span, evt.upstreamRequestIdHash);
+    if (!trackedSpan) {
+      runtime.bindTrustedSpan(evt, metadata, span, "model.call");
+    }
     span.end(evt.ts);
   };
 
@@ -191,8 +196,9 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
     assignModelCallPromptStatsAttrs(spanAttrs, evt);
     assignModelCallUsageAttrs(spanAttrs, evt);
     assignOtelModelContentAttributes(spanAttrs, modelContent, contentCapturePolicy);
+    const trackedSpan = takeTrackedTrustedSpan(evt, metadata);
     const span =
-      takeTrackedTrustedSpan(evt, metadata) ??
+      trackedSpan ??
       spanWithDuration(modelCallSpanName(evt), spanAttrs, evt.durationMs, {
         kind: modelCallSpanKind(),
         parentContext: activeTrustedParentContext(evt, metadata),
@@ -204,6 +210,9 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
       code: SpanStatusCode.ERROR,
       message: redactSensitiveText(evt.errorCategory),
     });
+    if (!trackedSpan) {
+      runtime.bindTrustedSpan(evt, metadata, span, "model.call");
+    }
     span.end(evt.ts);
   };
 

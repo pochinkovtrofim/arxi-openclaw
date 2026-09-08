@@ -924,6 +924,7 @@ describe("startPluginServices", () => {
     expect(contexts[0]?.internalDiagnostics?.onEvent).toBeTypeOf("function");
     expect(contexts[0]?.internalDiagnostics?.emit).toBeTypeOf("function");
     expect(contexts[0]?.internalDiagnostics?.registerTracePropagationBridge).toBeTypeOf("function");
+    expect(contexts[0]?.internalDiagnostics?.createSpanBindingEmitter).toBeTypeOf("function");
     expect(
       (contexts[0]?.internalDiagnostics as TrustedExporterInternalDiagnostics | undefined)
         ?.reportExporterHealth,
@@ -943,6 +944,7 @@ describe("startPluginServices", () => {
     expect(prometheusContexts[0]?.internalDiagnostics?.registerTracePropagationBridge).toBeTypeOf(
       "function",
     );
+    expect(prometheusContexts[0]?.internalDiagnostics?.createSpanBindingEmitter).toBeUndefined();
     expect(
       (prometheusContexts[0]?.internalDiagnostics as TrustedExporterInternalDiagnostics | undefined)
         ?.reportExporterHealth,
@@ -968,6 +970,9 @@ describe("startPluginServices", () => {
       officialDiagnosticsOtelContexts[0]?.internalDiagnostics?.registerTracePropagationBridge,
     ).toBeTypeOf("function");
     expect(
+      officialDiagnosticsOtelContexts[0]?.internalDiagnostics?.createSpanBindingEmitter,
+    ).toBeTypeOf("function");
+    expect(
       (
         officialDiagnosticsOtelContexts[0]?.internalDiagnostics as
           | TrustedExporterInternalDiagnostics
@@ -989,6 +994,7 @@ describe("startPluginServices", () => {
     expect(
       officialInstallContexts[0]?.internalDiagnostics?.registerTracePropagationBridge,
     ).toBeTypeOf("function");
+    expect(officialInstallContexts[0]?.internalDiagnostics?.createSpanBindingEmitter).toBeUndefined();
     expect(
       (
         officialInstallContexts[0]?.internalDiagnostics as

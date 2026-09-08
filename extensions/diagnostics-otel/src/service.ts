@@ -14,7 +14,11 @@ import {
 } from "@opentelemetry/sdk-trace-base";
 import { ATTR_SERVICE_NAME } from "@opentelemetry/semantic-conventions";
 import { registerUnhandledRejectionHandler } from "openclaw/plugin-sdk/runtime-env";
-import type { DiagnosticTraceContext, OpenClawPluginService } from "../api.js";
+import type {
+  DiagnosticSpanBindingEmitter,
+  DiagnosticTraceContext,
+  OpenClawPluginService,
+} from "../api.js";
 import {
   DEFAULT_SERVICE_NAME,
   OTEL_EXPORTER_OTLP_ENDPOINT_ENV,
@@ -192,6 +196,7 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
   let stopActiveTrustedSpans: (() => void) | null = null;
   let unregisterOwnedSdkRuntime: (() => void) | null = null;
   let unregisterUnhandledRejectionHandler: (() => void) | null = null;
+  let spanBindingEmitter: DiagnosticSpanBindingEmitter | null = null;
   let retireExporterRoutes: ((preserveFailures?: boolean) => void) | null = null;
   let preserveExporterRoutesOnNextStop = false;
 
@@ -204,6 +209,7 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
     const currentStopActiveTrustedSpans = stopActiveTrustedSpans;
     const currentUnregisterOwnedSdkRuntime = unregisterOwnedSdkRuntime;
     const currentUnregisterUnhandledRejectionHandler = unregisterUnhandledRejectionHandler;
+    const currentSpanBindingEmitter = spanBindingEmitter;
     const currentRetireExporterRoutes = retireExporterRoutes;
 
     unsubscribe = null;
@@ -214,6 +220,7 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
     stopActiveTrustedSpans = null;
     unregisterOwnedSdkRuntime = null;
     unregisterUnhandledRejectionHandler = null;
+    spanBindingEmitter = null;
     retireExporterRoutes = options?.preserveExporterRoutes ? currentRetireExporterRoutes : null;
 
     const settle = async (...stops: Array<(() => void | Promise<void>) | null>) =>
@@ -233,6 +240,12 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
       currentMeterProvider ? () => currentMeterProvider.shutdown() : null,
     );
     failures.push(...providerFailures);
+    // Keep bindings live until the trace provider has flushed its terminal spans.
+    failures.push(
+      ...(await settle(
+        currentSpanBindingEmitter ? () => currentSpanBindingEmitter.retire() : null,
+      )),
+    );
     if (!options?.preserveExporterRoutes) {
       currentRetireExporterRoutes?.(providerFailures.length > 0);
     }
@@ -559,7 +572,13 @@ export function createDiagnosticsOtelService(): OpenClawPluginService {
       const tracer = traceProvider
         ? traceProvider.getTracer("openclaw")
         : trace.getTracer("openclaw");
-      const diagnosticsTrace = createDiagnosticsTraceRuntime(tracer);
+      spanBindingEmitter = tracesActive
+        ? (ctx.internalDiagnostics?.createSpanBindingEmitter?.() ?? null)
+        : null;
+      const diagnosticsTrace = createDiagnosticsTraceRuntime(
+        tracer,
+        spanBindingEmitter ?? undefined,
+      );
       stopActiveTrustedSpans = diagnosticsTrace.stopActiveTrustedSpans;
       const diagnosticMetrics = createDiagnosticsMetrics(meter, otel.metricNamePrefix);
 
