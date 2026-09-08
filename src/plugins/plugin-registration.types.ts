@@ -11,6 +11,7 @@ import type {
   DiagnosticEventMetadata,
   DiagnosticEventPayload,
 } from "../infra/diagnostic-events.js";
+import type { DiagnosticSpanBindingEmitter } from "../infra/diagnostic-span-bindings.js";
 import type { DiagnosticTracePropagationBridge as DiagnosticTracePropagationBridgeContract } from "../infra/diagnostic-trace-propagation.js";
 import type { SecurityAuditFinding } from "../security/audit.types.js";
 import type { DeliveryContext } from "../utils/delivery-context.types.js";
@@ -378,6 +379,8 @@ export type OpenClawPluginServiceContext = {
       ) => void,
     ) => () => void;
     registerTracePropagationBridge?: (bridge: DiagnosticTracePropagationBridge) => () => void;
+    /** Present only for the core-authorized diagnostics-otel exporter. */
+    createSpanBindingEmitter?: () => DiagnosticSpanBindingEmitter;
   };
 };
 

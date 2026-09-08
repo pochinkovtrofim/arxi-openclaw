@@ -7,6 +7,10 @@ import {
   type Tracer,
 } from "@opentelemetry/api";
 import type {
+  DiagnosticSpanBindingEmitter,
+  DiagnosticSpanBindingFamily,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
+import type {
   DiagnosticEventMetadata,
   DiagnosticEventPayload,
   DiagnosticTraceContext,
@@ -20,7 +24,10 @@ import {
 } from "./service-trace-context.js";
 import type { TrustedSpanAliasOwner } from "./service-types.js";
 
-export function createDiagnosticsTraceRuntime(tracer: Tracer) {
+export function createDiagnosticsTraceRuntime(
+  tracer: Tracer,
+  spanBindings?: DiagnosticSpanBindingEmitter,
+) {
   const activeTrustedSpans = new Map<string, ReturnType<typeof tracer.startSpan>>();
   const activeTrustedSpanAliases = new Map<
     string,
@@ -78,6 +85,23 @@ export function createDiagnosticsTraceRuntime(tracer: Tracer) {
   };
   const trustedTraceContext = (evt: DiagnosticEventPayload, metadata: DiagnosticEventMetadata) =>
     metadata.trusted ? normalizeTraceContext(evt.trace) : undefined;
+  const bindTrustedSpan = (
+    evt: DiagnosticEventPayload,
+    metadata: DiagnosticEventMetadata,
+    span: ReturnType<typeof tracer.startSpan>,
+    family: DiagnosticSpanBindingFamily,
+  ) => {
+    const diagnostic = trustedTraceContext(evt, metadata);
+    const actual = span.spanContext();
+    if (!diagnostic?.spanId || !isSpanContextValid(actual)) {
+      return;
+    }
+    spanBindings?.emit({
+      diagnostic: { traceId: diagnostic.traceId, spanId: diagnostic.spanId },
+      span: { traceId: actual.traceId, spanId: actual.spanId, traceFlags: actual.traceFlags },
+      family,
+    });
+  };
   // Internal-dispatcher events are linkable on their own; everything else defers to
   // the shared trusted-trace-context rule, which also accepts an untrusted payload
   // whose trace context came from OpenClaw-owned scope (metadata.trustedTraceContext).
@@ -242,11 +266,13 @@ export function createDiagnosticsTraceRuntime(tracer: Tracer) {
     evt: DiagnosticEventPayload,
     metadata: DiagnosticEventMetadata,
     span: ReturnType<typeof tracer.startSpan>,
+    family: DiagnosticSpanBindingFamily,
   ) => {
     const spanId = trustedTraceContext(evt, metadata)?.spanId;
     if (spanId) {
       activeTrustedSpans.set(spanId, span);
     }
+    bindTrustedSpan(evt, metadata, span, family);
     return span;
   };
   const trackInternalOrTrustedSpan = (
@@ -395,6 +421,7 @@ export function createDiagnosticsTraceRuntime(tracer: Tracer) {
     trustedSpanAliasOwner,
     spanWithDuration,
     trustedTraceContext,
+    bindTrustedSpan,
     internalOrTrustedTraceContext,
     internalOrTrustedParentContext,
     internalOrTrustedExplicitParentContext,

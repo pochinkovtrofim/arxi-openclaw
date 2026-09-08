@@ -12,6 +12,7 @@ import {
   onTrustedInternalDiagnosticEvent,
   registerDiagnosticTracePropagationBridge,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
+import { createTrustedDiagnosticSpanBindingEmitter } from "../../../src/infra/diagnostic-span-bindings.js";
 import { vi } from "vitest";
 import type { OpenClawPluginServiceContext } from "../api.js";
 import type { ExporterHealthUpdate } from "./service-exporter-health.js";
@@ -125,6 +126,7 @@ export function createOtelContext(
     emit: emitTrustedDiagnosticEventWithPrivateData,
     onEvent: onTrustedInternalDiagnosticEvent,
     registerTracePropagationBridge: registerDiagnosticTracePropagationBridge,
+    createSpanBindingEmitter: createTrustedDiagnosticSpanBindingEmitter,
     reportExporterHealth: (update) => reports.push(update),
   };
   const ctx: OpenClawPluginServiceContext = {

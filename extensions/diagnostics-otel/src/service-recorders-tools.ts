@@ -114,6 +114,7 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
         parentContext: activeTrustedParentContext(evt, metadata),
         startTimeMs: toolTimestampMs(evt),
       }),
+      "tool.execution",
     ).spanContext();
   };
 
@@ -131,13 +132,17 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
     addRunAttrs(spanAttrs, evt);
     assignOtelToolIdentityAttributes(spanAttrs, evt);
     assignOtelToolContentAttributes(spanAttrs, toolContent, contentCapturePolicy);
+    const trackedSpan = takeTrackedTrustedSpan(evt, metadata);
     const span =
-      takeTrackedTrustedSpan(evt, metadata) ??
+      trackedSpan ??
       spanWithDuration("openclaw.tool.execution", spanAttrs, evt.durationMs, {
         parentContext: activeTrustedParentContext(evt, metadata),
         endTimeMs: toolTimestampMs(evt),
       });
     setSpanAttrs(span, spanAttrs);
+    if (!trackedSpan) {
+      runtime.bindTrustedSpan(evt, metadata, span, "tool.execution");
+    }
     span.end(toolTimestampMs(evt));
   };
 
@@ -161,8 +166,9 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
       spanAttrs["openclaw.errorCode"] = normalizeDiagnosticValue(evt.errorCode, "other");
     }
     assignOtelToolContentAttributes(spanAttrs, toolContent, contentCapturePolicy);
+    const trackedSpan = takeTrackedTrustedSpan(evt, metadata);
     const span =
-      takeTrackedTrustedSpan(evt, metadata) ??
+      trackedSpan ??
       spanWithDuration("openclaw.tool.execution", spanAttrs, evt.durationMs, {
         parentContext: activeTrustedParentContext(evt, metadata),
         endTimeMs: toolTimestampMs(evt),
@@ -172,6 +178,9 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
       code: SpanStatusCode.ERROR,
       message: redactSensitiveText(evt.errorCategory),
     });
+    if (!trackedSpan) {
+      runtime.bindTrustedSpan(evt, metadata, span, "tool.execution");
+    }
     span.end(toolTimestampMs(evt));
   };
 
@@ -193,13 +202,17 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
     };
     addRunAttrs(spanAttrs, evt);
     assignOtelToolIdentityAttributes(spanAttrs, evt);
+    const trackedSpan = takeTrackedTrustedSpan(evt, metadata);
     const span =
-      takeTrackedTrustedSpan(evt, metadata) ??
+      trackedSpan ??
       spanWithDuration("openclaw.tool.execution", spanAttrs, 0, {
         parentContext: activeTrustedParentContext(evt, metadata),
         endTimeMs: toolTimestampMs(evt),
       });
     setSpanAttrs(span, spanAttrs);
+    if (!trackedSpan) {
+      runtime.bindTrustedSpan(evt, metadata, span, "tool.execution");
+    }
     span.end(toolTimestampMs(evt));
   };
 

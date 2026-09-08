@@ -332,6 +332,7 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
       completeTrackedLifecycleSpan(trustedTrace, trackedSpan, evt.ts);
       return;
     }
+    runtime.bindTrustedSpan(evt, metadata, span, "run");
     span.end(evt.ts);
   };
 
