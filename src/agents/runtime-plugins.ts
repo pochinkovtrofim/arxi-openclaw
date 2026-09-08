@@ -21,6 +21,7 @@ import {
   getPluginRuntimeGatewayRequestScope,
   withPluginRuntimeRegistryScope,
 } from "../plugins/runtime/gateway-request-scope.js";
+import { adoptRuntimeToolPolicyRegistrations } from "../plugins/tool-policy-runtime.js";
 import { adoptRuntimeWidgetPresenterRegistrations } from "../plugins/widget-presenters.js";
 import { resolveUserPath } from "../utils.js";
 import {
@@ -131,11 +132,12 @@ export function loadAgentRuntimePluginRegistryHandle(
   }
   // Discovery-only load: full mode can replace process-global sandbox backends.
   // Adopt full-only runtime capabilities from the matching composition-root owners.
-  const pluginRegistry = loadPluginRegistryHandle({ ...load.loadOptions, activate: false });
+  let pluginRegistry = loadPluginRegistryHandle({ ...load.loadOptions, activate: false });
   const activeRegistry = getActivePluginRegistry();
   if (!activeRegistry) {
     return pluginRegistry;
   }
+  pluginRegistry = adoptRuntimeToolPolicyRegistrations(pluginRegistry, activeRegistry);
   return adoptRuntimeWidgetPresenterRegistrations(
     adoptRuntimeContextEngineRegistrations(pluginRegistry, activeRegistry),
     activeRegistry,
