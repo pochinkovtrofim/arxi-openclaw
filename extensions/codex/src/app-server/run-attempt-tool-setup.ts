@@ -513,7 +513,12 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     );
     const toolsWithScopedMcp =
       scopedExecutable.length > 0
-        ? [...executableBaseTools, ...scopedExecutable]
+        ? [
+            ...executableBaseTools,
+            ...params.hostCapabilities.bindToolSurface(scopedExecutable, {
+              cwd: effectiveCwd ?? effectiveWorkspace,
+            }),
+          ]
         : executableBaseTools;
     const registeredWithScopedMcp =
       scopedAdvertised.length > 0
