@@ -1050,6 +1050,42 @@ beforeEach(() => {
 });
 
 describe("runCodexAppServerAttempt", () => {
+  it("binds scoped MCP execution to the current host capability", async () => {
+    const { sessionFile, workspaceDir } = createRunPaths();
+    const harness = createStartedThreadHarness();
+    const tool = createRuntimeDynamicTool("mail__send");
+    agentHarnessRuntimeMocks.scopedTools = [tool];
+    const params = createParams(sessionFile, workspaceDir);
+    const bind = vi.fn((tools: typeof agentHarnessRuntimeMocks.scopedTools) =>
+      (tools ?? []).map((source) => ({
+        ...source,
+        execute: async () => {
+          throw new Error("current host capability has closed");
+        },
+      })),
+    );
+    params.hostCapabilities = { ...params.hostCapabilities, bindToolSurface: bind };
+    const run = runCodexAppServerAttempt(params);
+    await harness.waitForMethod("turn/start");
+    const response = await harness.handleServerRequest({
+      id: "mcp-bound-host",
+      method: "item/tool/call",
+      params: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        callId: "mcp-bound-call",
+        namespace: null,
+        tool: tool.name,
+        arguments: {},
+      },
+    });
+    expect(bind).toHaveBeenCalledWith([tool], { cwd: workspaceDir });
+    expect(response).toMatchObject({ success: false });
+    expect(JSON.stringify(response)).toContain("current host capability has closed");
+    expect(tool.execute).not.toHaveBeenCalled();
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+    await run;
+  });
   it("binds requester-scoped MCP hooks to the same admitted conversation as resolution", async () => {
     const { sessionFile, workspaceDir } = createRunPaths();
     const harness = createStartedThreadHarness();
