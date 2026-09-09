@@ -137,7 +137,11 @@ export function loadAgentRuntimePluginRegistryHandle(
   if (!activeRegistry) {
     return pluginRegistry;
   }
-  pluginRegistry = adoptRuntimeToolPolicyRegistrations(pluginRegistry, activeRegistry);
+  pluginRegistry = adoptRuntimeToolPolicyRegistrations(
+    pluginRegistry,
+    activeRegistry,
+    load.loadOptions.config,
+  );
   return adoptRuntimeWidgetPresenterRegistrations(
     adoptRuntimeContextEngineRegistrations(pluginRegistry, activeRegistry),
     activeRegistry,

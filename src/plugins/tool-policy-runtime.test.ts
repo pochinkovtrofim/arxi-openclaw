@@ -27,6 +27,63 @@ function fixture() {
 }
 
 describe("prepared runtime tool policy adoption", () => {
+  it("keeps an admitted channel conversation gate and its completion hook", async () => {
+    const { runtime, target } = fixture();
+    for (const registry of [runtime, target]) registry.plugins[0]!.origin = "config";
+    const before = vi.fn(async () => ({ outcome: "block" as const, reason: "paused" }));
+    const after = vi.fn(async () => undefined);
+    runtime.typedHooks.push(
+      { pluginId: "approval", hookName: "before_agent_run", handler: before },
+      { pluginId: "approval", hookName: "agent_end", handler: after },
+    );
+    const config = {
+      plugins: { entries: { approval: { hooks: { allowConversationAccess: true } } } },
+    };
+    const adopted = adoptRuntimeToolPolicyRegistrations(target, runtime, config);
+    const runner = createHookRunner(adopted);
+    expect(
+      await runner.runBeforeAgentRun({ prompt: "synthetic", messages: [] }, { trigger: "cron" }),
+    ).toMatchObject({ decision: { outcome: "block" } });
+    await runner.runAgentEnd({ messages: [], success: false }, { trigger: "cron" });
+    expect(before).toHaveBeenCalledOnce();
+    expect(after).toHaveBeenCalledOnce();
+    expect(target.typedHooks).toEqual([]);
+    expect(adoptRuntimeToolPolicyRegistrations(adopted, runtime, config)).toBe(adopted);
+  });
+  it.each([undefined, false])(
+    "does not import conversation hooks without a current grant (%s)",
+    (grant) => {
+      const { runtime, target } = fixture();
+      for (const registry of [runtime, target]) registry.plugins[0]!.origin = "config";
+      runtime.typedHooks.push({
+        pluginId: "approval",
+        hookName: "before_agent_run",
+        handler: vi.fn(),
+      });
+      const adopted = adoptRuntimeToolPolicyRegistrations(target, runtime, {
+        plugins: { entries: { approval: { hooks: { allowConversationAccess: grant } } } },
+      });
+      expect(adopted.typedHooks.map((hook) => hook.hookName)).toEqual(["before_tool_call"]);
+    },
+  );
+  it("respects a current prompt-injection denial while retaining the run gate", () => {
+    const { runtime, target } = fixture();
+    runtime.typedHooks.push(
+      { pluginId: "approval", hookName: "before_agent_run", handler: vi.fn() },
+      { pluginId: "approval", hookName: "before_prompt_build", handler: vi.fn() },
+    );
+    const adopted = adoptRuntimeToolPolicyRegistrations(target, runtime, {
+      plugins: {
+        entries: {
+          approval: { hooks: { allowConversationAccess: true, allowPromptInjection: false } },
+        },
+      },
+    });
+    expect(adopted.typedHooks.map((hook) => hook.hookName)).toEqual([
+      "before_tool_call",
+      "before_agent_run",
+    ]);
+  });
   it("keeps a full-only blocking hook in the discovery generation without mutating it", async () => {
     const { runtime, target, handler } = fixture();
     const adopted = adoptRuntimeToolPolicyRegistrations(target, runtime);
