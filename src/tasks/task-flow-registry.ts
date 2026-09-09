@@ -1,14 +1,19 @@
 // Coordinates managed task-flow creation, updates, ownership, and snapshots.
 import crypto from "node:crypto";
+import type { DatabaseSync } from "node:sqlite";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { formatErrorMessage } from "../infra/errors.js";
+import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
+import { normalizeSqliteNumber } from "../infra/sqlite-number.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import {
   getTaskFlowRegistryObservers,
   getTaskFlowRegistryStore,
   resetTaskFlowRegistryRuntimeForTests,
   type TaskFlowRegistryObserverEvent,
 } from "./task-flow-registry.store.js";
+import { upsertTaskFlowRegistryRecordWithHistoryInStateTransaction } from "./task-flow-registry.store.sqlite.js";
 import type { TaskFlowHistoryRegistration } from "./task-flow-registry.store.types.js";
 import {
   isTerminalTaskFlow,
@@ -28,7 +33,7 @@ type TaskFlowRegistryRestoreState =
   | { status: "failed"; error: Error; message: string };
 let taskFlowRegistryRestoreState: TaskFlowRegistryRestoreState = { status: "uninitialized" };
 
-type FlowRecordPatch = Omit<
+export type FlowRecordPatch = Omit<
   Partial<
     Pick<
       TaskFlowRecord,
@@ -65,7 +70,7 @@ type FlowRecordPatch = Omit<
   endedAt?: number | null;
 };
 
-type FlowRecordCreateFields = {
+export type FlowRecordCreateFields = {
   ownerKey: string;
   requesterOrigin?: TaskFlowRecord["requesterOrigin"];
   status?: TaskFlowStatus;
@@ -99,6 +104,14 @@ export type TaskFlowUpdateResult =
       reason: "not_found" | "revision_conflict" | "persist_failed";
       current?: TaskFlowRecord;
     };
+
+/** A normalized managed Flow change held until its caller's outer transaction commits. */
+export type PreparedManagedTaskFlowMutation = {
+  prepared: true;
+  flow: TaskFlowRecord;
+  previous?: TaskFlowRecord;
+  history?: TaskFlowHistoryRegistration;
+};
 
 type TaskFlowSyncResult =
   | {
@@ -340,6 +353,14 @@ function persistFlowRegistry(): boolean {
 
 function persistFlowUpsert(flow: TaskFlowRecord, history?: TaskFlowHistoryRegistration) {
   const store = getTaskFlowRegistryStore();
+  if (
+    flow.syncMode === "managed" &&
+    isTerminalTaskFlow(flow) &&
+    store.upsertTerminalManagedFlowWithObligationCleanup
+  ) {
+    store.upsertTerminalManagedFlowWithObligationCleanup(cloneFlowRecord(flow), history);
+    return;
+  }
   if (store.upsertFlowWithHistory) {
     store.upsertFlowWithHistory(cloneFlowRecord(flow), history);
     return;
@@ -490,6 +511,106 @@ function createFlowRecord(params: CreateFlowRecordParams): TaskFlowRecord | null
   ensureTaskFlowRegistryReady();
   const record = buildFlowRecord(params);
   return writeFlowRecord(record, undefined, params.history);
+}
+
+/**
+ * Builds a managed Flow create/update without writing SQLite or publishing
+ * memory. Its caller owns the larger state transaction and must call commit,
+ * then publish only after that transaction returns successfully.
+ */
+export function prepareManagedTaskFlowMutation(params: {
+  ownerKey: string;
+  controllerId: string;
+  flowId?: string;
+  expectedRevision?: number;
+  create?: Omit<FlowRecordCreateFields, "ownerKey">;
+  patch?: FlowRecordPatch;
+  history?: TaskFlowHistoryRegistration;
+}): PreparedManagedTaskFlowMutation | TaskFlowUpdateResult {
+  ensureTaskFlowRegistryReady();
+  const controllerId = assertControllerId(params.controllerId);
+  if (!params.flowId) {
+    if (!params.create) {
+      throw new Error("Managed Flow creation requires create fields.");
+    }
+    if (params.history && params.history.controllerId !== controllerId) {
+      throw new Error("Task Flow history controller must match the managed flow controller.");
+    }
+    return {
+      prepared: true,
+      flow: buildFlowRecord({
+        ...params.create,
+        ownerKey: assertFlowOwnerKey(params.ownerKey),
+        syncMode: "managed",
+        controllerId,
+      }),
+      ...(params.history ? { history: params.history } : {}),
+    };
+  }
+  const expectedRevision = params.expectedRevision;
+  if (
+    typeof expectedRevision !== "number" ||
+    !Number.isSafeInteger(expectedRevision) ||
+    expectedRevision < 0
+  ) {
+    throw new Error("Managed Flow update requires an expected revision.");
+  }
+  const current = flows.get(params.flowId);
+  if (!current) return { applied: false, reason: "not_found" };
+  if (
+    current.syncMode !== "managed" ||
+    current.ownerKey !== params.ownerKey ||
+    current.controllerId !== controllerId ||
+    current.revision !== expectedRevision
+  ) {
+    return { applied: false, reason: "revision_conflict", current: cloneFlowRecord(current) };
+  }
+  return {
+    prepared: true,
+    flow: applyFlowPatch(current, params.patch ?? {}),
+    previous: cloneFlowRecord(current),
+    ...(params.history ? { history: params.history } : {}),
+  };
+}
+
+/** Writes a prepared Flow in the caller's state transaction and checks its database CAS. */
+export function commitPreparedManagedTaskFlowMutationInStateTransaction(
+  db: DatabaseSync,
+  prepared: PreparedManagedTaskFlowMutation,
+): void {
+  const current = executeSqliteQueryTakeFirstSync(
+    db,
+    getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
+      .selectFrom("flow_runs")
+      .select(["revision", "owner_key", "controller_id", "sync_mode"])
+      .where("flow_id", "=", prepared.flow.flowId),
+  );
+  if (prepared.previous) {
+    if (
+      normalizeSqliteNumber(current?.revision ?? null) !== prepared.previous.revision ||
+      current?.owner_key !== prepared.previous.ownerKey ||
+      current?.controller_id !== prepared.previous.controllerId ||
+      current?.sync_mode !== "managed"
+    ) {
+      throw new Error("Managed Flow database revision changed.");
+    }
+  } else if (current) {
+    throw new Error("Managed Flow already exists.");
+  }
+  upsertTaskFlowRegistryRecordWithHistoryInStateTransaction(db, prepared.flow, prepared.history);
+}
+
+/** Publishes a previously committed mutation to memory and observers. */
+export function publishPreparedManagedTaskFlowMutation(
+  prepared: PreparedManagedTaskFlowMutation,
+): TaskFlowRecord {
+  flows.set(prepared.flow.flowId, prepared.flow);
+  emitFlowRegistryObserverEvent(() => ({
+    kind: "upserted",
+    flow: cloneFlowRecord(prepared.flow),
+    ...(prepared.previous ? { previous: cloneFlowRecord(prepared.previous) } : {}),
+  }));
+  return cloneFlowRecord(prepared.flow);
 }
 
 export function createManagedTaskFlow(

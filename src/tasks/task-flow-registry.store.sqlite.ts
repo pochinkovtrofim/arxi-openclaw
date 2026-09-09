@@ -29,6 +29,7 @@ import {
   runOpenClawStateWriteTransaction,
   type OpenClawStateDatabaseOptions,
 } from "../state/openclaw-state-db.js";
+import { removeTaskFlowAutomationObligationForTerminalFlowInStateTransaction } from "./task-flow-automation-obligation.store.sqlite.js";
 import type {
   TaskFlowHistoryArchive,
   TaskFlowHistoryEvent,
@@ -47,7 +48,10 @@ import { parseDeliveryContextJson, parseSqliteJsonValue } from "./task-registry.
 import { parseTaskNotifyPolicy } from "./task-registry.types.js";
 
 type FlowRunsTable = OpenClawStateKyselyDatabase["flow_runs"];
-type FlowRegistryStoreDatabase = Pick<OpenClawStateKyselyDatabase, "flow_runs">;
+type FlowRegistryStoreDatabase = Pick<
+  OpenClawStateKyselyDatabase,
+  "flow_runs" | "task_flow_automation_obligations"
+>;
 
 type FlowRegistryRow = Selectable<FlowRunsTable> & {
   sync_mode: string | null;
@@ -491,8 +495,42 @@ export function upsertTaskFlowRegistryRecordWithHistoryToSqlite(
   history?: TaskFlowHistoryRegistration,
 ) {
   withWriteTransaction(({ db }) => {
-    upsertFlowWithHistory(db, flow, history);
+    upsertTaskFlowRegistryRecordWithHistoryInStateTransaction(db, flow, history);
   });
+}
+
+/** Atomically commits a terminal managed Flow and removes its existing wake receipt. */
+export function upsertTerminalManagedTaskFlowRecordWithObligationCleanupToSqlite(
+  flow: TaskFlowRecord,
+  history?: TaskFlowHistoryRegistration,
+) {
+  if (flow.syncMode !== "managed" || !flow.controllerId) {
+    throw new Error("Terminal Automation obligation cleanup requires a managed Flow controller.");
+  }
+  const controllerId = flow.controllerId;
+  withWriteTransaction(({ db }) => {
+    upsertFlowWithHistory(db, flow, history);
+    if (tableExists(db, "task_flow_automation_obligations")) {
+      removeTaskFlowAutomationObligationForTerminalFlowInStateTransaction(db, {
+        flowId: flow.flowId,
+        expectedFlowRevision: flow.revision,
+        controllerId,
+      });
+    }
+  });
+}
+
+/**
+ * Persists a Flow inside a larger state transaction owned by its lifecycle
+ * coordinator. Callers that add durable side effects must keep their Flow CAS
+ * and every receipt in this same transaction.
+ */
+export function upsertTaskFlowRegistryRecordWithHistoryInStateTransaction(
+  db: DatabaseSync,
+  flow: TaskFlowRecord,
+  history?: TaskFlowHistoryRegistration,
+): void {
+  upsertFlowWithHistory(db, flow, history);
 }
 
 function parseTaskFlowHistoryEvent(row: Record<string, unknown>): TaskFlowHistoryEvent | undefined {
@@ -811,6 +849,14 @@ export function bindTaskFlowExecution(params: {
 
 export function deleteTaskFlowRegistryRecordFromSqlite(flowId: string) {
   withWriteTransaction(({ db }) => {
+    if (tableExists(db, "task_flow_automation_obligations")) {
+      executeSqliteQuerySync(
+        db,
+        getFlowRegistryKysely(db)
+          .deleteFrom("task_flow_automation_obligations")
+          .where("flow_id", "=", flowId),
+      );
+    }
     executeSqliteQuerySync(
       db,
       getFlowRegistryKysely(db).deleteFrom("flow_runs").where("flow_id", "=", flowId),

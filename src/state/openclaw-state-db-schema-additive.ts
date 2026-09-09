@@ -36,6 +36,10 @@ const TASK_FLOW_HISTORY_STREAMS_SCHEMA_START =
   "CREATE TABLE IF NOT EXISTS task_flow_history_streams (";
 const TASK_FLOW_HISTORY_ARCHIVES_INDEX_END =
   "ON task_flow_history_archives(owner_key, archived_at DESC, flow_id);";
+const TASK_FLOW_AUTOMATION_OBLIGATIONS_SCHEMA_START =
+  "CREATE TABLE IF NOT EXISTS task_flow_automation_obligations (";
+const TASK_FLOW_AUTOMATION_OBLIGATIONS_INDEX_END =
+  "ON task_flow_automation_obligations(cron_store_key, cron_job_id, phase, scheduled_at_ms, flow_id);";
 
 function secretStoreSchemaSql(): string {
   const start = OPENCLAW_STATE_SCHEMA_SQL.indexOf(SECRET_STORE_SCHEMA_START);
@@ -109,6 +113,24 @@ export function ensureTaskFlowHistorySchema(database: DatabaseSync): void {
     OPENCLAW_STATE_SCHEMA_SQL.slice(
       start,
       endMarkerStart + TASK_FLOW_HISTORY_ARCHIVES_INDEX_END.length,
+    ),
+  ); // sqlite-allow-raw -- Canonical additive DDL only.
+}
+
+/** Lazily installs durable per-Flow receipts for existing Automation wake obligations. */
+export function ensureTaskFlowAutomationObligationSchema(database: DatabaseSync): void {
+  const start = OPENCLAW_STATE_SCHEMA_SQL.indexOf(TASK_FLOW_AUTOMATION_OBLIGATIONS_SCHEMA_START);
+  const endMarkerStart = OPENCLAW_STATE_SCHEMA_SQL.indexOf(
+    TASK_FLOW_AUTOMATION_OBLIGATIONS_INDEX_END,
+    start,
+  );
+  if (start < 0 || endMarkerStart < start) {
+    throw new Error("OpenClaw task-flow Automation obligation schema marker is missing.");
+  }
+  database.exec(
+    OPENCLAW_STATE_SCHEMA_SQL.slice(
+      start,
+      endMarkerStart + TASK_FLOW_AUTOMATION_OBLIGATIONS_INDEX_END.length,
     ),
   ); // sqlite-allow-raw -- Canonical additive DDL only.
 }

@@ -1675,6 +1675,31 @@ CREATE TABLE IF NOT EXISTS task_flow_history_archives (
 CREATE INDEX IF NOT EXISTS idx_task_flow_history_archives_owner
   ON task_flow_history_archives(owner_key, archived_at DESC, flow_id);
 
+-- A managed Flow may retain one controller-owned future check bound to an
+-- existing paced Automation. Ownership remains canonical in flow_runs; this
+-- receipt intentionally stores no owner key or controller content.
+CREATE TABLE IF NOT EXISTS task_flow_automation_obligations (
+  obligation_id TEXT NOT NULL PRIMARY KEY,
+  flow_id TEXT NOT NULL UNIQUE,
+  controller_id TEXT NOT NULL,
+  flow_revision INTEGER NOT NULL CHECK (flow_revision >= 0),
+  cron_store_key TEXT NOT NULL,
+  cron_job_id TEXT NOT NULL,
+  cron_schedule_identity TEXT NOT NULL,
+  source_run_id TEXT NOT NULL,
+  trigger_at_ms INTEGER NOT NULL,
+  scheduled_at_ms INTEGER NOT NULL,
+  trigger_kind TEXT NOT NULL,
+  trigger_digest TEXT NOT NULL,
+  phase TEXT NOT NULL CHECK (phase IN ('bound', 'scheduled', 'suspended', 'blocked')),
+  created_at_ms INTEGER NOT NULL,
+  updated_at_ms INTEGER NOT NULL,
+  FOREIGN KEY (flow_id) REFERENCES flow_runs(flow_id) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_task_flow_automation_obligations_job_due
+  ON task_flow_automation_obligations(cron_store_key, cron_job_id, phase, scheduled_at_ms, flow_id);
+
 -- Durable meeting-capture sessions are gateway-global rather than agent-session
 -- transcripts. JSON/JSONL files are doctor import inputs or explicit CLI exports.
 CREATE TABLE IF NOT EXISTS meeting_transcript_sessions (

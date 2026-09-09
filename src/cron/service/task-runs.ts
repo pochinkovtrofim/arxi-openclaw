@@ -69,6 +69,8 @@ export function createCronOwnerExecutionIdentityAdmission(params: {
   runReceipt: CronRunReceiptHandle;
   taskId?: string;
   flowId?: string;
+  /** Only the timer-owned due runner may grant durable Automation capability. */
+  scheduledAutomation?: boolean;
 }): CronExecutionIdentityAdmission {
   const ownerBinding = createExecutionStartedOwnerBinding((admitted) => {
     try {
@@ -106,6 +108,7 @@ export function createCronOwnerExecutionIdentityAdmission(params: {
     }
   });
   return {
+    ...(params.scheduledAutomation === true ? { scheduledAutomation: true } : {}),
     ingress: { kind: "schedule", boundary: "cron.isolated-agent", state: "present" },
     onPostAdmission: ownerBinding.onPostAdmission,
     onExecutionStarted: ownerBinding.onExecutionStarted,

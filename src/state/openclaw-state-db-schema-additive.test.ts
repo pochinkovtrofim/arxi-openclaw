@@ -17,6 +17,7 @@ vi.mock("./openclaw-state-schema.js", async (importOriginal) => {
 import { OPENCLAW_STATE_SCHEMA_VERSION } from "./openclaw-state-db-contract.js";
 import {
   ensureSecretStoreSchema,
+  ensureTaskFlowAutomationObligationSchema,
   ensureTaskFlowHistorySchema,
 } from "./openclaw-state-db-schema-additive.js";
 import { getOpenClawStateRuntimeSchema } from "./openclaw-state-schema-compatibility.js";
@@ -31,6 +32,27 @@ it("keeps secret-store first use from installing later additive schema", () => {
       .map((row) => row.name);
 
     expect(names).toEqual(["secret_store_entries", "secret_store_entries_live_idx"]);
+  } finally {
+    database.close();
+  }
+});
+
+it("installs task-flow Automation obligations as same-version additive schema", () => {
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec(`PRAGMA user_version = ${OPENCLAW_STATE_SCHEMA_VERSION};`);
+    ensureTaskFlowAutomationObligationSchema(database);
+    expect(
+      database
+        .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name = ?")
+        .get("task_flow_automation_obligations"),
+    ).toEqual({ name: "task_flow_automation_obligations" });
+    expect(database.prepare("PRAGMA user_version").get()).toEqual({
+      user_version: OPENCLAW_STATE_SCHEMA_VERSION,
+    });
+    expect(
+      getOpenClawStateRuntimeSchema({ includeVersionLazyAdditiveTables: false }),
+    ).not.toContain("task_flow_automation_obligations");
   } finally {
     database.close();
   }

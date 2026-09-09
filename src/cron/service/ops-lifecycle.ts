@@ -10,6 +10,7 @@ import {
 } from "./foreign-receipt-monitor.js";
 import { nextWakeAtMs } from "./jobs-scheduling.js";
 import { locked } from "./locked.js";
+import { repairManagedFlowAutomationObligations } from "./managed-flow-obligation-repair.js";
 import { emitCronRunFinished } from "./ops-run-preparation.js";
 import { cancelCronRunAdmissionWaiters } from "./run-admission.js";
 import {
@@ -130,6 +131,9 @@ export async function start(state: CronServiceState): Promise<void> {
   const skipJobIds = new Set<string>();
   await locked(state, async () => {
     await ensureLoaded(state, { skipRecompute: true });
+    if (repairManagedFlowAutomationObligations(state)) {
+      await ensureLoaded(state, { forceReload: true, skipRecompute: true });
+    }
     if (state.stopped) {
       return;
     }

@@ -19,6 +19,7 @@ import {
   summarizeCronJobSchedule,
 } from "./jobs-scheduling.js";
 import { locked } from "./locked.js";
+import { repairManagedFlowAutomationObligations } from "./managed-flow-obligation-repair.js";
 import {
   cleanupQueuedCronRunReservations,
   executeQueuedCronRun,
@@ -184,6 +185,9 @@ async function onAdmittedTimer(state: CronServiceState) {
   try {
     const dueJobs = await locked(state, async () => {
       await ensureLoaded(state, { forceReload: true, skipRecompute: true });
+      if (repairManagedFlowAutomationObligations(state)) {
+        await ensureLoaded(state, { forceReload: true, skipRecompute: true });
+      }
       if (state.stopped || state.startupCatchup) {
         state.deps.log.warn({}, "cron: due job reservation skipped - scheduler unavailable");
         return [];

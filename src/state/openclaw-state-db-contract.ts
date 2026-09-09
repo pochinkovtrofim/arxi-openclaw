@@ -66,6 +66,7 @@ export const LAZY_ADDITIVE_STATE_TABLES = [
   "task_flow_history_streams",
   "task_flow_history_events",
   "task_flow_history_archives",
+  "task_flow_automation_obligations",
 ] as const;
 export const LAZY_ADDITIVE_STATE_INDEXES = [
   ...FIRST_USE_STATE_INDEXES,
@@ -77,6 +78,7 @@ export const LAZY_ADDITIVE_STATE_INDEXES = [
   "idx_task_flow_history_streams_owner",
   "idx_task_flow_history_events_retention",
   "idx_task_flow_history_archives_owner",
+  "idx_task_flow_automation_obligations_job_due",
 ] as const;
 /** Maximum time one synchronous SQLite call may wait for a lock. */
 export const OPENCLAW_SQLITE_BUSY_TIMEOUT_MS = 5_000;

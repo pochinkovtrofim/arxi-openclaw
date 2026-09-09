@@ -8,6 +8,7 @@ import {
   saveTaskFlowRegistryStateToSqlite,
   upsertTaskFlowRegistryRecordWithHistoryToSqlite,
   upsertTaskFlowRegistryRecordToSqlite,
+  upsertTerminalManagedTaskFlowRecordWithObligationCleanupToSqlite,
 } from "./task-flow-registry.store.sqlite.js";
 import type {
   TaskFlowHistoryPage,
@@ -21,6 +22,10 @@ type TaskFlowRegistryStore = {
   saveSnapshot: (snapshot: TaskFlowRegistryStoreSnapshot) => void;
   upsertFlow?: (flow: TaskFlowRecord) => void;
   upsertFlowWithHistory?: (flow: TaskFlowRecord, history?: TaskFlowHistoryRegistration) => void;
+  upsertTerminalManagedFlowWithObligationCleanup?: (
+    flow: TaskFlowRecord,
+    history?: TaskFlowHistoryRegistration,
+  ) => void;
   deleteFlow?: (flowId: string) => void;
   listHistory?: (params: {
     flowId?: string;
@@ -59,6 +64,8 @@ const defaultFlowRegistryStore: TaskFlowRegistryStore = {
   saveSnapshot: saveTaskFlowRegistryStateToSqlite,
   upsertFlow: upsertTaskFlowRegistryRecordToSqlite,
   upsertFlowWithHistory: upsertTaskFlowRegistryRecordWithHistoryToSqlite,
+  upsertTerminalManagedFlowWithObligationCleanup:
+    upsertTerminalManagedTaskFlowRecordWithObligationCleanupToSqlite,
   deleteFlow: deleteTaskFlowRegistryRecordFromSqlite,
   listHistory: listTaskFlowHistoryForOwnerFromSqlite,
   pruneHistory: pruneTaskFlowHistoryFromSqlite,

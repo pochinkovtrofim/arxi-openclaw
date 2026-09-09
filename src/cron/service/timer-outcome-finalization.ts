@@ -6,6 +6,7 @@ import {
 } from "../store/run-receipt-store.js";
 import type { CronJob } from "../types.js";
 import { locked } from "./locked.js";
+import { suspendConsumedManagedFlowAutomationObligations } from "./managed-flow-obligation-repair.js";
 import { releaseQueuedCronRun, supersedeActivatedCronRun } from "./run-admission.js";
 import { cronRunReceiptPersistHooks, supersedeServiceCronRunReceipt } from "./run-receipts.js";
 import { recomputeUnownedCronSchedules } from "./run-recovery.js";
@@ -178,7 +179,13 @@ export async function finalizeCompletedCronRunOutcomes(
         jobIds: finalizedOutcomes.map((outcome) => outcome.jobId),
         operationLabel: "cron.run-finalization",
         transactionHooks,
-        mutate: ({ jobs }) => {
+        mutate: ({ database, jobs }) => {
+          suspendConsumedManagedFlowAutomationObligations({
+            database,
+            storePath: state.deps.storePath,
+            jobs,
+            outcomes: finalizedOutcomes,
+          });
           const upsertedJobs: CronJob[] = [];
           const removedJobs: CronJob[] = [];
           const eventPlans: Array<{ outcome: TimedCronRunOutcome; job?: CronJob }> = [];

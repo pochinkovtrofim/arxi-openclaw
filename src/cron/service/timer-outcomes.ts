@@ -468,11 +468,13 @@ export function applyJobResult(
     ) {
       // Pacing bounds are the explicit per-job cadence contract. Do not apply
       // normal schedule floors here; that would change the promised clamp.
-      const pacedNextRunAtMs = resolvePacedNextRunAtMs({
-        nowMs: result.endedAt,
-        delayMs: result.nextCheck.delayMs,
-        pacing: job.pacing,
-      });
+      const pacedNextRunAtMs =
+        result.nextCheck.scheduledAtMs ??
+        resolvePacedNextRunAtMs({
+          nowMs: result.endedAt,
+          delayMs: result.nextCheck.delayMs,
+          pacing: job.pacing,
+        });
       // The operator trigger floor is a safety policy and outranks a job-local
       // pacing bound. Non-trigger jobs retain the exact pacing clamp contract.
       const nextRunAtMs = assignNextRunAtMs({

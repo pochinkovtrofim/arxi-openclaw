@@ -29,10 +29,13 @@ import { CommandLane } from "../../process/lanes.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { removeCronRunContinuationSessionIfIdle } from "../../tasks/cron-run-continuation-cleanup.js";
 import { createCronRunDiagnosticsFromError, mergeCronRunDiagnostics } from "../run-diagnostics.js";
+import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import {
   normalizeCronRunErrorText,
   resolveCronAbortReasonText,
 } from "../service/execution-errors.js";
+import { resolveCronJobsStorePathFromConfig } from "../store.js";
+import { cronStoreKey } from "../store/key.js";
 import type {
   CronAgentExecutionPhaseUpdate,
   CronAgentExecutionStarted,
@@ -214,7 +217,15 @@ async function runCronIsolatedAgentTurnInTrace(params: {
         sessionId: initialSessionId,
         lifecycleGeneration: runLifecycleGeneration,
         cronRunsByJobId: new Map([
-          [params.job.id, { pacingEnabled: params.job.pacing !== undefined }],
+          [
+            params.job.id,
+            {
+              pacingEnabled: params.job.pacing !== undefined,
+              scheduledAutomation: params.executionIdentity?.scheduledAutomation === true,
+              cronStoreKey: cronStoreKey(resolveCronJobsStorePathFromConfig(params.cfg)),
+              cronScheduleIdentity: tryCronScheduleIdentity(params.job),
+            },
+          ],
         ]),
       },
       {
@@ -307,10 +318,10 @@ async function runCronIsolatedAgentTurnInTrace(params: {
       outcome = "error";
       outcomeError = finalized.error;
     }
-    const delayMs = consumeCronNextCheckProposal(initialSessionId, params.job.id);
-    return finalized.status !== "ok" || delayMs === undefined
+    const nextCheck = consumeCronNextCheckProposal(initialSessionId, params.job.id);
+    return finalized.status !== "ok" || nextCheck === undefined
       ? finalized
-      : { ...finalized, nextCheck: { delayMs } };
+      : { ...finalized, nextCheck };
   } catch (err) {
     consumeCronNextCheckProposal(initialSessionId, params.job.id);
     const isCronLaneTimeout = isAborted() || isCronNestedLaneTaskTimeoutError(err);

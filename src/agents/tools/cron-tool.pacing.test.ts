@@ -37,7 +37,7 @@ describe("cron next_check action", () => {
     });
 
     expect(result.details).toEqual({ ok: true, delayMs: 90 * 60_000 });
-    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toBe(90 * 60_000);
+    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toEqual({ delayMs: 90 * 60_000 });
     expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toBeUndefined();
   });
 
@@ -51,7 +51,7 @@ describe("cron next_check action", () => {
     });
 
     expect(result.details).toEqual({ ok: true, delayMs: 45 * 60_000 });
-    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toBe(45 * 60_000);
+    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toEqual({ delayMs: 45 * 60_000 });
   });
 
   it("rejects a proposal when the current job has no pacing", async () => {
@@ -97,7 +97,7 @@ describe("cron next_check action", () => {
       in: "30m",
     });
 
-    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toBe(15 * 60_000);
-    expect(consumeCronNextCheckProposal(RUN_ID, "next-job")).toBe(30 * 60_000);
+    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toEqual({ delayMs: 15 * 60_000 });
+    expect(consumeCronNextCheckProposal(RUN_ID, "next-job")).toEqual({ delayMs: 30 * 60_000 });
   });
 });
