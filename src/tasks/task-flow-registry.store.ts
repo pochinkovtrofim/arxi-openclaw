@@ -2,18 +2,34 @@
 import {
   closeTaskFlowRegistryDatabase,
   deleteTaskFlowRegistryRecordFromSqlite,
+  listTaskFlowHistoryForOwnerFromSqlite,
   loadTaskFlowRegistryStateFromSqlite,
+  pruneTaskFlowHistoryFromSqlite,
   saveTaskFlowRegistryStateToSqlite,
+  upsertTaskFlowRegistryRecordWithHistoryToSqlite,
   upsertTaskFlowRegistryRecordToSqlite,
 } from "./task-flow-registry.store.sqlite.js";
-import type { TaskFlowRegistryStoreSnapshot } from "./task-flow-registry.store.types.js";
+import type {
+  TaskFlowHistoryPage,
+  TaskFlowHistoryRegistration,
+  TaskFlowRegistryStoreSnapshot,
+} from "./task-flow-registry.store.types.js";
 import type { TaskFlowRecord } from "./task-flow-registry.types.js";
 
 type TaskFlowRegistryStore = {
   loadSnapshot: () => TaskFlowRegistryStoreSnapshot;
   saveSnapshot: (snapshot: TaskFlowRegistryStoreSnapshot) => void;
   upsertFlow?: (flow: TaskFlowRecord) => void;
+  upsertFlowWithHistory?: (flow: TaskFlowRecord, history?: TaskFlowHistoryRegistration) => void;
   deleteFlow?: (flowId: string) => void;
+  listHistory?: (params: {
+    flowId?: string;
+    ownerKey: string;
+    controllerId: string;
+    cursor?: string;
+    limit?: number;
+  }) => TaskFlowHistoryPage;
+  pruneHistory?: (now?: number) => number;
   close?: () => void;
 };
 
@@ -42,7 +58,10 @@ const defaultFlowRegistryStore: TaskFlowRegistryStore = {
   loadSnapshot: loadTaskFlowRegistryStateFromSqlite,
   saveSnapshot: saveTaskFlowRegistryStateToSqlite,
   upsertFlow: upsertTaskFlowRegistryRecordToSqlite,
+  upsertFlowWithHistory: upsertTaskFlowRegistryRecordWithHistoryToSqlite,
   deleteFlow: deleteTaskFlowRegistryRecordFromSqlite,
+  listHistory: listTaskFlowHistoryForOwnerFromSqlite,
+  pruneHistory: pruneTaskFlowHistoryFromSqlite,
   close: closeTaskFlowRegistryDatabase,
 };
 

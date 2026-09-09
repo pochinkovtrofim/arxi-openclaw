@@ -10,9 +10,11 @@ import {
   listTaskFlowsForOwner,
   resolveTaskFlowForLookupTokenForOwner,
 } from "../../tasks/task-flow-owner-access.js";
+import { getTaskFlowRegistryStore } from "../../tasks/task-flow-registry.store.js";
 import type { TaskFlowRecord } from "../../tasks/task-flow-registry.types.js";
 import {
   createManagedTaskFlow,
+  enableTaskFlowHistoryForFlow,
   failFlow,
   finishFlow,
   type TaskFlowUpdateResult,
@@ -24,6 +26,7 @@ import type { TaskDeliveryState } from "../../tasks/task-registry.types.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import type {
   BoundTaskFlowRuntime,
+  BoundTaskFlowHistoryController,
   ManagedTaskFlowMutationResult,
   ManagedTaskFlowRecord,
   PluginRuntimeTaskFlow,
@@ -118,6 +121,65 @@ function createBoundTaskFlowRuntime(params: {
     return asManagedTaskFlowRecord(flow ?? undefined) ?? null;
   };
 
+  const registerHistoryController: BoundTaskFlowRuntime["registerHistoryController"] = ({
+    controllerId,
+  }) => {
+    const normalizedControllerId = controllerId.trim();
+    if (!normalizedControllerId) {
+      throw new Error("Task Flow history controllerId is required.");
+    }
+    const tryCreateHistoryManaged: BoundTaskFlowHistoryController["tryCreateManaged"] = (input) => {
+      const flow = createManagedTaskFlow({
+        ownerKey,
+        controllerId: normalizedControllerId,
+        requesterOrigin,
+        status: input.status,
+        notifyPolicy: input.notifyPolicy,
+        goal: input.goal,
+        currentStep: input.currentStep,
+        stateJson: input.stateJson,
+        waitJson: input.waitJson,
+        cancelRequestedAt: input.cancelRequestedAt,
+        createdAt: input.createdAt,
+        updatedAt: input.updatedAt,
+        endedAt: input.endedAt,
+        history: { controllerId: normalizedControllerId },
+      });
+      return asManagedTaskFlowRecord(flow ?? undefined) ?? null;
+    };
+    return {
+      controllerId: normalizedControllerId,
+      createManaged: (input) => {
+        const flow = tryCreateHistoryManaged(input);
+        if (!flow) {
+          throw new Error("TaskFlow history persistence failed.");
+        }
+        return flow;
+      },
+      tryCreateManaged: tryCreateHistoryManaged,
+      enable: (input) =>
+        enableTaskFlowHistoryForFlow({
+          flowId: input.flowId,
+          ownerKey,
+          controllerId: normalizedControllerId,
+          enabledAt: input.enabledAt,
+        }),
+      list: (input = {}) => {
+        const listHistory = getTaskFlowRegistryStore().listHistory;
+        if (!listHistory) {
+          throw new Error("TaskFlow history is unavailable for this registry store.");
+        }
+        return listHistory({
+          ownerKey,
+          controllerId: normalizedControllerId,
+          ...(input.flowId ? { flowId: input.flowId } : {}),
+          ...(input.cursor ? { cursor: input.cursor } : {}),
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        });
+      },
+    };
+  };
+
   return {
     sessionKey: ownerKey,
     ...(requesterOrigin ? { requesterOrigin } : {}),
@@ -129,6 +191,7 @@ function createBoundTaskFlowRuntime(params: {
       return flow;
     },
     tryCreateManaged,
+    registerHistoryController,
     get: (flowId) =>
       getTaskFlowByIdForOwner({
         flowId,
