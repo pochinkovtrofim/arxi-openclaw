@@ -18,7 +18,30 @@ Later command examples select what to run, not the physical execution host.
 - The production host currently serves only the owner's test account and has sufficient resources for the complete release workflow.
 - GitHub hosts source and pull requests. Retain server-side check evidence with exact source revisions.
 - Workflow definitions are preserved in `.github/workflows-disabled/` for upstream comparison. Keep `.github/workflows/` absent when adopting upstream changes so pushes, PRs, comments, and schedules cannot launch hosted workloads.
-- These Arxi execution rules override upstream local/Crabbox/Testbox compute routing. Preserve review, source-trust, and live GitHub merge enforcement.
+- These Arxi execution rules override upstream local/Crabbox/Testbox compute routing. Preserve review and source-trust enforcement.
+
+### Arxi fork landing contract
+
+This subsection overrides later upstream-only CI, Testbox, Crabbox,
+`scripts/pr`, and release-workflow instructions for
+`pochinkovtrofim/arxi-openclaw`; it does not alter upstream
+`openclaw/openclaw` contribution rules.
+
+- Fetch immediately before work and use a clean isolated worktree at the exact
+  current `origin/main`; preserve unrelated dirty or active checkouts.
+- The Arxi fork does not run GitHub Actions. Do not enable, dispatch, or cite
+  disabled workflows as merge evidence.
+- Run the smallest relevant repository-controlled validation on the production
+  server against the exact pull-request head. Record host, head SHA, commands,
+  results, and retained evidence location in the pull request.
+- Merge only the reviewed and server-validated head with an expected-head guard,
+  then fetch and record the resulting `origin/main` SHA. A receipt for an older
+  head is invalid.
+- Merge and deployment are separate. Runtime-affecting changes are released by
+  sibling `arxi-ops` with exact cross-repository provenance, a qualified
+  artifact and golden, activation fences, rollback, and a real owner-visible
+  Telegram canary. Documentation-only changes require no runtime rebuild or
+  activation.
 
 ## Start
 
@@ -29,9 +52,15 @@ Later command examples select what to run, not the physical execution host.
 - Fix/triage/review: Repair Doctrine applies. Verdicts need source, tests, current/shipped behavior, and (when dependencies are involved) dependency contract proof; diff-only review is insufficient.
 - Dependency work: direct inspection mandatory when feasible — read upstream source/docs/types first. External API work: live test required; search for additional proof; cite current proof. No API/default/error/timing claims from assumptions, wrappers, or memory.
 - Codex hard gate: the acting agent must personally inspect sibling `../codex` source (clone `https://github.com/openai/codex.git` there if missing) for the exact protocol/runtime behavior before any verdict, comment, approval, merge recommendation, code change, or `proof sufficient` claim. Subagent reports, PR text, OpenClaw wrappers, generated schemas, memory, and prior bot reviews do not satisfy it — no direct `../codex` check means no Codex verdict. Cite Codex files/lines checked.
-- Provider model changes: update the owning plugin manifest; after landing, verify `openclaw/catalog/models/v1/catalog.json` refreshes and dispatch the catalog publish workflow when needed.
+- Provider model changes: update the owning plugin manifest. Upstream may
+  dispatch its catalog publish workflow after landing. In the Arxi fork, verify
+  the bundled catalog on the production server and release it through the Ops
+  artifact path; do not dispatch a disabled workflow.
 - Live-verify is the default, not a nicety: user-facing behavior gets live-tested through the real flow before landing. Skipping requires a concrete infeasibility stated in the PR, not convenience. Never print secrets.
-- Telegram-visible proof: use `$telegram-e2e-userbot`; all routine local, team, and CI runs lease Test Server credentials from Convex. Local maintainers use an authenticated `convex` CLI; CI workers receive the broker pair through GitHub Secrets.
+- Telegram-visible proof: use `$telegram-e2e-userbot`. In the Arxi fork, lease
+  the real credential securely on the production server; never place it in
+  GitHub Actions or the repository. Upstream may use its separately documented
+  CI secret mechanism.
 - Missing deps in a remote normal checkout: run `pnpm install` on `arxi-production`, retry once, then report first actionable error. Worktrees: see Commands — never reconcile on the workstation.
 - `CODEOWNERS` routes reviewers; it does not itself enforce approval. Maint/refactor/tests need no separate owner ask unless a path has explicit restricted/security ownership; those paths need listed-owner involvement. For governance changes to ownership/review policy itself, explicit direction from an organization owner is an alternative only when live GitHub organization membership shows `state: active` and `role: admin`; repository `ADMIN`, `viewerCanAdminister`, or bypass permission alone never qualifies. Larger behavior/product/security/ownership otherwise needs listed-owner involvement. Neither authorization route bypasses a GitHub-enforced review rule; verify live branch protection/rulesets and PR review state before calling approval mandatory.
 - Product/docs/UI/changelog wording: "plugin/plugins"; `extensions/` is internal.
@@ -86,7 +115,7 @@ Later command examples select what to run, not the physical execution host.
 - Won't-implement and out-of-scope closes are maintainer product judgment: automated review recommends with evidence, never executes the close; plausible design intent escalates instead of closing.
 - Doctrine-class findings are first-class: action path ending with no visible outcome and no recorded reason; default-path regression; prompt/tool text contradicting shipped behavior; multi-signal inference where a recorded fact belongs; new default-off capability with no named enablement path.
 - `maturity:stable`: issue-only attention signal for broken existing behavior primarily owned by an M4/M5 scorecard surface; name that surface and category. Not for feature requests, new config/policy choices, docs/support work, or lower-maturity owners merely passing through a stable surface. Visibility only — not fix proof, backport approval, or a release blocker.
-- Before landing any PR: read the latest ClawSweeper comment and its `Rank-up moves:` list; apply each move or state the skip in the PR — never merge past them silently. A <12h review covers the PR once every actionable finding is addressed (or skip stated) and exact-head CI is green, even if the head moved. Request `@clawsweeper re-review` only for an older review or post-review pushes that changed behavior beyond findings + mechanical refreshes (rebase, format, merge-ref). A queued or late re-review refreshes the rating; never block landing on the publisher.
+- Before landing any PR: read the latest ClawSweeper comment and its `Rank-up moves:` list; apply each move or state the skip in the PR — never merge past them silently. A <12h review covers the PR once every actionable finding is addressed (or skip stated) and the exact head has its required upstream CI or Arxi production-server receipt. Request `@clawsweeper re-review` only for an older review or post-review pushes that changed behavior beyond findings + mechanical refreshes (rebase, format, merge-ref). A queued or late re-review refreshes the rating; never block landing on the publisher.
 - Public ClawSweeper comments prefer `https://docs.openclaw.ai/...` when a public docs page exists; structured evidence still cites repo files, lines, SHAs.
 - Findings follow the Start-section evidence bar (source, tests, current/shipped behavior, dependency contract proof when involved). Validation is judged against touched + sibling surfaces plus the Commands section; user-visible changes need clear evidence, and Telegram-visible behavior needs `$telegram-e2e-userbot` event proof when feasible.
 - Real-behavior-proof gate: a mock-gateway harness run (mock channel API + mock provider + ephemeral gateway, verdict JSON in the PR body) satisfies it for channel-visible changes covering the changed path; live-channel proof is stronger evidence.
@@ -183,7 +212,7 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 
 ## Commands
 
-- Runtime: Node 22.22.3+, 24.15+, or 25.9+; Node 26 recommended (CI and release workflows still pin Node 24). Keep Node + Bun paths working.
+- Runtime: Node 22.22.3+, 24.15+, or 25.9+; Node 26 recommended (upstream CI and release workflows still pin Node 24). Keep Node + Bun paths working.
 - Package manager/runtime: repo defaults only. No swaps without approval.
 - Install: `pnpm install` (keep Bun lock/patches aligned if touched). All installs and validation execute in the synchronized isolated checkout on `arxi-production`; never on the workstation.
 - CLI: `pnpm openclaw ...` or `pnpm dev`; build: `pnpm build`.
@@ -202,10 +231,19 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 
 ## Validation
 
-- Use `$openclaw-testing` for test/CI choice and `$crabbox` for remote-environment, isolation, and clean-machine E2E proof.
-- The Crabbox skill is a snapshot of `https://github.com/openclaw/agent-skills/tree/main/skills/crabbox`; edit that source, then sync the snapshot. OpenClaw-specific setup lives in `docs/reference/test.md#crabbox-repository-setup`, outside the shared skill.
-- Proof routing: source trust first, required environment second. Trusted development tests, changed gates, typecheck/lint, builds, and full suites run in the synchronized isolated checkout on `arxi-production`, with scope proportional to the touched contract. Use Crabbox/Testbox only when the environment is part of the proof: clean-machine, install/package, Docker, E2E, live, desktop, cross-OS, CI parity, or explicit operator-requested remote work. Do not use it merely as generic compute offload. Lease/procedure mechanics: `$crabbox`.
-- Untrusted (contributor/fork) source: never run its scripts, tests, checks, wrappers, config, or package hooks locally, regardless of proof size, and never fall back to local. Use secretless fork CI or the sanitized direct AWS Crabbox procedure in `$crabbox`, never a credential-hydrated Testbox. Maintainer approval of credentialed execution after review makes it trusted; an explicit owner/maintainer instruction to land named, reviewed PRs is that approval — do not ask twice.
+- Use `$openclaw-testing` for test selection. The `$crabbox` remote-environment
+  workflow is upstream-only; Arxi executes validation on `arxi-production`.
+- The Crabbox skill is an upstream snapshot. Do not invoke it for Arxi fork
+  validation.
+- Proof routing: source trust first, required environment second. In the Arxi
+  fork, trusted development tests, changed gates, typecheck/lint, builds, and
+  full suites run in an isolated checkout on `arxi-production`, proportional to
+  the touched contract. Crabbox/Testbox routing applies only upstream.
+- Untrusted (contributor/fork) source: never run its scripts, tests, checks,
+  wrappers, config, or package hooks on a workstation or credential-bearing
+  production host. For upstream, use its secretless CI or sanitized Crabbox
+  procedure. The Arxi fork has no hosted-CI fallback: review first and require
+  explicit owner approval before production-host execution.
 - Visual proof: use a real isolated browser/desktop on the current host when capable; otherwise use Crabbox. Set up like a user, then screenshot-verify. No harness/bypass/shortcut unless explicitly asked.
 - Isolated browsers are pre-approved for development, testing, and sanitized screenshots/recordings; never ask again. Use the signed-in profile only when the flow needs its existing login.
 - Captured screenshots/videos are proof only after the agent has looked at them: open every capture, confirm the asserted state is actually visible in frame, and re-shoot when it is not. An uninspected capture is not verification and must not be attached as evidence.
@@ -213,7 +251,7 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 - Gateway-behavior change provable in the Control UI (session lifecycle, steering/queue, subagent flows, delivery states): prove on a live dev gateway — isolated `OPENCLAW_STATE_DIR`, own port, never the operator's gateway — and attach a video of the flow. Default recorder: Playwright `recordVideo` against the dashboard URL; keep the driving script's waits on asserted UI states, not sleeps.
 - In Codex or linked worktrees, execute `pnpm test*`, `pnpm check*`, and direct `node` test/check wrappers only in the synchronized isolated checkout on `arxi-production`. Use the direct Crabbox wrapper only for proof that specifically requires Crabbox.
 - Repo-native PR worktrees may omit `node_modules`; run `pnpm install` once in the remote checkout, retry the remote proof, then report the first actionable error.
-- Targeted format/lint (including release branches): on `arxi-production`, use existing `./node_modules/.bin/*`; never use workstation `pnpm exec` reconciliation. Use Testbox only when explicit clean-machine proof requires it.
+- Targeted format/lint (including release branches): on `arxi-production`, use existing `./node_modules/.bin/*`; never use workstation `pnpm exec` reconciliation. Upstream may use Testbox for its own clean-machine proof.
 - Parallel agents share the checkout; never switch its branch while sibling work runs.
 - QA CLI `--output-dir` must be repo-relative.
 - Before handoff/push: prove touched surface. Before landing to `main`: proof matches actual risk. Bounded behavior-neutral refactor: focused tests/checks enough; no issue proof or full/broad suite by default.
@@ -221,7 +259,9 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 - Pre-land/pre-commit code changes: mandatory fresh `$autoreview` until no accepted/actionable findings remain. Do not land code on CI, ClawSweeper, prior review comments, or your own manual review alone unless user explicitly opts out or scope is truly trivial/docs-only. If findings want refactor, refactor; no ugly fixes. Autoreview staged/uncommitted diff: `--mode uncommitted`; there is no `dirty` or `staged` mode.
 - If proof is blocked, say exactly what is missing and why.
 - Do not land related failing format/lint/type/build/tests. If unrelated on latest `origin/main`, say so with scoped proof.
-- Broken CI is always someone's job; default to making it yours. Red `main`, a red merge gate, or a flaky-by-construction assertion gets fixed, not waited out, worked around, or reported back as someone else's problem. Fix it in the landing PR, note it in the PR body, never land onto red or bypass the gate. Prefer the smallest correct fix (register a missing source file, restore a dropped export, give an exact-equality assertion on renderer/timing-dependent values a tolerance).
+- A broken required gate is always someone's job. Upstream CI failures and Arxi
+  production-server validation failures must be fixed or identified as an
+  unrelated current-main failure with scoped proof; never bypass them.
 - Only two things override that default: an in-flight fix already open for the same breakage (link it, wait, say so), or a fix that needs owner judgment beyond the failing gate (say exactly what and why). Neither excuses leaving CI red and moving on.
 - Docs/changelog-only and CI/workflow metadata-only: `git diff --check` plus relevant docs/workflow sanity; escalate only if scripts/config/generated/package/runtime behavior changed.
 
@@ -245,7 +285,9 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 - Generic triage and landing shortlists: exclude PRs authored by maintainers with broad repository access until 14 days after creation; only a named PR or explicit request for maintainer-owned work overrides this gate.
 - PR reviewable findings: post them on the PR, not chat-only, so author sees actionable feedback.
 - Issue/PR final answer: last line is the full GitHub URL.
-- PR verification: before merge, post land-ready work done, exact remote commands and host, CI/Testbox run IDs, before/after proof when used, and known proof gaps.
+- PR verification: before merge, post land-ready work done, exact remote
+  commands and host, the upstream CI/Testbox IDs or Arxi retained server receipt
+  as applicable, before/after proof when used, and known proof gaps.
 - Issue fixed on `main`, when acting under landing/`ship`/close/sweep authority: search duplicates, comment proof + canonical commit/PR/release, then close. Without that authority, report it instead of closing unsolicited.
 - After PR merge/ship: concise prose recap, not a bullet pile; cover behavior, key surface, proof, and issue/PR state. Check for worthwhile refactor or simplification follow-ups; suggest any warranted.
 - Public GH comments: show draft in chat first, unless the user explicitly asked to post/comment/reply/close/merge/land — under that explicit authority, once changes/proof exist, post the review/proof/commit comment without re-asking.
@@ -259,9 +301,13 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 - PR/issue images/video: upload with `gh --attach` when the installed `gh` exposes it, otherwise the GitHub user-attachments endpoint; uploads are permanent and need no browser/computer use. Never push proof assets to any product repo branch; do not commit `.github/pr-assets`. Commands, video rules, error semantics, transcode, and artifact fallback: `$openclaw-pr-maintainer`.
 - CI polling: exact SHA, relevant checks only, minimal fields. Skip routine noise (`Auto response`, `Labeler`, docs agents, performance/stale). Logs only after failure/completion or concrete need. Never `gh run watch`; its 3s polling exhausts API quota. Use sparse GraphQL rollups. Filter `gh run list` by workflow/branch/commit; broad JSON lists can exceed relay caps. Exact-SHA fallback dispatches require the full 40-character SHA.
 - CI waits: `node scripts/watch-pr-ci.mjs <pr> <head-sha>` — prechecks mergeable (CONFLICTING = pull_request CI cannot attach) and run attachment before polling; watchers emit every terminal state; no unbounded polls.
-- Agent PR landing to `main`: only the repo-native `scripts/pr` wrapper — `review-init` -> `review-artifacts-init` -> `review-validate-artifacts` -> `OPENCLAW_TESTBOX=1 scripts/pr prepare-run` -> `merge-run`. The Testbox flag is mandatory for agents; invoke `prepare-run` only after exact-head CI is complete and green. Full mechanics (fork-code variant, drift policy, waits): `$openclaw-pr-maintainer`.
+- Upstream agent PR landing to `main`: use the repo-native `scripts/pr` wrapper
+  and the `$openclaw-pr-maintainer` mechanics. This upstream-only path must not
+  be used for the Arxi fork; use the exact-head server receipt and expected-head
+  merge guard in the Arxi fork landing contract above.
 - Non-main PRs: never `scripts/pr prepare-run`/`merge-run` (they diff against `main`); the exact procedure, plus throttle-lock recovery, lives in `$openclaw-pr-maintainer`.
-- Main-bound workflow dispatch: resolve server `main` SHA immediately before dispatch; retry if identity fails after `main` advances.
+- Upstream main-bound workflow dispatch: resolve server `main` SHA immediately
+  before dispatch. The Arxi fork must not dispatch disabled workflows.
 
 ## Tooling Gotchas
 
@@ -270,7 +316,9 @@ Mechanics only; policy lives above.
 - `gh`: `gh pr view` takes the branch positionally (no `--head`). `gh pr diff` has no `--stat`; use `gh pr view --json changedFiles,additions,deletions` or `git diff --stat`. `gh pr checks --json` uses `link`, not `detailsUrl`. `gh run view --json` uses `attempt`, not `attemptNumber`; reruns need `gh run view <run> --attempt <n>` (default output may show the prior attempt). `gh --jq` is not standalone `jq` (no `--arg`); pipe JSON to `jq`. `gh api --paginate '<endpoint>' | jq -s ...`; gh `--slurp` may emit nothing and forbids `--jq`/`--template`.
 - zsh: quote `gh api` endpoints containing `?` or brackets and quote command globs; unmatched patterns abort before the tool runs. Don't use `path` as a variable; it rewrites `$PATH`. Git object paths: `${sha}:path`; `$sha:path` invokes parameter modifiers. File lists into tools: `--name-only -z | xargs -0`; zsh scalars don't word-split, and a zero-file run exits 0 looking clean.
 - git: shared checkout — serialize `git fetch`; on ref-lock failure, re-read the ref before retry. Fetch/pull yielding without completion: inspect/stop only the owned process before retry; never overlap retries. Main locked elsewhere: detach at `origin/main`, then create the task branch.
-- GitHub Actions: resolve workflow files from `.github/workflows` or API; never infer filenames from display names. Checkout refs use full 40-char SHAs; short SHAs resolve as branches/tags. GH job logs: filter the exact tab-delimited step first; broad patterns also match the job name.
+- Upstream GitHub Actions: resolve workflow files from `.github/workflows` or
+  API. In the Arxi fork, `.github/workflows-disabled/` is reference-only and
+  must never be enabled or dispatched.
 - Shell/exec: yielded exec — retain the returned session id before polling; never blind-retry. Nested remote shell: avoid local `$()` expansion; use remote-safe validation. Merge guard shells start `set -euo pipefail`; a failed `[[ ... ]]` alone does not stop a later merge command.
 - `rg`: options/globs before `--`; `--` immediately before a leading-dash pattern only.
 - macOS `find` has no `-printf`; use `-print0` plus `stat`.
