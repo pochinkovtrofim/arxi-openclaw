@@ -19,6 +19,7 @@ OpenClaw can run a **dedicated Chrome/Brave/Edge/Chromium profile** that the age
 - Deterministic tab control (list/open/focus/close).
 - Agent actions (click/type/drag/select), snapshots, screenshots, PDFs.
 - Question answering over readable page text without returning a full snapshot.
+- Recent-visit lookup for managed profiles, returning only bounded page titles, URLs, and visit times. Cookie values and other browser secrets are never exposed through this action.
 - Playwright-backed profiles save direct attachment navigations under the managed downloads directory and return `{ url, suggestedFilename, path }` metadata after final-URL policy validation.
 - Playwright-backed agent actions return a `downloads` array with the same managed metadata when the action immediately starts one or more downloads.
 - A bundled `browser-automation` skill that teaches agents the snapshot,

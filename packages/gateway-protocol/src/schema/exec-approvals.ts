@@ -41,6 +41,8 @@ const ExecAskSchema = Type.Union([
   Type.Literal("always"),
 ]);
 
+const ApprovalResolutionProofSchema = Type.String({ minLength: 1, maxLength: 4096 });
+
 /** Host-resolved default policy after applying persisted defaults and runtime fallbacks. */
 const ExecApprovalsResolvedDefaultsSchema = closedObject({
   security: ExecSecuritySchema,
@@ -316,6 +318,7 @@ export const ExecApprovalResolveParamsSchema = closedObject({
   id: NonEmptyString,
   decision: NonEmptyString,
   reviewer: Type.Optional(ApprovalChannelReviewerSchema),
+  resolutionProof: Type.Optional(ApprovalResolutionProofSchema),
   // Per-grant expiry override for allow-always on automation approvals:
   // days from resolution. Absent defers to tools.exec.grantExpiryDays, and
   // an unset config keeps the grant valid until revoked. Ignored for other

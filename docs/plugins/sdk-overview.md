@@ -916,3 +916,13 @@ subpath yet. Bundled examples:
     Deep architecture and capability model.
   </Card>
 </CardGroup>
+
+Tool hooks receive the host-admitted conversation in `ctx.requester.conversationId`
+and its kind in `ctx.requester.chatType`, alongside the trusted sender. These
+optional fields use the same inbound route as requester-scoped MCP resolution;
+approval plugins must not derive them from tool arguments or delivery targets.
+
+Prepared runtime registries retain full-registration tool hooks and trusted tool
+policies from the active loaded plugin with the same source. A disabled or shadowed
+plugin does not inherit these registrations, and a prepared registry's own policy
+replaces the corresponding root registration.

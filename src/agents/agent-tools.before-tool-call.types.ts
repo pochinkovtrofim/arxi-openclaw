@@ -8,6 +8,7 @@ import type { ToolLoopDetectionConfig } from "../config/types.tools.js";
 import type { DiagnosticToolTerminalReason } from "../infra/diagnostic-events.js";
 import type { DiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
 import type {
+  PluginApprovedToolExecution,
   PluginApprovalResolution,
   PluginHookBeforeToolCallResult,
   PluginHookToolRequesterContext,
@@ -75,6 +76,11 @@ export type BeforeToolCallFailureDisposition = "blocked" | DiagnosticToolTermina
 
 type PluginApprovalRequest = NonNullable<PluginHookBeforeToolCallResult["requireApproval"]>;
 
+export type PendingApprovedPluginToolExecution = {
+  callback: NonNullable<PluginApprovalRequest["beforeApprovedExecution"]>;
+  approved: PluginApprovedToolExecution;
+};
+
 export type DeferredPluginToolApproval = {
   approval: PluginApprovalRequest;
   toolName: string;
@@ -118,5 +124,6 @@ export type HookOutcome =
       params: unknown;
       ownerDecision?: true;
       approvalResolution?: PluginApprovalResolution;
+      pendingApprovedExecution?: PendingApprovedPluginToolExecution;
       deferredApproval?: DeferredPluginToolApproval;
     };

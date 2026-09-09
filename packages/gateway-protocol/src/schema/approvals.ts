@@ -313,11 +313,15 @@ export const ApprovalChannelReviewerSchema = closedObject({
   senderId: NonEmptyString,
 });
 
+/** Opaque channel-issued proof for one canonical approval resolution. */
+const ApprovalResolutionProofSchema = Type.String({ minLength: 1, maxLength: 4096 });
+
 export const ApprovalResolveParamsSchema = closedObject({
   id: ApprovalRecordCommonFields.id,
   kind: ApprovalKindSchema,
   decision: ApprovalDecisionSchema,
   reviewer: Type.Optional(ApprovalChannelReviewerSchema),
+  resolutionProof: Type.Optional(ApprovalResolutionProofSchema),
   // Per-grant expiry override for allow-always on automation (exec) approvals:
   // days from resolution. Absent defers to tools.exec.grantExpiryDays; unset
   // config keeps the grant valid until revoked. Ignored for other kinds.

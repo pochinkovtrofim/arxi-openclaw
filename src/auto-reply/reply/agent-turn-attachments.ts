@@ -4,6 +4,7 @@ import type { AcpTurnAttachment as AgentTurnAttachment } from "../../acp/control
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { logVerbose } from "../../globals.js";
 import type { MediaAttachment } from "../../media-understanding/types.js";
+import { classifyMediaReferenceSource } from "../../media/media-reference.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import type { MsgContext } from "../templating.js";
 import {
@@ -112,7 +113,10 @@ export async function resolveAgentTurnAttachments(params: {
     if (!runtime.isImageAttachment(attachment)) {
       return false;
     }
-    if (!normalizeOptionalString(attachment.path)) {
+    if (
+      !normalizeOptionalString(attachment.path) &&
+      !classifyMediaReferenceSource(attachment.url ?? "").isMediaStoreUrl
+    ) {
       return false;
     }
     try {

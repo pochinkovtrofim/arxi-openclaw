@@ -171,6 +171,51 @@ describe("Codex app-server model catalog", () => {
     expect(read()).toBeUndefined();
   });
 
+  it("re-reads the catalog after a delayed native login notification", async () => {
+    const model = {
+      id: "synthetic-opaque",
+      model: "synthetic-opaque",
+      inputModalities: ["text"],
+      supportedReasoningEfforts: ["medium"],
+    };
+    listModelsMock
+      .mockResolvedValueOnce({ models: [{ ...model, id: "prior-account-model" }] })
+      .mockResolvedValue({ models: [model] });
+    rpc.request.mockImplementationOnce(async () => {
+      rpc.epoch += 1;
+      return { account: { type: "apiKey" }, requiresOpenaiAuth: true };
+    });
+    const catalog = await owner.load(catalogParams, undefined);
+    expect(catalog.map((entry) => entry.id)).toEqual(["synthetic-opaque"]);
+    expect(listModelsMock).toHaveBeenCalledTimes(2);
+    expect(rpc.request).toHaveBeenCalledTimes(2);
+    expect(withCodexAppServerJsonClient).toHaveBeenCalledTimes(1);
+    expect(read()).toEqual({ accountType: "apiKey" });
+    rpc.epoch += 1;
+    expect(read()).toBeUndefined();
+  });
+
+  it("bounds retries and rejects an account that keeps changing", async () => {
+    listModelsMock.mockResolvedValue({
+      models: [
+        {
+          id: "synthetic-opaque",
+          model: "synthetic-opaque",
+          inputModalities: ["text"],
+          supportedReasoningEfforts: [],
+        },
+      ],
+    });
+    rpc.request.mockImplementation(async () => {
+      rpc.epoch += 1;
+      return { account: { type: "apiKey" }, requiresOpenaiAuth: true };
+    });
+    expect(await owner.load(catalogParams, undefined)).toEqual([]);
+    expect(listModelsMock).toHaveBeenCalledTimes(2);
+    expect(rpc.request).toHaveBeenCalledTimes(2);
+    expect(read()).toBeUndefined();
+  });
+
   it("cannot publish superseded or disposed asynchronous observations", async () => {
     listModelsMock.mockResolvedValue({
       models: [

@@ -100,7 +100,7 @@ channel is the communication surface.
 - The official `@openclaw/codex` plugin installed. Include `codex` in
   `plugins.allow` if your config uses an allowlist.
 - Managed Codex app-server `0.152.1`. The plugin ships and manages
-  `@openai/codex` `0.152.1` by default, so a `codex` command on `PATH` does not
+  `@openai/codex` `0.153.4` by default, so a `codex` command on `PATH` does not
   affect normal startup. Explicit custom, remote, and macOS desktop-owned
   app-servers must report a parseable semantic version of `0.149.0` or newer.
   Newer versions continue with a compatibility warning and normal runtime
@@ -114,6 +114,17 @@ channel is the communication surface.
 For auth precedence, environment isolation, custom app-server commands,
 model discovery, and the full config field list, see
 [Codex harness reference](/plugins/codex-harness-reference).
+
+The packaged 0.153.4 `model/list` snapshot includes GPT-6 Astra and GPT-5.6
+Sol, Terra, and Luna, all with text and image input. Astra, Sol, and Terra
+report `low`, `medium`, `high`, `xhigh`, `max`, and `ultra`; Luna reports
+`low` through `max`. Live account discovery remains authoritative for the
+models and reasoning levels available to a signed-in account.
+
+If a delayed native login notification changes the account revision during
+discovery, the harness repeats the model and account reads once within the
+original timeout. A second revision change leaves the catalog unavailable;
+models from the previous account are never published.
 
 ## Quickstart
 

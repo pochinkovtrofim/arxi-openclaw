@@ -1,6 +1,16 @@
-import { vi } from "vitest";
+import { vi, type Mock } from "vitest";
 
-type FixtureMock = ReturnType<typeof vi.fn>;
+type FixtureMock = {
+  (...args: unknown[]): unknown;
+  mockClear(): unknown;
+};
+
+type StaticToolExecute = () => Promise<{
+  content: Array<{ type: "text"; text: string }>;
+  details: { status: string };
+}>;
+
+export type StaticToolExecuteMock = Mock<StaticToolExecute>;
 
 type StaticMcpFixtureState = {
   dispose: FixtureMock;
@@ -13,7 +23,7 @@ type StaticMcpFixtureState = {
   staticFailureGate?: Promise<void>;
   staticHonorToolsAllow: boolean;
   staticProducedToolNames: string[];
-  staticToolExecutes: FixtureMock[];
+  staticToolExecutes: StaticToolExecuteMock[];
 };
 
 type ConfiguredMcpFixtureState = StaticMcpFixtureState & {
@@ -59,7 +69,7 @@ export async function materializeStaticMcpFixture(
     await state.staticFailureGate;
     throw state.staticFailure;
   }
-  const execute = vi.fn(async () => ({
+  const execute = vi.fn<StaticToolExecute>(async () => ({
     content: [{ type: "text" as const, text: "initial-result" }],
     details: { status: "ok" },
   }));

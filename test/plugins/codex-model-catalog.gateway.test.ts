@@ -331,6 +331,21 @@ describe("models.list native account catalog", () => {
                 expect(host.models[0]?.available, `host route ${routeIndex}`).toBe(false);
               }
               expect(requests).not.toContain("account/login/start");
+              const automaticProfile = {
+                availability: false,
+                selectedAuthMode: "api_key",
+                evidence: "profile" as const,
+                routeResolution: null,
+              };
+              expect(
+                createAgentHarnessCatalogEvaluator(scope)(rows[0]!, automaticProfile).availability,
+              ).toBe(true);
+              expect(
+                createAgentHarnessCatalogEvaluator({ ...scope, preferredProfileId: "explicit" })(
+                  rows[0]!,
+                  automaticProfile,
+                ),
+              ).toBe(automaticProfile);
               for (const socket of server.clients) {
                 socket.close();
               }

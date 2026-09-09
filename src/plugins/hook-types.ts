@@ -79,6 +79,7 @@ export type {
 } from "./hook-message.types.js";
 export {
   PluginApprovalResolutions,
+  type PluginApprovedToolExecution,
   type PluginApprovalResolution,
   type PluginHookBeforeToolCallResult,
 } from "./hook-before-tool-call-result.js";
@@ -690,6 +691,9 @@ export type PluginHookToolRequesterContext = {
   readonly accountId?: string;
   /** Channel-scoped sender id when the host received one. */
   readonly senderId?: string;
+  /** Host-admitted conversation identity, without deriving it from tool arguments. */
+  readonly conversationId?: string;
+  readonly chatType?: string;
   /** True only when the host resolved the sender as an owner. */
   readonly senderIsOwner?: boolean;
   /** Provider-native role ids when the channel supplies them. */

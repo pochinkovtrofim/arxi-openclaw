@@ -297,6 +297,44 @@ describe("unified approval handlers", () => {
     }
   });
 
+  it("keeps plugin data in the live request but never rehydrates it after restart", async () => {
+    const databaseOptions = createDatabaseOptions();
+    const managers = createManagers(databaseOptions);
+    const pending = registerPlugin(managers.plugin, {
+      id: "plugin:data-expires-on-restart",
+      request: { pluginData: { privateAction: { challenge: "native-challenge" } } },
+    });
+
+    expect(managers.plugin.listPendingRecords()).toContainEqual(
+      expect.objectContaining({
+        id: pending.record.id,
+        request: expect.objectContaining({
+          pluginData: { privateAction: { challenge: "native-challenge" } },
+        }),
+      }),
+    );
+    const durable = getOperatorApproval({ id: pending.record.id, databaseOptions });
+    expect(JSON.stringify(durable?.presentation)).not.toContain("native-challenge");
+
+    const restartedManagers = createManagers(databaseOptions);
+    expect(restartedManagers.plugin.listPendingRecords()).toEqual([]);
+    const handlers = createApprovalHandlers({
+      execApprovalManager: restartedManagers.exec,
+      pluginApprovalManager: restartedManagers.plugin,
+      databaseOptions,
+    });
+    const response = await invoke({
+      handlers,
+      method: "approval.resolve",
+      body: { id: pending.record.id, kind: "plugin", decision: "allow-once" },
+      client: createClient({ internal: true }),
+    });
+    expect(response.ok).toBe(false);
+
+    managers.plugin.expire(pending.record.id, "test-cleanup");
+    await expect(pending.decision).resolves.toBeNull();
+  });
+
   it("resolves a system-agent proposal only through unified operator approval", async () => {
     const databaseOptions = createDatabaseOptions();
     const managers = createManagers(databaseOptions);
@@ -343,10 +381,13 @@ describe("unified approval handlers", () => {
       request: { turnSourceChannel: "telegram", turnSourceAccountId: "ops" },
       reviewerDeviceIds: [],
     });
+    const authorizes = vi.fn(
+      (request: { request: ExecApprovalRequestPayload }) =>
+        request.request.turnSourceAccountId === "ops",
+    );
     prepareApprovalChannelCustodyMock.mockReturnValue({
       resolverId: "telegram:ops",
-      authorizes: (request: { request: ExecApprovalRequestPayload }) =>
-        request.request.turnSourceAccountId === "ops",
+      authorizes,
     });
     const handlers = createApprovalHandlers({
       execApprovalManager: managers.exec,
@@ -362,6 +403,7 @@ describe("unified approval handlers", () => {
         kind: "exec",
         decision: "deny",
         reviewer: { channel: "telegram", accountId: "ops", senderId: "owner" },
+        resolutionProof: "host-signed-proof",
       },
       client: createClient({ internal: true }),
     });
@@ -374,6 +416,11 @@ describe("unified approval handlers", () => {
       kind: "channel",
       id: "telegram:ops",
     });
+    expect(authorizes).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: pending.record.id }),
+      { approvalId: pending.record.id, decision: "deny" },
+      "host-signed-proof",
+    );
   });
 
   it("returns mapped terminal history with attribution and a next cursor", async () => {

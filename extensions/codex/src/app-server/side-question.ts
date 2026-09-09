@@ -97,6 +97,7 @@ import {
   readCodexTurn,
 } from "./protocol-validators.js";
 import {
+  CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
   isJsonObject,
   type CodexServerNotification,
   type CodexThreadForkParams,
@@ -137,7 +138,6 @@ import {
   resolveCodexBindingModelProviderFallback,
   resolveReasoningEffort,
 } from "./thread-lifecycle.js";
-import { filterCodexVisionTools } from "./vision-tools.js";
 import {
   resolveCodexWebSearchPlan,
   type CodexNativeWebSearchSupport,
@@ -714,6 +714,8 @@ export async function runCodexAppServerSideQuestion(
     const runtimeThreadConfig = buildCodexRuntimeThreadConfig(webSearchPlan.threadConfig, {
       nativeCodeModeEnabled: nativeToolSurfaceEnabled,
       nativeCodeModeOnlyEnabled: appServer.codeModeOnly,
+      disableNativeViewImage: true,
+      directOnlyToolNamespaces: [CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE],
     });
     // Codex reloads config for thread/fork, so replay the persisted app policy or
     // app-scoped reviewers disappear while sibling apps inherit the thread reviewer.
@@ -1181,10 +1183,7 @@ async function createCodexSideToolBridge(input: {
       requireExplicitMessageTarget: true,
     });
     const codexFilteredTools = filterCodexDynamicTools(allTools, input.pluginConfig);
-    tools = filterCodexVisionTools(codexFilteredTools, {
-      modelHasVision: runtimeModel.input?.includes("image") ?? false,
-      nativeImageInspectionEnabled: input.nativeToolSurfaceEnabled,
-    });
+    tools = codexFilteredTools;
   }
   const requestedWebSearchPlan = resolveCodexWebSearchPlan({
     config: input.params.cfg,

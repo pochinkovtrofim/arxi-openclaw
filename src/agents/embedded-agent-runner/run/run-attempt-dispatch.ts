@@ -17,6 +17,7 @@ import {
   withGatewayToolCallerIdentity,
 } from "../../tools/gateway-caller-context.js";
 import type { SystemAgentToolOptions } from "../../tools/system-agent-tool.js";
+import { log } from "../logger.js";
 import { prepareExecApprovalContinuationForAttempt } from "./attempt-exec-approval-continuation.js";
 import { applyResolvedToolPromptFinalizer } from "./attempt-prompt-support.js";
 import { resolveAttemptWorkspaceSandbox } from "./attempt-setup.js";
@@ -228,6 +229,16 @@ export async function dispatchEmbeddedRunAttempt(input: {
         pluginHarness: true,
       })
     : { images: params.images, imageOrder: params.imageOrder, media: params.media };
+  log.info("attempt image materialization", {
+    runId: params.runId,
+    harness: runtime.agentHarnessId,
+    modelInput: runtime.model.input,
+    incomingImages: params.images?.length ?? 0,
+    imageSlots: params.imageOrder?.length ?? 0,
+    mediaFacts: params.media?.length ?? 0,
+    recorder: Boolean(params.userTurnTranscriptRecorder),
+    preparedImages: promptMedia.images?.length ?? 0,
+  });
   // Plugin harnesses own their tool materialization, so the host cannot attest
   // a message tool. Finalize conservatively instead of leaking phantom guidance.
   const pluginHarnessPrompt =

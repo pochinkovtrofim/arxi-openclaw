@@ -54,6 +54,7 @@ export { hasProxyEnvConfigured } from "../infra/net/proxy-env.js";
 export { normalizeHostname } from "../infra/net/hostname.js";
 export {
   SsrFBlockedError,
+  assertHostnameAllowedWithPolicy,
   isPrivateNetworkAllowedByPolicy,
   matchesHostnameAllowlist,
   resolvePinnedHostnameWithPolicy,

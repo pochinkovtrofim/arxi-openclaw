@@ -39,6 +39,7 @@ const BROWSER_TOOL_ACTIONS = [
   "start",
   "stop",
   "profiles",
+  "history",
   "importprofile",
   "tabs",
   "open",

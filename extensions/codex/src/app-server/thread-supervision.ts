@@ -471,6 +471,7 @@ function buildPendingSupervisionProbeForkParams(
   pending: CodexAppServerPendingSupervisionBranch,
 ): CodexThreadForkParams {
   const runtimeConfig = buildCodexRuntimeThreadConfigForRun(params.attempt, params.config, {
+    dynamicTools: params.dynamicTools,
     nativeCodeModeEnabled: params.nativeCodeModeEnabled,
     nativeProviderWebSearchSupport: params.nativeProviderWebSearchSupport,
     nativeCodeModeOnlyEnabled: params.nativeCodeModeOnlyEnabled,

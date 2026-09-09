@@ -14,6 +14,7 @@ import {
   resolveSqliteScope,
   runExclusiveSqliteSessionWrite,
 } from "../config/sessions/session-accessor.sqlite-scope.js";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { withInstallationTarget } from "../infra/installation-target-context.js";
 import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
 import {
@@ -1212,7 +1213,40 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     vi.restoreAllMocks();
   });
 
-  it("uses Gateway command metadata without resolving the agent workspace", async () => {
+  it("keeps admitted Gateway config through command preparation", async () => {
+    const admittedConfig = {
+      agents: {
+        defaults: {
+          model: "anthropic/admitted-model",
+          models: { "anthropic/admitted-model": {} },
+        },
+      },
+      models: {
+        providers: {
+          anthropic: {
+            baseUrl: "https://provider.example.invalid",
+            models: [
+              {
+                id: "admitted-model",
+                name: "Admitted model",
+                reasoning: true,
+                input: ["text"],
+                cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+                maxTokens: 1_024,
+              },
+            ],
+          },
+        },
+      },
+    } satisfies OpenClawConfig;
+    state.runtimeConfigMock = {
+      agents: {
+        defaults: {
+          model: "openai/ambient-model",
+          models: { "openai/ambient-model": {} },
+        },
+      },
+    };
     const pluginGeneration = {
       pluginMetadataSnapshot: manifestMetadataSnapshot,
     } as never;
@@ -1220,9 +1254,19 @@ describe("agentCommand – LiveSessionModelSwitchError retry", () => {
     const prepared = await prepareAgentCommandExecution(
       { message: "/demo", to: "+1234567890" },
       {} as never,
-      { config: {}, pluginGeneration },
+      { config: admittedConfig, pluginGeneration },
     );
 
+    expect(prepared.cfg).toBe(admittedConfig);
+    expect(prepared.agentCfg).toBe(admittedConfig.agents.defaults);
+    expect(prepared.configuredThinkingCatalog).toEqual([
+      expect.objectContaining({
+        provider: "anthropic",
+        id: "admitted-model",
+        name: "Admitted model",
+        reasoning: true,
+      }),
+    ]);
     expect(prepared.manifestMetadataSnapshot).toBe(manifestMetadataSnapshot);
     expect(prepared.commandRuntimeContext?.pluginGeneration).toBe(pluginGeneration);
     expect(state.listSkillCommandsForWorkspaceMock).toHaveBeenCalledWith(

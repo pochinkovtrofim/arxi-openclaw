@@ -17,6 +17,7 @@ import {
 import {
   browserCloseTabByRawTargetId,
   browserDoctor,
+  browserHistory,
   browserOpenTab,
   browserSnapshot,
   browserStatus,
@@ -81,6 +82,23 @@ describe("browser client", () => {
       running: false,
       tabs: [],
     });
+  });
+
+  it("requests managed browser history with bounded query parameters", async () => {
+    const fetch = vi.fn(async (_url: RequestInfo | URL) => jsonResponse({ entries: [] }));
+    vi.stubGlobal("fetch", fetch);
+
+    await expect(
+      browserHistory("http://127.0.0.1:18791", {
+        profile: "openclaw",
+        query: "report",
+        limit: 5,
+      }),
+    ).resolves.toEqual({ entries: [] });
+
+    expect(fetch.mock.calls[0]?.[0]).toBe(
+      "http://127.0.0.1:18791/history?profile=openclaw&query=report&limit=5",
+    );
   });
 
   it("adds useful cancellation messaging for abort-like failures", async () => {

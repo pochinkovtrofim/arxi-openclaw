@@ -370,7 +370,13 @@ describe("agent harness host capability", () => {
   });
 
   it("overwrites plugin policy fields with the host snapshot and revokes lexically", async () => {
-    const { attempt, admission } = await admittedAttempt();
+    const { attempt, admission } = await admittedAttempt("run-1", {
+      chatId: "canonical-conversation",
+      groupId: "other-group",
+      messageTo: "other-target",
+      chatType: "direct",
+      senderId: "verified-sender",
+    });
     const authority = getAdmittedRunDelegatedAuthority(attempt.admittedRunContext);
     const { tool, execute } = testTool();
     const { host, bound } = bindTool(attempt, tool);
@@ -381,6 +387,11 @@ describe("agent harness host capability", () => {
         runId: "run-1",
         sessionKey: "agent:main:session-1",
         channelId: "chat-1",
+        requester: expect.objectContaining({
+          conversationId: "canonical-conversation",
+          chatType: "direct",
+          senderId: "verified-sender",
+        }),
       }),
     );
 
