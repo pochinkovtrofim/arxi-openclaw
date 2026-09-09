@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import { resetFileLockStateForTest } from "../../infra/file-lock.js";
 import { closeOpenClawAgentDatabasesForTest } from "../../state/openclaw-agent-db.js";
-import { captureEnv, setTestEnvValue } from "../../test-utils/env.js";
+import { captureEnv, deleteTestEnvValue, setTestEnvValue } from "../../test-utils/env.js";
 import { resolveAuthProfileOrder } from "./order.js";
+import { resolveSharedAuthStorePath } from "./path-resolve.js";
 import { loadPersistedAuthProfileStore } from "./persisted.js";
 import { markAuthProfileSuccess } from "./profiles.js";
 import { clearRuntimeAuthProfileStoreSnapshots } from "./runtime-snapshots.js";
@@ -47,7 +48,7 @@ function createMainStore(): AuthProfileStore {
 }
 
 describe("inherited auth-profile usage persistence", () => {
-  const env = captureEnv(["OPENCLAW_STATE_DIR", "OPENCLAW_AGENT_DIR"]);
+  const env = captureEnv(["OPENCLAW_STATE_DIR", "OPENCLAW_AGENT_DIR", "ARXI_AUTH_AGENT_DIR"]);
   let rootDir: string;
   let mainAgentDir: string;
   let childAgentDir: string;
@@ -143,6 +144,39 @@ describe("inherited auth-profile usage persistence", () => {
     const ownerStats = loadPersistedAuthProfileStore(mainAgentDir)?.usageStats?.[PRIMARY_ID];
     expect(ownerStats?.cooldownUntil).toBeUndefined();
     expect(ownerStats?.errorCount).toBe(0);
+  });
+
+  it("keeps a relocated legacy shared store owned by main", async () => {
+    mainAgentDir = path.join(rootDir, "auth-agent");
+    fs.mkdirSync(mainAgentDir, { recursive: true });
+    setTestEnvValue("OPENCLAW_AGENT_DIR", mainAgentDir);
+    setTestEnvValue("ARXI_AUTH_AGENT_DIR", mainAgentDir);
+    // Keep this fixture on the legacy database path instead of allowing a fresh
+    // root to choose the newer state-db ownership mode.
+    fs.writeFileSync(path.join(mainAgentDir, "auth-profiles.json"), "{}\n");
+    writeMainStore();
+    expect(loadPersistedAuthProfileStore(mainAgentDir)?.profiles[PRIMARY_ID]).toBeDefined();
+
+    // Runtime launchers may retain the legacy location through OPENCLAW_AGENT_DIR
+    // after the explicit bootstrap override is removed. The durable owner stays
+    // main; the directory name is not an agent identity.
+    deleteTestEnvValue("ARXI_AUTH_AGENT_DIR");
+    expect(resolveSharedAuthStorePath()).toBe(path.join(mainAgentDir, "openclaw-agent.sqlite"));
+    expect(fs.existsSync(resolveSharedAuthStorePath())).toBe(true);
+    expect(loadPersistedAuthProfileStore()?.profiles[PRIMARY_ID]).toBeDefined();
+    const childStore = ensureAuthProfileStore(childAgentDir);
+    expect(childStore.profiles[PRIMARY_ID]).toBeDefined();
+
+    await markAuthProfileFailure({
+      store: childStore,
+      profileId: PRIMARY_ID,
+      reason: "timeout",
+      agentDir: childAgentDir,
+    });
+
+    expect(loadPersistedAuthProfileStore()?.usageStats?.[PRIMARY_ID]?.cooldownUntil).toBeTypeOf(
+      "number",
+    );
   });
 
   it("clears inherited health without changing selection ownership", async () => {

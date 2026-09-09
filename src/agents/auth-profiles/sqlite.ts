@@ -186,10 +186,13 @@ function resolveAuthProfileDatabaseOptions(
     if (resolveSharedAuthStoreOwnership(env).location === "state-db") {
       return { kind: "shared-state", path: pathname, env };
     }
-    const dir = path.dirname(pathname);
     return {
       kind: "agent",
-      agentId: resolveRegisteredAgentIdForDir(dir) ?? inferAgentIdFromDir(dir),
+      // The legacy shared store is owned by the implicit main agent even when
+      // OPENCLAW_AGENT_DIR relocates it to a non-roster directory. Inferring an
+      // id from that directory would address the main database as custom-* and
+      // make inherited profile health writes fail the SQLite ownership guard.
+      agentId: LEGACY_IMPLICIT_AGENT_ID,
       path: pathname,
       env,
     };
