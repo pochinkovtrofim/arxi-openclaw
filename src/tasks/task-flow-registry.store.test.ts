@@ -555,6 +555,72 @@ describe("task-flow-registry store runtime", () => {
     });
   });
 
+  it("hides expired details before maintenance and pages every owner archive receipt", async () => {
+    await withFlowRegistryTempDir(async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-09T12:00:00.000Z"));
+      const ownerKey = "agent:owner:archive-page";
+      const controllerId = "tests/archive-page";
+      const expiredAt = Date.now() - 91 * 24 * 60 * 60_000;
+      const expiredFlowIds: string[] = [];
+      for (let index = 0; index < 21; index += 1) {
+        const flow = createManagedTaskFlow({
+          ownerKey,
+          controllerId,
+          history: { controllerId },
+          goal: `Expired ${index}`,
+          createdAt: expiredAt,
+          updatedAt: expiredAt,
+        });
+        expiredFlowIds.push(flow.flowId);
+      }
+      createManagedTaskFlow({
+        ownerKey: "agent:other:archive-page",
+        controllerId,
+        history: { controllerId },
+        goal: "Other owner",
+        createdAt: expiredAt,
+        updatedAt: expiredAt,
+      });
+      const fresh = createManagedTaskFlow({
+        ownerKey,
+        controllerId,
+        history: { controllerId },
+        goal: "Fresh detail",
+      });
+
+      // The read boundary is enforced even before the existing maintenance pass compacts rows.
+      const beforeMaintenance = listTaskFlowHistoryForOwnerFromSqlite({ ownerKey, controllerId });
+      expect(beforeMaintenance.events.map((event) => event.flowId)).toEqual([fresh.flowId]);
+      expect(beforeMaintenance.archives).toEqual([]);
+      expect(pruneTaskFlowHistoryFromSqlite()).toBe(22);
+
+      const eventPage = listTaskFlowHistoryForOwnerFromSqlite({ ownerKey, controllerId });
+      expect(eventPage.events.map((event) => event.flowId)).toEqual([fresh.flowId]);
+      expect(eventPage.nextCursor).toEqual(expect.any(String));
+      const archivePageOne = listTaskFlowHistoryForOwnerFromSqlite({
+        ownerKey,
+        controllerId,
+        cursor: eventPage.nextCursor,
+      });
+      expect(archivePageOne.events).toEqual([]);
+      expect(archivePageOne.archives).toHaveLength(20);
+      expect(archivePageOne.nextCursor).toEqual(expect.any(String));
+      const archivePageTwo = listTaskFlowHistoryForOwnerFromSqlite({
+        ownerKey,
+        controllerId,
+        cursor: archivePageOne.nextCursor,
+      });
+      expect(archivePageTwo.archives).toHaveLength(1);
+      expect(archivePageTwo.nextCursor).toBeUndefined();
+      expect(
+        new Set(
+          [...archivePageOne.archives, ...archivePageTwo.archives].map((archive) => archive.flowId),
+        ),
+      ).toEqual(new Set(expiredFlowIds));
+    });
+  });
+
   it("exposes cursor-paginated history only through the registered bound controller", async () => {
     await withFlowRegistryTempDir(async () => {
       const runtime = createRuntimeTaskFlow();
@@ -569,6 +635,7 @@ describe("task-flow-registry store runtime", () => {
         });
       const enabledAt = Date.now();
       expect(ownerHistory.enable({ flowId: legacy.flowId, enabledAt })).toBe(true);
+      expect(ownerHistory.enable({ flowId: legacy.flowId, enabledAt })).toBe(true);
       const first = ownerHistory.createManaged({ goal: "First" });
       const second = ownerHistory.createManaged({ goal: "Second" });
       expect(first.controllerId).toBe(ownerHistory.controllerId);
@@ -580,6 +647,10 @@ describe("task-flow-registry store runtime", () => {
       const secondPage = ownerHistory.list({ cursor: firstPage.nextCursor, limit: 1 });
       expect(secondPage.events).toHaveLength(1);
       expect(secondPage.events[0]?.flowId).not.toBe(firstPage.events[0]?.flowId);
+      expect(ownerHistory.list({ flowId: legacy.flowId }).events).toMatchObject([
+        { eventType: "enabled", occurredAt: enabledAt },
+      ]);
+      resetTaskFlowRegistryForTests({ persist: false });
       expect(ownerHistory.list({ flowId: legacy.flowId }).events).toMatchObject([
         { eventType: "enabled", occurredAt: enabledAt },
       ]);
