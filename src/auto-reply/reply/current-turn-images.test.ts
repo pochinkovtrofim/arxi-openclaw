@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { saveMediaBuffer } from "../../media/store.js";
 import { withTestDir } from "../../test-helpers/temp-dir.js";
 import { deleteTestEnvValue, setTestEnvValue } from "../../test-utils/env.js";
 import type { MsgContext } from "../templating.js";
@@ -88,6 +89,50 @@ describe("resolveCurrentTurnImages", () => {
         ],
         imageOrder: ["inline"],
       });
+    });
+  });
+
+  it("hydrates a URL-only durable inbound image into the current native turn", async () => {
+    await withTestDir({ prefix: "openclaw-current-turn-media-uri-" }, async (base) => {
+      const stateDir = path.join(base, "state");
+      setTestEnvValue("OPENCLAW_STATE_DIR", stateDir);
+      const saved = await saveMediaBuffer(PNG_IMAGE_BYTES, "image/png", "inbound");
+
+      const result = await resolveCurrentTurnImages({
+        ctx: {
+          Body: "describe this image",
+          media: [{ url: `media://inbound/${saved.id}`, contentType: "image/png" }],
+        } satisfies MsgContext,
+        cfg: {} as OpenClawConfig,
+      });
+
+      expect(result).toEqual({
+        images: [
+          {
+            type: "image",
+            data: PNG_IMAGE_BYTES.toString("base64"),
+            mimeType: "image/png",
+          },
+        ],
+        imageOrder: ["inline"],
+      });
+      expect(result.imageSourceIndexes).toEqual([0]);
+    });
+  });
+
+  it("keeps an unavailable durable inbound image marked unresolved", async () => {
+    await withTestDir({ prefix: "openclaw-current-turn-missing-media-uri-" }, async (base) => {
+      setTestEnvValue("OPENCLAW_STATE_DIR", path.join(base, "state"));
+
+      const result = await resolveCurrentTurnImages({
+        ctx: {
+          Body: "describe this image",
+          media: [{ url: "media://inbound/missing-image.png", contentType: "image/png" }],
+        } satisfies MsgContext,
+        cfg: {} as OpenClawConfig,
+      });
+
+      expect(result).toEqual({ unresolvedSourceIndexes: [0] });
     });
   });
 

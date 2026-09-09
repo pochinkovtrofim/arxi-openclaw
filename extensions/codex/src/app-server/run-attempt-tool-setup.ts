@@ -321,7 +321,10 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   ];
   const turnSourceChannel = params.messageChannel ?? params.messageProvider;
   const turnSourceTo = params.currentMessagingTarget ?? params.currentChannelId;
+  const conversationId = params.chatId ?? params.groupId ?? params.messageTo;
   const requester = {
+    ...(conversationId ? { conversationId } : {}),
+    ...(params.chatType ? { chatType: params.chatType } : {}),
     ...(turnSourceChannel ? { channel: turnSourceChannel } : {}),
     ...(params.agentAccountId ? { accountId: params.agentAccountId } : {}),
     ...(params.senderId ? { senderId: params.senderId } : {}),
@@ -510,7 +513,12 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     );
     const toolsWithScopedMcp =
       scopedExecutable.length > 0
-        ? [...executableBaseTools, ...scopedExecutable]
+        ? [
+            ...executableBaseTools,
+            ...params.hostCapabilities.bindToolSurface(scopedExecutable, {
+              cwd: effectiveCwd ?? effectiveWorkspace,
+            }),
+          ]
         : executableBaseTools;
     const registeredWithScopedMcp =
       scopedAdvertised.length > 0
@@ -527,6 +535,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
       sessionKey: contextSessionKey,
       runId: params.runId,
       channelId: hookChannelId,
+      ...(params.diagnosticTrace ? { trace: params.diagnosticTrace } : {}),
       currentChannelProvider: resolveCodexMessageToolProvider(params),
       currentChannelId: params.currentChannelId,
       currentMessagingTarget: params.currentMessagingTarget,
@@ -539,7 +548,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
       allocateToolOutcomeOrdinal: allocateCodexToolOutcomeOrdinal,
       trigger: params.trigger,
       approvalReviewerDeviceId: params.approvalReviewerDeviceId,
-      ...(hasRequester ? { requester } : {}),
+      ...(hasRequester && !mayResolveBackgroundMcp ? { requester } : {}),
       ...(turnSourceChannel ? { turnSourceChannel } : {}),
       ...(turnSourceTo ? { turnSourceTo } : {}),
       ...(params.agentAccountId ? { turnSourceAccountId: params.agentAccountId } : {}),

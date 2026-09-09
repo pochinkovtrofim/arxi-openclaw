@@ -113,6 +113,7 @@ export async function resolveEmbeddedRunModelSetup(params: {
       workspaceDir: params.workspaceDir,
     });
     const tieredResolution = await resolveTieredModel({
+      agentRuntimeId: agentHarness.id,
       provider: selectedRuntimeProvider,
       ...(selectedRuntimeProvider !== provider ? { fallbackProvider: provider } : {}),
       modelId,

@@ -842,6 +842,7 @@ describe("createCodexDynamicToolBridge", () => {
       }),
       expect.objectContaining({
         name: CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
+        description: expect.stringContaining("Call these tools directly, outside exec and tools.*"),
         tools: [
           expect.objectContaining({ name: "browser" }),
           expect.objectContaining({ name: "computer" }),

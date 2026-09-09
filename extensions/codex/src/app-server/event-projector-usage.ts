@@ -1,4 +1,13 @@
-import { normalizeUsage } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  type EmbeddedRunAttemptParamsV2,
+  normalizeUsage,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  createChildDiagnosticTraceContext,
+  emitTrustedDiagnosticEvent,
+  freezeDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
 import {
   asSafeIntegerInRange,
   readStringField as readString,
@@ -117,7 +126,14 @@ export class CodexResponseCompletionProjection {
     this.usage = undefined;
   }
 
-  record(params: JsonObject, reportOutputTokens?: (outputTokens: number) => void): void {
+  record(
+    params: JsonObject,
+    context: Pick<
+      EmbeddedRunAttemptParamsV2,
+      "runId" | "provider" | "modelId" | "hostCapabilities"
+    >,
+    trace?: DiagnosticTraceContext,
+  ): void {
     const responseId = readString(params, "responseId");
     if (!responseId || this.responseIds.has(responseId)) {
       return;
@@ -127,9 +143,51 @@ export class CodexResponseCompletionProjection {
     // Every provider completion replaces the prior response snapshot. A final
     // response with missing or malformed usage must leave freshness unknown.
     this.usage = usage ? normalizeCodexResponseTokenUsage(usage) : undefined;
+    emitCodexRequestCompletion(responseId, this.usage, {
+      runId: context.runId,
+      provider: context.provider,
+      model: context.modelId,
+      trace,
+    });
     const outputTokens = this.usage?.output;
     if (outputTokens !== undefined) {
-      reportOutputTokens?.(outputTokens);
+      context.hostCapabilities.reportOutputTokens?.(outputTokens);
     }
   }
+}
+
+/** One source-confirmed provider completion, with no prompt or response content. */
+function emitCodexRequestCompletion(
+  responseId: string,
+  usage: ReturnType<typeof normalizeUsage>,
+  context: { runId: string; provider: string; model: string; trace?: DiagnosticTraceContext },
+): void {
+  emitTrustedDiagnosticEvent({
+    type: "model.call.completed",
+    runId: context.runId,
+    callId: responseId,
+    provider: context.provider,
+    model: context.model,
+    observationUnit: "request",
+    // The upstream notification provides completion time, not request duration.
+    durationMs: 0,
+    ...(context.trace
+      ? { trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(context.trace)) }
+      : {}),
+    ...(usage
+      ? {
+          usage: {
+            input: usage.input,
+            output: usage.output,
+            cacheRead: usage.cacheRead,
+            cacheWrite: usage.cacheWrite,
+            reasoningTokens: usage.reasoningTokens,
+            ...(usage.contextUsage?.state === "available"
+              ? { promptTokens: usage.contextUsage.promptTokens }
+              : {}),
+            total: usage.total,
+          },
+        }
+      : {}),
+  });
 }

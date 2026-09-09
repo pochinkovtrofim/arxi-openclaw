@@ -377,6 +377,28 @@ export async function browserTabs(
   return normalizeBrowserTabsResult(res);
 }
 
+/** Read bounded visit metadata from an OpenClaw-managed Chromium profile. */
+export async function browserHistory(
+  baseUrl: string | undefined,
+  opts?: BrowserClientProfileOptions & { query?: string; limit?: number },
+): Promise<{ entries: Array<{ title: string | null; url: string; visitedAt: string }> }> {
+  const query = new URLSearchParams();
+  if (opts?.profile) {
+    query.set("profile", opts.profile);
+  }
+  if (opts?.query) {
+    query.set("query", opts.query);
+  }
+  if (opts?.limit !== undefined) {
+    query.set("limit", String(opts.limit));
+  }
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return await fetchBrowserJson(withBaseUrl(baseUrl, `/history${suffix}`), {
+    timeoutMs: resolveBrowserClientTimeoutMs(opts, 3_000),
+    signal: opts?.signal,
+  });
+}
+
 /** Open a new tab in the selected browser profile. */
 export async function browserOpenTab(
   baseUrl: string | undefined,

@@ -12,6 +12,8 @@ import {
   createParams,
   createProjector,
   buildEmptyToolTelemetry,
+  flushDiagnosticEvents,
+  onInternalDiagnosticEvent,
   readAttemptTerminal,
   expectUsageFields,
   forCurrentTurn,
@@ -19,11 +21,67 @@ import {
   turnCompleted,
   turnWithStatus,
   vi,
+  type DiagnosticEventPayload,
 } from "./event-projector.test-harness.js";
 
 registerCodexEventProjectorTestLifecycle();
 
 describe("CodexAppServerEventProjector usage projection", () => {
+  it("emits one content-free request completion for each upstream response", async () => {
+    const events: DiagnosticEventPayload[] = [];
+    const stop = onInternalDiagnosticEvent((event) => {
+      if (event.type === "model.call.completed" && event.observationUnit === "request") {
+        events.push(event);
+      }
+    });
+    const projector = await createProjector(undefined, {
+      modelCallTrace: {
+        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+        spanId: "00f067aa0ba902b7",
+        traceFlags: "01",
+      },
+    });
+    const response = forCurrentTurn("rawResponse/completed", {
+      responseId: "response-1",
+      opaqueProviderPayload: "owner message must never reach diagnostics",
+      usage: {
+        inputTokens: 9,
+        cachedInputTokens: 3,
+        cacheWriteInputTokens: 2,
+        outputTokens: 7,
+        reasoningOutputTokens: 5,
+        totalTokens: 16,
+      },
+    });
+
+    try {
+      await projector.handleNotification(response);
+      await projector.handleNotification(response);
+      await flushDiagnosticEvents();
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          callId: "response-1",
+          observationUnit: "request",
+          durationMs: 0,
+          usage: {
+            input: 4,
+            output: 7,
+            cacheRead: 3,
+            cacheWrite: 2,
+            reasoningTokens: 5,
+            promptTokens: 9,
+            total: 16,
+          },
+          trace: expect.objectContaining({ traceId: "4bf92f3577b34da6a3ce929d0e0e4736" }),
+        }),
+      ]);
+      expect(JSON.stringify(events)).not.toContain("owner message");
+    } finally {
+      stop();
+    }
+  });
+
   it("keeps the startup harness window when no token-usage update arrives", async () => {
     const projector = await createProjector(undefined, { initialContextTokens: 1_050_000 });
 

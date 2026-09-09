@@ -208,6 +208,18 @@ function createContextEngine(overrides: Partial<ContextEngine> = {}): ContextEng
 }
 
 type MockCallReader = { mock: { calls: unknown[][] } };
+type PersistedMediaUserMessage = Extract<
+  Parameters<SessionManager["appendMessage"]>[0],
+  { role: "user" }
+> & {
+  __openclaw: {
+    media: Array<{ url: string; contentType: string }>;
+    mediaImageLayout: {
+      slots: Array<{ kind: "offloaded"; factIndex: number }>;
+      suppressedFactIndexes?: number[];
+    };
+  };
+};
 
 const requireRecord = createRequireRecord("record", "expected-label-object");
 
@@ -280,7 +292,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
     await fs.mkdir(path.dirname(photoPath), { recursive: true });
     await fs.writeFile(photoPath, photoBytes);
     await fs.writeFile(secondPhotoPath, secondPhotoBytes);
-    openFileBackedSessionManagerForTest(sessionFile, { sessionId: "session-1" }).appendMessage({
+    const persistedPhotoMessage: PersistedMediaUserMessage = {
       role: "user",
       content: "[Telegram photo]",
       __openclaw: {
@@ -299,7 +311,10 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
         },
       },
       timestamp: Date.now() - 1,
-    } as unknown as AgentMessage);
+    };
+    openFileBackedSessionManagerForTest(sessionFile, { sessionId: "session-1" }).appendMessage(
+      persistedPhotoMessage,
+    );
     const harness = createStartedThreadHarness();
     const params = createParams(sessionFile, workspaceDir);
     params.prompt = "нет";
@@ -357,7 +372,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       const params = createParams(sessionFile, workspaceDir);
       params.prompt = "нет";
       params.model = { ...params.model, input: ["text", "image"] };
-      openFileBackedSessionManagerForTest(sessionFile, { sessionId: "session-1" }).appendMessage({
+      const persistedPhotoMessage: PersistedMediaUserMessage = {
         role: "user",
         content: "[Telegram photo]",
         timestamp: Date.now(),
@@ -365,7 +380,10 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
           media: [{ url: `media://inbound/${photoName}`, contentType: "image/png" }],
           mediaImageLayout: { slots: [{ kind: "offloaded", factIndex: 0 }] },
         },
-      } as unknown as AgentMessage);
+      };
+      openFileBackedSessionManagerForTest(sessionFile, { sessionId: "session-1" }).appendMessage(
+        persistedPhotoMessage,
+      );
 
       await expect(readCodexAppServerBinding(sessionFile)).resolves.toMatchObject({
         threadId: "thread-resumed",

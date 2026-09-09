@@ -606,7 +606,7 @@ export function createExecApprovalHandlers(
       if (!resolveParams) {
         return;
       }
-      const { inputId, decision, reviewer } = resolveParams;
+      const { inputId, decision, reviewer, resolutionProof } = resolveParams;
       // Grant terms freeze at resolve time. An explicit per-resolve override
       // (custom operator UIs) wins over the configured default; the manager
       // applies tools.exec.grantExpiryDays when this stays undefined.
@@ -626,6 +626,7 @@ export function createExecApprovalHandlers(
         context,
         client,
         reviewer,
+        resolutionProof,
         exposeAmbiguousPrefixError: true,
         validateDecision: (snapshot) => {
           const autoReviewIdentity =

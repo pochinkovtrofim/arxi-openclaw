@@ -2514,6 +2514,9 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     expect(result.ok).toBe(true);
     expect(mockCallArg(resolveModelMock)).toBe("openai");
     expect(mockCallArg(resolveModelMock, 0, 1)).toBe("gpt-5.4-mini");
+    expect(mockCallArg(resolveModelAsyncMock, 0, 4)).toMatchObject({
+      agentRuntimeId: "codex",
+    });
     expectRecordFields(mockCallArg(resolveContextWindowInfoMock), {
       provider: "openai",
       modelId: "gpt-5.4-mini",
@@ -4553,7 +4556,10 @@ describe("compactEmbeddedAgentSession hooks (ownsCompaction engine)", () => {
     );
 
     expect(mockCallArg(resolveModelAsyncMock, 0, 4)).toEqual(
-      expect.objectContaining({ authProfileId: "openai:token" }),
+      expect.objectContaining({
+        agentRuntimeId: "codex",
+        authProfileId: "openai:token",
+      }),
     );
     expect(resolveModelAsyncMock).toHaveBeenLastCalledWith(
       "openai",
@@ -4569,7 +4575,7 @@ describe("compactEmbeddedAgentSession hooks (ownsCompaction engine)", () => {
           },
         },
       }),
-      expect.objectContaining({ authProfileMode: "token" }),
+      expect.objectContaining({ agentRuntimeId: "codex", authProfileMode: "token" }),
     );
     expect(contextEngineCompactMock).toHaveBeenCalledWith(
       expect.objectContaining({ tokenBudget: 272_000 }),

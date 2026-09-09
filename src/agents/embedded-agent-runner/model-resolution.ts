@@ -18,6 +18,7 @@ export async function resolveTieredModel(params: {
   workspaceDir: string;
   authProfileId?: string;
   authProfileMode?: AuthProfileCredential["type"] | "aws-sdk";
+  agentRuntimeId?: string;
   preparedModelRuntime?: PreparedModelRuntimeSnapshot;
   staticCatalogOwnsTransport?: boolean;
 }): Promise<{ provider: string; resolution: ModelResolution }> {
@@ -43,6 +44,7 @@ export async function resolveTieredModel(params: {
     return undefined;
   };
   const firstTier = await resolveCandidates({
+    agentRuntimeId: params.agentRuntimeId,
     skipAgentDiscovery: true,
     allowBundledStaticCatalogFallback: params.staticCatalogOwnsTransport,
     preferBundledStaticCatalogTransport: params.staticCatalogOwnsTransport,
@@ -70,6 +72,7 @@ export async function resolveTieredModel(params: {
     }));
   return (
     (await resolveCandidates({
+      agentRuntimeId: params.agentRuntimeId,
       ...preparedModelRuntime.createStores(),
       workspaceDir: params.workspaceDir,
       authProfileId: params.authProfileId,

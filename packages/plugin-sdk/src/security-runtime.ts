@@ -2,6 +2,7 @@
 
 export {
   appendRegularFile,
+  assertHostnameAllowedWithPolicy,
   assertNoSymlinkParents,
   assertNoSymlinkParentsSync,
   buildChannelMetadata,

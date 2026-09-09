@@ -680,12 +680,15 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
     recordToolPrepStage: options?.recordToolPrepStage,
   });
   const cronCreatorAuthorityResolver = bindActiveCronCreatorAuthorityResolver(options?.runId);
-  // A fresh exact-run capability authorizes only automation creation. Keep every
-  // other owner-only control-plane tool denied for senderless operator turns.
+  // A fresh exact-run capability authorizes automation creation. A cron run may
+  // manage only its own automation through its separately scoped cron tool.
+  // Keep every other owner-only control-plane tool denied for senderless turns.
   const ownerOnlyCoreToolDenylist =
     options?.senderIsOwner === false
       ? GATEWAY_OWNER_ONLY_CORE_TOOLS.filter(
-          (toolName) => toolName !== AUTOMATIONS_TOOL_NAME || !cronCreatorAuthorityResolver,
+          (toolName) =>
+            toolName !== AUTOMATIONS_TOOL_NAME ||
+            (!cronCreatorAuthorityResolver && !cronSelfRemoveOnlyJobId),
         )
       : [];
   const ownerOnlyCoreToolPolicy =
@@ -1030,7 +1033,10 @@ function createOpenClawCodingToolsInternal(options?: OpenClawCodingToolsOptions)
   options?.recordToolPrepStage?.("authorization-policy");
   const turnSourceChannel = options?.messageChannel ?? options?.messageProvider;
   const turnSourceTo = options?.currentMessagingTarget ?? options?.currentChannelId;
+  const conversationId = options?.nativeChannelId ?? options?.groupId ?? options?.messageTo;
   const requester = {
+    ...(conversationId ? { conversationId } : {}),
+    ...(options?.chatType ? { chatType: options.chatType } : {}),
     ...(turnSourceChannel ? { channel: turnSourceChannel } : {}),
     ...(options?.agentAccountId ? { accountId: options.agentAccountId } : {}),
     ...(options?.senderId ? { senderId: options.senderId } : {}),

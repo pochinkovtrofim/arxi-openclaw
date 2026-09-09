@@ -5,6 +5,7 @@ import {
   appendOrdinaryDynamicToolFixtures,
   materializeStaticMcpFixture,
   resetConfiguredMcpFixtureState,
+  type StaticToolExecuteMock,
 } from "./run-attempt.configured-mcp.test-support.js";
 
 const mcpMocks = vi.hoisted(() => ({
@@ -41,7 +42,7 @@ const mcpMocks = vi.hoisted(() => ({
   staticBaseToolName: "fake__show",
   staticHonorToolsAllow: false,
   staticProducedToolNames: [] as string[],
-  staticToolExecutes: [] as ReturnType<typeof vi.fn>[],
+  staticToolExecutes: [] as StaticToolExecuteMock[],
   threadConfigCalls: [] as Array<Record<string, unknown>>,
 }));
 

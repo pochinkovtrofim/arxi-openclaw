@@ -182,6 +182,39 @@ describe("OpenAI provider Codex transport hooks", () => {
     },
   );
 
+  it.each([
+    { agentRuntimeId: "codex", auth: undefined, expected: true },
+    { agentRuntimeId: "codex", auth: "oauth", expected: true },
+    { agentRuntimeId: undefined, auth: undefined, expected: false },
+    { agentRuntimeId: "codex", auth: "api-key", expected: false },
+  ])(
+    "preserves runtime model ownership with OAuth: $agentRuntimeId/$auth",
+    ({ agentRuntimeId, auth, expected }) => {
+      const model = buildOpenAIProvider().resolveDynamicModel?.({
+        provider: "openai",
+        modelId: "runtime-only-test-model",
+        agentRuntimeId,
+        authProfileId: "openai:test",
+        authProfileMode: "oauth",
+        providerConfig: {
+          api: "openai-chatgpt-responses",
+          baseUrl: "https://chatgpt.com/backend-api",
+          ...(auth ? { auth } : {}),
+        },
+        modelRegistry: { find: () => null },
+      } as never);
+      if (expected) {
+        expect(model).toMatchObject({
+          id: "runtime-only-test-model",
+          api: "openai-chatgpt-responses",
+          input: ["text", "image"],
+        });
+      } else {
+        expect(model).toBeUndefined();
+      }
+    },
+  );
+
   it("does not invent a bare GPT-5.6 alias for the Codex transport", () => {
     const provider = buildOpenAIProvider();
 

@@ -9,6 +9,7 @@ import {
 } from "openclaw/plugin-sdk/security-runtime";
 
 export {
+  assertHostnameAllowedWithPolicy,
   ensurePortAvailable,
   extractErrorCode,
   formatErrorMessage,

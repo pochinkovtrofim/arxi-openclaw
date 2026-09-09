@@ -6,6 +6,7 @@
  */
 import { isIP } from "node:net";
 import {
+  assertHostnameAllowedWithPolicy,
   isPrivateNetworkAllowedByPolicy,
   resolvePinnedHostnameWithPolicy,
   type LookupFn,
@@ -143,6 +144,19 @@ export async function assertBrowserNavigationAllowed(
     throw new InvalidBrowserNavigationUrlError(
       "Navigation blocked: strict browser SSRF policy cannot be enforced while this browser profile is proxy-routed",
     );
+  }
+
+  // In an explicitly proxy-routed, private-network-permitted mode, local DNS
+  // pinning cannot constrain the proxy's eventual connection and may not be
+  // available in an otherwise network-isolated browser runtime. Retain the
+  // synchronous hostname policy, then let the configured proxy enforce its
+  // destination policy in this deliberately permissive mode.
+  if (
+    opts.browserProxyMode === "explicit-browser-proxy" &&
+    isPrivateNetworkAllowedByPolicy(opts.ssrfPolicy)
+  ) {
+    assertHostnameAllowedWithPolicy(parsed.hostname, opts.ssrfPolicy);
+    return;
   }
 
   // Browser navigations happen in Chromium's network stack, not Node's. In

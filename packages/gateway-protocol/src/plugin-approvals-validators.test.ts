@@ -47,4 +47,29 @@ describe("plugin approval protocol validators", () => {
       }),
     ).toBe(true);
   });
+
+  it("accepts bounded opaque plugin data only as an object", () => {
+    const request = {
+      title: "Apply workspace skill proposal",
+      description: "Apply the pending proposal",
+    };
+
+    expect(
+      validatePluginApprovalRequestParams({
+        ...request,
+        pluginData: { exactAction: { challenge: "challenge", input: { to: "owner" } } },
+      }),
+    ).toBe(true);
+    expect(validatePluginApprovalRequestParams({ ...request, pluginData: ["not-an-object"] })).toBe(
+      false,
+    );
+    expect(
+      validatePluginApprovalRequestParams({
+        ...request,
+        pluginData: Object.fromEntries(
+          Array.from({ length: 33 }, (_, index) => [`key${index}`, index]),
+        ),
+      }),
+    ).toBe(false);
+  });
 });

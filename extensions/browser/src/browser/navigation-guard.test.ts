@@ -232,7 +232,9 @@ describe("browser navigation guard", () => {
   });
 
   it("allows explicit browser proxy routing when private-network mode is enabled", async () => {
-    const lookupFn = createLookupFn("93.184.216.34");
+    const lookupFn = vi.fn(async () => {
+      throw new Error("proxy-routed navigation must not use guest DNS");
+    });
     await expect(
       assertBrowserNavigationAllowed({
         url: "https://example.com",
@@ -241,6 +243,25 @@ describe("browser navigation guard", () => {
         ssrfPolicy: { dangerouslyAllowPrivateNetwork: true },
       }),
     ).resolves.toBeUndefined();
+    expect(lookupFn).not.toHaveBeenCalled();
+  });
+
+  it("retains hostname allowlist enforcement for proxy-routed private-network navigation", async () => {
+    const lookupFn = vi.fn(async () => {
+      throw new Error("proxy-routed navigation must not use guest DNS");
+    });
+    await expect(
+      assertBrowserNavigationAllowed({
+        url: "https://blocked.example",
+        lookupFn,
+        browserProxyMode: "explicit-browser-proxy",
+        ssrfPolicy: {
+          dangerouslyAllowPrivateNetwork: true,
+          hostnameAllowlist: ["allowed.example"],
+        },
+      }),
+    ).rejects.toThrow(/not in allowlist/i);
+    expect(lookupFn).not.toHaveBeenCalled();
   });
 
   it("rejects invalid URLs", async () => {

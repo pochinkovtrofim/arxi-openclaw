@@ -327,13 +327,16 @@ function resolveCodexForwardCompatModel(ctx: ProviderResolveDynamicModelContext)
     };
   } else if (
     ctx.agentRuntimeId === "codex" &&
-    ctx.authProfileId === undefined &&
-    ctx.authProfileMode === undefined &&
-    ctx.providerConfig?.auth === undefined
+    (ctx.providerConfig?.auth === undefined ||
+      (ctx.providerConfig.auth === "oauth" &&
+        ctx.providerConfig.api === "openai-chatgpt-responses" &&
+        isOpenAICodexBaseUrl(ctx.providerConfig.baseUrl)))
   ) {
     // Codex owns its account-scoped model catalog. When that catalog is not yet
-    // available, keep the requested identity intact and let the native runtime
-    // decide whether the account can actually use it.
+    // available, keep the requested identity through credential-scoped resolution.
+    // Prepared subscription routes project OAuth and their exact Codex endpoint
+    // into providerConfig; that projection remains native-account-owned rather
+    // than turning an otherwise unobserved model into a host-authored route.
     templateIds = OPENAI_CODEX_GPT_56_MODEL_IDS;
     patch = {
       reasoning: true,

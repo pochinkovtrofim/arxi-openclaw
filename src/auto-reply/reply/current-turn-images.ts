@@ -1,5 +1,4 @@
 // Tracks image attachments that belong to the current reply turn.
-import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { MediaImageLayout } from "../../agents/embedded-agent-runner/run/prompt-image-metadata.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { logVerbose } from "../../globals.js";
@@ -13,15 +12,12 @@ import {
   stripExtractedFileImageMetadata,
   type ExtractedFileImage,
 } from "../../media-understanding/extracted-file-images.js";
-import type { MediaAttachment } from "../../media-understanding/types.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { RuntimeMsgContext as MsgContext } from "../templating.js";
 import {
   collectDescribedImageAttachmentIndexes,
   resolveAgentTurnAttachments,
 } from "./agent-turn-attachments.js";
-
-type CurrentImageAttachment = MediaAttachment & { path: string };
 
 type OrderedTurnImage = {
   image?: ImageContent;
@@ -38,13 +34,6 @@ export type CurrentTurnImages = {
   /** Admission-owned slot-to-media identity used by later runtime adapters. */
   mediaImageLayout?: MediaImageLayout;
 };
-
-function collectCurrentImageAttachments(ctx: MsgContext): CurrentImageAttachment[] {
-  return normalizeAttachments(ctx).flatMap((attachment) => {
-    const mediaPath = normalizeOptionalString(attachment.path);
-    return mediaPath && isImageAttachment(attachment) ? [{ ...attachment, path: mediaPath }] : [];
-  });
-}
 
 function appendOrderedImages(params: {
   entries: OrderedTurnImage[];
@@ -131,7 +120,7 @@ export async function resolveCurrentTurnImages(params: {
     });
   }
 
-  const currentImageAttachments = collectCurrentImageAttachments(params.ctx);
+  const currentImageAttachments = normalizeAttachments(params.ctx).filter(isImageAttachment);
   if (currentImageAttachments.length === 0) {
     return resolveMergedTurnImages(entries);
   }

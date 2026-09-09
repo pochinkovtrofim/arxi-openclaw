@@ -4,6 +4,7 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { buildApprovalPresentation } from "../../infra/approval-presentation.js";
 import type { PluginApprovalRequestPayload } from "../../infra/plugin-approvals.js";
 import { ExecApprovalManager } from "../exec-approval-manager.js";
 import { createPluginApprovalHandlers } from "./plugin-approval.js";
@@ -320,6 +321,41 @@ describe("createPluginApprovalHandlers", () => {
       const finalResult = expectResponseOk(respond, 1);
       expect(finalResult.id).toBe(approvalId);
       expect(finalResult.decision).toBe("allow-once");
+    });
+
+    it("retains opaque plugin data for native approval replay without rendering it", async () => {
+      const handlers = createPluginApprovalHandlers(manager);
+      const respond = vi.fn();
+      const opts = createMockOptions(
+        "plugin.approval.request",
+        {
+          title: "Sensitive action",
+          description: "Owner review required",
+          pluginData: { privateAction: { challenge: "native-challenge", secret: "not-for-view" } },
+          twoPhase: true,
+        },
+        { respond },
+      );
+
+      const requestPromise = expectDefined(
+        handlers["plugin.approval.request"],
+        'handlers["plugin.approval.request"] test invariant',
+      )(opts);
+      const approvalId = await waitForAcceptedApproval(respond);
+      expect(manager.getSnapshot(approvalId)?.request.pluginData).toEqual({
+        privateAction: { challenge: "native-challenge", secret: "not-for-view" },
+      });
+
+      const presentation = buildApprovalPresentation({
+        kind: "plugin",
+        request: manager.getSnapshot(approvalId)?.request,
+        allowedDecisions: ["allow-once", "deny"],
+      });
+      expect(JSON.stringify(presentation)).not.toContain("native-challenge");
+      expect(JSON.stringify(presentation)).not.toContain("not-for-view");
+
+      manager.resolve(approvalId, "deny");
+      await requestPromise;
     });
 
     it("sanitizes title/description/detail at creation so every surface gets safe text", async () => {
