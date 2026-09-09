@@ -9,6 +9,7 @@ import {
   resetTaskFlowRegistryRuntimeForTests,
   type TaskFlowRegistryObserverEvent,
 } from "./task-flow-registry.store.js";
+import type { TaskFlowHistoryRegistration } from "./task-flow-registry.store.types.js";
 import {
   isTerminalTaskFlow,
   type JsonValue,
@@ -85,6 +86,7 @@ type CreateFlowRecordParams = FlowRecordCreateFields & {
   syncMode?: TaskFlowSyncMode;
   controllerId?: string | null;
   revision?: number;
+  history?: TaskFlowHistoryRegistration;
 };
 
 export type TaskFlowUpdateResult =
@@ -336,8 +338,15 @@ function persistFlowRegistry(): boolean {
   }
 }
 
-function persistFlowUpsert(flow: TaskFlowRecord) {
+function persistFlowUpsert(flow: TaskFlowRecord, history?: TaskFlowHistoryRegistration) {
   const store = getTaskFlowRegistryStore();
+  if (store.upsertFlowWithHistory) {
+    store.upsertFlowWithHistory(cloneFlowRecord(flow), history);
+    return;
+  }
+  if (history) {
+    throw new Error("Task Flow history requires a history-capable registry store.");
+  }
   if (store.upsertFlow) {
     store.upsertFlow(cloneFlowRecord(flow));
     return;
@@ -347,9 +356,13 @@ function persistFlowUpsert(flow: TaskFlowRecord) {
   });
 }
 
-function tryPersistFlowUpsert(flow: TaskFlowRecord, operation: string): boolean {
+function tryPersistFlowUpsert(
+  flow: TaskFlowRecord,
+  operation: string,
+  history?: TaskFlowHistoryRegistration,
+): boolean {
   try {
-    persistFlowUpsert(flow);
+    persistFlowUpsert(flow, history);
     return true;
   } catch (error) {
     log.warn("Failed to persist task-flow registry upsert", {
@@ -456,8 +469,12 @@ function applyFlowPatch(current: TaskFlowRecord, patch: FlowRecordPatch): TaskFl
   };
 }
 
-function writeFlowRecord(next: TaskFlowRecord, previous?: TaskFlowRecord): TaskFlowRecord | null {
-  if (!tryPersistFlowUpsert(next, previous ? "update" : "create")) {
+function writeFlowRecord(
+  next: TaskFlowRecord,
+  previous?: TaskFlowRecord,
+  history?: TaskFlowHistoryRegistration,
+): TaskFlowRecord | null {
+  if (!tryPersistFlowUpsert(next, previous ? "update" : "create", history)) {
     return null;
   }
   flows.set(next.flowId, next);
@@ -472,18 +489,46 @@ function writeFlowRecord(next: TaskFlowRecord, previous?: TaskFlowRecord): TaskF
 function createFlowRecord(params: CreateFlowRecordParams): TaskFlowRecord | null {
   ensureTaskFlowRegistryReady();
   const record = buildFlowRecord(params);
-  return writeFlowRecord(record);
+  return writeFlowRecord(record, undefined, params.history);
 }
 
 export function createManagedTaskFlow(
   params: FlowRecordCreateFields & {
     controllerId: string;
+    history?: TaskFlowHistoryRegistration;
   },
 ): TaskFlowRecord | null {
+  if (params.history && params.history.controllerId !== params.controllerId) {
+    throw new Error("Task Flow history controller must match the managed flow controller.");
+  }
   return createFlowRecord({
     ...params,
     syncMode: "managed",
     controllerId: assertControllerId(params.controllerId),
+    ...(params.history ? { history: params.history } : {}),
+  });
+}
+
+/** Starts durable receipts from the current state; it never fabricates earlier transitions. */
+export function enableTaskFlowHistoryForFlow(params: {
+  flowId: string;
+  ownerKey: string;
+  controllerId: string;
+  enabledAt?: number;
+}): boolean {
+  ensureTaskFlowRegistryReady();
+  const current = flows.get(params.flowId);
+  if (
+    !current ||
+    current.syncMode !== "managed" ||
+    current.ownerKey !== params.ownerKey ||
+    current.controllerId !== params.controllerId
+  ) {
+    return false;
+  }
+  return tryPersistFlowUpsert(current, "history-enable", {
+    controllerId: params.controllerId,
+    enabledAt: params.enabledAt ?? Date.now(),
   });
 }
 

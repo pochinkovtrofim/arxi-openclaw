@@ -1634,6 +1634,47 @@ CREATE INDEX IF NOT EXISTS idx_flow_runs_status ON flow_runs(status);
 CREATE INDEX IF NOT EXISTS idx_flow_runs_owner_key ON flow_runs(owner_key);
 CREATE INDEX IF NOT EXISTS idx_flow_runs_updated_at ON flow_runs(updated_at);
 
+-- Transition receipts are deliberately independent from flow_runs: completed
+-- flows are pruned after seven days, while opted-in controllers retain their
+-- owner-scoped timeline for ninety days.
+CREATE TABLE IF NOT EXISTS task_flow_history_streams (
+  flow_id TEXT NOT NULL PRIMARY KEY,
+  owner_key TEXT NOT NULL,
+  controller_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_task_flow_history_streams_owner
+  ON task_flow_history_streams(owner_key, controller_id, created_at DESC, flow_id);
+
+CREATE TABLE IF NOT EXISTS task_flow_history_events (
+  flow_id TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (revision >= 0),
+  occurred_at INTEGER NOT NULL,
+  event_type TEXT NOT NULL,
+  event_json TEXT NOT NULL,
+  digest TEXT NOT NULL,
+  PRIMARY KEY (flow_id, revision)
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_task_flow_history_events_retention
+  ON task_flow_history_events(occurred_at, flow_id, revision);
+
+CREATE TABLE IF NOT EXISTS task_flow_history_archives (
+  flow_id TEXT NOT NULL PRIMARY KEY,
+  owner_key TEXT NOT NULL,
+  first_revision INTEGER NOT NULL CHECK (first_revision >= 0),
+  last_revision INTEGER NOT NULL CHECK (last_revision >= first_revision),
+  first_occurred_at INTEGER NOT NULL,
+  last_occurred_at INTEGER NOT NULL,
+  event_count INTEGER NOT NULL CHECK (event_count > 0),
+  digest TEXT NOT NULL,
+  archived_at INTEGER NOT NULL
+) STRICT;
+
+CREATE INDEX IF NOT EXISTS idx_task_flow_history_archives_owner
+  ON task_flow_history_archives(owner_key, archived_at DESC, flow_id);
+
 -- Durable meeting-capture sessions are gateway-global rather than agent-session
 -- transcripts. JSON/JSONL files are doctor import inputs or explicit CLI exports.
 CREATE TABLE IF NOT EXISTS meeting_transcript_sessions (

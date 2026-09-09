@@ -1,5 +1,6 @@
 // Runtime task-flow types describe task-flow hooks and options for plugin runtimes.
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { TaskFlowHistoryPage } from "../../tasks/task-flow-registry.store.types.js";
 import type { JsonValue, TaskFlowRecord } from "../../tasks/task-flow-registry.types.js";
 import type {
   TaskDeliveryState,
@@ -45,6 +46,18 @@ type ManagedTaskFlowCreateParams = {
   createdAt?: number;
   updatedAt?: number;
   endedAt?: number | null;
+};
+
+type HistoryManagedTaskFlowCreateParams = Omit<ManagedTaskFlowCreateParams, "controllerId">;
+
+export type BoundTaskFlowHistoryController = {
+  readonly controllerId: string;
+  createManaged: (params: HistoryManagedTaskFlowCreateParams) => ManagedTaskFlowRecord;
+  tryCreateManaged: (params: HistoryManagedTaskFlowCreateParams) => ManagedTaskFlowRecord | null;
+  /** Begins receipts at the current state for a pre-existing controller-owned Flow. */
+  enable: (params: { flowId: string; enabledAt?: number }) => boolean;
+  /** Lists the owner/session-bound 90-day transition timeline; no flow id is required after Flow GC. */
+  list: (params?: { flowId?: string; cursor?: string; limit?: number }) => TaskFlowHistoryPage;
 };
 
 type BoundTaskFlowTaskRunResult =
@@ -136,6 +149,8 @@ export type BoundTaskFlowRuntime = {
     lastEventAt?: number;
     progressSummary?: string | null;
   }) => BoundTaskFlowTaskRunResult;
+  /** Explicitly opts this managed controller into durable transition receipts. */
+  registerHistoryController: (params: { controllerId: string }) => BoundTaskFlowHistoryController;
 };
 
 export type PluginRuntimeTaskFlow = {

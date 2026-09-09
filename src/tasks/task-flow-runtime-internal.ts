@@ -3,6 +3,7 @@ export {
   createTaskFlowForTask,
   createManagedTaskFlow,
   deleteTaskFlowRecordById,
+  enableTaskFlowHistoryForFlow,
   ensureTaskFlowRegistryReady,
   failFlow,
   finishFlow,

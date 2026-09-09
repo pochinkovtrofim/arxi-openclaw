@@ -14,7 +14,12 @@ vi.mock("./openclaw-state-schema.js", async (importOriginal) => {
   };
 });
 
-import { ensureSecretStoreSchema } from "./openclaw-state-db-schema-additive.js";
+import { OPENCLAW_STATE_SCHEMA_VERSION } from "./openclaw-state-db-contract.js";
+import {
+  ensureSecretStoreSchema,
+  ensureTaskFlowHistorySchema,
+} from "./openclaw-state-db-schema-additive.js";
+import { getOpenClawStateRuntimeSchema } from "./openclaw-state-schema-compatibility.js";
 
 it("keeps secret-store first use from installing later additive schema", () => {
   const database = new DatabaseSync(":memory:");
@@ -60,6 +65,38 @@ it("lazily adds allowed_hosts to a v6 secret store without changing user_version
         )
         .get("secret_store_entries", "allowed_hosts"),
     ).toEqual({ name: "allowed_hosts", type: "TEXT", notnull: 0, dflt_value: null });
+  } finally {
+    database.close();
+  }
+});
+
+it("installs task-flow history as same-version additive schema for candidate reopen", () => {
+  const database = new DatabaseSync(":memory:");
+  try {
+    database.exec(`PRAGMA user_version = ${OPENCLAW_STATE_SCHEMA_VERSION};`);
+    ensureTaskFlowHistorySchema(database);
+
+    expect(
+      database
+        .prepare(
+          "SELECT name FROM sqlite_schema WHERE type = 'table' AND name LIKE 'task_flow_history_%'",
+        )
+        .all()
+        .map((row) => row.name)
+        .sort(),
+    ).toEqual([
+      "task_flow_history_archives",
+      "task_flow_history_events",
+      "task_flow_history_streams",
+    ]);
+    expect(database.prepare("PRAGMA user_version").get()).toEqual({
+      user_version: OPENCLAW_STATE_SCHEMA_VERSION,
+    });
+    // The normal same-version runtime projection omits feature-local tables, so
+    // a previous reader accepts a database after the candidate has enabled history.
+    expect(
+      getOpenClawStateRuntimeSchema({ includeVersionLazyAdditiveTables: false }),
+    ).not.toContain("task_flow_history_streams");
   } finally {
     database.close();
   }

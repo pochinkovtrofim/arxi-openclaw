@@ -125,6 +125,7 @@ describe("agent runtime plugin registries", () => {
     expect(hoisted.adoptRuntimeToolPolicyRegistrations).toHaveBeenCalledWith(
       { handle: true },
       activeRegistry,
+      {},
     );
     expect(hoisted.adoptRuntimeContextEngineRegistrations).toHaveBeenCalledWith(
       { handle: true },

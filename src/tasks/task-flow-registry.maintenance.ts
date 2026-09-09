@@ -13,6 +13,7 @@ import {
   listTaskFlowRecords,
   updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-registry.js";
+import { getTaskFlowRegistryStore } from "./task-flow-registry.store.js";
 import { isTerminalTaskFlow, type TaskFlowRecord } from "./task-flow-registry.types.js";
 
 const TASK_FLOW_RETENTION_MS = 7 * 24 * 60 * 60_000;
@@ -150,6 +151,9 @@ export function previewTaskFlowRegistryMaintenance(): TaskFlowRegistryMaintenanc
 
 export async function runTaskFlowRegistryMaintenance(): Promise<TaskFlowRegistryMaintenanceSummary> {
   const now = Date.now();
+  // History retention uses the existing Task Flow maintenance cadence; it does
+  // not create a second scheduler and does not depend on flow_runs surviving GC.
+  getTaskFlowRegistryStore().pruneHistory?.(now);
   let reconciled = 0;
   let pruned = 0;
   for (const flow of listTaskFlowRecords()) {

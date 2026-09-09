@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdmittedRunContext } from "../agents/admitted-run-context.js";
 import { createExecutionIdentityAdmissionToken } from "../audit/execution-identity-admission.js";
 import { executeSqliteQuerySync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
+import { createRuntimeTaskFlow } from "../plugins/runtime/runtime-taskflow.js";
 import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
 import { openOpenClawStateDatabase } from "../state/openclaw-state-db.js";
@@ -12,14 +13,18 @@ import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 import {
   createManagedTaskFlow as createManagedTaskFlowOrNull,
+  deleteTaskFlowRecordById,
   getTaskFlowById,
   requestFlowCancel,
   setFlowWaiting,
+  updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-registry.js";
 import {
   bindTaskFlowExecution,
+  listTaskFlowHistoryForOwnerFromSqlite,
   loadTaskFlowRegistryStateFromSqlite,
   loadTaskFlowRegistryStateFromSqliteReadOnly,
+  pruneTaskFlowHistoryFromSqlite,
   saveTaskFlowRegistryStateToSqlite,
 } from "./task-flow-registry.store.sqlite.js";
 import {
@@ -448,6 +453,219 @@ describe("task-flow-registry store runtime", () => {
       expect(databasePath.endsWith(path.join("state", "openclaw.sqlite"))).toBe(true);
       expect(statSync(registryDir).mode & 0o777).toBe(0o700);
       expect(statSync(databasePath).mode & 0o777).toBe(0o600);
+    });
+  });
+
+  it("keeps opted-in transition history atomic, owner-scoped, and independent of Flow GC", async () => {
+    await withFlowRegistryTempDir(async () => {
+      const controllerId = "tests/history";
+      const ownerKey = "agent:owner:history";
+      const createdAt = Date.now();
+      const created = createManagedTaskFlow({
+        ownerKey,
+        controllerId,
+        history: { controllerId },
+        goal: "Retain this transition",
+        status: "running",
+        stateJson: { stage: "created" },
+        createdAt,
+        updatedAt: createdAt,
+      });
+
+      expect(
+        updateFlowRecordByIdExpectedRevision({
+          flowId: created.flowId,
+          expectedRevision: 0,
+          patch: {
+            status: "succeeded",
+            stateJson: { stage: "finished" },
+            endedAt: createdAt,
+            updatedAt: createdAt,
+          },
+        }),
+      ).toMatchObject({ applied: true });
+      const beforeGc = listTaskFlowHistoryForOwnerFromSqlite({ ownerKey, controllerId });
+      expect(beforeGc.events).toHaveLength(2);
+      expect(beforeGc.events.map((event) => event.revision)).toEqual([1, 0]);
+      expect(beforeGc.events[0]?.snapshot.stateJson).toEqual({ stage: "finished" });
+      expect(
+        listTaskFlowHistoryForOwnerFromSqlite({
+          ownerKey: "agent:other:history",
+          controllerId,
+        }).events,
+      ).toEqual([]);
+      expect(deleteTaskFlowRecordById(created.flowId)).toBe(true);
+      expect(getTaskFlowById(created.flowId)).toBeUndefined();
+      expect(listTaskFlowHistoryForOwnerFromSqlite({ ownerKey, controllerId }).events).toHaveLength(
+        2,
+      );
+
+      expect(pruneTaskFlowHistoryFromSqlite(Date.now() + 91 * 24 * 60 * 60_000)).toBe(2);
+      const afterRetention = listTaskFlowHistoryForOwnerFromSqlite({ ownerKey, controllerId });
+      expect(afterRetention.events).toEqual([]);
+      expect(afterRetention.archives).toEqual([]);
+      expect(afterRetention.nextCursor).toEqual(expect.any(String));
+      const archived = listTaskFlowHistoryForOwnerFromSqlite({
+        ownerKey,
+        controllerId,
+        cursor: afterRetention.nextCursor,
+      });
+      expect(archived.archives).toMatchObject([
+        {
+          flowId: created.flowId,
+          firstRevision: 0,
+          lastRevision: 1,
+          eventCount: 2,
+        },
+      ]);
+      expect(archived.archives[0]?.digest).toMatch(/^[a-f0-9]{64}$/);
+    });
+  });
+
+  it("rolls back the Flow update when its history receipt cannot be written", async () => {
+    await withFlowRegistryTempDir(async () => {
+      const controllerId = "tests/history-rollback";
+      const created = createManagedTaskFlow({
+        ownerKey: "agent:owner:rollback",
+        controllerId,
+        history: { controllerId },
+        goal: "Atomic transition",
+      });
+      openOpenClawStateDatabase().db.exec(`
+        CREATE TRIGGER task_flow_history_fail_before_insert
+        BEFORE INSERT ON task_flow_history_events
+        WHEN NEW.revision = 1
+        BEGIN SELECT RAISE(ABORT, 'receipt failure'); END;
+      `);
+
+      expect(
+        updateFlowRecordByIdExpectedRevision({
+          flowId: created.flowId,
+          expectedRevision: 0,
+          patch: { status: "running" },
+        }),
+      ).toMatchObject({ applied: false, reason: "persist_failed" });
+      expect(getTaskFlowById(created.flowId)).toMatchObject({ revision: 0, status: "queued" });
+      expect(
+        listTaskFlowHistoryForOwnerFromSqlite({
+          ownerKey: created.ownerKey,
+          controllerId,
+        }).events,
+      ).toHaveLength(1);
+    });
+  });
+
+  it("hides expired details before maintenance and pages every owner archive receipt", async () => {
+    await withFlowRegistryTempDir(async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-09T12:00:00.000Z"));
+      const ownerKey = "agent:owner:archive-page";
+      const controllerId = "tests/archive-page";
+      const expiredAt = Date.now() - 91 * 24 * 60 * 60_000;
+      const expiredFlowIds: string[] = [];
+      for (let index = 0; index < 21; index += 1) {
+        const flow = createManagedTaskFlow({
+          ownerKey,
+          controllerId,
+          history: { controllerId },
+          goal: `Expired ${index}`,
+          createdAt: expiredAt,
+          updatedAt: expiredAt,
+        });
+        expiredFlowIds.push(flow.flowId);
+      }
+      createManagedTaskFlow({
+        ownerKey: "agent:other:archive-page",
+        controllerId,
+        history: { controllerId },
+        goal: "Other owner",
+        createdAt: expiredAt,
+        updatedAt: expiredAt,
+      });
+      const fresh = createManagedTaskFlow({
+        ownerKey,
+        controllerId,
+        history: { controllerId },
+        goal: "Fresh detail",
+      });
+
+      // The read boundary is enforced even before the existing maintenance pass compacts rows.
+      const beforeMaintenance = listTaskFlowHistoryForOwnerFromSqlite({ ownerKey, controllerId });
+      expect(beforeMaintenance.events.map((event) => event.flowId)).toEqual([fresh.flowId]);
+      expect(beforeMaintenance.archives).toEqual([]);
+      expect(pruneTaskFlowHistoryFromSqlite()).toBe(22);
+
+      const eventPage = listTaskFlowHistoryForOwnerFromSqlite({ ownerKey, controllerId });
+      expect(eventPage.events.map((event) => event.flowId)).toEqual([fresh.flowId]);
+      expect(eventPage.nextCursor).toEqual(expect.any(String));
+      const archivePageOne = listTaskFlowHistoryForOwnerFromSqlite({
+        ownerKey,
+        controllerId,
+        cursor: eventPage.nextCursor,
+      });
+      expect(archivePageOne.events).toEqual([]);
+      expect(archivePageOne.archives).toHaveLength(20);
+      expect(archivePageOne.nextCursor).toEqual(expect.any(String));
+      const archivePageTwo = listTaskFlowHistoryForOwnerFromSqlite({
+        ownerKey,
+        controllerId,
+        cursor: archivePageOne.nextCursor,
+      });
+      expect(archivePageTwo.archives).toHaveLength(1);
+      expect(archivePageTwo.nextCursor).toBeUndefined();
+      expect(
+        new Set(
+          [...archivePageOne.archives, ...archivePageTwo.archives].map((archive) => archive.flowId),
+        ),
+      ).toEqual(new Set(expiredFlowIds));
+    });
+  });
+
+  it("exposes cursor-paginated history only through the registered bound controller", async () => {
+    await withFlowRegistryTempDir(async () => {
+      const runtime = createRuntimeTaskFlow();
+      const ownerHistory = runtime
+        .bindSession({ sessionKey: "agent:owner:plugin-history" })
+        .registerHistoryController({ controllerId: "tests/plugin-history" });
+      const legacy = runtime
+        .bindSession({ sessionKey: "agent:owner:plugin-history" })
+        .createManaged({
+          controllerId: "tests/plugin-history",
+          goal: "Existing flow",
+        });
+      const enabledAt = Date.now();
+      expect(ownerHistory.enable({ flowId: legacy.flowId, enabledAt })).toBe(true);
+      expect(ownerHistory.enable({ flowId: legacy.flowId, enabledAt })).toBe(true);
+      const first = ownerHistory.createManaged({ goal: "First" });
+      const second = ownerHistory.createManaged({ goal: "Second" });
+      expect(first.controllerId).toBe(ownerHistory.controllerId);
+      expect(second.controllerId).toBe(ownerHistory.controllerId);
+
+      const firstPage = ownerHistory.list({ limit: 1 });
+      expect(firstPage.events).toHaveLength(1);
+      expect(firstPage.nextCursor).toEqual(expect.any(String));
+      const secondPage = ownerHistory.list({ cursor: firstPage.nextCursor, limit: 1 });
+      expect(secondPage.events).toHaveLength(1);
+      expect(secondPage.events[0]?.flowId).not.toBe(firstPage.events[0]?.flowId);
+      expect(ownerHistory.list({ flowId: legacy.flowId }).events).toMatchObject([
+        { eventType: "enabled", occurredAt: enabledAt },
+      ]);
+      resetTaskFlowRegistryForTests({ persist: false });
+      expect(ownerHistory.list({ flowId: legacy.flowId }).events).toMatchObject([
+        { eventType: "enabled", occurredAt: enabledAt },
+      ]);
+      expect(
+        runtime
+          .bindSession({ sessionKey: "agent:other:plugin-history" })
+          .registerHistoryController({ controllerId: "tests/plugin-history" })
+          .list(),
+      ).toMatchObject({ events: [], archives: [] });
+      expect(
+        runtime
+          .bindSession({ sessionKey: "agent:owner:plugin-history" })
+          .registerHistoryController({ controllerId: "tests/other-controller" })
+          .list(),
+      ).toMatchObject({ events: [], archives: [] });
     });
   });
 });
