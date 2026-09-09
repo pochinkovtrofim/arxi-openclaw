@@ -255,6 +255,8 @@ export type CronRunOutcome = {
 /** One run's requested delay before the same paced job runs again. */
 export type CronNextCheckProposal = {
   delayMs: number;
+  /** Core-issued effective paced timestamp for a durable managed Flow obligation. */
+  scheduledAtMs?: number;
 };
 
 /** Embedded-agent execution phase names surfaced to cron watchdog progress. */

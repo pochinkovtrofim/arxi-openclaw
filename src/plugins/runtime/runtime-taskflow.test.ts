@@ -1,5 +1,6 @@
 // Runtime task-flow tests cover plugin task-flow registration and execution behavior.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { claimAgentRunContext, clearAgentRunContext } from "../../infra/agent-run-registry.js";
 import { createAcpTaskBackingDetailForTest } from "../../tasks/task-backing-authority.test-support.js";
 import { createRunningTaskRunCore } from "../../tasks/task-executor.js";
 import { createTaskFlowForTask, getTaskFlowById } from "../../tasks/task-flow-registry.js";
@@ -58,6 +59,46 @@ describe("runtime TaskFlow", () => {
     expect(taskFlow.get(created.flowId)?.flowId).toBe(created.flowId);
     expect(taskFlow.findLatest()?.flowId).toBe(created.flowId);
     expect(taskFlow.resolve("agent:main:main")?.flowId).toBe(created.flowId);
+  });
+
+  it("grants the Automation obligation capability only to a timer-admitted paced run", () => {
+    const runId = "runtime-taskflow-scheduled-only";
+    const runtime = createRuntimeTaskFlow();
+    const makeBound = () =>
+      runtime.fromToolContext({ sessionKey: "agent:main:main", sessionId: runId });
+    try {
+      claimAgentRunContext(runId, {
+        cronRunsByJobId: new Map([
+          [
+            "paced-job",
+            {
+              pacingEnabled: true,
+              cronStoreKey: "cron-store",
+              cronScheduleIdentity: "schedule-v1",
+              scheduledAutomation: false,
+            },
+          ],
+        ]),
+      });
+      expect(makeBound().hasCurrentAutomationObligationCapability()).toBe(false);
+      clearAgentRunContext(runId);
+      claimAgentRunContext(runId, {
+        cronRunsByJobId: new Map([
+          [
+            "paced-job",
+            {
+              pacingEnabled: true,
+              cronStoreKey: "cron-store",
+              cronScheduleIdentity: "schedule-v1",
+              scheduledAutomation: true,
+            },
+          ],
+        ]),
+      });
+      expect(makeBound().hasCurrentAutomationObligationCapability()).toBe(true);
+    } finally {
+      clearAgentRunContext(runId);
+    }
   });
 
   it("binds TaskFlows from trusted tool context", () => {

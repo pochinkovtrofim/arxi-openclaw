@@ -1,6 +1,7 @@
 // Internal task-flow registry facade for runtime modules.
 export {
   createTaskFlowForTask,
+  commitPreparedManagedTaskFlowMutationInStateTransaction,
   createManagedTaskFlow,
   deleteTaskFlowRecordById,
   enableTaskFlowHistoryForFlow,
@@ -9,6 +10,8 @@ export {
   finishFlow,
   getTaskFlowById,
   listTaskFlowRecords,
+  prepareManagedTaskFlowMutation,
+  publishPreparedManagedTaskFlowMutation,
   requestFlowCancel,
   reloadTaskFlowRegistryFromStore,
   resolveTaskFlowForLookupToken,
@@ -18,4 +21,9 @@ export {
   updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-registry.js";
 
-export type { TaskFlowUpdateResult } from "./task-flow-registry.js";
+export type {
+  FlowRecordCreateFields,
+  FlowRecordPatch,
+  PreparedManagedTaskFlowMutation,
+  TaskFlowUpdateResult,
+} from "./task-flow-registry.js";

@@ -610,6 +610,7 @@ export async function executeQueuedCronRun(params: {
             runReceipt: started.runReceipt,
             taskId: taskRun?.taskId,
             flowId: taskRun?.flowId,
+            scheduledAutomation: true,
           }),
         });
       const result = state.deps.runSchedulerOwned

@@ -1233,6 +1233,52 @@ export interface TaskDeliveryState {
   task_id: string;
 }
 
+export interface TaskFlowAutomationObligations {
+  controller_id: string;
+  created_at_ms: number;
+  cron_job_id: string;
+  cron_schedule_identity: string;
+  cron_store_key: string;
+  flow_id: string;
+  flow_revision: number;
+  obligation_id: string;
+  phase: string;
+  scheduled_at_ms: number;
+  source_run_id: string;
+  trigger_at_ms: number;
+  trigger_digest: string;
+  trigger_kind: string;
+  updated_at_ms: number;
+}
+
+export interface TaskFlowHistoryArchives {
+  archived_at: number;
+  digest: string;
+  event_count: number;
+  first_occurred_at: number;
+  first_revision: number;
+  flow_id: string;
+  last_occurred_at: number;
+  last_revision: number;
+  owner_key: string;
+}
+
+export interface TaskFlowHistoryEvents {
+  digest: string;
+  event_json: string;
+  event_type: string;
+  flow_id: string;
+  occurred_at: number;
+  revision: number;
+}
+
+export interface TaskFlowHistoryStreams {
+  controller_id: string;
+  created_at: number;
+  flow_id: string;
+  owner_key: string;
+}
+
 export interface TaskRuns {
   agent_id: string | null;
   child_session_key: string | null;
@@ -1614,6 +1660,10 @@ export interface DB {
   state_leases: StateLeases;
   subagent_runs: SubagentRuns;
   task_delivery_state: TaskDeliveryState;
+  task_flow_automation_obligations: TaskFlowAutomationObligations;
+  task_flow_history_archives: TaskFlowHistoryArchives;
+  task_flow_history_events: TaskFlowHistoryEvents;
+  task_flow_history_streams: TaskFlowHistoryStreams;
   task_runs: TaskRuns;
   user_preferences: UserPreferences;
   web_push_approval_deliveries: WebPushApprovalDeliveries;

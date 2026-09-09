@@ -298,6 +298,8 @@ export type CronServiceDeps = {
 };
 
 export type CronExecutionIdentityAdmission = {
+  /** True only when the timer scheduler admitted this due run; force/manual runs stay false. */
+  scheduledAutomation?: boolean;
   ingress: ExecutionIdentityAdmissionFacts["ingress"];
   invoker?: ExecutionIdentityAdmissionFacts["invoker"];
   onPostAdmission?: (context: AdmittedRunContext) => void;

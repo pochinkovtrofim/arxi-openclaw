@@ -55,6 +55,19 @@ for updated binaries. Older readers ignore it and can reopen and update the
 same database safely; their association update invalidates context captured by
 a newer writer so it cannot be replayed after re-upgrade.
 
+Opted-in managed Task Flows may lazily create the additive
+`task_flow_automation_obligations` table. Each row has an opaque stable receipt
+identifier and is one content-free receipt
+for a nonterminal Flow's selected future check and its existing Automation
+identity. The row joins back to `flow_runs` for owner ownership, so it does not
+duplicate an owner key, goal, or model rationale. A terminal Flow removes its
+own receipt in the same state transaction; a scheduled receipt is retained only
+as a consumed phase and cannot itself cause another wake. It records the one
+effective native pacing time, which recovery reuses instead of renewing a
+pacing window. Older readers ignore
+the table. Re-upgrade preserves receipts and validates their Flow and Automation
+identity before any scheduler uses them.
+
 Transcript context eligibility uses a bare nullable
 `session_transcript_active_events.context_eligible INTEGER` column without
 changing agent schema 18. Database open installs the column and a non-unique

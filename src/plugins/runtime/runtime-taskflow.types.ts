@@ -34,7 +34,32 @@ export type ManagedTaskFlowMutationResult =
       current?: TaskFlowRecord;
     };
 
-type ManagedTaskFlowCreateParams = {
+export type ManagedTaskFlowAutomationObligationMutation =
+  | {
+      kind: "setWaiting";
+      currentStep?: string | null;
+      stateJson?: JsonValue | null;
+      waitJson?: JsonValue | null;
+      blockedTaskId?: string | null;
+      blockedSummary?: string | null;
+      updatedAt?: number;
+    }
+  | {
+      kind: "resume";
+      status?: Extract<ManagedTaskFlowRecord["status"], "queued" | "running">;
+      currentStep?: string | null;
+      stateJson?: JsonValue | null;
+      updatedAt?: number;
+    };
+
+export type ManagedTaskFlowAutomationObligationResult = {
+  flow: ManagedTaskFlowRecord;
+  obligationId: string;
+  boundJobId: string;
+  nextRunAtMs: number;
+};
+
+export type ManagedTaskFlowCreateParams = {
   controllerId: string;
   goal: string;
   status?: ManagedTaskFlowRecord["status"];
@@ -54,6 +79,10 @@ export type BoundTaskFlowHistoryController = {
   readonly controllerId: string;
   createManaged: (params: HistoryManagedTaskFlowCreateParams) => ManagedTaskFlowRecord;
   tryCreateManaged: (params: HistoryManagedTaskFlowCreateParams) => ManagedTaskFlowRecord | null;
+  createManagedWithCurrentAutomationObligation: (params: {
+    flow: HistoryManagedTaskFlowCreateParams;
+    obligation: { triggerAtMs: number; triggerKind: string; triggerDigest: string };
+  }) => ManagedTaskFlowAutomationObligationResult;
   /** Begins receipts at the current state for a pre-existing controller-owned Flow. */
   enable: (params: { flowId: string; enabledAt?: number }) => boolean;
   /** Lists the owner/session-bound 90-day transition timeline; no flow id is required after Flow GC. */
@@ -86,6 +115,12 @@ export type BoundTaskFlowRuntime = {
   readonly requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   createManaged: (params: ManagedTaskFlowCreateParams) => ManagedTaskFlowRecord;
   tryCreateManaged: (params: ManagedTaskFlowCreateParams) => ManagedTaskFlowRecord | null;
+  /** True only in the exact current enabled paced Automation tool run. */
+  hasCurrentAutomationObligationCapability: () => boolean;
+  createManagedWithCurrentAutomationObligation: (params: {
+    flow: ManagedTaskFlowCreateParams;
+    obligation: { triggerAtMs: number; triggerKind: string; triggerDigest: string };
+  }) => ManagedTaskFlowAutomationObligationResult;
   get: (flowId: string) => TaskFlowRecord | undefined;
   list: () => TaskFlowRecord[];
   findLatest: () => TaskFlowRecord | undefined;
@@ -101,6 +136,17 @@ export type BoundTaskFlowRuntime = {
     blockedSummary?: string | null;
     updatedAt?: number;
   }) => ManagedTaskFlowMutationResult;
+  /** Atomically binds a nonterminal managed Flow transition to this exact paced Automation run. */
+  commitWithCurrentAutomationObligation: (params: {
+    flowId: string;
+    expectedRevision: number;
+    mutation: ManagedTaskFlowAutomationObligationMutation;
+    obligation: {
+      triggerAtMs: number;
+      triggerKind: string;
+      triggerDigest: string;
+    };
+  }) => ManagedTaskFlowAutomationObligationResult;
   resume: (params: {
     flowId: string;
     expectedRevision: number;
@@ -159,6 +205,14 @@ export type PluginRuntimeTaskFlow = {
     requesterOrigin?: TaskDeliveryState["requesterOrigin"];
   }) => BoundTaskFlowRuntime;
   fromToolContext: (
-    ctx: Pick<OpenClawPluginToolContext, "sessionKey" | "deliveryContext">,
+    ctx: Pick<
+      OpenClawPluginToolContext,
+      | "sessionKey"
+      | "sessionId"
+      | "deliveryContext"
+      | "config"
+      | "runtimeConfig"
+      | "getRuntimeConfig"
+    >,
   ) => BoundTaskFlowRuntime;
 };
