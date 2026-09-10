@@ -420,6 +420,24 @@ describe("resolveAgentConfig", () => {
         modelOverrideSource: "user",
       }),
     ).toStrictEqual([]);
+    const cfgAllowUserFallbacks: OpenClawConfig = {
+      ...cfg,
+      agents: {
+        ...cfg.agents,
+        defaults: {
+          ...cfg.agents?.defaults,
+          userModelFallbacks: true,
+        },
+      },
+    };
+    expect(
+      resolveEffectiveModelFallbacks({
+        cfg: cfgAllowUserFallbacks,
+        agentId: "linus",
+        hasSessionModelOverride: true,
+        modelOverrideSource: "user",
+      }),
+    ).toEqual(["openai/gpt-5.4"]);
     expect(
       resolveEffectiveModelFallbacks({
         cfg,

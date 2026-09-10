@@ -640,6 +640,8 @@ export function resolveModelFallbackAvailability(params: {
   }
   const canUseConfiguredFallbacks =
     params.modelOverrideSource === "auto" ||
+    (params.modelOverrideSource === "user" &&
+      params.cfg.agents?.defaults?.userModelFallbacks === true) ||
     (params.modelOverrideSource === undefined && params.hasAutoFallbackProvenance === true);
   if (!canUseConfiguredFallbacks) {
     return { kind: "disabled_by_model_override" };

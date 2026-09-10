@@ -131,6 +131,8 @@ export type AgentDefaultsConfig = {
   model?: AgentModelConfig;
   /** Optional model-selection scope. Omitted preserves each surface's existing behavior. */
   modelSelectionScope?: ModelSelectionScope;
+  /** Allow configured model fallbacks for explicit user session model selections. */
+  userModelFallbacks?: boolean;
   /** Optional lower-cost model for short internal tasks such as generated session titles. */
   utilityModel?: string;
   /**
