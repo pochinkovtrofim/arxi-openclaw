@@ -18,6 +18,22 @@ or validating a change without wasting hours.
 
 Prove the touched surface first. Do not reflexively run the whole suite.
 
+Classify the change using the repository `AGENTS.md` risk tiers before choosing
+commands:
+
+- **trivial**: inspect the diff, run `git diff --check`, and only the smallest
+  artifact-specific formatter/type/build check needed to prove a mechanical or
+  prose-only edit;
+- **normal**: run focused owner tests and the relevant changed check lane;
+- **critical**: add regression and owner-boundary coverage, applicable broader
+  gates, and environment or live proof when that environment is part of the
+  behavior.
+
+These tiers are a ceiling as well as a floor. Do not turn a trivial or normal
+change into release qualification without a concrete failed check, accepted
+review finding, or newly discovered critical boundary. Diff size alone is not a
+risk class.
+
 Route by source trust first, then required environment. Only trusted source may
 run locally; never execute untrusted repository tooling locally. Trusted
 development tests, changed gates, typecheck/lint, and builds run locally by

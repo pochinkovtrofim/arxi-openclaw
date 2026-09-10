@@ -11,6 +11,12 @@ Codex review is the default when no engine is set. It uses `gpt-5.6-sol` with `h
 
 Do not invoke Autoreview automatically before a commit, push, PR, merge, deploy, or final reply. Repository or workflow rules may call it only when they explicitly name it.
 
+When a repository rule invokes Autoreview by risk class, keep the invocation
+proportional: skip trivial changes, run one bounded default-priority pass for a
+normal change, and reserve repeat-until-clean review for critical changes or an
+accepted finding that changed code. Do not add a panel or widen priorities
+without an explicit request or a named critical risk.
+
 ## Contract
 
 - Default accepted findings are P0 only: report issues worth blocking the current change
@@ -24,7 +30,9 @@ Do not invoke Autoreview automatically before a commit, push, PR, merge, deploy,
 - Prefer root-cause fixes at the right ownership boundary. A coherent refactor is appropriate when it removes the bug class, duplicate policy, stale paths, or ownership confusion; do not default to a symptom patch.
 - When an accepted finding exposes a bug class or repeated pattern, inspect its owner and relevant sibling implementations before fixing.
 - Fix the same bug class across its owner-boundary neighborhood when practical; stop at unrelated invariants, different owners, and unapproved contract changes.
-- Run one bounded review pass. If an accepted finding changes code, run the smallest relevant test; rerun Autoreview only when the user explicitly requests another pass.
+- Run one bounded review pass. If an accepted finding changes code, run the
+  smallest relevant test. Rerun Autoreview only when the user explicitly asks
+  or the invoking repository rule requires a fresh pass for that risk class.
 - For security-audit suppression changes, verify accepted findings remain auditable: suppressed findings stay in structured output, active output keeps an unsuppressible suppression notice, and aggregate findings cannot hide unrelated active risk.
 - Never switch or override the requested review engine/model except for the documented Codex Sol-to-Terra account-access fallback. Capacity, rate-limit, and unrelated failures keep the same engine/model.
 - Be patient with large bundles. Structured review can take up to 30 minutes while the model call is active, especially with Codex tools or web search.
