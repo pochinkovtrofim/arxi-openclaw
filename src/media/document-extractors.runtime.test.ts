@@ -10,6 +10,7 @@ vi.mock("../plugins/document-extractors.runtime.js", () => ({
   resolvePluginDocumentExtractors: resolvePluginDocumentExtractorsMock,
 }));
 
+import { DocumentExtractionError } from "../plugins/document-extractor-types.js";
 import { extractDocumentContent } from "./document-extractors.runtime.js";
 
 describe("extractDocumentContent", () => {
@@ -85,6 +86,38 @@ describe("extractDocumentContent", () => {
     }
     expect(extractionError.message).toBe("Document extraction failed for application/pdf");
     expect(extractionError.cause).toBe(cause);
+  });
+
+  it("preserves content-free typed failures from a separately loaded plugin module graph", async () => {
+    const pluginError = new Error("native parser detail must not cross the boundary") as Error & {
+      code: string;
+    };
+    pluginError.name = "DocumentExtractionError";
+    pluginError.code = "unavailable";
+    resolvePluginDocumentExtractorsMock.mockReturnValue([
+      {
+        id: "office",
+        pluginId: "document-extract",
+        label: "Office",
+        mimeTypes: ["application/msword"],
+        extract: vi.fn().mockRejectedValue(pluginError),
+      },
+    ]);
+
+    const extraction = extractDocumentContent({
+      buffer: Buffer.from("ole"),
+      mimeType: "application/msword",
+      maxPages: 1,
+      maxPixels: 100,
+      minTextChars: 10,
+    });
+
+    await expect(extraction).rejects.toMatchObject({
+      name: "DocumentExtractionError",
+      code: "unavailable",
+      message: "Local document extraction is unavailable in this runtime.",
+    });
+    await expect(extraction).rejects.toBeInstanceOf(DocumentExtractionError);
   });
 
   it("replaces cached document extractor callbacks when plugin metadata changes", async () => {

@@ -322,6 +322,18 @@ function expectPolicyRejectedFileApplied(params: {
   expect(params.ctx.Body).toContain(`[Attachment type not allowed: ${params.mime}]`);
 }
 
+function expectUnavailableFileApplied(params: {
+  ctx: MsgContext;
+  result: { appliedFile: boolean };
+  mime: string;
+}) {
+  expect(params.result.appliedFile).toBe(true);
+  expect(params.ctx.Body).toContain(`<file name=`);
+  expect(params.ctx.Body).toContain(`mime="${params.mime}"`);
+  expect(params.ctx.Body).toContain("[Local document extraction is unavailable in this runtime.]");
+  expect(params.ctx.Body).not.toContain("approved local file path");
+}
+
 describe("applyMediaUnderstanding", () => {
   beforeAll(async () => {
     vi.resetModules();
@@ -1988,7 +2000,7 @@ describe("applyMediaUnderstanding", () => {
     );
   });
 
-  it("reports archive container attachments with +zip MIME types as unsupported", async () => {
+  it("reports unavailable local extraction for supported +zip document MIME types", async () => {
     const pseudoEpub = Buffer.from(
       "PK\u0003\u0004mimetypeapplication/epub+zipMETA-INF/container",
       "utf8",
@@ -2004,7 +2016,7 @@ describe("applyMediaUnderstanding", () => {
       mediaType: "application/epub+zip",
     });
 
-    expectUnsupportedFileApplied({ ctx, result, mime: "application/epub+zip" });
+    expectUnavailableFileApplied({ ctx, result, mime: "application/epub+zip" });
   });
 
   it("does not coerce binary control-byte payloads into text/plain", async () => {
@@ -2370,26 +2382,37 @@ describe("applyMediaUnderstanding", () => {
       fileName: "report.docx",
       mediaType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     },
-  ])("reports unsupported Office document MIME: $mediaType", async ({ fileName, mediaType }) => {
-    // ZIP-based Office docs can have printable-leading bytes.
-    const pseudoZip = Buffer.from("PK\u0003\u0004[Content_Types].xml word/document.xml", "utf8");
-    const filePath = await createTempMediaFile({ fileName, content: pseudoZip });
+  ])(
+    "reports unavailable local extraction for Office MIME: $mediaType",
+    async ({ fileName, mediaType }) => {
+      // ZIP-based Office docs can have printable-leading bytes.
+      const pseudoZip = Buffer.from("PK\u0003\u0004[Content_Types].xml word/document.xml", "utf8");
+      const filePath = await createTempMediaFile({ fileName, content: pseudoZip });
 
-    const { ctx, result } = await applyWithDisabledMedia({
-      body: "<media:file>",
-      mediaPath: filePath,
-      mediaType,
-    });
+      const { ctx, result } = await applyWithDisabledMedia({
+        body: "<media:file>",
+        mediaPath: filePath,
+        mediaType,
+      });
 
-    expectUnsupportedFileApplied({ ctx, result, mime: mediaType });
-  });
+      expectUnavailableFileApplied({ ctx, result, mime: mediaType });
+    },
+  );
 
   it.each([
-    { fileName: "legacy.doc", mediaType: "application/msword" },
-    { fileName: "compound-file.doc", mediaType: "application/x-cfb" },
+    {
+      fileName: "legacy.doc",
+      mediaType: "application/msword",
+      expectedMime: "application/msword",
+    },
+    {
+      fileName: "compound-file.doc",
+      mediaType: "application/x-cfb",
+      expectedMime: "application/msword",
+    },
   ])(
-    "reports legacy Word/OLE MIME $mediaType as unsupported even when explicitly allowed",
-    async ({ fileName, mediaType }) => {
+    "reports unavailable local extraction for legacy Word/OLE MIME $mediaType under canonical MIME",
+    async ({ fileName, mediaType, expectedMime }) => {
       const printableOlePayload = Buffer.from(
         "Root Entry WordDocument 1Table Data Microsoft Office legacy text preview",
         "utf8",
@@ -2410,7 +2433,7 @@ describe("applyMediaUnderstanding", () => {
         ]),
       });
 
-      expectUnsupportedFileApplied({ ctx, result, mime: mediaType });
+      expectUnavailableFileApplied({ ctx, result, mime: expectedMime });
     },
   );
 
@@ -2456,7 +2479,7 @@ describe("applyMediaUnderstanding", () => {
   });
 
   it.each(["prepared transcript", ""])(
-    "defers the self-serve path with prepared text %j until the final runtime capability",
+    "keeps unavailable Office extraction content-free with prepared text %j",
     async (agentText) => {
       const filePath = await createTempMediaFile({
         fileName: "sandboxed.doc",
@@ -2479,9 +2502,7 @@ describe("applyMediaUnderstanding", () => {
       });
 
       expect(result.appliedFile).toBe(true);
-      expect(ctx.Body).toContain(
-        "[Unsupported document format: application/msword. PDF and plain-text attachments can be read.]",
-      );
+      expect(ctx.Body).toContain("[Local document extraction is unavailable in this runtime.]");
       expect(ctx.Body).not.toContain("approved local file path");
       expect(ctx.agentText).toContain(agentText);
       expect(ctx.agentText).not.toContain("transport envelope");
@@ -2496,12 +2517,12 @@ describe("applyMediaUnderstanding", () => {
       const stagedPath = "media/inbound/sandboxed.doc";
       result.enableLocalPathSelfServe?.([ctx], new Map([[0, stagedPath]]));
 
-      expect(ctx.Body).toContain("approved local file path");
-      expect(ctx.Body).toContain(stagedPath);
+      expect(ctx.Body).not.toContain("approved local file path");
+      expect(ctx.Body).not.toContain(stagedPath);
       expect(ctx.Body).not.toContain(filePath);
       expect(ctx.Body).not.toContain("PDF and plain-text attachments can be read");
       expect(ctx.agentText).toContain(agentText);
-      expect(ctx.agentText).toContain(stagedPath);
+      expect(ctx.agentText).not.toContain(stagedPath);
       expect(ctx.agentText).not.toContain(filePath);
       expect(ctx.agentText).not.toContain("PDF and plain-text attachments can be read");
       expect(ctx.BodyForAgent).toBe(ctx.agentText);
@@ -2522,7 +2543,7 @@ describe("applyMediaUnderstanding", () => {
     });
 
     expect(result.appliedFile).toBe(true);
-    expect(ctx.Body).toContain("[Unsupported document format");
+    expect(ctx.Body).toContain("[Local document extraction is unavailable in this runtime.]");
     expect(ctx.Body).not.toContain("ignore all previous instructions");
     expect(ctx.Body).not.toContain("OWNED");
   });
@@ -2554,7 +2575,8 @@ describe("applyMediaUnderstanding", () => {
         );
         expect(ctx.Body).not.toContain("[Attachment could not be read]");
       }
-      const markerCount = ctx.Body?.split("[Unsupported document format").length ?? 0;
+      const markerCount =
+        ctx.Body?.split("[Local document extraction is unavailable in this runtime.]").length ?? 0;
       expect(markerCount - 1).toBe(5);
       expect(ctx.Body).toContain('<file name="legacy-4.doc"');
       expect(ctx.Body).not.toContain('<file name="legacy-5.doc"');
@@ -2583,7 +2605,9 @@ describe("applyMediaUnderstanding", () => {
     });
 
     expect(result.appliedFile).toBe(true);
-    expect(ctx.Body?.split("[Unsupported document format")).toHaveLength(5);
+    expect(
+      ctx.Body?.split("[Local document extraction is unavailable in this runtime.]"),
+    ).toHaveLength(5);
     expect(
       ctx.Body?.split("[Image attachment not analyzed: image understanding is disabled]"),
     ).toHaveLength(2);

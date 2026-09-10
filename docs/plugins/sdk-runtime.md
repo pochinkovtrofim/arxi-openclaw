@@ -1209,6 +1209,51 @@ Use `createPluginRuntimeStore` to store the runtime reference for use outside th
 Prefer `pluginId` for the runtime-store identity. The lower-level `key` form is for uncommon cases where one plugin intentionally needs more than one runtime slot.
 </Note>
 
+## Document extractor contract
+
+The focused `openclaw/plugin-sdk/document-extractor` entrypoint exports
+`DocumentExtractorPlugin`, request/result types, `DocumentExtractionError`, and
+generic Office MIME/extension/container metadata. MIME metadata describes
+candidates; successful byte detection and parsing establish readable content.
+Parser-specific format names belong in the plugin.
+
+Bundled extractors declare `contracts.documentExtractors` in their manifest and
+export zero-argument `create*DocumentExtractor` factories from the narrow
+`document-extractor.js` artifact. Input bytes arrive in `request.buffer`; results
+contain text and any explicitly extracted images. Do not interpret an empty
+image list as evidence that embedded images were understood.
+
+The request also carries optional limits and cancellation metadata:
+
+| Field       | Meaning                                                          |
+| ----------- | ---------------------------------------------------------------- |
+| `maxChars`  | Maximum returned JavaScript string length, in UTF-16 code units. |
+| `timeoutMs` | Conversion deadline in milliseconds.                             |
+| `signal`    | Abort signal from the owning input operation.                    |
+
+These additions preserve existing callers. The bundled Office extractor defaults
+to 60,000 characters and 10,000 ms. Supplied limits are rounded down and clamped
+to the range from 1 through those maxima (including infinities); `NaN` is rejected.
+It admits at most 25 MiB; the input pipeline's smaller byte
+limit still applies. Only one conversion runs at a time. Active cancellation or
+timeout terminates and joins its subprocess before releasing the conversion
+slot; rejecting a promise alone is insufficient for native work.
+
+`DocumentExtractionError` carries a safe `code`: `encrypted`, `malformed`,
+`missingPart`, `unsupported`, `resourceLimit`, `io`, `canceled`, `timeout`, or
+`unavailable`. Its message is fixed and contains no parser output, document
+content, filename, or runtime path. Throw these typed errors for known read
+limitations; never substitute arbitrary parser messages. Existing PDF
+extraction retains its own behavior and does not acquire Office's subprocess
+or cancellation guarantees.
+
+Bundled Office extraction requires an unprivileged Linux Gateway, compatible
+native package, and working `unshare`, `setpriv`, and `prlimit`. It creates private
+user/network namespaces, drops capabilities, clears the child environment, and
+sets native allocation, CPU, descriptor and task limits. Root execution or
+unavailable namespace/loader support fails with `unavailable`; there is no
+unrestricted fallback. The process boundary is not a filesystem sandbox.
+
 ## Other top-level `api` fields
 
 Beyond `api.runtime`, the API object also provides:
