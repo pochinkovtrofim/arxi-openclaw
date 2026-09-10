@@ -87,6 +87,10 @@ describe("agent defaults schema", () => {
     },
   );
 
+  it("accepts explicit user model fallback policy", () => {
+    expect(AgentDefaultsSchema.parse({ userModelFallbacks: true })?.userModelFallbacks).toBe(true);
+  });
+
   it("rejects unsupported model selection scopes", () => {
     expectSchemaFailurePath(
       AgentDefaultsSchema.safeParse({ modelSelectionScope: "default" }),

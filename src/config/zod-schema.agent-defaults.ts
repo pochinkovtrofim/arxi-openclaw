@@ -65,6 +65,7 @@ export const AgentDefaultsSchema = z
     params: z.record(z.string(), z.unknown()).optional(),
     model: AgentModelSchema.optional(),
     modelSelectionScope: z.enum(["session", "agent", "global"]).optional(),
+    userModelFallbacks: z.boolean().optional(),
     utilityModel: z.string().optional(),
     imageModel: AgentToolModelSchema.optional(),
     mediaModels: z
