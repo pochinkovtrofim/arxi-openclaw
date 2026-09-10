@@ -170,7 +170,6 @@ function emitCodexRequestCompletion(
     model: context.model,
     observationUnit: "request",
     // The upstream notification provides completion time, not request duration.
-    durationMs: 0,
     ...(context.trace
       ? { trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(context.trace)) }
       : {}),

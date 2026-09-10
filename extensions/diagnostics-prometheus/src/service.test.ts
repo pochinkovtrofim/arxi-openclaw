@@ -192,6 +192,30 @@ describe("diagnostics-prometheus service", () => {
     );
   });
 
+  it("counts model completions without inventing an unknown duration", () => {
+    const metrics = createMetricsHarness();
+
+    metrics.record(
+      {
+        ...baseEvent(),
+        type: "model.call.completed",
+        runId: "run-1",
+        callId: "call-1",
+        provider: "codex",
+        model: "gpt-5.6-sol",
+        observationUnit: "request",
+        usage: { input: 3, output: 2, total: 5 },
+      },
+      trusted,
+    );
+
+    const rendered = metrics.render();
+    expect(rendered).toContain(
+      'openclaw_model_call_total{api="unknown",error_category="none",model="gpt-5.6-sol",observation_unit="request",outcome="completed",provider="codex",transport="unknown"} 1',
+    );
+    expect(rendered).not.toContain("openclaw_model_call_duration_seconds");
+  });
+
   it("drops untrusted plugin-emitted diagnostic events that spoof gateway stability signals", () => {
     const metrics = createMetricsHarness();
 

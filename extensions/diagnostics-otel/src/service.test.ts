@@ -4483,6 +4483,30 @@ describe("diagnostics-otel service", () => {
     expect(JSON.stringify(genAiOperationDuration?.record.mock.calls)).not.toContain("run-1");
   });
 
+  test("does not export timing for a model completion with unknown duration", async () => {
+    await startServiceFixture(["traces", "metrics"]);
+
+    await emitAndFlush({
+      type: "model.call.completed",
+      runId: "run-1",
+      callId: "response-1",
+      provider: "codex",
+      model: "gpt-5.6-sol",
+      observationUnit: "request",
+      usage: { input: 3, output: 2, total: 5 },
+    });
+
+    expect(
+      telemetryState.histograms.get("openclaw.model_call.duration_ms")?.record,
+    ).not.toHaveBeenCalled();
+    expect(
+      telemetryState.histograms.get("gen_ai.client.operation.duration")?.record,
+    ).not.toHaveBeenCalled();
+    expect(
+      telemetryState.tracer.startSpan.mock.calls.some((call) => call[0] === "openclaw.model.call"),
+    ).toBe(false);
+  });
+
   test("exports skill usage counter and span without raw identifiers", async () => {
     await startServiceFixture(["traces", "metrics"]);
 

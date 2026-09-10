@@ -56,6 +56,9 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
     evt: ModelCallLifecycleDiagnosticEvent,
     errorType?: string,
   ) => {
+    if (evt.durationMs === undefined) {
+      return;
+    }
     genAiOperationDurationHistogram.record(
       evt.durationMs / 1000,
       genAiModelCallMetricAttrs(evt, errorType),
@@ -120,7 +123,9 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
     modelContent?: OtelModelCallContent,
   ) => {
     const metricAttrs = modelCallMetricAttrs(evt);
-    modelCallDurationHistogram.record(evt.durationMs, metricAttrs);
+    if (evt.durationMs !== undefined) {
+      modelCallDurationHistogram.record(evt.durationMs, metricAttrs);
+    }
     recordModelCallSizeTimingMetrics(evt, metricAttrs);
     recordGenAiModelCallDuration(evt);
     if (!tracesEnabled) {
@@ -142,6 +147,11 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
     assignModelCallUsageAttrs(spanAttrs, evt);
     assignOtelModelContentAttributes(spanAttrs, modelContent, contentCapturePolicy);
     const trackedSpan = takeTrackedTrustedSpan(evt, metadata);
+    // A completion without a matching start or measured duration still carries
+    // useful request usage, but cannot define a truthful timing span.
+    if (!trackedSpan && evt.durationMs === undefined) {
+      return;
+    }
     const span =
       trackedSpan ??
       spanWithDuration(modelCallSpanName(evt), spanAttrs, evt.durationMs, {

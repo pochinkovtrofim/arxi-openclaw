@@ -129,7 +129,7 @@ export async function executeBrowserTabAction(context: {
             timeoutMs: toolTimeoutMs,
             signal,
           });
-      return jsonResult(result);
+      return formatBrowserExternalToolResult({ kind: "history", payload: result });
     }
     case "tabs":
       return await executeTabsAction({
