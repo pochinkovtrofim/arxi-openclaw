@@ -19,6 +19,7 @@ import {
   retirePlaywrightBrowserConnection,
   retirePlaywrightBrowserConnectionExact,
 } from "./pw-session.js";
+import { withPageScopedCdpClient } from "./pw-session.page-cdp.js";
 import {
   getConsoleMessagesViaPlaywright,
   getNetworkRequestsViaPlaywright,
@@ -83,6 +84,7 @@ import {
 import { traceStartViaPlaywright, traceStopViaPlaywright } from "./pw-tools-core.trace.js";
 
 export const pwAi = {
+  withPageScopedCdpClient,
   closePageByTargetIdViaPlaywright,
   closePlaywrightBrowserConnection,
   retirePlaywrightBrowserConnection,
