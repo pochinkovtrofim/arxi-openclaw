@@ -60,6 +60,7 @@ type RequestOptions = {
   timeoutMs?: number;
   signal?: AbortSignal;
   assertCurrent?: () => void;
+  trace?: RpcRequest["trace"];
 };
 
 /** Process-local generation fence for bindings tied to one app-server client instance. */
@@ -616,7 +617,12 @@ export class CodexAppServerClient {
     ) {
       this.modelCatalogRevision += 1;
     }
-    const message: RpcRequest = { id, method, params: params as JsonValue | undefined };
+    const message: RpcRequest = {
+      id,
+      method,
+      params: params as JsonValue | undefined,
+      ...(options.trace ? { trace: options.trace } : {}),
+    };
     return new Promise<T>((resolve, reject) => {
       let timeout: ReturnType<typeof setTimeout> | undefined;
       let cleanupAbort: (() => void) | undefined;

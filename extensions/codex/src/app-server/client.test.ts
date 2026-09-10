@@ -49,6 +49,44 @@ describe("CodexAppServerClient", () => {
     expect(outbound.method).toBe("model/list");
   });
 
+  it("keeps a trace carrier scoped to one request across overload retries", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const harness = createClientHarness();
+    clients.push(harness.client);
+    const trace = {
+      traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
+      tracestate: "vendor=value",
+    };
+
+    const tracedRequest = harness.client.request("model/list", {}, { trace });
+    const first = JSON.parse(harness.writes[0] ?? "{}") as {
+      id?: number;
+      trace?: typeof trace;
+    };
+    harness.send({
+      id: first.id,
+      error: { code: -32_001, message: "Server overloaded; retry later." },
+    });
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    const second = JSON.parse(harness.writes[1] ?? "{}") as {
+      id?: number;
+      trace?: typeof trace;
+    };
+    harness.send({ id: second.id, result: { models: [] } });
+    await expect(tracedRequest).resolves.toEqual({ models: [] });
+
+    const untracedRequest = harness.client.request("model/list", {});
+    const third = JSON.parse(harness.writes[2] ?? "{}") as { id?: number; trace?: unknown };
+    harness.send({ id: third.id, result: { models: [] } });
+    await expect(untracedRequest).resolves.toEqual({ models: [] });
+
+    expect(first.trace).toEqual(trace);
+    expect(second.trace).toEqual(trace);
+    expect(third).not.toHaveProperty("trace");
+  });
+
   it("replays configuration warnings emitted before their notification observer exists", () => {
     const harness = createClientHarness();
     clients.push(harness.client);

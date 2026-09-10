@@ -79,6 +79,7 @@ export type RpcRequest = {
   id?: number | string;
   method: string;
   params?: JsonValue;
+  trace?: { traceparent: string; tracestate?: string };
 };
 
 export type RpcResponse = {

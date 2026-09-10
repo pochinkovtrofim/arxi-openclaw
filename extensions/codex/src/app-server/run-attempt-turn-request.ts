@@ -39,6 +39,7 @@ export async function prepareCodexAttemptTurnRequest(
     usesSupervisionConnection,
     codexModelCallId,
     codexModelCallTrace,
+    codexModelCallTraceparent,
     codexModelContentCapture,
     appServer,
     runAbortController,
@@ -157,6 +158,9 @@ export async function prepareCodexAttemptTurnRequest(
         await resourceState.client.request("turn/start", turnStartParams, {
           timeoutMs: params.timeoutMs,
           signal: runAbortController.signal,
+          ...(codexModelCallTraceparent
+            ? { trace: { traceparent: codexModelCallTraceparent } }
+            : {}),
         }),
       );
       acceptedTurnId = startedTurn.turn.id;

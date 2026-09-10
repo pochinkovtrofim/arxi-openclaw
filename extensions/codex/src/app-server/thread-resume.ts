@@ -13,7 +13,7 @@ import {
   type CodexAppServerClient,
 } from "./client.js";
 import { assertCodexThreadResumeResponse } from "./protocol-validators.js";
-import type { CodexThreadResumeParams, CodexThreadResumeResponse } from "./protocol.js";
+import type { CodexThreadResumeParams, CodexThreadResumeResponse, RpcRequest } from "./protocol.js";
 import { CodexAppServerScopedRequestRejectedError } from "./request.js";
 import { isCodexAppServerStartSelectionChangedError } from "./shared-client.js";
 
@@ -25,6 +25,7 @@ export async function resumeCodexAppServerThread(params: {
   timeoutMs?: number;
   signal?: AbortSignal;
   assertCurrent?: () => void;
+  trace?: RpcRequest["trace"];
   /** Identifies ownership rejection by the request's physical pre-write fence only. */
   isPrewriteOwnershipError?: (error: unknown) => boolean;
   onSubscriptionReleased?: () => void;
@@ -40,6 +41,7 @@ export async function resumeCodexAppServerThread(params: {
             ...(params.timeoutMs !== undefined ? { timeoutMs: params.timeoutMs } : {}),
             ...(params.signal ? { signal: params.signal } : {}),
             assertCurrent: params.assertCurrent,
+            ...(params.trace ? { trace: params.trace } : {}),
           })),
     );
     assertCodexThreadResumeSubscription(threadId, response.thread.id);
