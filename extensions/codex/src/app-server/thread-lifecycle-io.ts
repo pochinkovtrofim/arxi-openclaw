@@ -58,6 +58,7 @@ import {
   buildThreadStartParams,
 } from "./thread-requests.js";
 import { resumeCodexAppServerThread } from "./thread-resume.js";
+import { resolveCodexThreadRequestTraceOptions } from "./thread-trace.js";
 
 type ResumeThreadContext = CodexThreadRequestContext & {
   binding: CodexAppServerThreadBinding;
@@ -217,6 +218,7 @@ export async function resumeExistingCodexThread(
         request: resumeParams,
         signal: params.signal,
         assertCurrent: context.assertResumeOwnership,
+        ...resolveCodexThreadRequestTraceOptions(params),
         isPrewriteOwnershipError: (error) => error instanceof CodexAdoptedThreadActiveError,
       }),
     );
@@ -506,7 +508,10 @@ export async function startFreshCodexThread(
       : undefined;
   const threadStartResponse = await lifecycleTiming.measure("thread-start-request", async () => {
     try {
-      return await params.client.request("thread/start", startParams, { signal: params.signal });
+      return await params.client.request("thread/start", startParams, {
+        signal: params.signal,
+        ...resolveCodexThreadRequestTraceOptions(params),
+      });
     } catch (error) {
       if (error instanceof CodexAppServerRpcError) {
         throw new CodexThreadStartRequestError(error);

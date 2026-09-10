@@ -8,7 +8,9 @@ import { resolveAgentDir } from "openclaw/plugin-sdk/agent-runtime";
 import { resolveSessionAgentIdsStrict } from "openclaw/plugin-sdk/agent-scope-runtime";
 import {
   createDiagnosticTraceContextFromActiveScope,
+  formatDiagnosticTraceparent,
   freezeDiagnosticTraceContext,
+  isDiagnosticsEnabled,
   resolveDiagnosticModelContentCapturePolicy,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { loadExecApprovals } from "openclaw/plugin-sdk/exec-approvals-runtime";
@@ -62,6 +64,10 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
   const codexModelCallTrace = freezeDiagnosticTraceContext(
     createDiagnosticTraceContextFromActiveScope(),
   );
+  const codexModelCallTraceparent =
+    isDiagnosticsEnabled(params.config) && params.diagnosticTrace
+      ? formatDiagnosticTraceparent(codexModelCallTrace)
+      : undefined;
   const codexModelContentCapture = resolveDiagnosticModelContentCapturePolicy(params.config);
   const codexModelCallId = `${params.runId}:codex-model:1`;
   const fastModeAutoStartedAtMs =
@@ -485,6 +491,7 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
     attemptStartedAt,
     profilerEnabled,
     codexModelCallTrace,
+    codexModelCallTraceparent,
     codexModelContentCapture,
     codexModelCallId,
     fastModeAutoStartedAtMs,

@@ -48,7 +48,8 @@ function resumeResponse(threadId: string, restoredTurns = 0) {
 
 function createClient(requestImpl: (method: string, params: unknown) => unknown) {
   const request = vi.fn(
-    async (method: string, params: unknown) => await requestImpl(method, params),
+    async (method: string, params: unknown, _options?: unknown) =>
+      await requestImpl(method, params),
   );
   const client = { request } as unknown as CodexAppServerClient;
   return {
@@ -70,7 +71,24 @@ describe("resumeCodexAppServerThread", () => {
 
     expect(response.thread.id).toBe("thread-1");
     expect(request).toHaveBeenCalledWith("thread/resume", expect.anything(), expect.anything());
+    expect(request.mock.calls[0]?.[2]).not.toHaveProperty("trace");
     expect(abandonClient).not.toHaveBeenCalled();
+  });
+
+  it("carries an admitted trace on the resume request", async () => {
+    const { client, request } = createClient(async () => resumeResponse("thread-1"));
+    const trace = {
+      traceparent: "00-11111111111111111111111111111111-2222222222222222-01",
+    };
+
+    await resumeCodexAppServerThread({
+      client,
+      abandonClient: vi.fn(async () => undefined),
+      request: { threadId: "thread-1" },
+      trace,
+    });
+
+    expect(request.mock.calls[0]?.[2]).toMatchObject({ trace });
   });
 
   it.each(["unsubscribed", "notSubscribed", "notLoaded"] as const)(
