@@ -231,6 +231,32 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 
 ## Validation
 
+- Classify the change before choosing proof. Use the lowest class whose
+  conditions all hold; uncertainty about a listed critical boundary moves the
+  change up one class, not automatically to the broadest suite:
+  - **trivial**: behavior-neutral prose, formatting, comments, or a mechanical
+    internal edit whose completeness is enforced by the compiler or formatter;
+    no runtime, public/config/schema/generated, security, persistence,
+    delivery, packaging, or release effect;
+  - **normal**: a bounded bug fix or refactor in one owner surface without a
+    critical boundary below;
+  - **critical**: auth/credentials/permissions, owner isolation, data durability
+    or migration, public API/protocol/schema, external delivery or side effects,
+    concurrency/order/restart recovery, install/update/packaging, or release and
+    deployment behavior.
+- Match proof to that class:
+  - trivial: inspect the diff, run `git diff --check`, and run only the smallest
+    deterministic formatter/type/build check needed by the edited artifact;
+    `$autoreview` is not required;
+  - normal: run focused owner tests plus the relevant changed type/lint/guard
+    lane, then one `$autoreview` pass; broaden or rerun only when a failure,
+    accepted finding, or touched contract gives a concrete reason;
+  - critical: add regression and owner-boundary proof, the applicable broader
+    gates, environment/live proof when behavior depends on it, and fresh
+    `$autoreview` after each accepted code-changing fix until clean.
+- Do not promote a change merely because the policy documents are long, the
+  branch has unrelated drift, or a broad command exists. Record the concrete
+  risk or failed evidence that justifies broader proof.
 - Use `$openclaw-testing` for test selection. The `$crabbox` remote-environment
   workflow is upstream-only; Arxi executes validation on `arxi-production`.
 - The Crabbox skill is an upstream snapshot. Do not invoke it for Arxi fork
@@ -256,7 +282,18 @@ Review invariants; full doctrine: `docs/gateway/audit.md`.
 - QA CLI `--output-dir` must be repo-relative.
 - Before handoff/push: prove touched surface. Before landing to `main`: proof matches actual risk. Bounded behavior-neutral refactor: focused tests/checks enough; no issue proof or full/broad suite by default.
 - Release-branch full validation and its dispatch mechanics: `$release-openclaw-ci`.
-- Pre-land/pre-commit code changes: mandatory fresh `$autoreview` until no accepted/actionable findings remain. Do not land code on CI, ClawSweeper, prior review comments, or your own manual review alone unless user explicitly opts out or scope is truly trivial/docs-only. If findings want refactor, refactor; no ugly fixes. Autoreview staged/uncommitted diff: `--mode uncommitted`; there is no `dirty` or `staged` mode.
+- Truly trivial internal instruction/docs-only PRs may skip the native
+  `review-init`/artifact/prepare workflow. After verifying the PR is open,
+  mergeable, based on current `main`, and still at the reviewed exact head, land
+  with GitHub's expected-head guard. This exception does not cover source,
+  config, scripts, generated files, user-facing docs, ownership/security policy,
+  or any normal/critical change.
+- Pre-land/pre-commit normal and critical code changes require the risk-matched
+  fresh `$autoreview` above. Do not land them on CI, ClawSweeper, prior review
+  comments, or your own manual review alone unless the user explicitly opts out.
+  If findings want an in-scope refactor, refactor; no ugly fixes. Autoreview
+  staged/uncommitted diff: `--mode uncommitted`; there is no `dirty` or `staged`
+  mode.
 - If proof is blocked, say exactly what is missing and why.
 - Do not land related failing format/lint/type/build/tests. If unrelated on latest `origin/main`, say so with scoped proof.
 - A broken required gate is always someone's job. Upstream CI failures and Arxi

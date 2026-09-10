@@ -11,10 +11,17 @@ duplicate stronger proof, couple behavior to implementation, or keep test-only
 production seams alive. Continue broad audits as separate coherent follow-up
 PRs; optimize for confidence, not deletion count.
 
+Apply the gate proportionally. For a normal bounded change, the four authoring
+answers may be a brief note in the working reasoning or PR evidence; do not
+create a separate audit document, inventory, or broad sweep. Use the full
+candidate-evidence and audit workflow only for an explicit test audit, a
+critical change, or when a concrete test-quality concern is discovered.
+
 ## Authoring gate
 
-Before adding any test, answer four questions; a missing answer means do not
-add it yet:
+Before adding any test, answer four questions. For an ordinary focused test,
+one clear sentence per question is enough; a missing substantive answer means
+do not add it yet:
 
 1. What observable behavior, invariant, or independent contract does it protect?
 2. What credible regression makes it fail?
@@ -83,8 +90,10 @@ may still be the independent contract; prove otherwise before removing it.
 
 ## Candidate evidence
 
-Record every field below before editing. A missing field means the candidate is
-not ready for deletion:
+For an audit candidate, record every field below before editing. This full
+record is not required merely because a normal product change adds or updates a
+focused test. In audit mode, a missing field means the candidate is not ready
+for deletion:
 
 - exact test name and location;
 - what failure it can actually detect;
