@@ -15,12 +15,12 @@ import {
   type CoreModelRequestLifecycleProvenance,
 } from "./diagnostic-model-request-provenance.js";
 import { isTrustedOtelDiagnosticListener } from "./diagnostic-otel-listener-provenance.js";
-import { resetDiagnosticSpanBindingsForTest } from "./diagnostic-span-bindings.js";
 import { consumeHostPluginUsageDiagnosticEvent } from "./diagnostic-plugin-usage-provenance.js";
 import {
   consumeCoreSemanticRunProgressDiagnosticEvent,
   CORE_SEMANTIC_RUN_PROGRESS_METADATA_KEY,
 } from "./diagnostic-semantic-run-progress-provenance.js";
+import { resetDiagnosticSpanBindingsForTest } from "./diagnostic-span-bindings.js";
 import {
   getActiveDiagnosticTraceContext,
   type DiagnosticTraceContext,
@@ -667,7 +667,7 @@ export type DiagnosticModelCallStartedEvent = DiagnosticModelCallBaseEvent & {
 
 export type DiagnosticModelCallCompletedEvent = DiagnosticModelCallBaseEvent & {
   type: "model.call.completed";
-  durationMs: number;
+  durationMs?: number;
   requestPayloadBytes?: number;
   responseStreamBytes?: number;
   timeToFirstByteMs?: number;

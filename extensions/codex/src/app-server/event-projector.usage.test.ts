@@ -63,7 +63,6 @@ describe("CodexAppServerEventProjector usage projection", () => {
         expect.objectContaining({
           callId: "response-1",
           observationUnit: "request",
-          durationMs: 0,
           usage: {
             input: 4,
             output: 7,
@@ -76,6 +75,7 @@ describe("CodexAppServerEventProjector usage projection", () => {
           trace: expect.objectContaining({ traceId: "4bf92f3577b34da6a3ce929d0e0e4736" }),
         }),
       ]);
+      expect(events[0]).not.toHaveProperty("durationMs");
       expect(JSON.stringify(events)).not.toContain("owner message");
     } finally {
       stop();
