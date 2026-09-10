@@ -2,8 +2,14 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { afterEach, describe, expect, it } from "vitest";
-import { readManagedChromeHistory } from "./chrome-history.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  mergeManagedChromeHistory,
+  readManagedChromeHistory,
+  readManagedChromeLiveHistory,
+} from "./chrome-history.js";
+import type { PwAiModule } from "./pw-ai-module.js";
+import type { ProfileContext } from "./server-context.js";
 
 const tempDirs: string[] = [];
 
@@ -42,6 +48,103 @@ describe("readManagedChromeHistory", () => {
         visitedAt: "2020-12-30T00:00:01.000Z",
       },
     ]);
+  });
+
+  it("keeps live navigations from healthy tabs when another tab closes", async () => {
+    const page = {};
+    const send = vi.fn(async () => ({
+      entries: [
+        { title: "", url: "about:blank" },
+        { title: "First page", url: "https://example.com/?arxi_probe=history-live" },
+        { title: "Second page", url: "https://example.org/?arxi_probe=history-live" },
+      ],
+    }));
+    const pw = {
+      getPageForTargetId: vi.fn(async ({ targetId }) => {
+        if (targetId === "closed-tab") {
+          throw new Error("tab closed during history read");
+        }
+        return page;
+      }),
+      withPageScopedCdpClient: vi.fn(async ({ fn }) => await fn(send)),
+    } as unknown as PwAiModule;
+    const profileCtx = {
+      profile: { cdpUrl: "http://127.0.0.1:9222" },
+      listTabs: vi.fn(async () => [{ targetId: "tab-1" }, { targetId: "closed-tab" }]),
+    } as unknown as ProfileContext;
+
+    await expect(readManagedChromeLiveHistory({ profileCtx, pw })).resolves.toEqual([
+      {
+        title: "Second page",
+        url: "https://example.org/?arxi_probe=history-live",
+        visitedAt: null,
+      },
+      {
+        title: "First page",
+        url: "https://example.com/?arxi_probe=history-live",
+        visitedAt: null,
+      },
+    ]);
+    expect(send).toHaveBeenCalledWith("Page.getNavigationHistory");
+    expect(pw.getPageForTargetId).toHaveBeenCalledTimes(2);
+  });
+
+  it("merges live and durable visits without duplicating flushed navigations", () => {
+    expect(
+      mergeManagedChromeHistory({
+        query: "report_",
+        limit: 2,
+        live: [
+          {
+            title: "Current report (live)",
+            url: "https://example.com/report_2026",
+            visitedAt: null,
+          },
+        ],
+        persisted: [
+          {
+            title: "Current report",
+            url: "https://example.com/report_2026",
+            visitedAt: "2026-09-11T00:00:00.000Z",
+          },
+          {
+            title: "Earlier report",
+            url: "https://example.com/report_2025",
+            visitedAt: "2025-09-11T00:00:00.000Z",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        title: "Current report",
+        url: "https://example.com/report_2026",
+        visitedAt: "2026-09-11T00:00:00.000Z",
+      },
+      {
+        title: "Earlier report",
+        url: "https://example.com/report_2025",
+        visitedAt: "2025-09-11T00:00:00.000Z",
+      },
+    ]);
+  });
+
+  it("reads history while Chromium-style exclusive locking remains active", async () => {
+    const userDataDir = await createHistoryDatabase();
+    const historyPath = path.join(userDataDir, "Default", "History");
+    const chromium = new DatabaseSync(historyPath);
+    chromium.exec("PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; COMMIT");
+
+    try {
+      expect(readManagedChromeHistory({ userDataDir, query: "report_" })).toEqual([
+        {
+          title: "Quarterly report",
+          url: "https://example.com/report_2026",
+          visitedAt: "2020-12-30T00:00:01.000Z",
+        },
+      ]);
+    } finally {
+      chromium.close();
+    }
   });
 
   it("searches titles and URLs literally without exposing other records", async () => {

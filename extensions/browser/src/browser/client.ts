@@ -381,7 +381,7 @@ export async function browserTabs(
 export async function browserHistory(
   baseUrl: string | undefined,
   opts?: BrowserClientProfileOptions & { query?: string; limit?: number },
-): Promise<{ entries: Array<{ title: string | null; url: string; visitedAt: string }> }> {
+): Promise<{ entries: Array<{ title: string | null; url: string; visitedAt: string | null }> }> {
   const query = new URLSearchParams();
   if (opts?.profile) {
     query.set("profile", opts.profile);
