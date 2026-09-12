@@ -3,6 +3,7 @@
  * system-prompt reports, and context-engine projection decisions.
  */
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildBootstrapContextForFiles,
@@ -264,6 +265,30 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
     const turnScopedDeveloperInstructionFiles = injectOpenClawContext
       ? selectCodexWorkspaceTurnScopedDeveloperInstructionFiles(contextFiles)
       : [];
+    // A bootstrap hook may replace an old birth baseline in memory. Codex's
+    // native loader still sees disk; carry only the changed effective document
+    // on every turn, including resume. Unmodified personal AGENTS stays native.
+    if (injectOpenClawContext && !params.ringZeroActive) {
+      for (const file of bootstrapFiles) {
+        if (file.name !== "AGENTS.md" || file.missing || typeof file.content !== "string") {
+          continue;
+        }
+        let physical: string | undefined;
+        try {
+          physical = await readFile(file.path, "utf8");
+        } catch {
+          /* Missing native document. */
+        }
+        if (physical !== file.content) {
+          const effective = contextFiles.find(
+            (entry) => path.resolve(entry.path) === path.resolve(promptWorkspace, "AGENTS.md"),
+          );
+          if (effective) {
+            turnScopedDeveloperInstructionFiles.push(effective);
+          }
+        }
+      }
+    }
     return {
       bootstrapFiles,
       contextFiles,
@@ -334,6 +359,48 @@ export function buildCodexSystemPromptReport(params: {
     workspaceDir: params.workspaceDir,
     ...(bootstrapMaxChars ? { bootstrapMaxChars } : {}),
     ...(bootstrapTotalMaxChars ? { bootstrapTotalMaxChars } : {}),
+    contextAccounting: {
+      scope: "openclaw_assembled_layers",
+      completeWirePayload: false,
+      layers: [
+        {
+          name: "developer",
+          chars: params.developerInstructions.length,
+          hash: sha256Text(params.developerInstructions),
+        },
+        {
+          name: "workspace_thread",
+          chars: (params.workspaceBootstrapContext.threadDeveloperInstructions ?? "").length,
+          hash: sha256Text(params.workspaceBootstrapContext.threadDeveloperInstructions ?? ""),
+        },
+        {
+          name: "workspace_turn",
+          chars: (params.workspaceBootstrapContext.turnScopedDeveloperInstructions ?? "").length,
+          hash: sha256Text(params.workspaceBootstrapContext.turnScopedDeveloperInstructions ?? ""),
+        },
+        {
+          name: "workspace_prompt",
+          chars: (params.workspaceBootstrapContext.promptContext ?? "").length,
+          hash: sha256Text(params.workspaceBootstrapContext.promptContext ?? ""),
+        },
+        {
+          name: "memory_routing",
+          chars: (params.workspaceBootstrapContext.memoryCollaborationInstructions ?? "").length,
+          hash: sha256Text(params.workspaceBootstrapContext.memoryCollaborationInstructions ?? ""),
+        },
+        { name: "skills", chars: skillsPrompt.length, hash: sha256Text(skillsPrompt) },
+        { name: "eager_tool_schemas", chars: schemaChars },
+      ],
+      // Layers can be nested in developer instructions. They must not be summed.
+      additive: false,
+      unknownLayers: [
+        "native_model_base",
+        "native_project_docs",
+        "history",
+        "loaded_deferred_tools",
+        "provider_context",
+      ],
+    },
     systemPrompt: {
       chars: params.developerInstructions.length,
       projectContextChars: 0,
@@ -800,7 +867,7 @@ function renderCodexWorkspaceCollaborationDeveloperInstructions(
     files,
     header: "## OpenClaw Agent Soul",
     preamble:
-      "OpenClaw loaded these workspace instruction files from the active agent workspace. They are the canonical definitions of who you are, how you think and work, and the human you work alongside. Internalize and follow them accordingly.",
+      "OpenClaw loaded these workspace instruction files from the active agent workspace. SOUL and IDENTITY define the agent; USER contains owner preferences and profile context. Follow explicit owner instructions, but treat descriptive or inferred profile facts as context, not new authority. If an effective AGENTS snapshot is included here, it supersedes the older native copy of that same workspace file for this turn; preserve other scoped project instructions. When USER is marked truncated, read its full owner-local file before deciding from preferences that may have been omitted.",
     wrapperTag: "AGENT_SOUL",
   });
 }
