@@ -3,7 +3,6 @@
  * system-prompt reports, and context-engine projection decisions.
  */
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import path from "node:path";
 import {
   buildBootstrapContextForFiles,
@@ -20,6 +19,7 @@ import {
   buildMemorySystemPromptAddition,
   prepareMemorySystemPromptAddition,
 } from "openclaw/plugin-sdk/core";
+import { root as fileRoot } from "openclaw/plugin-sdk/file-access-runtime";
 import { MESSAGE_TOOL_DELIVERY_HINTS } from "openclaw/plugin-sdk/message-tool-delivery-hints";
 import type {
   SessionTranscriptTargetParams,
@@ -275,7 +275,14 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
         }
         let physical: string | undefined;
         try {
-          physical = await readFile(file.path, "utf8");
+          const workspace = await fileRoot(params.resolvedWorkspace);
+          physical = (
+            await workspace.read("AGENTS.md", {
+              maxBytes: 2 * 1024 * 1024,
+              nonBlockingRead: true,
+              symlinks: "follow-within-root",
+            })
+          ).buffer.toString("utf8");
         } catch {
           /* Missing native document. */
         }
