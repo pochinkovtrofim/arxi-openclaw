@@ -1,5 +1,13 @@
 /** Persisted size and provenance summary for one assembled system prompt. */
 export type SessionSystemPromptReport = {
+  /** Content-free accounting of assembled layers, not a wire-token estimate. */
+  contextAccounting?: {
+    scope: "openclaw_assembled_layers";
+    completeWirePayload: false;
+    additive: false;
+    layers: Array<{ name: string; chars: number; hash?: string }>;
+    unknownLayers: string[];
+  };
   source: "run" | "estimate";
   generatedAt: number;
   sessionId?: string;

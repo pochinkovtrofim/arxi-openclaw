@@ -6,6 +6,7 @@ import {
   embeddedAgentLog,
   type EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import { clearInternalHooks, registerInternalHook } from "openclaw/plugin-sdk/hook-runtime";
 import {
   clearMemoryPluginState,
   registerMemoryCapability,
@@ -26,6 +27,7 @@ import type { CodexAppServerContextEngineBinding } from "./session-binding.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
+  clearInternalHooks();
   clearMemoryPluginState();
 });
 
@@ -201,6 +203,43 @@ describe("Codex app-server attempt context", () => {
     } finally {
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
+  });
+
+  it("carries a hook-migrated AGENTS on successive turns while preserving a personal native file", async () => {
+    await withTempDir("codex-effective-agents-", async (workspaceDir) => {
+      const agents = path.join(workspaceDir, "AGENTS.md");
+      await fs.writeFile(agents, "old birth rules");
+      registerInternalHook("agent:bootstrap", (event) => {
+        const context = event.context as {
+          bootstrapFiles: Array<{ name: string; content?: string }>;
+        };
+        for (const file of context.bootstrapFiles) {
+          if (file.name === "AGENTS.md" && file.content === "old birth rules")
+            file.content = "current shared rules";
+        }
+      });
+      const build = () =>
+        buildCodexWorkspaceBootstrapContext({
+          params: {
+            sessionId: "session-1",
+            sessionKey: "agent:main:session-1",
+            config: { agents: { defaults: { workspace: workspaceDir } } },
+          } as EmbeddedRunAttemptParams,
+          resolvedWorkspace: workspaceDir,
+          effectiveWorkspace: workspaceDir,
+          sessionKey: "agent:main:session-1",
+          sessionAgentId: "main",
+          memoryToolNames: [],
+          ringZeroActive: false,
+        });
+      for (let turn = 0; turn < 2; turn++) {
+        expect((await build()).turnScopedDeveloperInstructions).toContain("current shared rules");
+        expect(await fs.readFile(agents, "utf8")).toBe("old birth rules");
+      }
+      clearInternalHooks();
+      const personal = await build();
+      expect(personal.turnScopedDeveloperInstructions ?? "").not.toContain("old birth rules");
+    });
   });
 
   it("inherits agent workspace instructions when Codex executes in another folder", async () => {

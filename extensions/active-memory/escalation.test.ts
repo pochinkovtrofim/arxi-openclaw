@@ -4,6 +4,12 @@ import { hasRecallIntent, shouldEscalateRecall } from "./escalation.js";
 describe("active-memory escalation", () => {
   it.each([
     "Do you remember what we decided?",
+    "Помнишь, что мы решили вчера?",
+    "Что мы обсуждали в прошлый раз?",
+    "Какие у меня предпочтения по перелётам?",
+    "Напомни, на чём мы остановились.",
+    "Как мы договорились делать отчёт?",
+    "Помнишь, что мы решили сделать завтра?",
     "What did we discuss last time?",
     "Which database did we choose?",
     "Summarize the conversations from January",
@@ -56,6 +62,10 @@ describe("active-memory escalation", () => {
     "Before we deploy, run the tests",
     "Remember to send the report",
     "Remind me tomorrow",
+    "Напомни завтра отправить отчёт",
+    "Помнишь завтра отправить отчёт?",
+    "Вспомни завтра про письмо",
+    "Расскажи, как работает память",
     "How does prior authorization work?",
     "部署之前先运行测试",
     "部署之前先决定方案",
