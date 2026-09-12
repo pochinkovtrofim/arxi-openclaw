@@ -12,36 +12,36 @@ The ACPX extension is a thin OpenClaw wrapper around the published `acpx` packag
 - Do not leave the extension pinned to a temporary GitHub commit or local checkout once the ACPX release exists.
 - Do not leave temporary pnpm build-script allowlist exceptions behind after switching back to a published ACPX package.
 
-## Unreleased ACPX Development Flow
+## Unreleased ACPX Development
 
-Use this flow when OpenClaw needs unreleased ACPX changes before the ACPX version is published.
-
-1. Make the ACPX code change in the `openclaw/acpx` repo first.
-2. In OpenClaw, temporarily point `extensions/acpx/package.json` at the ACPX GitHub commit you need.
-3. If pnpm blocks ACPX lifecycle/build scripts for that temporary GitHub-sourced package, temporarily add `acpx: true` to `allowBuilds` in `pnpm-workspace.yaml`.
-4. Refresh the root workspace lock:
-   - `pnpm install --lockfile-only --filter ./extensions/acpx`
-5. Refresh the extension-local npm lock for install metadata:
-   - `cd extensions/acpx && npm install --package-lock-only --ignore-scripts`
-6. Rebuild OpenClaw and restart the gateway before doing live ACP validation.
-7. Once ACPX is released, switch `extensions/acpx/package.json` back to the published npm version and refresh the same lockfiles again.
-8. Remove any temporary `acpx` build-script allowlist entry that was only needed for the GitHub-sourced development pin.
+Use this only when OpenClaw needs an unreleased ACPX change. Land the reusable
+change in `openclaw/acpx`, pin this extension to the required commit, and add a
+temporary `allowBuilds.acpx` entry only if pnpm requires it. Keep both lockfiles
+aligned with the pin. After ACPX publishes, return to the released npm version,
+refresh both lockfiles, and remove the temporary allowlist entry.
 
 ## Lockfile Notes
 
 - `pnpm-lock.yaml` is the tracked workspace lockfile and must match the ACPX version referenced by `extensions/acpx/package.json`.
-- `extensions/acpx/package-lock.json` is useful local install metadata for the plugin package.
-- If `extensions/acpx/package-lock.json` is gitignored in this repo state, regenerating it is still useful for local verification, but it will not appear in `git status`.
+- `extensions/acpx/package-lock.json` is install metadata for the plugin package.
+- If `extensions/acpx/package-lock.json` is gitignored in this repo state, a
+  refreshed copy will not appear in `git status`.
 
-## Local Runtime Validation
+## Validation
 
-When ACPX integration changes here, prefer this sequence:
+Run applicable steps only on the Arxi production server. For an ACPX integration
+change, install the pinned extension dependency and run its focused test. Add a
+full build when package wiring or runtime imports change; restart the isolated
+validation gateway when runtime behavior changes; add a real ACP smoke when chat
+behavior changes.
 
-1. `pnpm install --filter ./extensions/acpx`
-2. `pnpm test:extension acpx`
-3. `pnpm build`
-4. Restart the local gateway if ACP runtime behavior or bundled plugin wiring changed.
-5. If the change affects direct ACP behavior in chat, run a real ACP smoke after restart.
+Relevant commands:
+
+- `pnpm install --lockfile-only --filter ./extensions/acpx`
+- `cd extensions/acpx && npm install --package-lock-only --ignore-scripts`
+- `pnpm install --filter ./extensions/acpx`
+- `pnpm test:extension acpx`
+- `pnpm build`
 
 ## Direct ACPX Binary Policy
 

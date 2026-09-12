@@ -5,6 +5,9 @@ can affect bundled plugins and third-party plugins.
 
 ## Source Of Truth
 
+Use only the documents and definitions relevant to the public seam being
+changed.
+
 - Docs:
   - `docs/plugins/sdk-overview.md`
   - `docs/plugins/sdk-entrypoints.md`
@@ -68,24 +71,39 @@ can affect bundled plugins and third-party plugins.
 
 ## Versioned Required Capabilities
 
-- Always: when a shipped Plugin SDK parameter contract gains required host authority, introduce a versioned type that requires it. Keep the legacy type source-compatible for its documented deprecation window, and migrate every bundled/internal caller in the same change.
-- Always: keep host capabilities generic and closure-bound. Bind every exposed tool, preparer, callback, approval operation, and native-action surface; retained copies must fail after owner or capability closure, including closure during awaited policy work.
-- Never: treat legacy optionality as a capability-free runtime path, reconstruct host authority inside a plugin, or add provider-specific authority to the generic contract.
-- Never: hand-edit generated SDK baselines, declarations, hashes, or budgets. Regenerate them canonically.
-- Ask first: obtain SDK and security owner acceptance before shortening a compatibility window, making a shipped type source-incompatible, or widening a capability’s trust, authority, or persistence boundary.
+- When a shipped Plugin SDK parameter contract gains required host authority,
+  introduce a versioned type that requires it. Keep the legacy type
+  source-compatible for its documented deprecation window, and migrate affected
+  bundled/internal callers in the same change.
+- Keep host capabilities generic and closure-bound. Bind every exposed tool,
+  preparer, callback, approval operation, and native-action surface; retained
+  copies must fail after owner or capability closure, including closure during
+  awaited policy work.
+- Do not treat legacy optionality as a capability-free runtime path, reconstruct
+  host authority inside a plugin, or add provider-specific authority to the
+  generic contract.
+- Regenerate SDK baselines, declarations, hashes, and budgets canonically; do
+  not hand-edit them.
+- Shortening a compatibility window, making a shipped type source-incompatible,
+  or widening a capability's trust, authority, or persistence boundary requires
+  explicit SDK and security owner acceptance. Existing authorization for routine
+  SDK work does not imply that product/security decision.
 
 ## Verification
 
-- If you touch SDK seams that affect lazy loading, hot channel entrypoints, or
-  bundled plugin import topology, run `pnpm build`.
-- If the change can alter bundled channel startup cost, also run the isolated
-  entrypoint profiler for the affected plugin:
+- Run applicable commands only on the Arxi production server. Use `pnpm build`
+  when an SDK seam affects lazy loading, hot channel entrypoints, or bundled
+  plugin import topology. If the change can alter bundled channel startup cost,
+  also run the isolated entrypoint profiler for the affected plugin:
   `OPENCLAW_LOCAL_CHECK=0 node --import tsx scripts/profile-extension-memory.mts --extension <id> --skip-combined --concurrency 1`
 
 ## Expanding The Boundary
 
-- SDK surface is too large. Do not add compat barrels, aliases, or fallback exports for convenience. Replace old entrypoints when cleaner.
-- Public third-party API is the only compat exception: document/version breaks, migrate ALL bundled/internal plugins first, then aggressively deprecate unused exports.
+- Do not add compat barrels, aliases, or fallback exports for convenience.
+  Replace old entrypoints when cleaner.
+- For public third-party API compatibility, document and version breaks, migrate
+  affected bundled/internal plugins in the same change, then deprecate unused
+  exports.
 - When adding or changing a public subpath, keep these aligned:
   - docs in `docs/plugins/*`
   - `scripts/lib/plugin-sdk-entrypoints.json`

@@ -1,6 +1,8 @@
 # Scripts Guide
 
-This directory owns local tooling, script wrappers, and generated-artifact helper rules.
+This directory owns repository tooling, script wrappers, and generated-artifact
+helper rules. Execute build, test, check, format, generation, and profiling
+commands only on the Arxi production server under the root execution contract.
 
 ## Wrapper Rules
 

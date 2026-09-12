@@ -1,6 +1,8 @@
 # Docs Guide
 
 This directory owns docs authoring, Mintlify link rules, and docs i18n policy.
+Run any named generation, check, or publishing command only on the Arxi
+production server under the root execution contract.
 
 ## Mintlify Rules
 

@@ -22,6 +22,7 @@ descriptions.
 
 ## Verification
 
-- For `src/agents/tools/*.test.ts` performance work, compare targeted file
-  runtime with `pnpm test <file>` before/after.
-- Run `pnpm build` when adding or changing bundled plugin artifacts.
+- Run applicable commands only on the Arxi production server. For
+  `src/agents/tools/*.test.ts` performance work, compare the targeted file with
+  `pnpm test <file>` before/after. Add `pnpm build` when bundled plugin artifacts
+  change.

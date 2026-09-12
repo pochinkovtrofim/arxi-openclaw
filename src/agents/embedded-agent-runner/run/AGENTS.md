@@ -16,13 +16,13 @@ Use full-runner tests only when the behavior truly requires the runner.
 - Preserve context-engine coverage for `sessionKey`, `sessionFile`, token
   budget, current token count, prompt cache, and routing fields when slimming
   tests.
-- Treat a standalone full-runner test above a few seconds as suspect. First ask
+- Treat a standalone full-runner test above a few seconds as suspect. Determine
   whether the proof can move to a production helper plus one cheap integration
   smoke.
 
 ## Verification
 
-- For runner test slimming, run the touched helper test and the nearest
-  two-file runner/context-engine surface.
-- Record Vitest duration, wall time, and RSS when the change is performance
-  motivated.
+- Run applicable commands only on the Arxi production server. For runner test
+  slimming, cover the touched helper and the nearest runner/context-engine
+  integration surface. Record Vitest duration, wall time, and RSS when the
+  change is performance motivated.

@@ -1,6 +1,8 @@
 # Control UI Guide
 
 This directory owns Control UI-specific guidance that should not live in the repo root.
+Run any named build, test, check, format, generation, or profiling command only
+on the Arxi production server under the root execution contract.
 
 ## i18n Rules
 

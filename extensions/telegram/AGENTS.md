@@ -1,9 +1,7 @@
 # Telegram Plugin Guide
 
-Read this before any change under `extensions/telegram/`. These are intentional
-maintainer decisions and review-binding invariants, not incidental
-implementation details. Also read `extensions/AGENTS.md` for the plugin
-boundary rules.
+This guide records Telegram-specific maintainer decisions and review-binding
+invariants. The parent `extensions/AGENTS.md` supplies the plugin boundary.
 
 Verified against Telegram Bot API 10.3, August 24 2026.
 

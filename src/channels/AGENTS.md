@@ -5,6 +5,9 @@ import from this tree directly.
 
 ## Public Contracts
 
+Use only the documents and definitions relevant to the channel seam being
+changed.
+
 - Docs:
   - `docs/plugins/sdk-channel-plugins.md`
   - `docs/plugins/architecture.md`
@@ -52,6 +55,7 @@ import from this tree directly.
 
 ## Verification
 
-- If you touch hot channel entrypoints or lazy-loading seams, run `pnpm build`.
-- For bundled plugin channel changes that can affect startup/import cost, run:
+- Run applicable commands only on the Arxi production server. Use `pnpm build`
+  for changes to hot channel entrypoints or lazy-loading seams. For bundled
+  plugin channel changes that can affect startup/import cost, run:
   `OPENCLAW_LOCAL_CHECK=0 node --import tsx scripts/profile-extension-memory.mts --extension <id> --skip-combined --concurrency 1`

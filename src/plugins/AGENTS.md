@@ -5,6 +5,9 @@ assembly, and contract enforcement.
 
 ## Public Contracts
 
+Use only the documents and definitions relevant to the plugin seam being
+changed.
+
 - Docs:
   - `docs/plugins/architecture.md`
   - `docs/plugins/manifest.md`
@@ -79,8 +82,8 @@ assembly, and contract enforcement.
 
 ## Verification
 
-- If you touch loader, registry, activation, or public-artifact code that can
-  change bundled plugin import fanout, run `pnpm build`.
-- If the change can alter bundled plugin startup cost, re-profile the affected
-  plugin entrypoint with:
+- Run applicable commands only on the Arxi production server. Use `pnpm build`
+  when loader, registry, activation, or public-artifact changes can alter bundled
+  plugin import fanout. If the change can alter bundled plugin startup cost,
+  re-profile the affected plugin entrypoint with:
   `OPENCLAW_LOCAL_CHECK=0 node --import tsx scripts/profile-extension-memory.mts --extension <id> --skip-combined --concurrency 1`

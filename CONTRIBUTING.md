@@ -1,5 +1,12 @@
 # Contributing to OpenClaw
 
+> Arxi fork: use [AGENTS.md](AGENTS.md) for execution and validation. All
+> repository-controlled compute runs on `arxi-production`; upstream local/hosted
+> CI examples below do not change that requirement. Select checks by the affected
+> contract; the full upstream suite and automatic autoreview instructions below
+> do not apply to every fork edit. For Arxi, use autoreview only when explicitly
+> requested or justified by a concrete unresolved risk.
+
 Welcome to the lobster tank! 🦞
 
 ## Quick Links

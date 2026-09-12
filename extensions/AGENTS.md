@@ -5,6 +5,9 @@ third-party plugins see.
 
 ## Public Contracts
 
+Use the subset that owns the changed seam; do not load this whole list for
+unrelated extension work.
+
 - Docs:
   - `docs/plugins/building-plugins.md`
   - `docs/plugins/architecture.md`

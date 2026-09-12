@@ -1,6 +1,11 @@
 # iOS Release Agent Policy
 
 Root rules still apply. This file adds the iOS release guardrails.
+Xcode-dependent checks require an authorized macOS execution environment. If
+`arxi-production` cannot supply it, report that specific missing proof and
+continue independent work. Using a different host requires explicit user
+authorization; do not silently run it on the workstation or claim Linux
+checks substitute for Xcode proof.
 
 ## UI / Typography
 
@@ -9,7 +14,9 @@ Root rules still apply. This file adds the iOS release guardrails.
 - Avoid shorthand controls like `Button("Title")`, `Link("Title", ...)`, `TextField("Placeholder", ...)`, and `SecureField("Placeholder", ...)` when they make typography or placeholder styling implicit. Prefer explicit label builders with branded `Text`/`Label`.
 - Secure-field placeholders need both branded visual styling and accessibility semantics. If using an overlay placeholder, keep the actual field semantically named with `.accessibilityLabel(...)` and hide the decorative placeholder from accessibility.
 - System font modifiers are acceptable for SF Symbol `Image(systemName:)` sizing, not for user-visible text unless a platform control makes branded typography impossible. If an exception is intentional, keep it narrow and explain why.
-- When touching iOS text surfaces, update/keep `apps/ios/Tests/OpenClawTypographyTests.swift` so bare text/control regressions are caught, then run the focused typography test.
+- When an iOS text change affects typography behavior, keep
+  `apps/ios/Tests/OpenClawTypographyTests.swift` aligned and run the focused
+  typography test only in the authorized Xcode environment described above.
 
 ## Licenses Screen
 
@@ -24,7 +31,10 @@ Root rules still apply. This file adds the iOS release guardrails.
 - When adding, removing, or replacing redistributed font binaries under `apps/ios/Sources/Fonts/`, update `apps/ios/THIRD_PARTY_FONTS.md` with immutable upstream source URLs and SHA-256 checksums for each bundled file.
 - Keep license detail bodies rendered as verbatim monospace text.
 - Keep the Settings Licenses row at the bottom Settings section with no section title unless product direction changes.
-- When changing license loading or presentation, update `apps/ios/Tests/LicenseDocumentLoaderTests.swift` and `apps/ios/Tests/SwiftUIRenderSmokeTests.swift`, then run focused iOS tests.
+- When license loading or presentation behavior changes, keep
+  `apps/ios/Tests/LicenseDocumentLoaderTests.swift` and
+  `apps/ios/Tests/SwiftUIRenderSmokeTests.swift` aligned and run the focused iOS
+  tests only in the authorized Xcode environment described above.
 
 ## App Store Releases
 
@@ -38,4 +48,6 @@ Root rules still apply. This file adds the iOS release guardrails.
 - If `pnpm ios:release:upload` exits non-zero, stop immediately and report the failing step.
 - After a failed `pnpm ios:release:upload`, do not continue with a lower-level upload path. A human may repair App Store Connect state; the next pipeline run re-plans the same revision and next build automatically.
 - Do not submit an iOS App Store version for App Review. App Review submission stays manual unless the user explicitly asks to submit a specific already-prepared version after the failed state has been reported.
-- `pnpm ios:release:archive` is for local archive validation only. It is not a fallback release path after screenshot, metadata, or upload-lane failure.
+- `pnpm ios:release:archive` is for archive validation only and requires the
+  authorized Xcode environment described above; it is not a fallback
+  release path after screenshot, metadata, or upload-lane failure.

@@ -26,7 +26,7 @@ real delivery.
 
 ## Verification
 
-- Benchmark the affected outbound test file before/after with
-  `pnpm test <file>`.
-- Run the closest media/action/payload contract test when changing a shared
-  outbound helper.
+- Run applicable commands only on the Arxi production server. For outbound
+  performance work, benchmark the affected test file before/after with
+  `pnpm test <file>`. When shared outbound behavior changes, run the closest
+  media, action, or payload contract test.

@@ -38,7 +38,7 @@ runtime when they only need plugin-owned static descriptors.
 
 ## Verification
 
-- Benchmark the affected Gateway test file before/after with
-  `pnpm test <file>`.
-- Run `pnpm build` when changing Gateway lazy-loading or bundled plugin
-  artifacts.
+- Run applicable commands only on the Arxi production server. For Gateway
+  performance work, benchmark the affected test file before/after with
+  `pnpm test <file>`. Add `pnpm build` when Gateway lazy loading or bundled
+  plugin artifacts change.
