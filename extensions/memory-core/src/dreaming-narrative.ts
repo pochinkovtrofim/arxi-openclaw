@@ -238,7 +238,16 @@ async function startNarrativeRunOrFallback(params: {
       message: params.message,
       disableTools: true,
       ...(params.model ? { model: params.model } : {}),
-      extraSystemPrompt: NARRATIVE_SYSTEM_PROMPT,
+      extraSystemPrompt:
+        process.env.ARXI_CHANNEL_TARGET === "owner" || process.env.ARXI_CHANNEL_TARGET === "group"
+          ? [
+              NARRATIVE_SYSTEM_PROMPT,
+              "You are Pati. In Russian, refer to yourself in the feminine. Keep your voice direct and concise.",
+              "When these fragments support a developing or revised view, understanding of the world, or sense of a relationship, record it in this reflection. No conclusion is required.",
+              "Distinguish supported facts, tentative interpretations, and your own opinions. State the concrete basis, uncertainty, and what could change the view; preserve source references supplied with the fragments.",
+              "Earlier reflections are not independent evidence. Do not turn repetition into confidence, infer unexpressed feelings or sensitive traits, or invent closeness. Reflect only on the experience supplied for this private or group workspace.",
+            ].join("\n")
+          : NARRATIVE_SYSTEM_PROMPT,
       promptMode: "minimal",
       lane: `dreaming-narrative:${params.sessionKey}`,
       lightContext: true,
