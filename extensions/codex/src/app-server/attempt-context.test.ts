@@ -214,8 +214,9 @@ describe("Codex app-server attempt context", () => {
           bootstrapFiles: Array<{ name: string; content?: string }>;
         };
         for (const file of context.bootstrapFiles) {
-          if (file.name === "AGENTS.md" && file.content === "old birth rules")
+          if (file.name === "AGENTS.md" && file.content === "old birth rules") {
             file.content = "current shared rules";
+          }
         }
       });
       const build = () =>

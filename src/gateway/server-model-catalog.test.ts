@@ -59,7 +59,6 @@ function ownerSnapshot(
     config,
     observationConfig: config,
     isCurrent: () => true,
-    pluginRegistry: createEmptyPluginRegistry(),
     authModes: {},
     authStore: { version: 1, profiles: {} },
     metadataSnapshot: { index: { plugins: [] }, plugins: [] } as never,
@@ -199,7 +198,6 @@ describe("gateway prepared model catalog", () => {
     expect(projected).not.toHaveProperty("authStore");
     expect(projected).not.toHaveProperty("metadataSnapshot");
     expect(projected).not.toHaveProperty("pluginRegistry");
-    expect(projected).not.toHaveProperty("observationConfig");
     expect(projected).not.toHaveProperty("isCurrent");
 
     expect(loadPublishedPreparedModelCatalogOwnerSnapshot).toHaveBeenCalledWith({
@@ -209,6 +207,33 @@ describe("gateway prepared model catalog", () => {
       readOnly: true,
       workspaceDir: "/tmp/gateway-workspace",
     });
+  });
+
+  it("keeps the prepared generation registry behind the private snapshot", async () => {
+    const config = ownerConfig();
+    const pluginRegistry = createEmptyPluginRegistry();
+    const isCurrent = () => true;
+    const candidate = { ...ownerSnapshot(config), pluginRegistry, isCurrent };
+    const loadPublishedPreparedModelCatalogOwnerSnapshot = async () => candidate;
+
+    await expect(
+      loadPreparedGatewayModelCatalogSnapshot({
+        getConfig: () => config,
+        loadPublishedPreparedModelCatalogOwnerSnapshot,
+      }),
+    ).resolves.toMatchObject({ pluginRegistry, isCurrent });
+    await expect(
+      loadGatewayModelCatalogSnapshot({
+        getConfig: () => config,
+        loadPublishedPreparedModelCatalogOwnerSnapshot,
+      }),
+    ).resolves.not.toHaveProperty("pluginRegistry");
+    await expect(
+      loadGatewayModelCatalogSnapshot({
+        getConfig: () => config,
+        loadPublishedPreparedModelCatalogOwnerSnapshot,
+      }),
+    ).resolves.not.toHaveProperty("isCurrent");
   });
 
   it("projects whether the published owner already contains a full catalog", async () => {
@@ -324,6 +349,23 @@ describe("gateway prepared model catalog", () => {
 
     expect(loaded.authStore?.profiles).toEqual({});
     expect(loaded.authModes).toEqual({});
+  });
+
+  it("reports a prepared auth failure when fresh auth was requested", async () => {
+    const config = ownerConfig();
+    const candidate = ownerSnapshot(config);
+    const error = new Error("prepared auth refresh failed");
+    setPreparedModelRuntimeAuthLoader(candidate, async () => {
+      throw error;
+    });
+
+    await expect(
+      loadPreparedGatewayModelCatalogSnapshot({
+        getConfig: () => config,
+        loadPublishedPreparedModelCatalogOwnerSnapshot: async () => candidate,
+        refreshAuth: true,
+      }),
+    ).rejects.toBe(error);
   });
 
   it("retries the whole owner projection when deferred auth supersedes its generation", async () => {

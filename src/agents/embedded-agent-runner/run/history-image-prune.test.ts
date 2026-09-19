@@ -13,6 +13,7 @@ import {
 import { buildPersistedUserTurnMessage } from "../../../sessions/user-turn-transcript.js";
 import { castAgentMessage } from "../../test-helpers/agent-message-fixtures.js";
 import { createHostSandboxFsBridge } from "../../test-helpers/host-sandbox-fs-bridge.js";
+import { textToolResult } from "../../test-helpers/sparse-transcript.test-support.js";
 import {
   installHistoryImagePruneContextTransform,
   pruneProcessedHistoryImages,
@@ -78,7 +79,7 @@ function expectImageMessagePreserved(messages: AgentMessage[], errorMessage: str
 }
 
 function oldEnoughTail(): AgentMessage[] {
-  // Four assistant turns makes the first message old enough to prune while
+  // Four prior completed turns make the first message old enough to prune while
   // keeping each test focused on content rewriting instead of turn counting.
   const assistantTurn = () => castAgentMessage({ role: "assistant", content: "ack" });
   const userText = () => castAgentMessage({ role: "user", content: "more" });
@@ -90,6 +91,7 @@ function oldEnoughTail(): AgentMessage[] {
     assistantTurn(),
     userText(),
     assistantTurn(),
+    userText(),
   ];
 }
 
@@ -115,19 +117,13 @@ describe("pruneProcessedHistoryImages", () => {
     ).toEqual(["turn-2", "ack", "turn-3", "ack", "turn-4", "ack"]);
   });
 
-  it("prunes image blocks from user messages older than 3 assistant turns", () => {
+  it("prunes image blocks from user messages older than 3 completed turns", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({
         role: "user",
         content: [{ type: "text", text: "See /tmp/photo.png" }, { ...image }],
       }),
-      assistantTurn(),
-      userText(),
-      assistantTurn(),
-      userText(),
-      assistantTurn(),
-      userText(),
-      assistantTurn(),
+      ...oldEnoughTail(),
     ];
 
     const content = expectPrunedImageMessage(messages, "expected user array content");
@@ -449,7 +445,7 @@ describe("pruneProcessedHistoryImages", () => {
     expect(toolResult?.content).toBe(`previous ${PRUNED_HISTORY_MEDIA_REFERENCE_MARKER} result`);
   });
 
-  it("keeps image blocks that belong to the third-most-recent assistant turn", () => {
+  it("keeps image blocks that belong to the third-most-recent completed turn", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({
         role: "user",
@@ -460,6 +456,7 @@ describe("pruneProcessedHistoryImages", () => {
       assistantTurn(),
       userText(),
       assistantTurn(),
+      userText(),
     ];
 
     expectImageMessagePreserved(messages, "expected user array content");
@@ -482,6 +479,7 @@ describe("pruneProcessedHistoryImages", () => {
       assistantTurn(),
       userText(),
       assistantTurn(),
+      userText(),
     ];
 
     const pruned = pruneProcessedHistoryImages(messages);
@@ -504,17 +502,13 @@ describe("pruneProcessedHistoryImages", () => {
         role: "assistant",
         content: [{ type: "toolCall", id: "call_1", name: "read", arguments: {} }],
       } as AgentMessage),
-      castAgentMessage({
-        role: "toolResult",
-        toolCallId: "call_1",
-        toolName: "read",
-        content: [{ type: "text", text: "bytes" }],
-      }),
+      castAgentMessage(textToolResult("call_1", "read", "bytes")),
       assistantTurn(),
       userText(),
       assistantTurn(),
       userText(),
       assistantTurn(),
+      userText(),
     ];
 
     expectImageMessagePreserved(messages, "expected user array content");
@@ -536,20 +530,58 @@ describe("pruneProcessedHistoryImages", () => {
     expectContentBlock(content[1], { type: "image", data: "abc" });
   });
 
-  it("prunes image blocks from toolResult messages older than 3 assistant turns", () => {
+  it.each([
+    { name: "image blocks", block: image, marker: PRUNED_HISTORY_IMAGE_MARKER },
+    {
+      name: "media references",
+      block: { type: "text", text: "[media attached: media://inbound/old.png]" },
+      marker: PRUNED_HISTORY_MEDIA_REFERENCE_MARKER,
+    },
+  ])("keeps $name byte-identical throughout the active tool loop", ({ block, marker }) => {
+    const messages: AgentMessage[] = [
+      castAgentMessage({ role: "user", content: [{ type: "text", text: "look" }, block] }),
+      assistantTurn(),
+      userText(),
+      assistantTurn(),
+      userText(),
+      assistantTurn(),
+      userText(),
+    ];
+    const retainedLength = messages.length;
+    const retainedBytes = JSON.stringify(messages);
+    expect(pruneProcessedHistoryImages(messages)).toBeNull();
+
+    messages.push(
+      castAgentMessage({
+        role: "assistant",
+        content: [{ type: "toolCall", id: "call_4", name: "read", arguments: {} }],
+      }),
+      castAgentMessage(textToolResult("call_4", "read", "bytes")),
+    );
+    const duringLoop = pruneProcessedHistoryImages(messages) ?? messages;
+    expect(JSON.stringify(duringLoop.slice(0, retainedLength))).toBe(retainedBytes);
+    expect(expectArrayMessageContent(duringLoop[0], "expected retained content")[1]).toBe(block);
+
+    messages.push(assistantTurn());
+    expect(pruneProcessedHistoryImages(messages)).toBeNull();
+    messages.push(userText());
+    const nextTurn = expectPrunedMessages(messages);
+    expect(expectArrayMessageContent(nextTurn[0], "expected pruned content")[1]).toEqual({
+      type: "text",
+      text: marker,
+    });
+    expect(JSON.stringify(nextTurn.slice(2))).toBe(JSON.stringify(messages.slice(2)));
+    expect(JSON.stringify(messages.slice(0, retainedLength))).toBe(retainedBytes);
+  });
+
+  it("prunes image blocks from toolResult messages older than 3 completed turns", () => {
     const messages: AgentMessage[] = [
       castAgentMessage({
         role: "toolResult",
         toolName: "read",
         content: [{ type: "text", text: "screenshot bytes" }, { ...image }],
       }),
-      assistantTurn(),
-      userText(),
-      assistantTurn(),
-      userText(),
-      assistantTurn(),
-      userText(),
-      assistantTurn(),
+      ...oldEnoughTail(),
     ];
 
     expectPrunedImageMessage(messages, "expected toolResult array content");
@@ -571,6 +603,7 @@ describe("pruneProcessedHistoryImages", () => {
         content: [{ type: "text", text: "recent" }, { ...image }],
       }),
       assistantTurn(),
+      userText(),
     ];
 
     const pruned = expectPrunedMessages(messages);

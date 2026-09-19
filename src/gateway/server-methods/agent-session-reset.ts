@@ -10,8 +10,8 @@ import {
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolveAgentDeliveryPlanWithSessionRoute } from "../../infra/outbound/agent-delivery.js";
 import { defaultRuntime } from "../../runtime.js";
-import { arxiUserCopy } from "../../shared/arxi-user-copy.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
+import { arxiUserCopy } from "../../shared/arxi-user-copy.js";
 import { sessionDeliveryChannel } from "../../utils/delivery-context.shared.js";
 import { performGatewaySessionReset } from "../session-reset-service.js";
 import { loadSessionEntry } from "../session-utils.js";
@@ -68,8 +68,9 @@ export function buildBareSessionResetResult(params: {
   sessionId?: string;
   ackText?: string;
 }) {
+  const text = params.ackText ?? sessionResetAckText(params.reason);
   return {
-    payloads: [{ text: params.ackText ?? sessionResetAckText(params.reason) }],
+    payloads: [{ text, isStatusNotice: true }],
     meta: {
       durationMs: 0,
       ...(params.sessionId
@@ -162,7 +163,7 @@ async function deliverBareSessionResetResult(params: {
     outboundSession: undefined,
     sessionEntry: params.sessionEntry,
     result: result as never,
-    payloads: result.payloads as never,
+    payloads: result.payloads,
     preparedPlugin: params.preparedPlugin,
     assertDeliveryCurrent: params.assertCurrent,
   });

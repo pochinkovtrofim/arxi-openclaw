@@ -20,6 +20,7 @@ import type {
   PluginApprovalRequest,
   PluginApprovalResolved,
 } from "../../infra/plugin-approvals.js";
+import type { SystemAgentApprovalRequest } from "../../infra/system-agent-approvals.js";
 import type { ResolvedAgentRoute } from "../../routing/resolve-route.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import type { ResolverContext, SecretDefaults } from "../../secrets/runtime-shared.js";
@@ -296,6 +297,7 @@ type ChannelLoginWithQrStartResult = {
   qrDataUrl?: string;
   message: string;
   connected?: boolean;
+  sessionKey?: string;
 };
 
 type ChannelLoginWithQrWaitResult = {
@@ -325,6 +327,7 @@ export type ChannelGatewayAdapter<ResolvedAccount = unknown> = {
   }) => Promise<ChannelLoginWithQrStartResult>;
   loginWithQrWait?: (params: {
     accountId?: string;
+    sessionKey?: string;
     timeoutMs?: number;
     currentQrDataUrl?: string;
   }) => Promise<ChannelLoginWithQrWaitResult>;
@@ -353,6 +356,15 @@ export type ChannelHeartbeatAdapter = {
     accountId?: string | null;
     threadId?: string | number | null;
     deps?: ChannelHeartbeatDeps;
+  }) => Promise<void> | void;
+  /** Optional owned typing: recheck the guard after transport waits and honor cancellation. */
+  sendTypingGuarded?: (params: {
+    cfg: OpenClawConfig;
+    to: string;
+    accountId?: string | null;
+    threadId?: string | number | null;
+    signal: AbortSignal;
+    assertPlatformSendAuthorized: () => void;
   }) => Promise<void> | void;
   clearTyping?: (params: {
     cfg: OpenClawConfig;
@@ -557,7 +569,7 @@ type ChannelApprovalDeliveryAdapter = {
     cfg: OpenClawConfig;
     approvalKind: ChannelApprovalKind;
     target: ChannelApprovalForwardTarget;
-    request: ExecApprovalRequest | PluginApprovalRequest;
+    request: ExecApprovalRequest | PluginApprovalRequest | SystemAgentApprovalRequest;
   }) => boolean;
 };
 type ChannelApproveCommandBehavior =

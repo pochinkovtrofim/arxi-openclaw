@@ -5,6 +5,8 @@
  * trusted policies, approvals, normal hooks, and final owner approval must
  * remain in this sequence.
  */
+import type { ToolLoopWarning } from "@openclaw/agent-core";
+import { getRuntimeConfig } from "../config/config.js";
 import { freezeDiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
 import { getGlobalHookRunnerRegistry } from "../plugins/hook-runner-global-state.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
@@ -76,7 +78,9 @@ async function finalizeApprovedExecutions(params: {
       pending,
       finalParams: params.finalParams,
     });
-    if (blocked) return blocked;
+    if (blocked) {
+      return blocked;
+    }
   }
   return undefined;
 }
@@ -98,6 +102,7 @@ export function hasBeforeToolCallPolicy(): boolean {
 /** Consume voice approval only after tool-owned finalization produces execution params. */
 export function consumeFinalClientVoiceToolConfirmation(args: {
   toolName: string;
+  toolCallId?: string;
   params: unknown;
   ctx?: HookContext;
 }) {
@@ -106,6 +111,7 @@ export function consumeFinalClientVoiceToolConfirmation(args: {
     agentId: voiceRun?.agentId,
     voiceSessionId: voiceRun?.voiceSessionId,
     runId: args.ctx?.runId,
+    toolCallId: args.toolCallId,
     toolName: normalizeToolPolicyName(args.toolName || "tool"),
     toolParams: args.params,
     ...(voiceRun ? { isConfirmable: () => isClientVoiceSessionConfirmable(voiceRun) } : {}),
@@ -124,6 +130,13 @@ export async function runBeforeToolCallHook(args: {
 }): Promise<HookOutcome> {
   const toolName = normalizeToolPolicyName(args.toolName || "tool");
   const params = args.params;
+  let loopWarning: ToolLoopWarning | undefined;
+  const withLoopWarning = (outcome: HookOutcome): HookOutcome => {
+    if (!outcome.blocked && loopWarning) {
+      outcome.loopWarning = loopWarning;
+    }
+    return outcome;
+  };
   let releaseArgumentChurnPolicyWait: (() => void) | undefined;
 
   try {
@@ -157,7 +170,7 @@ export async function runBeforeToolCallHook(args: {
           { toolName, params, toolCallId: args.toolCallId },
           args.ctx,
         );
-        if (intervention) {
+        if (intervention?.kind === "critical-tool-loop") {
           const outcome: HookOutcome = {
             blocked: true,
             kind: "veto",
@@ -168,6 +181,7 @@ export async function runBeforeToolCallHook(args: {
           markPrivateDecision(outcome, "genericDecision");
           return outcome;
         }
+        loopWarning = intervention;
       }
     }
 
@@ -176,17 +190,22 @@ export async function runBeforeToolCallHook(args: {
     const policyRegistry = getGlobalHookRunnerRegistry() ?? undefined;
     const shouldRunTrustedPolicies = hasTrustedToolPolicies(policyRegistry);
     const normalizedParams = isPlainObject(params) ? params : {};
-    const initialCorePolicyResult = await resolveSkillWorkshopToolApproval({
-      toolName,
-      toolParams: normalizedParams,
-      ...(args.ctx?.config ? { config: args.ctx.config } : {}),
-      ...(args.ctx?.workspaceDir ? { workspaceDir: args.ctx.workspaceDir } : {}),
-    });
+    const initialCorePolicyResult =
+      toolName === "skill_workshop"
+        ? await resolveSkillWorkshopToolApproval({
+            toolName,
+            toolParams: normalizedParams,
+            config: args.ctx?.config ?? getRuntimeConfig(),
+            ...(args.ctx?.workspaceDir ? { workspaceDir: args.ctx.workspaceDir } : {}),
+            ...(args.ctx?.agentId ? { agentId: args.ctx.agentId } : {}),
+          })
+        : undefined;
     const voiceRun = resolveClientVoiceRunBinding(args.ctx?.runId);
     const voiceConfirmation = checkClientVoiceToolConfirmationPolicy({
       agentId: voiceRun?.agentId,
       voiceSessionId: voiceRun?.voiceSessionId,
       runId: args.ctx?.runId,
+      toolCallId: args.toolCallId,
       toolName,
       toolParams: normalizedParams,
       ...(voiceRun ? { isConfirmable: () => isClientVoiceSessionConfirmable(voiceRun) } : {}),
@@ -201,7 +220,7 @@ export async function runBeforeToolCallHook(args: {
       };
     }
     if (!initialCorePolicyResult && !shouldRunTrustedPolicies && !hasBeforeToolCallHooks) {
-      return { blocked: false, params };
+      return withLoopWarning({ blocked: false, params });
     }
     const deriveOptions =
       args.ctx?.cwd || args.ctx?.sandbox
@@ -308,7 +327,7 @@ export async function runBeforeToolCallHook(args: {
           return approvalOutcome;
         }
         if (approvalOutcome.deferredApproval) {
-          return approvalOutcome;
+          return withLoopWarning(approvalOutcome);
         }
         trustedApprovalParams = approvalOutcome.params;
         trustedApprovalResolution = approvalOutcome.approvalResolution;
@@ -339,7 +358,7 @@ export async function runBeforeToolCallHook(args: {
       });
       if (finalApprovalOutcome) {
         if (finalApprovalOutcome.blocked || finalApprovalOutcome.deferredApproval) {
-          return finalApprovalOutcome;
+          return withLoopWarning(finalApprovalOutcome);
         }
         if (finalApprovalOutcome.pendingApprovedExecution) {
           pendingApprovedExecutions.push(finalApprovalOutcome.pendingApprovedExecution);
@@ -350,7 +369,9 @@ export async function runBeforeToolCallHook(args: {
         pending: pendingApprovedExecutions,
         finalParams,
       });
-      if (bindingBlocked) return bindingBlocked;
+      if (bindingBlocked) {
+        return bindingBlocked;
+      }
       const allowed: HookOutcome = {
         blocked: false as const,
         params: finalParams,
@@ -359,7 +380,7 @@ export async function runBeforeToolCallHook(args: {
         markPrivateDecision(allowed, "ownerDecision");
         allowed.approvalResolution = trustedApprovalResolution;
       }
-      return allowed;
+      return withLoopWarning(allowed);
     }
     const hookEventParams = isPlainObject(policyAdjustedParams) ? policyAdjustedParams : {};
     const callerIdentity = getGatewayToolCallerIdentity();
@@ -416,7 +437,7 @@ export async function runBeforeToolCallHook(args: {
           return approvalOutcome;
         }
         if (approvalOutcome.deferredApproval) {
-          return approvalOutcome;
+          return withLoopWarning(approvalOutcome);
         }
         finalParams = approvalOutcome.params;
         finalApprovalResolution = approvalOutcome.approvalResolution ?? finalApprovalResolution;
@@ -444,7 +465,7 @@ export async function runBeforeToolCallHook(args: {
     });
     if (finalApprovalOutcome) {
       if (finalApprovalOutcome.blocked || finalApprovalOutcome.deferredApproval) {
-        return finalApprovalOutcome;
+        return withLoopWarning(finalApprovalOutcome);
       }
       finalParams = finalApprovalOutcome.params;
       if (finalApprovalOutcome.pendingApprovedExecution) {
@@ -455,7 +476,9 @@ export async function runBeforeToolCallHook(args: {
       pending: pendingApprovedExecutions,
       finalParams,
     });
-    if (bindingBlocked) return bindingBlocked;
+    if (bindingBlocked) {
+      return bindingBlocked;
+    }
     const allowed: HookOutcome = {
       blocked: false as const,
       params: finalParams,
@@ -466,7 +489,7 @@ export async function runBeforeToolCallHook(args: {
     if (finalApprovalResolution) {
       allowed.approvalResolution = finalApprovalResolution;
     }
-    return allowed;
+    return withLoopWarning(allowed);
   } catch (err) {
     const toolCallId = args.toolCallId ? ` toolCallId=${args.toolCallId}` : "";
     const cause = unwrapErrorCause(err);

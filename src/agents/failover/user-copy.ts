@@ -1,11 +1,13 @@
 import { stableStringify } from "@openclaw/normalization-core";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
+import { formatCommandErrorForUser } from "../../process/command-error.js";
 import { arxiUserCopy, isArxiConversation } from "../../shared/arxi-user-copy.js";
 import {
   extractErrorHttpStatus,
   extractLeadingHttpStatus,
   formatRawAssistantErrorForUi,
+  formatTransportErrorCopy,
   isCloudflareOrHtmlErrorPage,
   isGenericProviderInternalError,
   MALFORMED_STREAMING_FRAGMENT_ERROR_MESSAGE,
@@ -14,11 +16,12 @@ import {
 } from "../../shared/assistant-error-format.js";
 import { formatExecDeniedUserMessage } from "../exec-approval-result.js";
 import type { CliTimeoutContext, FallbackAttemptRecord } from "../failover-error.js";
+import { ERROR_PREFIX_RE, renderFormatErrorCopy } from "./assistant-request-failure-copy.js";
+import { classifyFailoverReasonCore } from "./classify-core.js";
 import {
-  classifyFailoverReason,
   isPeriodicUsageLimitErrorMessage,
   isProviderCompletedErrorFinishReasonMessage,
-} from "./classify.js";
+} from "./message-patterns.js";
 import {
   classifyProviderRequestFacets,
   type ProviderRequestFacet,
@@ -68,18 +71,10 @@ const RATE_LIMIT_RETRY_MESSAGE = arxiUserCopy(
 const MODEL_CAPACITY_ERROR_RE = /\b(?:selected\s+)?model\s+(?:is\s+)?at capacity\b/i;
 const RATE_LIMIT_SPECIFIC_HINT_RE =
   /\bmin(ute)?s?\b|\bhours?\b|\bseconds?\b|\btry again in\b|\bresets?\b|\bplan\b|\bquota\b/i;
-const ERROR_PREFIX_RE =
-  /^(?:error|(?:[a-z][\w-]*\s+)?api\s*error|openai\s*error|anthropic\s*error|gateway\s*error|codex\s*error|request failed|failed|exception)(?:\s+\d{3})?[:\s-]+/i;
 const CONTEXT_OVERFLOW_ERROR_HEAD_RE =
   /^(?:context overflow:|request_too_large\b|request size exceeds\b|request exceeds the maximum size\b|context length exceeded\b|maximum context length\b|prompt is too long\b|exceeds model context window\b)/i;
 const NON_ERROR_PROVIDER_PAYLOAD_MAX_LENGTH = 16_384;
 const NON_ERROR_PROVIDER_PAYLOAD_PREFIX_RE = /^codex\s*error(?:\s+\d{3})?[:\s-]+/i;
-export const PROVIDER_SCHEMA_REJECTION_USER_TEXT = arxiUserCopy(
-  "LLM request failed: provider rejected the request schema or tool payload.",
-  "Не удалось выполнить запрос: сервис не принял его формат.",
-);
-const PROVIDER_OUTPUT_TOKEN_LIMIT_RE =
-  /^['"]?max_(?:tokens|output_tokens|completion_tokens|new_tokens)['"]?\s*(?:[:=]\s*)?\(?(\d[\d,]*)\)?\s+exceeds?\b.{0,120}?\b(?:maximum|max|limit)\b(?:\s+(?:output\s+)?tokens?)?(?:\s+(?:is|of)|\s*[:=])?\s*\(?(\d[\d,]*)\)?(?:\D|$)/i;
 
 /** Format billing copy with optional provider/model and credential context. */
 export function formatBillingErrorMessage(
@@ -87,8 +82,9 @@ export function formatBillingErrorMessage(
   model?: string,
   authMode?: string,
 ): string {
-  if (isArxiConversation())
+  if (isArxiConversation()) {
     return "Сервис сообщил о проблеме с оплатой или подпиской. Проверь свой аккаунт ChatGPT.";
+  }
   const providerName = provider?.trim();
   const modelName = model?.trim();
   const providerLabel =
@@ -105,23 +101,6 @@ export function formatBillingErrorMessage(
 }
 
 const BILLING_ERROR_USER_MESSAGE = formatBillingErrorMessage();
-
-/** Surface only bounded numeric limit facts, never arbitrary provider-controlled error text. */
-export function renderFormatErrorCopy(raw: string): string {
-  const trimmed = raw.trim();
-  const normalized =
-    extractErrorHttpStatus(trimmed)?.rest ?? trimmed.replace(ERROR_PREFIX_RE, "").trim();
-  const candidate = extractErrorHttpStatus(normalized)?.rest ?? normalized;
-  const match = candidate.length <= 300 ? candidate.match(PROVIDER_OUTPUT_TOKEN_LIMIT_RE) : null;
-  const [, value, maximum] = match ?? [];
-  if (!value || !maximum) {
-    return PROVIDER_SCHEMA_REJECTION_USER_TEXT;
-  }
-  return arxiUserCopy(
-    `LLM request rejected: configured maxTokens is ${value}, above the provider maximum of ${maximum}. Lower maxTokens and try again.`,
-    "Запрос превышает допустимый размер ответа. Нужно изменить настройку лимита ответа.",
-  );
-}
 
 function extractProviderRateLimitMessage(raw: string): string | undefined {
   const withoutPrefix = raw.replace(ERROR_PREFIX_RE, "").trim();
@@ -146,7 +125,9 @@ function extractProviderRateLimitMessage(raw: string): string | undefined {
 }
 
 function renderRateLimitBaseCopy(context: FailoverUserCopyContext): string {
-  if (isArxiConversation()) return RATE_LIMIT_ERROR_USER_MESSAGE;
+  if (isArxiConversation()) {
+    return RATE_LIMIT_ERROR_USER_MESSAGE;
+  }
   const raw = context.raw ?? "";
   if (MODEL_CAPACITY_ERROR_RE.test(raw)) {
     return MODEL_CAPACITY_ERROR_USER_MESSAGE;
@@ -227,72 +208,6 @@ export function renderRateLimitOrOverloadedCopy(params: {
   );
 }
 
-export function formatTransportErrorCopy(raw: string): string | undefined {
-  if (!raw || isCloudflareOrHtmlErrorPage(raw)) {
-    return undefined;
-  }
-  const lower = normalizeLowercaseStringOrEmpty(raw);
-  if (
-    /\beconnrefused\b/i.test(raw) ||
-    lower.includes("connection refused") ||
-    lower.includes("actively refused")
-  ) {
-    return arxiUserCopy(
-      "LLM request failed: connection refused by the provider endpoint.",
-      "Сервис отклонил соединение. Попробуй чуть позже.",
-    );
-  }
-  if (
-    /\beconnreset\b|\beconnaborted\b|\benetreset\b|\bepipe\b/i.test(raw) ||
-    lower.includes("socket hang up") ||
-    lower.includes("connection reset") ||
-    lower.includes("connection aborted")
-  ) {
-    return arxiUserCopy(
-      "LLM request failed: network connection was interrupted.",
-      "Соединение прервалось до завершения ответа.",
-    );
-  }
-  if (
-    /\benotfound\b|\beai_again\b/i.test(raw) ||
-    lower.includes("getaddrinfo") ||
-    lower.includes("no such host") ||
-    lower.includes("dns")
-  ) {
-    return arxiUserCopy(
-      "LLM request failed: DNS lookup for the provider endpoint failed.",
-      "Не удалось найти адрес сервиса.",
-    );
-  }
-  if (
-    /\benetunreach\b|\behostunreach\b|\behostdown\b/i.test(raw) ||
-    lower.includes("network is unreachable") ||
-    lower.includes("host is unreachable")
-  ) {
-    return arxiUserCopy(
-      "LLM request failed: the provider endpoint is unreachable from this host.",
-      "Сервис сейчас недоступен.",
-    );
-  }
-  if (
-    lower.includes("fetch failed") ||
-    lower.includes("connection error") ||
-    lower.includes("network request failed")
-  ) {
-    return arxiUserCopy(
-      "LLM request failed: network connection error.",
-      "Не удалось соединиться с сервисом.",
-    );
-  }
-  if (raw.includes("网络错误") || raw.includes("网络异常") || raw.includes("连接错误")) {
-    return arxiUserCopy(
-      "LLM request failed: provider reported a network error.",
-      "Сервис сообщил об ошибке соединения.",
-    );
-  }
-  return undefined;
-}
-
 export function formatDiskSpaceErrorCopy(raw: string): string | undefined {
   const lower = normalizeLowercaseStringOrEmpty(raw);
   return /\benospc\b/i.test(raw) ||
@@ -339,7 +254,7 @@ export function isLikelyHttpErrorText(raw: string): boolean {
   return Boolean(
     status &&
     status.code >= 400 &&
-    (classifyFailoverReason(raw, { providerPlugin: null }) !== null ||
+    (classifyFailoverReasonCore(raw) !== null ||
       classifyProviderRequestFacets({ status: status.code, message: raw }) !== null),
   );
 }
@@ -374,6 +289,10 @@ export function renderSanitizedUserFacingText(
       ? formatRawAssistantErrorForUi(trimmed)
       : sanitized;
   }
+  const commandError = formatCommandErrorForUser(trimmed);
+  if (commandError) {
+    return commandError;
+  }
   const execDenied = formatExecDeniedUserMessage(trimmed);
   if (execDenied) {
     return execDenied;
@@ -388,7 +307,7 @@ export function renderSanitizedUserFacingText(
       "Не удалось обработать порядок сообщений. Попробуй ещё раз; если повторится — /new.",
     );
   }
-  const reason = classifyFailoverReason(trimmed, { providerPlugin: null });
+  const reason = classifyFailoverReasonCore(trimmed);
   const status = extractLeadingHttpStatus(trimmed);
   const rawPayload = isRawApiErrorPayload(trimmed);
   if (
@@ -402,6 +321,19 @@ export function renderSanitizedUserFacingText(
   }
   if (reason === "billing" || reason === "rate_limit" || reason === "overloaded") {
     return renderFailoverBaseCopy(reason, { raw: trimmed }) ?? trimmed;
+  }
+  // Reason-level provider copy is surface-independent: the channel reply path renders
+  // it from failover facts, while session transcripts, run status, and the TUI read
+  // this renderer. Facets stay null so the rate-limit/overload branches above keep
+  // provider retry detail; labeled statuses ("unexpected status 401 ...") never carry
+  // a leading code, so the status is re-read from the full error grammar here.
+  const providerRequestCopy = renderProviderRequestFailureCopy({
+    classification: reason ? { kind: "reason", reason } : null,
+    facet: null,
+    status: extractErrorHttpStatus(trimmed)?.code,
+  });
+  if (providerRequestCopy) {
+    return providerRequestCopy;
   }
   if (isGenericProviderInternalError(trimmed)) {
     return formatRawAssistantErrorForUi(trimmed);
@@ -457,6 +389,19 @@ const PROVIDER_INTERNAL_ERROR_USER_MESSAGE = arxiUserCopy(
   "⚠️ The model provider returned a temporary internal error before replying. Try again in a moment, or switch to another model if it keeps happening.",
   "Сервис временно не отвечает. Попробуй чуть позже.",
 );
+
+const HEARTBEAT_FAILURE_LEAD = "⚠️ Heartbeat check failed before it could produce an update";
+const HEARTBEAT_FAILURE_TAIL = "The main chat session remains available.";
+
+/** `reason` is the failure-reply owner's already sanitized and capped detail. */
+export function renderHeartbeatRunFailureCopy(reason?: string): string {
+  if (!reason || isArxiConversation()) {
+    return HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT;
+  }
+  const terminator = /[.!?]$/u.test(reason) ? "" : ".";
+  return `${HEARTBEAT_FAILURE_LEAD}: ${reason}${terminator} ${HEARTBEAT_FAILURE_TAIL}`;
+}
+
 const PROVIDER_AUTHENTICATION_ERROR_USER_MESSAGE = `⚠️ ${AUTH_INVALID_TOKEN_USER_TEXT}`;
 const PROVIDER_MODEL_UNAVAILABLE_USER_MESSAGE = arxiUserCopy(
   "⚠️ The configured model is unavailable from the provider — it may have been renamed, retired, or is not offered on this account. This needs a config update (agents.defaults.model); retrying or starting a new session won't fix it.",
@@ -649,14 +594,15 @@ export function renderMissingApiKeyReplyCopy(params?: {
   provider: string;
   providerGuidance?: boolean;
 }): string | null {
-  if (isArxiConversation())
+  if (isArxiConversation()) {
     return "Подключение к ChatGPT недоступно. Подключи подписку заново в настройках.";
+  }
   const provider = params?.provider.trim().toLowerCase();
   if (!provider) {
     return null;
   }
   if (provider === "openai" && params?.providerGuidance) {
-    return "⚠️ Missing API key for OpenAI on the gateway. Use `openai/gpt-5.6-sol` with the OpenAI OAuth profile, or set `OPENAI_API_KEY` for direct OpenAI API-key runs.";
+    return "⚠️ Missing API key for OpenAI on the gateway. Use `openai/gpt-6-astra` with the OpenAI OAuth profile, or set `OPENAI_API_KEY` for direct OpenAI API-key runs.";
   }
   if (provider === "openai") {
     return '⚠️ Missing API key for provider "openai". Run `openclaw doctor --fix` to repair stale OpenAI model/session routes, restart the gateway if doctor asks, then try again. If doctor has nothing to repair or the error persists, re-auth with `openclaw models auth login --provider openai` or run `openclaw configure`.';
@@ -782,8 +728,9 @@ const AUTH_PROFILE_REASON_POLICY = {
 } satisfies Record<FailoverReason, AuthProfileReasonPolicy>;
 
 export function renderAuthProfileFailoverCopy(params: AuthProfileFailureCopyParams): string {
-  if (isArxiConversation())
+  if (isArxiConversation()) {
     return renderFailoverBaseCopy(params.reason) ?? GENERIC_EXTERNAL_RUN_FAILURE_TEXT;
+  }
   const policy = AUTH_PROFILE_REASON_POLICY[params.reason];
   const description = params.allInCooldown
     ? AUTH_PROFILE_COOLDOWN_COPY[params.reason](params.provider)

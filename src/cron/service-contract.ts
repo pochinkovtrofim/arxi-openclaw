@@ -49,7 +49,11 @@ export interface CronServiceContract {
   /** Synchronous snapshot read only after suspension has paused scheduling. */
   getSuspendWakeSnapshot(): CronSuspendWakeSnapshot;
   list(opts?: { includeDisabled?: boolean }): Promise<CronListResult>;
-  listPage(opts?: CronListPageOptions): Promise<CronListPageResult>;
+  /** The in-process predicate runs under the store lock and must not mutate borrowed jobs. */
+  listPage(
+    opts?: CronListPageOptions,
+    matchesJob?: (job: CronJob) => boolean,
+  ): Promise<CronListPageResult>;
   add(input: CronAddInput, opts?: CronAddOptions): Promise<CronAddResult>;
   update(id: string, patch: CronUpdateInput, opts?: CronUpdateOptions): Promise<CronUpdateResult>;
   updateWithPrecondition(

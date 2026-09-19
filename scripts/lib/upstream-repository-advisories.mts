@@ -107,6 +107,27 @@ function githubRange(value: unknown) {
   }
 }
 
+function patchedUpperBound(range: semver.Comparator[], value: unknown) {
+  // Some publishers leave an open vulnerable lower bound alongside a patched
+  // suffix. Only this unambiguous shape supplies the missing upper bound; prose,
+  // unions, partial versions, prereleases, and already-bounded ranges do not.
+  const lower = range[0];
+  if (
+    range.length !== 1 ||
+    !lower ||
+    ![">", ">="].includes(lower.operator) ||
+    typeof value !== "string"
+  ) {
+    return null;
+  }
+  const match = /^>=\s*(\d+\.\d+\.\d+)$/u.exec(value);
+  const version = match?.[1];
+  if (!version || !semver.valid(version) || !semver.gt(version, lower.semver)) {
+    return null;
+  }
+  return new semver.Comparator(`<${version}`);
+}
+
 function nextCursor(
   link: string | null,
   repository: string,
@@ -200,9 +221,12 @@ function collectRepositoryMatches(
       if (affected.length === 0) {
         continue;
       }
+      // Keep the reviewed lookup even if the publisher's cap removes every match.
+      const upper = patchedUpperBound(range, vulnerability.patched_versions);
       const match = matches.get(name) ?? { ranges: new Set<string>(), versions: new Set<string>() };
       match.ranges.add(range.map((bound) => bound.value).join(" "));
-      for (const version of affected) {
+      // Evidence retains the publisher range; only installed-version matching is capped.
+      for (const version of affected.filter((candidate) => !upper || upper.test(candidate))) {
         match.versions.add(version);
       }
       matches.set(name, match);
@@ -307,9 +331,33 @@ export async function fetchPublishedRepositoryAdvisories({
               (response.status === 429 ||
                 (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0"));
             const reason = rateLimited ? "rate-limited" : "request-failed";
-            // Secondary limits can return 403 with primary quota remaining. Do not
-            // continue through repositories after a throttle or credential denial.
-            if (github && [401, 403, 429].includes(response.status)) {
+            let resourceDenied = false;
+            if (
+              github &&
+              response.status === 403 &&
+              !rateLimited &&
+              !response.headers.has("retry-after")
+            ) {
+              try {
+                const error: unknown = JSON.parse(
+                  await readBoundedResponseText(
+                    response,
+                    "GitHub advisory denial",
+                    MAX_RESPONSE_BYTES,
+                    { signal, timeoutPromise },
+                  ),
+                );
+                // GitHub documents these as resource-scoped permission failures, not throttling.
+                // Keep that advisory unresolved without poisoning unrelated reviewed requests.
+                resourceDenied =
+                  isRecord(error) &&
+                  (error.message === "Resource not accessible by integration" ||
+                    error.message === "Resource not accessible by personal access token");
+              } catch {
+                // Unknown or unreadable 403 responses may be secondary limits: stop globally.
+              }
+            }
+            if (github && [401, 403, 429].includes(response.status) && !resourceDenied) {
               githubFailure = reason;
             }
             void response.body?.cancel().catch(() => undefined);
@@ -460,7 +508,7 @@ export async function fetchPublishedRepositoryAdvisories({
     throwOnError: true,
     tasks: advisories.map((advisory) => async () => {
       // Repository ranges can remain stale after GitHub reviews the same GHSA.
-      // Only exact reviewed package ranges may replace them; missing proof retains the blocker.
+      // Exact reviewed package ranges override the parsed publisher range; missing proof retains it.
       const response = await request(`${GITHUB_API}/advisories/${advisory.id}`, "github");
       const ranges = response.ok ? reviewedPackageRanges(response.value.data, advisory) : null;
       if (!ranges) {
@@ -468,7 +516,7 @@ export async function fetchPublishedRepositoryAdvisories({
           subject: `${advisory.packageName}#${advisory.id}`,
           reason: response.ok ? "invalid-advisory" : response.error,
         });
-        return advisory;
+        return advisory.matchedVersions.length > 0 ? advisory : null;
       }
       const reviewedRanges = ranges.map((range) => range.map((bound) => bound.value).join(" "));
       const matchedVersions = [...new Set(payload[advisory.packageName] ?? [])]

@@ -15,7 +15,9 @@ import type { TimedCronRunOutcome } from "./timer-execution-timeout.js";
 const databases: DatabaseSync[] = [];
 
 afterEach(() => {
-  for (const database of databases.splice(0)) database.close();
+  for (const connection of databases.splice(0)) {
+    connection.close();
+  }
 });
 
 function database(): DatabaseSync {
@@ -52,7 +54,9 @@ describe("managed Flow Automation obligation repair", () => {
       state: {},
     } as CronJob;
     const scheduleIdentity = tryCronScheduleIdentity(job);
-    if (!scheduleIdentity) throw new Error("expected valid schedule identity");
+    if (!scheduleIdentity) {
+      throw new Error("expected valid schedule identity");
+    }
     const storeKey = cronStoreKey(storePath);
     for (const [flowId, revision, scheduledAtMs] of [
       ["flow-a", 3, 1_000],

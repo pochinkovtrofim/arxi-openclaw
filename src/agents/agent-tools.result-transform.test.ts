@@ -4,7 +4,10 @@ import { createMockPluginRegistry } from "../plugins/hooks.test-helpers.js";
 import { bindAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";
 import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.wrapper.js";
 import { consumeMcpCodeModeGuestResult, projectMcpCallToolResult } from "./mcp-content.js";
-import { consumeToolEffectReceipt, registerToolEffectReceipt } from "./tool-effect-receipt.js";
+import {
+  attachInternalToolResultProvenance,
+  getInternalToolResultProvenance,
+} from "./runtime/internal-hooks.js";
 import type { AnyAgentTool } from "./tools/common.js";
 
 afterEach(() => initializeGlobalHookRunner(createMockPluginRegistry([])));
@@ -15,7 +18,7 @@ describe("terminal result transformation boundary", () => {
     description: "read",
     parameters: { type: "object", properties: {} } as never,
     execute: vi.fn(async () => ({
-      content: [{ type: "text", text: "original" }],
+      content: [{ type: "text" as const, text: "original" }],
       details: { provenance: "retained" },
     })),
   });
@@ -49,7 +52,9 @@ describe("terminal result transformation boundary", () => {
   it("rejects a transformed result after source authority is revoked while awaiting", async () => {
     let active = true;
     const source = bindAgentToolSourceExecutionGuard(makeTool(), () => {
-      if (!active) throw new Error("revoked");
+      if (!active) {
+        throw new Error("revoked");
+      }
     });
     initializeGlobalHookRunner(
       createMockPluginRegistry([
@@ -77,7 +82,7 @@ describe("terminal result transformation boundary", () => {
       ],
       structuredContent: { payload: { id: "message-1" } },
     };
-    const original = registerToolEffectReceipt(projectMcpCallToolResult(raw), {
+    const original = attachInternalToolResultProvenance(projectMcpCallToolResult(raw), {
       state: "read_completed",
     });
     const source = {
@@ -90,9 +95,10 @@ describe("terminal result transformation boundary", () => {
       createMockPluginRegistry([
         {
           hookName: "tool_result_transform",
-          handler: async (event) => ({
-            result: { ...event.result, content: [...event.result.content, advice] },
-          }),
+          handler: async (event) => {
+            const { result } = event as { result: Awaited<ReturnType<AnyAgentTool["execute"]>> };
+            return { result: { ...result, content: [...result.content, advice] } };
+          },
         },
       ]),
     );
@@ -108,7 +114,7 @@ describe("terminal result transformation boundary", () => {
       content: [...raw.content, advice],
     });
     expect(consumeMcpCodeModeGuestResult(result)).toBeUndefined();
-    expect(consumeToolEffectReceipt(result)).toEqual({ state: "read_completed" });
-    expect(consumeToolEffectReceipt(original)).toBeUndefined();
+    expect(getInternalToolResultProvenance(result)).toEqual({ state: "read_completed" });
+    expect(getInternalToolResultProvenance(original)).toBe(getInternalToolResultProvenance(result));
   });
 });

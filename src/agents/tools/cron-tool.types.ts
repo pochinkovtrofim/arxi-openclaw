@@ -2,7 +2,7 @@
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { CronRuntimeAuthority } from "../../cron/runtime-authority.js";
 import type { CronScheduledMcpToolBinding } from "../../cron/scheduled-tool-policy.js";
-import type { CronCreatorAuthorityGrant } from "../../gateway/cron-creator-authority-grant.js";
+import type { CronCreatorAuthorityGrant } from "../../gateway/cron-creator-authority-grant.types.js";
 import type { DeliveryContext } from "../../utils/delivery-context.shared.js";
 import type { callGatewayTool } from "./gateway.js";
 
@@ -73,11 +73,6 @@ export type CronToolOptions = {
   creatorAuthorityUnavailableReason?: "queued-local-operator-configured-mcp";
   selfRemoveOnlyJobId?: string;
   runId?: string;
-};
-
-export type CronToolCallerScope = {
-  kind: "agentTool";
-  agentId: string;
 };
 
 export type GatewayToolCaller = typeof callGatewayTool;

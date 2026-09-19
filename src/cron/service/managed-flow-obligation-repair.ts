@@ -54,9 +54,7 @@ export function repairManagedFlowAutomationObligations(state: CronServiceState):
           );
           continue;
         }
-        const currentReceipts = receipts.filter(
-          (entry) => entry.cronScheduleIdentity === scheduleIdentity,
-        );
+        const earliest = receipts.find((entry) => entry.cronScheduleIdentity === scheduleIdentity);
         for (const stale of receipts) {
           if (stale.cronScheduleIdentity === scheduleIdentity) {
             continue;
@@ -68,7 +66,6 @@ export function repairManagedFlowAutomationObligations(state: CronServiceState):
             to: "blocked",
           });
         }
-        const earliest = currentReceipts[0];
         if (!earliest) {
           continue;
         }

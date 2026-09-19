@@ -29,7 +29,7 @@ const MCP_CONNECTION_RESOLVER_TIMEOUT_MS = 10_000;
  * How long a full-set requester runtime may skip re-resolve while active.
  * Revocation/rotation takes effect within this window even for continuously active requesters.
  */
-const MCP_CONNECTION_REVALIDATE_MS = 60 * 1000;
+export const MCP_CONNECTION_REVALIDATE_MS = 60 * 1000;
 
 const MCP_CONNECTION_RESOLVER_TEST_STATE_KEY = Symbol.for(
   "openclaw.mcpServerConnectionResolverTestState",
@@ -134,9 +134,9 @@ function listMcpServerConnectionResolversByServerName(): Map<
   string,
   McpServerConnectionResolverEntry
 > {
-  const testOverrides = getTestState().resolversByServerName;
-  if (testOverrides) {
-    return new Map([...testOverrides.entries()].toSorted(([a], [b]) => a.localeCompare(b)));
+  const override = getTestState().resolversByServerName;
+  if (override) {
+    return new Map(override);
   }
   const byName = new Map<string, McpServerConnectionResolverEntry>();
   const registry =

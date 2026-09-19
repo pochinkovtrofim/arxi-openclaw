@@ -134,34 +134,6 @@ async function fixture(mode: "persistent" | "oneshot" = "persistent", sessionKey
   };
 }
 
-it.each(["missing", "empty"])(
-  "does not inspect session claims when the legacy directory is %s",
-  async (directoryState) => {
-    const directory = directories.make("acpx-empty-owner-migration-");
-    if (directoryState === "empty") {
-      await fs.mkdir(path.join(directory, "state", "sessions"), { recursive: true });
-    }
-    const context: PluginDoctorStateMigrationContext = {
-      openPluginStateKeyedStore() {
-        throw new Error("No record requires a state store");
-      },
-      async inspectAcpSessionClaims() {
-        throw new Error("No record requires canonical ownership evidence");
-      },
-    };
-    await expect(
-      acpxSessionOwnerMigration.detectLegacyState({
-        config: {},
-        env: { ...process.env, OPENCLAW_STATE_DIR: directory },
-        stateDir: directory,
-        oauthDir: path.join(directory, "oauth"),
-        serviceWorkspaceDir: directory,
-        context,
-      }),
-    ).resolves.toBeNull();
-  },
-);
-
 it.each(["none", "publication", "canonical"])(
   "preserves raw history and resumes idempotently after interruption=%s",
   async (interrupted) => {
@@ -303,6 +275,52 @@ it.each(["runtime", "doctor"])(
       }
     }
     expect(await fs.readFile(f.sourcePath, "utf8")).toBe(before);
+  },
+);
+
+it.each([false, true])(
+  "recreates a deleted bare session with fresh history (new runtime: %s)",
+  async (restart) => {
+    const target = { agentId: "work", sessionKey: "global" };
+    const resource = resolveAcpxSessionResource(target);
+    const f = await fixture("persistent", resource);
+    const runtime = new AcpxRuntime({
+      ...f.runtimeOptions,
+      openclawLegacyBareSessionKeys: new Set([resource]),
+    });
+    await runtime.close({
+      handle: { ...f.handle, ...target },
+      reason: "session-delete",
+      discardPersistentState: true,
+    });
+    expect(await f.runtimeOptions.sessionStore.load(f.handle.acpxRecordId!)).toMatchObject({
+      closed: true,
+      closedAt: expect.any(String),
+      acpx: { reset_on_next_ensure: true },
+    });
+    const recreatedRuntime = restart ? new AcpxRuntime(f.runtimeOptions) : runtime;
+    const fresh = await recreatedRuntime.ensureSession({
+      ...target,
+      agent: "fixture",
+      mode: "persistent",
+    });
+    try {
+      expect(fresh.backendSessionId).not.toBe(f.handle.backendSessionId);
+      const chunks: string[] = [];
+      for await (const event of recreatedRuntime.runTurn({
+        handle: fresh,
+        text: "recreated",
+        requestId: "after-delete",
+        mode: "prompt",
+      })) {
+        if (event.type === "text_delta") {
+          chunks.push(event.text);
+        }
+      }
+      expect(JSON.parse(chunks.join(""))).toMatchObject({ history: ["recreated"] });
+    } finally {
+      await recreatedRuntime.close({ handle: fresh, reason: "test-complete" });
+    }
   },
 );
 

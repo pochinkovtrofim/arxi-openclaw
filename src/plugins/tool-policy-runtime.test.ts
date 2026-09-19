@@ -29,7 +29,9 @@ function fixture() {
 describe("prepared runtime tool policy adoption", () => {
   it("keeps an admitted channel conversation gate and its completion hook", async () => {
     const { runtime, target } = fixture();
-    for (const registry of [runtime, target]) registry.plugins[0]!.origin = "config";
+    for (const registry of [runtime, target]) {
+      registry.plugins[0]!.origin = "config";
+    }
     const before = vi.fn(async () => ({ outcome: "block" as const, reason: "paused" }));
     const after = vi.fn(async () => undefined);
     runtime.typedHooks.push(
@@ -54,7 +56,9 @@ describe("prepared runtime tool policy adoption", () => {
     "does not import conversation hooks without a current grant (%s)",
     (grant) => {
       const { runtime, target } = fixture();
-      for (const registry of [runtime, target]) registry.plugins[0]!.origin = "config";
+      for (const registry of [runtime, target]) {
+        registry.plugins[0]!.origin = "config";
+      }
       runtime.typedHooks.push({
         pluginId: "approval",
         hookName: "before_agent_run",
@@ -102,9 +106,13 @@ describe("prepared runtime tool policy adoption", () => {
     "does not import authority for a %s owner",
     (reason) => {
       const { runtime, target } = fixture();
-      if (reason === "missing") target.plugins = [];
-      else if (reason === "shadow") target.plugins[0]!.source = "/workspace/shadow/index.js";
-      else target.plugins[0]!.status = reason as "disabled" | "error";
+      if (reason === "missing") {
+        target.plugins = [];
+      } else if (reason === "shadow") {
+        target.plugins[0]!.source = "/workspace/shadow/index.js";
+      } else {
+        target.plugins[0]!.status = reason as "disabled" | "error";
+      }
       expect(adoptRuntimeToolPolicyRegistrations(target, runtime)).toBe(target);
     },
   );

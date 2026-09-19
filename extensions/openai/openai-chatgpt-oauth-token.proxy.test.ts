@@ -42,6 +42,7 @@ describe.each(["exchange", "refresh"] as const)("OpenAI token %s proxy routing",
     { name: "ALL_PROXY alone", variable: "ALL_PROXY", proxied: false },
     { name: "empty lowercase override", variable: "HTTPS_PROXY", lowerEmpty: true, proxied: false },
     { name: "managed proxy", variable: "HTTPS_PROXY", managed: true, proxied: true },
+    { name: "retired owner", variable: "HTTPS_PROXY", retired: true, proxied: false },
     { name: "aborted caller", variable: "HTTPS_PROXY", aborted: true, proxied: false },
   ])("preserves $name behavior", async (scenario) => {
     for (const key of [
@@ -88,7 +89,12 @@ describe.each(["exchange", "refresh"] as const)("OpenAI token %s proxy routing",
     if (scenario.aborted) {
       controller.abort();
     }
-    const options = { signal: controller.signal, timeoutMs: 1000 };
+    const assertCurrent = vi.fn(() => {
+      if (scenario.retired) {
+        throw new Error("owner retired");
+      }
+    });
+    const options = { signal: controller.signal, assertCurrent, timeoutMs: 1000 };
 
     try {
       const result =
@@ -101,12 +107,22 @@ describe.each(["exchange", "refresh"] as const)("OpenAI token %s proxy routing",
             )
           : await refreshOpenAIAccessToken("synthetic-refresh", options);
 
-      expect(result).toMatchObject({ type: "failed" });
+      expect(result).toMatchObject({ type: "failed", operation });
       expect(destinations).toEqual(scenario.proxied ? ["auth.openai.com:443"] : []);
-      if (!scenario.aborted && !scenario.proxied) {
-        expect(result).toMatchObject({ message: expect.stringContaining("direct DNS selected") });
+      if (scenario.aborted) {
+        expect(result).toMatchObject({ cancelled: true, summary: "Login cancelled" });
+        expect(assertCurrent).not.toHaveBeenCalled();
+      } else if (scenario.retired) {
+        expect(result).toMatchObject({ summary: expect.stringContaining("owner retired") });
+        expect(assertCurrent).toHaveBeenCalledOnce();
+      } else if (scenario.proxied) {
+        expect(assertCurrent).toHaveBeenCalledOnce();
+      } else {
+        expect(result).toMatchObject({ summary: expect.stringContaining("direct DNS selected") });
       }
-      expect(directLookup).toHaveBeenCalledTimes(scenario.proxied || scenario.aborted ? 0 : 1);
+      expect(directLookup).toHaveBeenCalledTimes(
+        scenario.proxied || scenario.retired || scenario.aborted ? 0 : 1,
+      );
     } finally {
       for (const socket of sockets) {
         socket.destroy();

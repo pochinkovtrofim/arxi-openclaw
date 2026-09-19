@@ -12,7 +12,9 @@ import {
 const databases: DatabaseSync[] = [];
 
 afterEach(() => {
-  for (const database of databases.splice(0)) database.close();
+  for (const connection of databases.splice(0)) {
+    connection.close();
+  }
 });
 
 function database(options: { obligationSchema?: boolean } = {}): DatabaseSync {
@@ -25,7 +27,9 @@ function database(options: { obligationSchema?: boolean } = {}): DatabaseSync {
       ended_at INTEGER, cancel_requested_at INTEGER
     ) STRICT;
   `);
-  if (options.obligationSchema !== false) ensureTaskFlowAutomationObligationSchema(db);
+  if (options.obligationSchema !== false) {
+    ensureTaskFlowAutomationObligationSchema(db);
+  }
   return db;
 }
 

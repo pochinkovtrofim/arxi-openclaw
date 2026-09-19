@@ -59,9 +59,10 @@ export type DocumentExtractionRequest = {
   /** Owning input pipeline's output ceiling and conversion deadline. */
   maxChars?: number;
   timeoutMs?: number;
-  signal?: AbortSignal;
   password?: string;
   pageNumbers?: number[];
+  /** Cancels queued extraction and stops active work when supported by the extractor. */
+  signal?: AbortSignal;
   onImageExtractionError?: (error: unknown) => void;
 };
 

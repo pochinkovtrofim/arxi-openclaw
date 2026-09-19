@@ -53,7 +53,7 @@ describe("Codex app-server diagnostic trace context", () => {
     params.config = { diagnostics: { enabled } } as never;
 
     const run = runWithDiagnosticTraceContext(diagnosticTrace, () =>
-      runCodexAppServerAttempt(params, { turnCompletionIdleTimeoutMs: 5 }),
+      runCodexAppServerAttempt(params),
     );
     await harness.waitForMethod("turn/start");
     await run;

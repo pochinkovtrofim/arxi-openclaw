@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
  * timeout classification, and owner-provided approval outcomes.
  */
 import { addTimerTimeoutGraceMs } from "@openclaw/normalization-core/number-coercion";
+import { getRuntimeConfig } from "../config/config.js";
 import { GatewayClientRequestError } from "../gateway/client.js";
 import { sanitizeApprovalScope } from "../infra/approval-scope.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
@@ -120,9 +121,13 @@ function notifyPluginApprovalResolution(
 }
 
 function freezeApprovedParams(value: unknown, seen = new WeakSet<object>()): unknown {
-  if (!value || typeof value !== "object" || seen.has(value)) return value;
+  if (!value || typeof value !== "object" || seen.has(value)) {
+    return value;
+  }
   seen.add(value);
-  for (const child of Object.values(value)) freezeApprovedParams(child, seen);
+  for (const child of Object.values(value)) {
+    freezeApprovedParams(child, seen);
+  }
   return Object.freeze(value);
 }
 
@@ -134,7 +139,9 @@ function pendingApprovedExecution(params: {
   toolCallId?: string;
   params: unknown;
 }): PendingApprovedPluginToolExecution | undefined {
-  if (typeof params.approval.beforeApprovedExecution !== "function") return undefined;
+  if (typeof params.approval.beforeApprovedExecution !== "function") {
+    return undefined;
+  }
   return {
     callback: params.approval.beforeApprovedExecution,
     approved: Object.freeze({
@@ -545,7 +552,9 @@ export async function requestDeferredPluginToolApproval(params: {
     baseParams: deferred.baseParams,
     overrideParams: deferred.overrideParams,
   });
-  if (outcome.blocked || !outcome.pendingApprovedExecution) return outcome;
+  if (outcome.blocked || !outcome.pendingApprovedExecution) {
+    return outcome;
+  }
   return (
     (await finalizeApprovedPluginToolExecution({
       pending: outcome.pendingApprovedExecution,
@@ -636,10 +645,14 @@ export async function resolveSkillWorkshopApprovalForFinalParams(params: {
   ctx?: HookContext;
   signal?: AbortSignal;
 }): Promise<HookOutcome | undefined> {
+  if (params.toolName !== "skill_workshop") {
+    return undefined;
+  }
   const result = await resolveSkillWorkshopToolApproval({
     toolName: params.toolName,
     toolParams: isPlainObject(params.params) ? params.params : {},
-    ...(params.ctx?.config ? { config: params.ctx.config } : {}),
+    config: params.ctx?.config ?? getRuntimeConfig(),
+    ...(params.ctx?.agentId ? { agentId: params.ctx.agentId } : {}),
     ...(params.ctx?.workspaceDir ? { workspaceDir: params.ctx.workspaceDir } : {}),
   });
   return await resolveBeforeToolCallApprovalOutcome({

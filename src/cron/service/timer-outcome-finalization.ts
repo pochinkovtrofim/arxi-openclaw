@@ -4,6 +4,8 @@ import {
   CronRunReceiptRevisionError,
   releaseLocalCronRunReceiptOwnership,
 } from "../store/run-receipt-store.js";
+import { isCronRunTriggerStateRetiredInDatabase } from "../store/run-receipt-trigger-state.js";
+import type { CronStoreTransactionHooks } from "../store/transaction-hooks.types.js";
 import type { CronJob } from "../types.js";
 import { locked } from "./locked.js";
 import { suspendConsumedManagedFlowAutomationObligations } from "./managed-flow-obligation-repair.js";
@@ -150,19 +152,15 @@ export async function finalizeCompletedCronRunOutcomes(
             },
           }),
         );
-      const transactionHooks =
+      const transactionHooks: CronStoreTransactionHooks | undefined =
         receiptHooks.length > 0
           ? {
-              beforeWrite: (
-                database: Parameters<NonNullable<(typeof receiptHooks)[number]["beforeWrite"]>>[0],
-              ) => {
+              beforeWrite: (database) => {
                 for (const hooks of receiptHooks) {
                   hooks.beforeWrite?.(database);
                 }
               },
-              afterWrite: (
-                database: Parameters<NonNullable<(typeof receiptHooks)[number]["afterWrite"]>>[0],
-              ) => {
+              afterWrite: (database) => {
                 for (const hooks of receiptHooks) {
                   hooks.afterWrite?.(database);
                 }
@@ -199,6 +197,9 @@ export async function finalizeCompletedCronRunOutcomes(
               applyOutcomeToAuthoritativeJob(state, job, outcome, {
                 deferredNotifications: postPersistNotifications,
                 emit: false,
+                triggerStateRetired:
+                  outcome.runReceipt &&
+                  isCronRunTriggerStateRetiredInDatabase({ database, handle: outcome.runReceipt }),
               })
             ) {
               removedJobs.push(job);

@@ -44,7 +44,9 @@ beforeEach(async () => {
   };
   await saveCronJobsStore(storePath, { version: 1, jobs: [job] });
   const identity = tryCronScheduleIdentity(job);
-  if (!identity) throw new Error("expected valid schedule");
+  if (!identity) {
+    throw new Error("expected valid schedule");
+  }
   claimAgentRunContext(runId, {
     cronRunsByJobId: new Map([
       [
@@ -159,7 +161,9 @@ describe("current Automation atomic managed Flow contract", () => {
     });
     expect(terminal.applied).toBe(true);
     expect(receipts()).toHaveLength(0);
-    if (!terminal.applied) throw new Error("expected finish");
+    if (!terminal.applied) {
+      throw new Error("expected finish");
+    }
     expect(() => mutate(terminal.flow.revision)).toThrow();
   });
 });

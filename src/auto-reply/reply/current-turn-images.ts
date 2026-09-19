@@ -12,6 +12,7 @@ import {
   stripExtractedFileImageMetadata,
   type ExtractedFileImage,
 } from "../../media-understanding/extracted-file-images.js";
+import { normalizeMediaFacts } from "../../media/media-facts.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { RuntimeMsgContext as MsgContext } from "../templating.js";
 import {
@@ -120,7 +121,15 @@ export async function resolveCurrentTurnImages(params: {
     });
   }
 
-  const currentImageAttachments = normalizeAttachments(params.ctx).filter(isImageAttachment);
+  const hydrationSuppressedIndexes = new Set(
+    normalizeMediaFacts(params.ctx.media).flatMap((fact, index) =>
+      fact.hydrationSuppressed === true ? [index] : [],
+    ),
+  );
+  const currentImageAttachments = normalizeAttachments(params.ctx).filter(
+    (attachment) =>
+      isImageAttachment(attachment) && !hydrationSuppressedIndexes.has(attachment.index),
+  );
   if (currentImageAttachments.length === 0) {
     return resolveMergedTurnImages(entries);
   }
@@ -140,13 +149,11 @@ export async function resolveCurrentTurnImages(params: {
       includeRecentHistoryImages: false,
       includeAttachmentIndexes: true,
     });
-    const images = resolved.attachments.map(
-      (attachment): ImageContent => ({
-        type: "image",
-        data: attachment.data,
-        mimeType: attachment.mediaType,
-      }),
-    );
+    const images = resolved.attachments.map((attachment): ImageContent => ({
+      type: "image",
+      data: attachment.data,
+      mimeType: attachment.mediaType,
+    }));
     const resolvedIndexes = resolved.attachmentIndexes ?? [];
     if (images.length < undescribedImageAttachments.length) {
       logVerbose(

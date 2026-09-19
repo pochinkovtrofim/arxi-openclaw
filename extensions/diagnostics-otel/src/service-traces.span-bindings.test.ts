@@ -1,6 +1,6 @@
 import { BasicTracerProvider } from "@opentelemetry/sdk-trace-base";
 import type { DiagnosticSpanBinding } from "openclaw/plugin-sdk/diagnostic-runtime";
-import { afterEach, expect, test } from "vitest";
+import { expect, test } from "vitest";
 import { createDiagnosticsTraceRuntime } from "./service-traces.js";
 
 const diagnostic = {

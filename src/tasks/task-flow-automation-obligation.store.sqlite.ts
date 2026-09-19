@@ -34,14 +34,16 @@ type FlowStateRow = Pick<
 >;
 
 function requireText(value: unknown, label: string, maxLength = MAX_IDENTIFIER_LENGTH): string {
-  if (typeof value !== "string" || !value.trim() || value.length > maxLength)
+  if (typeof value !== "string" || !value.trim() || value.length > maxLength) {
     throw new Error(`Invalid Task Flow Automation obligation ${label}.`);
+  }
   return value;
 }
 function requireDigest(value: unknown): string {
   const digest = requireText(value, "trigger digest", 64);
-  if (!DIGEST_PATTERN.test(digest))
+  if (!DIGEST_PATTERN.test(digest)) {
     throw new Error("Invalid Task Flow Automation obligation trigger digest.");
+  }
   return digest;
 }
 function requireInteger(value: unknown, label: string): number {
@@ -49,13 +51,15 @@ function requireInteger(value: unknown, label: string): number {
     throw new Error(`Invalid Task Flow Automation obligation ${label}.`);
   }
   const number = normalizeSqliteNumber(value);
-  if (number === undefined || !Number.isSafeInteger(number) || number < 0)
+  if (number === undefined || !Number.isSafeInteger(number) || number < 0) {
     throw new Error(`Invalid Task Flow Automation obligation ${label}.`);
+  }
   return number;
 }
 function parsePhase(value: unknown): TaskFlowAutomationObligationPhase {
-  if (typeof value !== "string" || !PHASES.has(value as TaskFlowAutomationObligationPhase))
+  if (typeof value !== "string" || !PHASES.has(value as TaskFlowAutomationObligationPhase)) {
     throw new Error("Invalid Task Flow Automation obligation phase.");
+  }
   return value as TaskFlowAutomationObligationPhase;
 }
 function rowToObligation(row: ObligationRow): TaskFlowAutomationObligation {
@@ -112,8 +116,9 @@ function requireLiveManagedFlow(
     flow.ended_at !== null ||
     flow.cancel_requested_at !== null ||
     isTerminal(flow.status)
-  )
+  ) {
     throw new Error("Task Flow Automation obligation flow is not a live managed controller Flow.");
+  }
 }
 
 /** Must run inside the caller's existing state write transaction with its Flow CAS. */
@@ -171,7 +176,9 @@ export function upsertTaskFlowAutomationObligationInStateTransaction(
       .selectAll()
       .where("flow_id", "=", row.flow_id),
   );
-  if (!saved) throw new Error("Task Flow Automation obligation write was lost.");
+  if (!saved) {
+    throw new Error("Task Flow Automation obligation write was lost.");
+  }
   return rowToObligation(saved);
 }
 
@@ -180,17 +187,23 @@ export function removeTaskFlowAutomationObligationForTerminalFlowInStateTransact
   db: DatabaseSync,
   params: { flowId: string; expectedFlowRevision: number; controllerId: string },
 ): boolean {
-  if (!tableExists(db, "task_flow_automation_obligations")) return false;
+  if (!tableExists(db, "task_flow_automation_obligations")) {
+    return false;
+  }
   const flow = loadFlow(db, params.flowId);
-  if (!flow) return false;
+  if (!flow) {
+    return false;
+  }
   if (
     normalizeSqliteNumber(flow.revision) !== params.expectedFlowRevision ||
     flow.controller_id !== params.controllerId ||
     flow.sync_mode !== "managed"
-  )
+  ) {
     throw new Error("Task Flow Automation obligation terminal flow ownership changed.");
-  if (flow.ended_at === null && !isTerminal(flow.status))
+  }
+  if (flow.ended_at === null && !isTerminal(flow.status)) {
     throw new Error("Task Flow Automation obligation terminal removal requires a terminal flow.");
+  }
   const result = executeSqliteQuerySync(
     db,
     getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
@@ -237,8 +250,12 @@ export function listTaskFlowAutomationObligationsForCronJobFromSqlite(
 ): TaskFlowAutomationObligation[] {
   ensureTaskFlowAutomationObligationSchema(db);
   const phases = params.phases ?? ["bound", "scheduled", "suspended", "blocked"];
-  for (const phase of phases) parsePhase(phase);
-  if (phases.length === 0) return [];
+  for (const phase of phases) {
+    parsePhase(phase);
+  }
+  if (phases.length === 0) {
+    return [];
+  }
   const rows = executeSqliteQuerySync<ObligationRow>(
     db,
     getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
