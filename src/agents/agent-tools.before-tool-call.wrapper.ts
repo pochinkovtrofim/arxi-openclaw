@@ -85,7 +85,12 @@ import {
   normalizeCodeModeExecBeforeHookParams,
   reconcileCodeModeExecBeforeHookParams,
 } from "./code-mode-control-tools.js";
-import { attachInternalToolExecutionPreparer } from "./runtime/internal-hooks.js";
+import { transferTransformedMcpCodeModeGuestResult } from "./mcp-content.js";
+import {
+  attachInternalToolExecutionPreparer,
+  copyInternalToolResultState,
+} from "./runtime/internal-hooks.js";
+import { transferToolEffectReceipt } from "./tool-effect-receipt.js";
 import { buildToolMutationState } from "./tool-mutation.js";
 import { normalizeToolPolicyName } from "./tool-policy.js";
 import {
@@ -593,7 +598,14 @@ export function wrapToolWithBeforeToolCallHook(
           signal?.throwIfAborted();
           runAgentToolSourceExecutionGuard(tool);
           if (transformed?.result && Array.isArray(transformed.result.content)) {
-            result = transformed.result as typeof result;
+            const target = transformed.result as typeof result;
+            if (target !== result) {
+              transferToolEffectReceipt(result, target);
+              result = transferTransformedMcpCodeModeGuestResult(
+                result,
+                copyInternalToolResultState(result, target),
+              ) as typeof result;
+            }
           }
         }
         const durationMs = Date.now() - startedAt;
