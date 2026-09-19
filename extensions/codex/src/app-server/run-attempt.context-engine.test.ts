@@ -26,10 +26,12 @@ import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
 import { shouldEnableCodexAppServerNativeToolSurface } from "./dynamic-tool-build.js";
 import {
   assistantMessage,
+  bindProductionHarnessHostCapabilitiesForTest,
   createParams as createSharedParams,
   createStartedThreadHarness as createSharedStartedThreadHarness,
   runCodexAppServerAttempt as runSharedCodexAppServerAttempt,
   setupRunAttemptTestHooks,
+  seedRunSessionOwnerForTest,
   tempDir,
   threadStartResult,
   turnStartResult,
@@ -349,17 +351,25 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
     ];
 
     await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
+      await seedRunSessionOwnerForTest("session-1", "agent:main:session-1");
+      const closeHost = await bindProductionHarnessHostCapabilitiesForTest(params);
       const run = runCodexAppServerAttempt(params);
-      await harness.waitForMethod("turn/start");
+      await Promise.race([
+        harness.waitForMethod("turn/start"),
+        run.then((result) => {
+          throw new Error(`Attempt ended before turn/start: ${JSON.stringify(result)}`);
+        }),
+      ]);
 
       const request = requireRequestParams(harness, "turn/start");
       const input = requireArray(request.input, "turn/start input");
       expect(
         input.filter((entry) => requireRecord(entry, "turn/start input entry").type === "image"),
       ).toEqual([
-        { type: "image", url: `data:image/png;base64,${currentPhotoBytes.toString("base64")}` },
-        { type: "image", url: `data:image/png;base64,${secondPhotoBytes.toString("base64")}` },
+        // The host projects saved attachments in canonical media order before current input.
         { type: "image", url: `data:image/png;base64,${photoBytes.toString("base64")}` },
+        { type: "image", url: `data:image/png;base64,${secondPhotoBytes.toString("base64")}` },
+        { type: "image", url: `data:image/png;base64,${currentPhotoBytes.toString("base64")}` },
       ]);
       expect(getRequestInputText(harness)).toContain(`media://inbound/${photoName}`);
       expect(getRequestInputText(harness)).toContain(`media://inbound/${secondPhotoName}`);
@@ -367,6 +377,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
 
       await harness.completeTurn();
       await run;
+      closeHost();
     });
   });
 
@@ -380,17 +391,28 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
     await fs.writeFile(path.join(stateDir, "media", "inbound", photoName), photoBytes);
 
     await withEnvAsync({ OPENCLAW_STATE_DIR: stateDir }, async () => {
+      await seedRunSessionOwnerForTest("session-1", "agent:main:session-1");
       // Create the binding through the same state-root, skills-isolation and tool-policy
       // path as the resumed turn. A hand-written binding lacks those fingerprints and is
       // deliberately rotated before resume.
-      const initialHarness = createStartedThreadHarness(async (method) =>
-        method === "thread/start" ? threadStartResult("thread-resumed") : undefined,
+      const initialHarness = createStartedThreadHarness(
+        async (method) =>
+          method === "thread/start" ? threadStartResult("thread-resumed") : undefined,
+        { persistedThreads: [] },
       );
       const initialParams = createParams(sessionFile, workspaceDir);
+      const closeInitialHost = await bindProductionHarnessHostCapabilitiesForTest(initialParams);
       const initialRun = runCodexAppServerAttempt(initialParams);
-      await initialHarness.waitForMethod("turn/start");
+      await Promise.race([
+        initialHarness.waitForMethod("turn/start"),
+        initialRun.then((result) => {
+          throw new Error(`Attempt ended before turn/start: ${JSON.stringify(result)}`);
+        }),
+      ]);
       await initialHarness.completeTurn("completed", "thread-resumed");
       await initialRun;
+      closeInitialHost();
+      await initialHarness.client.closeAndWait();
       const initialCompletedAt = Date.now();
       await vi.waitFor(() => expect(Date.now()).toBeGreaterThan(initialCompletedAt));
 
@@ -413,15 +435,23 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       await expect(readCodexAppServerBinding(sessionFile)).resolves.toMatchObject({
         threadId: "thread-resumed",
       });
-      const harness = createStartedThreadHarness(async (method) =>
-        method === "thread/resume" ? threadStartResult("thread-resumed") : undefined,
+      const harness = createStartedThreadHarness(
+        async (method) =>
+          method === "thread/resume" ? threadStartResult("thread-resumed") : undefined,
+        { persistedThreads: ["thread-resumed"] },
       );
+      const closeHost = await bindProductionHarnessHostCapabilitiesForTest(params);
       const run = runCodexAppServerAttempt(params);
-      await harness.waitForMethod("turn/start");
+      await Promise.race([
+        harness.waitForMethod("turn/start"),
+        run.then((result) => {
+          throw new Error(`Attempt ended before turn/start: ${JSON.stringify(result)}`);
+        }),
+      ]);
       expect(
         harness.requests
           .map((request) => request.method)
-          .filter((method) => method.startsWith("thread/") || method === "turn/start"),
+          .filter((method) => ["thread/start", "thread/resume", "turn/start"].includes(method)),
       ).toEqual(["thread/resume", "turn/start"]);
       const input = requireArray(
         requireRequestParams(harness, "turn/start").input,
@@ -432,19 +462,29 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       ).toEqual([{ type: "image", url: `data:image/png;base64,${photoBytes.toString("base64")}` }]);
       await harness.completeTurn("completed", "thread-resumed");
       await run;
+      closeHost();
+      await harness.client.closeAndWait();
 
-      const noReplayHarness = createStartedThreadHarness(async (method) =>
-        method === "thread/resume" ? threadStartResult("thread-resumed") : undefined,
+      const noReplayHarness = createStartedThreadHarness(
+        async (method) =>
+          method === "thread/resume" ? threadStartResult("thread-resumed") : undefined,
+        { persistedThreads: ["thread-resumed"] },
       );
       const noReplayParams = createParams(sessionFile, workspaceDir);
       noReplayParams.prompt = "следующее сообщение без фотографии";
       noReplayParams.model = { ...noReplayParams.model, input: ["text", "image"] };
+      const closeNoReplayHost = await bindProductionHarnessHostCapabilitiesForTest(noReplayParams);
       const noReplayRun = runCodexAppServerAttempt(noReplayParams);
-      await noReplayHarness.waitForMethod("turn/start");
+      await Promise.race([
+        noReplayHarness.waitForMethod("turn/start"),
+        noReplayRun.then((result) => {
+          throw new Error(`Attempt ended before turn/start: ${JSON.stringify(result)}`);
+        }),
+      ]);
       expect(
         noReplayHarness.requests
           .map((request) => request.method)
-          .filter((method) => method.startsWith("thread/") || method === "turn/start"),
+          .filter((method) => ["thread/start", "thread/resume", "turn/start"].includes(method)),
       ).toEqual(["thread/resume", "turn/start"]);
       const noReplayInput = requireArray(
         requireRequestParams(noReplayHarness, "turn/start").input,
@@ -457,6 +497,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       ).toEqual([]);
       await noReplayHarness.completeTurn("completed", "thread-resumed");
       await noReplayRun;
+      closeNoReplayHost();
     });
   });
 

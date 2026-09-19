@@ -300,22 +300,12 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
             agentId: opts.agentId,
           })
         : undefined;
-      const creatorExecToolTarget = resolveCronCreatorExecToolTarget(opts?.creatorToolAllowlist);
       const callerIdentity =
         callerAgentId && opts?.agentSessionKey?.trim()
           ? {
               agentId: callerAgentId,
               sessionKey: opts.agentSessionKey.trim(),
               turnSourceAccountId: opts.agentAccountId,
-              ...(opts.creatorToolAllowlistCaptureRef?.value?.source === "final-executable-surface"
-                ? {
-                    cronToolsAllowCapture: "final-executable-surface" as const,
-                    cronMcpToolBindings: resolveCronCreatorMcpToolBindings(
-                      opts.creatorToolAllowlist,
-                    ),
-                    ...(creatorExecToolTarget ? { cronExecToolTarget: creatorExecToolTarget } : {}),
-                  }
-                : {}),
               ...(readCronSelfRemoveOnlyJobId(opts)
                 ? { cronSelfManagementJobId: readCronSelfRemoveOnlyJobId(opts) }
                 : {}),
@@ -584,9 +574,27 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
                 }
               }
             }
+            const writePayload = isRecord((job as Record<string, unknown>).payload)
+              ? ((job as Record<string, unknown>).payload as Record<string, unknown>)
+              : undefined;
+            const toolsAllow = Array.isArray(writePayload?.toolsAllow)
+              ? writePayload.toolsAllow.filter(
+                  (entry): entry is string => typeof entry === "string",
+                )
+              : undefined;
+            const writeAuthority =
+              resolvedAuthority ??
+              (creatorToolAllowlistCaptureRef?.value?.source === "final-executable-surface" &&
+              creatorToolAllowlist
+                ? { tools: creatorToolAllowlist, provenance: creatorToolAllowlistCaptureRef.value }
+                : undefined);
+            if (resolvedAuthority && toolsAllow === undefined) {
+              throw new Error("fresh configured MCP cron authority requires a concrete tool cap");
+            }
             return jsonResult(
-              await withCreatorAuthorityProvenance(resolvedAuthority, () =>
-                callGateway("cron.add", gatewayOpts, job),
+              await withCreatorAuthorityProvenance(
+                writeAuthority && toolsAllow ? { ...writeAuthority, toolsAllow } : undefined,
+                () => callGateway("cron.add", gatewayOpts, job),
               ),
             );
           }

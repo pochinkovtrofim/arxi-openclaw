@@ -556,7 +556,6 @@ describe("executeSendAction", () => {
         channelPlugin: plugin,
         channel: "discord",
         params: { to: "channel:123", presentation },
-        runId: "run-presentation-delivery",
         replyKind: "final",
         dryRun: false,
         mirror: {

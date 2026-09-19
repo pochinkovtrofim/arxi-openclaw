@@ -1404,7 +1404,7 @@ describe("runCodexAppServerSideQuestion", () => {
       expect(forkParams?.approvalsReviewer).toBe("auto_review");
       const config = forkParams?.config as Record<string, unknown> | undefined;
       expect(config).not.toHaveProperty("approvals_reviewer");
-      expect(config?.["features.code_mode"]).toBe(true);
+      expect(config?.["features.code_mode"]).toEqual(directCodeModeConfig);
       expect(config?.apps).toEqual({
         _default: {
           enabled: false,

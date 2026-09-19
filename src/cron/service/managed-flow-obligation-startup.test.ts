@@ -31,7 +31,11 @@ function deps(cronEnabled = true) {
   };
 }
 function stored() {
-  return loadCronJobsStoreSync(storePath).jobs[0];
+  const storedJob = loadCronJobsStoreSync(storePath).jobs[0];
+  if (!storedJob) {
+    throw new Error("expected stored cron job");
+  }
+  return storedJob;
 }
 
 beforeEach(async () => {

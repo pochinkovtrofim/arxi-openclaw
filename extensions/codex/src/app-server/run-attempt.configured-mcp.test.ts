@@ -8,6 +8,7 @@ import {
   createPluginMetadataSnapshotFixture,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { flattenCodexDynamicToolFunctions, type CodexDynamicToolSpec } from "./protocol.js";
 import {
   appendOrdinaryDynamicToolFixtures,
   materializeStaticMcpFixture,
@@ -932,6 +933,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
           diagnostics: [],
           evaluated: true,
           staticServerNames: ["bundled", "unannotated"],
+          requesterScopedServerNames: [],
           userStaticServerNames: ["unannotated"],
         });
       } else if (testCase.source === "operator-over-bundle") {
@@ -944,6 +946,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
           diagnostics: [],
           evaluated: true,
           staticServerNames: ["fake", "unannotated"],
+          requesterScopedServerNames: [],
           userStaticServerNames: ["fake", "unannotated"],
         });
       }
@@ -1114,7 +1117,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     const params = createParams(sessionFile, path.join(tempDir, "workspace-native-mcp-restricted"));
     configureFakeMcp(params);
     params.config!.mcp!.servers!.fake!.codex = { defaultToolsApprovalMode: "auto" };
-    params.toolsAllow = ["cron", "fake__show"];
+    params.toolsAllow = ["cron", "fake__show", "fake__show-2"];
     mcpMocks.requesterCollisionTool = true;
     const requestApproval = vi.fn(async (request: { isMcpToolApprovalActive?: () => boolean }) => {
       expect(request.isMcpToolApprovalActive?.()).toBe(true);
@@ -1134,8 +1137,12 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     const run = runCodexAppServerAttempt(params);
     await harness.waitForMethod("turn/start");
     const threadStart = harness.requests.find((request) => request.method === "thread/start")
-      ?.params as { config?: Record<string, unknown>; dynamicTools?: unknown } | undefined;
-    const serializedDynamicTools = JSON.stringify(threadStart?.dynamicTools ?? []);
+      ?.params as
+      | { config?: Record<string, unknown>; dynamicTools?: CodexDynamicToolSpec[] }
+      | undefined;
+    const dynamicNames = flattenCodexDynamicToolFunctions(threadStart?.dynamicTools).map(
+      (tool) => tool.name,
+    );
     expect(mcpMocks.staticCalls).toHaveLength(1);
     expect(mcpMocks.staticCalls[0]).toMatchObject({
       agentId: "main",
@@ -1143,8 +1150,8 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
       requestInteractiveCodexApproval: expect.any(Function),
     });
     expect(threadStart?.config).not.toHaveProperty("mcp_servers");
-    expect(serializedDynamicTools.match(/fake__show"/gu)).toHaveLength(1);
-    expect(serializedDynamicTools.match(/fake__show_2"/gu)).toHaveLength(1);
+    expect(dynamicNames.filter((name) => name === "fake__show")).toHaveLength(1);
+    expect(dynamicNames.filter((name) => name === "fake__show-2")).toHaveLength(1);
 
     const requestInteractiveCodexApproval = mcpMocks.staticCalls[0]!
       .requestInteractiveCodexApproval as (params: {
@@ -1156,7 +1163,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
       isActive: () => boolean;
     }) => Promise<void>;
     await requestInteractiveCodexApproval({
-      safeToolName: "fake__show",
+      safeToolName: "fake__show-2",
       toolCallId: "call-fake-show",
       serverName: "fake",
       toolName: "show",
@@ -1178,7 +1185,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(harness.requests.map((request) => request.method)).not.toContain("mcpServerStatus/list");
     expect(mcpMocks.captureCalls).toHaveLength(1);
     expect(mcpMocks.captureCalls[0]!.storedNames).toEqual(
-      expect.arrayContaining(["fake__show", "fake__show_2"]),
+      expect.arrayContaining(["fake__show", "fake__show-2"]),
     );
     expect(new Set(mcpMocks.captureCalls[0]!.storedNames).size).toBe(
       mcpMocks.captureCalls[0]!.storedNames.length,

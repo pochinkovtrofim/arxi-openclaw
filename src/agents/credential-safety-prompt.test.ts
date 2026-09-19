@@ -8,14 +8,14 @@ describe("buildCredentialSafetyPrompt", () => {
     { name: "legacy tool name", input: "legacy-secrets-tool", terminalSetup: false },
     { name: "omitted availability", input: undefined, terminalSetup: false },
     { name: "unknown availability", input: {}, terminalSetup: false },
-  ])("preserves private handoff and routes setup with $name", ({ input, terminalSetup }) => {
+  ])("preserves transcript safety and routes setup with $name", ({ input, terminalSetup }) => {
     const prompt = buildCredentialSafetyPrompt(input);
     const lines = prompt.split("\n");
 
-    expect(lines).toHaveLength(terminalSetup ? 2 : 1);
-    expect(lines[0]).toContain("For user-requested login or pairing in a group");
-    expect(lines[0]).toContain("only to the requesting user in private");
-    expect(lines[0]).toContain("then acknowledge in the group without them");
+    expect(lines).toHaveLength(terminalSetup ? 4 : 3);
+    expect(lines[0]).toContain("Never request or echo credentials/secrets");
+    expect(lines[1]).toContain("Never place or suggest credentials/secrets in commands");
+    expect(lines[2]).toContain("host-owned masked credential entry");
     expect(prompt.includes("openclaw channels add <channel>")).toBe(terminalSetup);
     expect(prompt.includes("openclaw configure")).toBe(terminalSetup);
     expect(prompt).not.toContain("legacy-secrets-tool");

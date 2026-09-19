@@ -264,6 +264,7 @@ describe("mcp connection resolver helpers", () => {
       const sessionId = "gateway-plugin-disable-mcp-proof";
       const previousScope = {
         sessionId,
+        sessionKey: "agent:test:gateway-plugin-disable-mcp-proof",
         requesterSenderId: "existing-before-disable",
         agentAccountId: "proof-bot",
         messageChannel: "telegram",
@@ -271,7 +272,6 @@ describe("mcp connection resolver helpers", () => {
       const previousRuntimeKey = buildMcpRequesterRuntimeCacheKey(previousScope);
       const previousRuntime = await getOrCreateSessionMcpRuntime({
         ...previousScope,
-        sessionKey: "agent:test:gateway-plugin-disable-mcp-proof",
         workspaceDir: process.cwd(),
         cfg: {
           mcp: {
@@ -427,13 +427,13 @@ describe("mcp connection resolver helpers", () => {
       const nextSessionId = "gateway-plugin-disable-brand-new-mcp-proof";
       const nextScope = {
         sessionId: nextSessionId,
+        sessionKey: "agent:test:gateway-plugin-disable-brand-new-mcp-proof",
         requesterSenderId: "brand-new-after-disable",
         agentAccountId: "proof-bot",
         messageChannel: "telegram",
       };
       const nextRuntime = await getOrCreateSessionMcpRuntime({
         ...nextScope,
-        sessionKey: "agent:test:gateway-plugin-disable-brand-new-mcp-proof",
         workspaceDir: process.cwd(),
         cfg: nextConfig,
       });

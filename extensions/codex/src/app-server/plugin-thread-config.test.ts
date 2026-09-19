@@ -275,6 +275,7 @@ describe("Codex plugin thread config", () => {
 
     expect(config.configPatch).toEqual({
       "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: { enabled: false, destructive_enabled: false, open_world_enabled: false },
       },
@@ -627,6 +628,7 @@ describe("Codex plugin thread config", () => {
     expect(methods).not.toContain("plugin/install");
     expect(config.configPatch).toEqual({
       "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: { enabled: false, destructive_enabled: false, open_world_enabled: false },
       },
@@ -1304,6 +1306,7 @@ describe("Codex plugin thread config", () => {
 
     expect(config.configPatch).toEqual({
       "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: {
           enabled: false,
@@ -1820,6 +1823,7 @@ describe("Codex plugin thread config", () => {
 
       expect(config.configPatch).toEqual({
         "features.apps": false,
+        "features.plugins": false,
         apps: {
           _default: {
             enabled: false,
@@ -2436,6 +2440,7 @@ describe("Codex plugin thread config", () => {
 
     expect(config.configPatch).toEqual({
       "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: {
           enabled: false,
@@ -2499,6 +2504,7 @@ describe("Codex plugin thread config", () => {
 
     expect(config.configPatch).toEqual({
       "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: {
           enabled: false,
@@ -2888,6 +2894,7 @@ describe("Codex plugin thread config", () => {
 
     expect(config.configPatch).toEqual({
       "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: {
           enabled: false,
@@ -3039,6 +3046,7 @@ describe("Codex plugin thread config", () => {
 
     expect(config.configPatch).toEqual({
       "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: {
           enabled: false,
@@ -3100,6 +3108,7 @@ describe("Codex plugin thread config", () => {
 
     expect(config.configPatch).toEqual({
       "features.apps": false,
+      "features.plugins": false,
       apps: {
         _default: {
           enabled: false,

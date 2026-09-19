@@ -940,7 +940,7 @@ describe("Codex app-server dynamic tool build", () => {
       expect(bridge.specs).toContainEqual({
         type: "namespace",
         name: CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
-        description: "",
+        description: expect.stringContaining("Call these tools directly, outside exec and tools.*"),
         tools: [expect.objectContaining({ type: "function", name: "openclaw" })],
       });
       expect(bridge.specs).toContainEqual(
@@ -2003,7 +2003,7 @@ describe("Codex app-server dynamic tool build", () => {
     expect(bridge.specs).toContainEqual({
       type: "namespace",
       name: CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
-      description: "",
+      description: expect.stringContaining("Call these tools directly, outside exec and tools.*"),
       tools: expect.arrayContaining([
         expect.objectContaining({ name: "exec" }),
         expect.objectContaining({ name: "process" }),

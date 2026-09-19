@@ -3062,7 +3062,7 @@ describe("resolvePluginTools optional tools", () => {
     }
   });
 
-  it("preserves tool-owned execution preparation across the descriptor cache", async () => {
+  it("preserves tool-owned execution preparation across freshly resolved tool instances", async () => {
     const stateByParams = new WeakMap<object, { owner: boolean; runId?: string }>();
     const factory = vi.fn((rawContext: unknown) => {
       const owner = (rawContext as { senderIsOwner?: boolean }).senderIsOwner === true;
@@ -3102,8 +3102,10 @@ describe("resolvePluginTools optional tools", () => {
     const context = { ...createContext(), senderIsOwner: false };
 
     resolvePluginTools(createResolveToolsParams({ context }));
-    const [cachedTool] = resolvePluginTools(createResolveToolsParams({ context }));
-    expect(factory).toHaveBeenCalledTimes(1);
+    const [cachedTool] = resolvePluginTools(
+      createResolveToolsParams({ context: { ...context, senderIsOwner: true } }),
+    );
+    expect(factory).toHaveBeenCalledTimes(2);
 
     const prepared = await cachedTool?.prepareBeforeToolCallParams?.(
       { action: "record" },
@@ -3120,12 +3122,13 @@ describe("resolvePluginTools optional tools", () => {
     });
     expect(factory).toHaveBeenCalledTimes(2);
 
+    const [nextTool] = resolvePluginTools(createResolveToolsParams({ context }));
     const nextParams = { action: "record-again" };
-    await cachedTool?.prepareBeforeToolCallParams?.(nextParams, {
+    await nextTool?.prepareBeforeToolCallParams?.(nextParams, {
       toolCallId: "call-next",
       hookContext: { runId: "run-next", requester: { senderIsOwner: false } },
     });
-    await expect(cachedTool?.execute("call-next", nextParams, undefined)).resolves.toEqual({
+    await expect(nextTool?.execute("call-next", nextParams, undefined)).resolves.toEqual({
       content: [{ type: "text", text: '{"owner":false,"runId":"run-next"}' }],
     });
     expect(factory).toHaveBeenCalledTimes(3);

@@ -425,7 +425,7 @@ describe("Codex app-server model catalog", () => {
     expect(listModelsMock).toHaveBeenCalledTimes(2);
     expect(rpc.request).toHaveBeenCalledTimes(2);
     expect(withCodexAppServerJsonClient).toHaveBeenCalledTimes(1);
-    expect(read()).toEqual({ accountType: "apiKey" });
+    expect(read()).toEqual({ accountType: "apiKey", authMode: "api_key" });
     rpc.epoch += 1;
     expect(read()).toBeUndefined();
   });

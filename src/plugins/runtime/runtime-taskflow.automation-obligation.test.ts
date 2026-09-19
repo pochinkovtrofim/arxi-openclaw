@@ -64,7 +64,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   clearAgentRunContext(runId);
-  resetRuntimeTaskTestState();
+  await resetRuntimeTaskTestState();
   await saveCronJobsStore(storePath, { version: 1, jobs: [] });
 });
 
@@ -106,7 +106,7 @@ describe("current Automation atomic managed Flow contract", () => {
       stateJson: { delivery: "recorded" },
     });
     expect(ordinary.applied).toBe(true);
-    expect(receipts()[0].scheduledAtMs).toBe(first.nextRunAtMs);
+    expect(receipts()[0]?.scheduledAtMs).toBe(first.nextRunAtMs);
     expect(
       createRuntimeTaskFlow()
         .bindSession({ sessionKey: "agent:other:main" })
@@ -153,7 +153,7 @@ describe("current Automation atomic managed Flow contract", () => {
     paused = false;
     await saveCronJobsStore(storePath, { version: 1, jobs: [{ ...job, enabled: false }] });
     expect(() => mutate()).toThrow();
-    expect(receipts()[0].obligationId).toBe(created.obligationId);
+    expect(receipts()[0]?.obligationId).toBe(created.obligationId);
     await saveCronJobsStore(storePath, { version: 1, jobs: [job] });
     const terminal = flows.finish({
       flowId: created.flow.flowId,

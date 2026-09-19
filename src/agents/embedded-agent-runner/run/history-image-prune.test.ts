@@ -100,12 +100,18 @@ describe("pruneProcessedHistoryImages", () => {
   const assistantTurn = () => castAgentMessage({ role: "assistant", content: "ack" });
   const userText = () => castAgentMessage({ role: "user", content: "more" });
 
-  it("keeps media from exactly the last three completed turns", () => {
+  it("keeps media from exactly the last three completed turns and the active turn", () => {
     const turn = (label: string): AgentMessage[] => [
       castAgentMessage({ role: "user", content: label }),
       assistantTurn(),
     ];
-    const messages = [...turn("turn-1"), ...turn("turn-2"), ...turn("turn-3"), ...turn("turn-4")];
+    const messages = [
+      ...turn("turn-1"),
+      ...turn("turn-2"),
+      ...turn("turn-3"),
+      ...turn("turn-4"),
+      userText(),
+    ];
 
     expect(
       selectRecentCompletedTurnMediaHistory(messages).map((message) => {
@@ -114,7 +120,7 @@ describe("pruneProcessedHistoryImages", () => {
         }
         return message.content;
       }),
-    ).toEqual(["turn-2", "ack", "turn-3", "ack", "turn-4", "ack"]);
+    ).toEqual(["turn-2", "ack", "turn-3", "ack", "turn-4", "ack", "more"]);
   });
 
   it("prunes image blocks from user messages older than 3 completed turns", () => {

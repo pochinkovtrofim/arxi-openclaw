@@ -3754,7 +3754,7 @@ process.on("SIGINT", shutdown);`,
         await firstTools.dispose();
         firstTools = undefined;
 
-        nowMs += 300_000;
+        nowMs += 60_000;
         const secondRequest = materializeRequesterScopedMcpToolsForHarnessRun(params);
         await resolutionStarted.promise;
 
@@ -3833,6 +3833,8 @@ process.on("SIGINT", shutdown);`,
 
 describe("requester-scoped MCP connection resolution", () => {
   afterEach(async () => {
+    const { testing: resolverTesting } = await import("./mcp-connection-resolver.js");
+    resolverTesting.setMcpServerConnectionResolversForTest(undefined);
     vi.useRealTimers();
   });
 
@@ -4634,7 +4636,7 @@ describe("requester-scoped MCP connection resolution", () => {
       expect(manager.listRuntimeKeys().some((key) => key.startsWith("{"))).toBe(true);
 
       allow = false;
-      nowMs += 299_999;
+      nowMs += 59_999;
       await manager.getOrCreate(params);
       expect(disposed).toEqual([]);
       expect(manager.listRuntimeKeys().some((key) => key.startsWith("{"))).toBe(true);
@@ -4856,7 +4858,7 @@ describe("requester-scoped MCP connection resolution", () => {
       expect(createCount).toBe(2); // empty static + requester
 
       // Within revalidation window: no resolver call.
-      nowMs += 299_999;
+      nowMs += 59_999;
       await manager.getOrCreate(params);
       expect(resolveCalls).toBe(1);
       expect(createCount).toBe(2);
@@ -4869,7 +4871,7 @@ describe("requester-scoped MCP connection resolution", () => {
 
       // Past window with rotated header: rebuild requester runtime.
       token = "secret-token";
-      nowMs += 300_000;
+      nowMs += 60_000;
       await manager.getOrCreate(params);
       expect(resolveCalls).toBe(3);
       expect(createCount).toBe(3);

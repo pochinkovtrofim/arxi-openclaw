@@ -1,5 +1,6 @@
 // These consumers need the host-owned SQLite broker, which runs in forked processes.
 export const databaseWorkerCoreTestFiles = [
+  "src/plugins/runtime/runtime-taskflow.automation-obligation.test.ts",
   "src/state/agent-provenance.test.ts",
   "src/commands/agents.commands.list.worker.test.ts",
   "src/state/openclaw-agent-worker-store.test.ts",

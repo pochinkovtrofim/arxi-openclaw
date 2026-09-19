@@ -492,9 +492,9 @@ describe("buildAgentSystemPrompt", () => {
       expect(prompt.includes("openclaw channels add <channel>")).toBe(terminalSetup);
       expect(prompt.includes("openclaw configure")).toBe(terminalSetup);
       expect(prompt).toContain(
-        "deliver short-lived codes and verification URLs only to the requesting user in private",
+        "Never request or echo credentials/secrets (including authentication/pairing codes)",
       );
-      expect(prompt).toContain("then acknowledge in the group without them");
+      expect(prompt).toContain("host-owned masked credential entry");
     },
   );
 

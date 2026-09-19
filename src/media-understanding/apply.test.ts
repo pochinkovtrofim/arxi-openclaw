@@ -2894,7 +2894,9 @@ describe("applyMediaUnderstanding", () => {
 
       const context = await renderInboundDocumentContext({ ctx, cfg: createMediaDisabledConfig() });
 
-      const markerCount = context?.text.split("[Unsupported document format").length ?? 0;
+      const markerCount =
+        context?.text.split("[Local document extraction is unavailable in this runtime.]").length ??
+        0;
       expect(markerCount - 1).toBe(5);
       expect(context?.text).toContain("[2 more attachments skipped]");
       expect(context?.images).toEqual([]);

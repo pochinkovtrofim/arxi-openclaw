@@ -15,7 +15,12 @@ function fixture() {
   runtime.plugins.push(owner);
   target.plugins.push({ ...owner });
   const handler = vi.fn(async () => ({ block: true, blockReason: "owner approval required" }));
-  runtime.typedHooks.push({ pluginId: owner.id, hookName: "before_tool_call", handler });
+  runtime.typedHooks.push({
+    pluginId: owner.id,
+    source: owner.source,
+    hookName: "before_tool_call",
+    handler,
+  });
   runtime.trustedToolPolicies.push({
     pluginId: owner.id,
     pluginName: "Approval",
@@ -35,8 +40,18 @@ describe("prepared runtime tool policy adoption", () => {
     const before = vi.fn(async () => ({ outcome: "block" as const, reason: "paused" }));
     const after = vi.fn(async () => undefined);
     runtime.typedHooks.push(
-      { pluginId: "approval", hookName: "before_agent_run", handler: before },
-      { pluginId: "approval", hookName: "agent_end", handler: after },
+      {
+        pluginId: "approval",
+        source: "/plugins/approval/index.js",
+        hookName: "before_agent_run",
+        handler: before,
+      },
+      {
+        pluginId: "approval",
+        source: "/plugins/approval/index.js",
+        hookName: "agent_end",
+        handler: after,
+      },
     );
     const config = {
       plugins: { entries: { approval: { hooks: { allowConversationAccess: true } } } },
@@ -61,6 +76,7 @@ describe("prepared runtime tool policy adoption", () => {
       }
       runtime.typedHooks.push({
         pluginId: "approval",
+        source: "/plugins/approval/index.js",
         hookName: "before_agent_run",
         handler: vi.fn(),
       });
@@ -73,8 +89,18 @@ describe("prepared runtime tool policy adoption", () => {
   it("respects a current prompt-injection denial while retaining the run gate", () => {
     const { runtime, target } = fixture();
     runtime.typedHooks.push(
-      { pluginId: "approval", hookName: "before_agent_run", handler: vi.fn() },
-      { pluginId: "approval", hookName: "before_prompt_build", handler: vi.fn() },
+      {
+        pluginId: "approval",
+        source: "/plugins/approval/index.js",
+        hookName: "before_agent_run",
+        handler: vi.fn(),
+      },
+      {
+        pluginId: "approval",
+        source: "/plugins/approval/index.js",
+        hookName: "before_prompt_build",
+        handler: vi.fn(),
+      },
     );
     const adopted = adoptRuntimeToolPolicyRegistrations(target, runtime, {
       plugins: {
@@ -119,8 +145,18 @@ describe("prepared runtime tool policy adoption", () => {
   it("preserves a generation's own hook and does not start unrelated lifecycle hooks", async () => {
     const { runtime, target } = fixture();
     const own = vi.fn(async () => ({ block: true, blockReason: "current policy" }));
-    target.typedHooks.push({ pluginId: "approval", hookName: "before_tool_call", handler: own });
-    runtime.typedHooks.push({ pluginId: "approval", hookName: "gateway_start", handler: vi.fn() });
+    target.typedHooks.push({
+      pluginId: "approval",
+      source: "/plugins/approval/index.js",
+      hookName: "before_tool_call",
+      handler: own,
+    });
+    runtime.typedHooks.push({
+      pluginId: "approval",
+      source: "/plugins/approval/index.js",
+      hookName: "gateway_start",
+      handler: vi.fn(),
+    });
     const adopted = adoptRuntimeToolPolicyRegistrations(target, runtime);
     expect(adopted.typedHooks).toEqual(target.typedHooks);
     expect(
