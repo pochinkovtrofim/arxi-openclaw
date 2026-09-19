@@ -49,6 +49,31 @@ export function consumeMcpCodeModeGuestResult(result: AgentToolResult<unknown>):
   return safe;
 }
 
+/** Preserve the MCP wire value when a model-result hook adds advisory text. */
+export function transferTransformedMcpCodeModeGuestResult(
+  source: AgentToolResult<unknown>,
+  target: AgentToolResult<unknown>,
+): AgentToolResult<unknown> {
+  if (source === target || !mcpCodeModeGuestResults.has(source)) return target;
+  const original = mcpCodeModeGuestResults.get(source);
+  // Only append-only text has an unambiguous mapping to the wire contract.
+  // Structured content, resource blocks and other raw provider fields survive.
+  const appended =
+    stableStringify(source.content) ===
+    stableStringify(target.content.slice(0, source.content.length))
+      ? target.content.slice(source.content.length).filter((block) => block.type === "text")
+      : [];
+  const value =
+    isRecord(original) && appended.length > 0
+      ? {
+          ...original,
+          content: [...(Array.isArray(original.content) ? original.content : []), ...appended],
+        }
+      : original;
+  mcpCodeModeGuestResults.delete(source);
+  return setMcpCodeModeGuestResult(target, value);
+}
+
 function stringifyMcpContent(value: unknown): string {
   try {
     return JSON.stringify(value) ?? String(value);

@@ -3,6 +3,8 @@ import { initializeGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { createMockPluginRegistry } from "../plugins/hooks.test-helpers.js";
 import { bindAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";
 import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.wrapper.js";
+import { consumeMcpCodeModeGuestResult, projectMcpCallToolResult } from "./mcp-content.js";
+import { consumeToolEffectReceipt, registerToolEffectReceipt } from "./tool-effect-receipt.js";
 import type { AnyAgentTool } from "./tools/common.js";
 
 afterEach(() => initializeGlobalHookRunner(createMockPluginRegistry([])));
@@ -66,5 +68,47 @@ describe("terminal result transformation boundary", () => {
       { emitDiagnostics: false },
     );
     await expect(wrapped.execute("call", {})).rejects.toThrow("revoked");
+  });
+  it("retains the owned MCP wire result and appends advice through code mode", async () => {
+    const raw = {
+      content: [
+        { type: "text", text: "provider" },
+        { type: "resource_link", uri: "https://example.com/source", name: "source" },
+      ],
+      structuredContent: { payload: { id: "message-1" } },
+    };
+    const original = registerToolEffectReceipt(projectMcpCallToolResult(raw), {
+      state: "read_completed",
+    });
+    const source = {
+      ...makeTool(),
+      name: "mcp__google_workspace__google_private_gmail_get",
+      execute: vi.fn(async () => original),
+    };
+    const advice = { type: "text" as const, text: "[Arxi attention] advisory only" };
+    initializeGlobalHookRunner(
+      createMockPluginRegistry([
+        {
+          hookName: "tool_result_transform",
+          handler: async (event) => ({
+            result: { ...event.result, content: [...event.result.content, advice] },
+          }),
+        },
+      ]),
+    );
+    const wrapped = wrapToolWithBeforeToolCallHook(
+      source,
+      { runId: "mcp", loopDetection: { enabled: false } },
+      { emitDiagnostics: false },
+    );
+    const result = await wrapped.execute("mcp-call", {});
+    expect(consumeMcpCodeModeGuestResult(original)).toBeUndefined();
+    expect(consumeMcpCodeModeGuestResult(result)).toEqual({
+      ...raw,
+      content: [...raw.content, advice],
+    });
+    expect(consumeMcpCodeModeGuestResult(result)).toBeUndefined();
+    expect(consumeToolEffectReceipt(result)).toEqual({ state: "read_completed" });
+    expect(consumeToolEffectReceipt(original)).toBeUndefined();
   });
 });
