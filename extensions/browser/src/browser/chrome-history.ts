@@ -115,9 +115,7 @@ export async function readManagedChromeLiveHistory(params: {
         targetId: tab.targetId,
       });
       const result = (await params.pw.withPageScopedCdpClient({
-        cdpUrl: params.profileCtx.profile.cdpUrl,
         page,
-        targetId: tab.targetId,
         fn: async (send) => await send("Page.getNavigationHistory"),
       })) as { entries?: CdpNavigationEntry[] };
       if (!Array.isArray(result.entries)) {

@@ -1,4 +1,4 @@
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type SQLInputValue } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { ensureTaskFlowAutomationObligationSchema } from "../state/openclaw-state-db-schema-additive.js";
 import {
@@ -12,7 +12,9 @@ import {
 const databases: DatabaseSync[] = [];
 
 afterEach(() => {
-  for (const database of databases.splice(0)) database.close();
+  for (const connection of databases.splice(0)) {
+    connection.close();
+  }
 });
 
 function database(options: { obligationSchema?: boolean } = {}): DatabaseSync {
@@ -25,11 +27,13 @@ function database(options: { obligationSchema?: boolean } = {}): DatabaseSync {
       ended_at INTEGER, cancel_requested_at INTEGER
     ) STRICT;
   `);
-  if (options.obligationSchema !== false) ensureTaskFlowAutomationObligationSchema(db);
+  if (options.obligationSchema !== false) {
+    ensureTaskFlowAutomationObligationSchema(db);
+  }
   return db;
 }
 
-function insertFlow(db: DatabaseSync, values: Partial<Record<string, unknown>> = {}) {
+function insertFlow(db: DatabaseSync, values: Partial<Record<string, SQLInputValue>> = {}) {
   db.prepare(
     `INSERT INTO flow_runs
       (flow_id, sync_mode, owner_key, controller_id, revision, status, ended_at, cancel_requested_at)

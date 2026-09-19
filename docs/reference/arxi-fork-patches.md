@@ -95,3 +95,37 @@ OpenClaw owns the composition
 Arxi owns no timer, candidate selector, prompt engine, portfolio, or proactive
 memory layer. Fork seams remain limited to runtime custody, authenticated
 execution, wake reporting, durable delivery, and the hosted Codex integration.
+
+## Stable update integration notes (candidate, not deployed)
+
+The pending integration targets `v2026.9.5` at
+`ec9c1a13db8938e5a3eaa51fca2e981cde2395a9`. It is not qualified or activated.
+The previous selected-upstream section describes the currently released fork.
+
+Upstream now owns the transferred transient retry controller (#134281),
+prepared native catalog generation ownership (#134524), stale session dispatch
+recovery, OAuth proxy routing (#131161), and incremental memory maintenance
+handoff (#136064). Preserve their released successors rather than replaying
+older backports. Codex is upgraded with the release to `0.154.0`.
+
+The following narrow fork contracts must remain during the integration:
+
+- The ready suspend result includes the atomic wake requirement.
+- Authenticated `agent` RPC accepts bounded attachments with the same decoded
+  size ceilings as other chat entrypoints.
+- `openclaw/extensions/telegram/transport-plan-api` exposes
+  `planTelegramTextDeliveryPages`, `planTelegramPhotoDocumentDelivery`, and
+  `projectTelegramExternalMessageContext` to the authenticated external
+  Telegram transport.
+- MCP resolvers retain host-authorized run identity, generation fencing, and
+  finite canonical tool bindings for account Automations. Senderless runs never
+  inherit the creator's sender identity or per-requester OAuth.
+- `automations` accepts `failureAlert: { enabled: false }` and canonicalizes it
+  to the existing stored `false` sentinel.
+- Harness diagnostics preserve intentional silence and measured monotonic
+  duration separately from producer wall-clock timestamps.
+- The bounded Office document extractor and additive Task Flow history and
+  Automation obligation tables retain their previous fork contracts.
+
+Existing focused tests for these contracts must pass on the production build
+host before this candidate can be qualified or released.

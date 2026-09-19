@@ -6,7 +6,7 @@ describe("authorized tool result transformation", () => {
   const event = {
     toolName: "memory_search",
     params: { query: "q" },
-    result: { content: [{ type: "text", text: "original" }] },
+    result: { content: [{ type: "text", text: "original" }] as [{ type: string; text: string }] },
   };
   const context = { toolName: "memory_search", sessionKey: "private" };
   it("returns the first applicable transformation without mutating source", async () => {

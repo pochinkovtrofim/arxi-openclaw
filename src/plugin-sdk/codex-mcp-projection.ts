@@ -3,6 +3,8 @@ import { TOOL_NAME_SEPARATOR } from "../agents/agent-bundle-mcp-names.js";
 // runtime's user-mcp-server projection so the bundled Codex app-server harness
 // can attach the same user `mcp.servers` entries to its thread config without
 // deep-importing core helpers.
+// Private thread-configuration projections for the bundled Codex plugin.
+// Workspace preparation and MCP metadata remain separate from live run resources.
 import { pinExecToolTarget } from "../agents/exec-tool-target-pinning.js";
 import type { AgentHarnessHostCapabilities } from "../agents/harness/host-capability-types.js";
 import {
@@ -24,6 +26,13 @@ import {
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
 
 export { pinExecToolTarget };
+export { resolveBootstrapFilesForPreparation } from "../agents/bootstrap-files.js";
+export { loadCodexBundleMcpApprovalConfig } from "../agents/codex-mcp-config.js";
+export {
+  formatMcpCodexApprovalRemedy,
+  requiresMcpCodexToolApproval,
+  resolveProjectedMcpCodexToolApprovalMode,
+} from "../agents/mcp-codex-tool-approval.js";
 export type CodexScheduledToolProjectionFactory = AgentHarnessScheduledToolProjectionFactory;
 export type CodexTtsProvenanceTransfer = AgentHarnessTtsProvenanceTransfer;
 
@@ -137,6 +146,10 @@ export function resolveScheduledCodexMcpIdentityBindings(params: {
   }
   return { allowedNames, rejectedNames: [...rejectedNames].toSorted() };
 }
+// Native mode pins shell_tool after managed-policy preflight; the pinned registry has no disabled shells.
+// A shell-disabled custom model invalidates read/exec inference; Codex exposes no shell_type fact.
+// Write, patch, and process remain unobserved model/sandbox capabilities and are never inferred.
+const CODEX_NATIVE_CRON_CREATOR_AUTHORITY = ["read", "exec"] as const;
 
 /** Resolve the private scheduled-tool projection issuer for the Codex harness owner. */
 export function resolveCodexScheduledToolProjectionFactory(
@@ -159,7 +172,6 @@ export function resolveCodexTtsProvenanceTransfer(
 }
 
 export {
-  buildCodexUserMcpServersThreadConfigPatch,
   buildCodexUserMcpServersThreadConfigPatchForRuntime,
   buildCodexUserMcpServersThreadConfigPatchForRun,
   resolveCodexMcpToolOverridesForAgent,
@@ -169,13 +181,13 @@ export {
   runWithCronCreatorAuthorityResolver,
 } from "../agents/cron-creator-authority-context.js";
 
-/** Materialize static configured MCP under a scheduled Codex authority envelope. */
-export async function materializeStaticMcpToolsForScheduledHarnessRun(
+/** Materialize static configured MCP under the Codex harness authority envelope. */
+export async function materializeStaticMcpToolsForHarnessRun(
   params: Parameters<
-    typeof import("../agents/agent-bundle-mcp-harness.js").materializeStaticMcpToolsForScheduledHarnessRunCore
+    typeof import("../agents/agent-bundle-mcp-harness.js").materializeStaticMcpToolsForHarnessRunCore
   >[0],
 ) {
-  const { materializeStaticMcpToolsForScheduledHarnessRunCore: materialize } =
+  const { materializeStaticMcpToolsForHarnessRunCore: materialize } =
     await import("../agents/agent-bundle-mcp-harness.js");
   return materialize(params);
 }
@@ -185,8 +197,13 @@ export async function captureFinalCodexCronCreatorToolAllowlist(
   target: CronCreatorToolAllowlistEntry[],
   captureRef: CronToolsAllowCaptureRef,
   tools: readonly AnyAgentTool[],
+  options: { nativeToolSurfaceEnabled?: boolean } = {},
 ) {
   const { captureFinalEffectiveCronCreatorToolAllowlist: capture } =
     await import("../agents/tools/cron-tool.js");
-  return capture(target, captureRef, tools, (tool) => getPluginToolMeta(tool));
+  return capture(target, captureRef, tools, (tool) => getPluginToolMeta(tool), {
+    canonicalToolNames: options.nativeToolSurfaceEnabled
+      ? CODEX_NATIVE_CRON_CREATOR_AUTHORITY
+      : undefined,
+  });
 }

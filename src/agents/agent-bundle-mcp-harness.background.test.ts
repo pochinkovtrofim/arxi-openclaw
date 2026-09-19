@@ -9,9 +9,13 @@ const mocks = vi.hoisted(() => {
     setRuntime(value: SessionMcpRuntime) {
       runtime = value;
     },
-    getOrCreateRequesterScopedMcpRuntime: vi.fn(async () =>
+    acquireRequesterScopedMcpRuntime: vi.fn(async () =>
       runtime
-        ? { runtime, advertisedCatalogConfigFingerprint: runtime.configFingerprint }
+        ? {
+            runtime,
+            releaseLease: vi.fn(),
+            advertisedCatalogConfigFingerprint: runtime.configFingerprint,
+          }
         : undefined,
     ),
     rememberAdvertisedScopedMcpCatalog: vi.fn(
@@ -27,8 +31,11 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock("./agent-bundle-mcp-manager-api.js", () => ({
-  getOrCreateRequesterScopedMcpRuntime: mocks.getOrCreateRequesterScopedMcpRuntime,
-  getOrCreateSessionMcpRuntime: vi.fn(),
+  acquireRequesterScopedMcpRuntime: mocks.acquireRequesterScopedMcpRuntime,
+  acquireSessionMcpRuntime: vi.fn(),
+  releaseSessionMcpRuntime: vi.fn(async ({ releaseLease }: { releaseLease: () => void }) =>
+    releaseLease(),
+  ),
   rememberAdvertisedScopedMcpCatalog: mocks.rememberAdvertisedScopedMcpCatalog,
   getAdvertisedScopedMcpCatalog: vi.fn(
     (sessionId: string) => mocks.advertised.get(sessionId) ?? null,
@@ -88,7 +95,7 @@ function scheduledParams(sessionId: string, toolsAllow: string[]) {
 
 beforeEach(() => {
   mocks.reset();
-  mocks.getOrCreateRequesterScopedMcpRuntime.mockClear();
+  mocks.acquireRequesterScopedMcpRuntime.mockClear();
   mocks.rememberAdvertisedScopedMcpCatalog
     .mockReset()
     .mockImplementation((handle: { runtime: SessionMcpRuntime }, catalog: McpToolCatalog) => {

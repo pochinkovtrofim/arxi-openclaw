@@ -31,7 +31,11 @@ function deps(cronEnabled = true) {
   };
 }
 function stored() {
-  return loadCronJobsStoreSync(storePath).jobs[0];
+  const storedJob = loadCronJobsStoreSync(storePath).jobs[0];
+  if (!storedJob) {
+    throw new Error("expected stored cron job");
+  }
+  return storedJob;
 }
 
 beforeEach(async () => {
@@ -59,9 +63,13 @@ beforeEach(async () => {
     goal: "retained work",
     status: "waiting",
   });
-  if (!flow) throw new Error("expected Flow");
+  if (!flow) {
+    throw new Error("expected Flow");
+  }
   const identity = tryCronScheduleIdentity(job);
-  if (!identity) throw new Error("expected schedule identity");
+  if (!identity) {
+    throw new Error("expected schedule identity");
+  }
   runOpenClawStateWriteTransaction(({ db }) => {
     upsertTaskFlowAutomationObligationInStateTransaction(db, {
       flowId: flow.flowId,
@@ -79,7 +87,9 @@ beforeEach(async () => {
   });
 });
 afterEach(async () => {
-  for (const service of services.splice(0)) service.stop();
+  for (const service of services.splice(0)) {
+    service.stop();
+  }
   resetTaskFlowRegistryForTests();
   await saveCronJobsStore(storePath, { version: 1, jobs: [] });
   vi.clearAllMocks();

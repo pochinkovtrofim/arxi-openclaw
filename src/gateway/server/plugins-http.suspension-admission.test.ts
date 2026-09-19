@@ -14,6 +14,7 @@ import {
   resetGatewayWorkAdmission,
   tryBeginGatewaySuspendAdmission,
 } from "../../process/gateway-work-admission.js";
+import { trackAsyncWork } from "../../shared/async-work-scope.js";
 import type { GatewayRequestContext } from "../server-methods/types.js";
 import { makeMockHttpResponse } from "../test-http-response.js";
 import { createGatewayTestRegistry } from "./__tests__/test-utils.js";
@@ -86,6 +87,11 @@ function createMockUpgradeSocket() {
     destroyed: false,
     write(chunk: string) {
       socket.chunks.push(chunk);
+    },
+    end(chunk: string, callback?: () => void) {
+      socket.write(chunk);
+      callback?.();
+      return socket;
     },
     destroy() {
       socket.destroyed = true;
@@ -247,6 +253,7 @@ describe("plugin HTTP suspension admission", () => {
       getSuspendWakeSnapshot: vi.fn(() => ({ complete: true as const, nextWakeAtMs: null })),
     };
     const context = {
+      trackExecution: trackAsyncWork,
       cron,
       logGateway: { warn: vi.fn() },
       chatAbortControllers: new Map(),

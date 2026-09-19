@@ -105,7 +105,7 @@ it("installs task-flow history as same-version additive schema for candidate reo
         )
         .all()
         .map((row) => row.name)
-        .sort(),
+        .toSorted(),
     ).toEqual([
       "task_flow_history_archives",
       "task_flow_history_events",

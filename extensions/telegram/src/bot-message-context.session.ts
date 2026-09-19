@@ -10,6 +10,7 @@ import {
   toLocationContext,
   type NormalizedLocation,
   type InboundEventKind,
+  type GroupThreadMentionFacts,
 } from "openclaw/plugin-sdk/channel-inbound";
 import { normalizeCommandBody } from "openclaw/plugin-sdk/command-surface";
 import type {
@@ -195,7 +196,9 @@ export async function buildTelegramInboundContextPayload(params: {
   inboundEventKind: InboundEventKind;
   groupRequireMention: boolean;
   mentionFacts: TelegramMentionFacts;
-  hasControlCommand: boolean;
+  groupThread?: GroupThreadMentionFacts;
+  commandSource?: "native" | "text";
+  nativeCommandBody?: string;
   stickerCacheHit?: boolean;
   audioTranscribedMediaIndex?: number;
   commandAuthorized: boolean;
@@ -248,7 +251,8 @@ export async function buildTelegramInboundContextPayload(params: {
     inboundEventKind,
     groupRequireMention,
     mentionFacts,
-    hasControlCommand,
+    commandSource,
+    nativeCommandBody,
     stickerCacheHit,
     audioTranscribedMediaIndex,
     commandAuthorized,
@@ -511,12 +515,13 @@ export async function buildTelegramInboundContextPayload(params: {
     envelope: envelopeOptions,
   });
   const hasGroupHistoryContext = isGroup;
-  const commandBody = normalizeCommandBody(rawBody, {
+  const commandBody = normalizeCommandBody(nativeCommandBody ?? rawBody, {
     botUsername: normalizeOptionalLowercaseString(primaryCtx.me?.username),
+    // Preserve multiline text-directive arguments for the core boundary (#138545);
+    // native strictness is re-derived core-side from the same text.
+    preserveArguments: true,
   });
-  const commandSource =
-    options?.commandSource ??
-    (commandAuthorized && hasControlCommand ? ("text" as const) : undefined);
+
   const conversationKind = isGroup ? "group" : "direct";
   let watermarkedGroupHistoryEntries: HistoryEntry[] | undefined;
   let groupHistoryPromptEntries: HistoryEntry[] = [];
@@ -748,6 +753,7 @@ export async function buildTelegramInboundContextPayload(params: {
     },
     contextVisibility: contextVisibilityMode,
     extra: {
+      GroupThread: params.groupThread,
       BotUsername: primaryCtx.me?.username ?? undefined,
       AmbientTranscriptWatermarkKey: ambientTranscriptWatermarkKey,
       AmbientTranscriptBody: options?.ambientTranscriptBody,

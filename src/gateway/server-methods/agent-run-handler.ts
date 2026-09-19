@@ -17,11 +17,20 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
   context,
   client,
   isWebchatConnect,
+  hasCurrentClientAuthority,
+  sessionMutationCommitGuard,
 }) => {
   const activeDiagnosticTrace = getActiveDiagnosticTraceContext();
   const diagnosticTrace = activeDiagnosticTrace
     ? freezeDiagnosticTraceContext(activeDiagnosticTrace)
     : undefined;
+  const assertAdmissionCurrent = () => {
+    sessionMutationCommitGuard?.();
+    if (hasCurrentClientAuthority?.() === false) {
+      throw new Error("Gateway caller authority is no longer active.");
+    }
+  };
+  assertAdmissionCurrent();
   const io = createAgentTurnIo(respond);
   if (
     !assertValidParams(params, validateAgentParams, "agent", (ok, payload, error, meta) =>
@@ -41,6 +50,8 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
     registerToolEventRecipient: context.registerToolEventRecipient,
   });
   await createAgentTurnService({ context, isWebchatConnect }).startTurn({
+    assertAdmissionCurrent,
+    hasCurrentClientAuthority,
     preflight,
     principal,
     io,

@@ -32,6 +32,7 @@ import {
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { recordSessionCreated } from "../../sessions/session-state-events.js";
+import { assertPreparedSkillLibrarySelection } from "../../skills/library/selection.js";
 import { getGeneratedMediaTaskIdsForSessionKey } from "../../tasks/task-status-access.js";
 import { sessionDeliveryChannel } from "../../utils/delivery-context.shared.js";
 import { errorShapeFromError } from "../error-shape.js";
@@ -83,6 +84,7 @@ type AgentSessionPersistResult = {
 };
 
 export async function persistAgentSessionPhase(params: {
+  assertAdmissionCurrent?: () => void;
   request: AgentRunRequest;
   cfg: OpenClawConfig;
   storePath: string;
@@ -421,6 +423,12 @@ export async function persistAgentSessionPhase(params: {
             replaceEntry: true,
             takeCacheOwnership: true,
             maintenanceConfig: params.maintenanceConfig,
+            assertCommitAllowed: () => {
+              params.assertAdmissionCurrent?.();
+              if (createdNewEntry) {
+                assertPreparedSkillLibrarySelection(params.creation.skillLibrarySelections);
+              }
+            },
           },
         )) ?? undefined;
     } catch (err) {

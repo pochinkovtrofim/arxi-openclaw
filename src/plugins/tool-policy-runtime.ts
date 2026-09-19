@@ -27,9 +27,12 @@ export function adoptRuntimeToolPolicyRegistrations(
       hookName === "before_tool_call" ||
       hookName === "after_tool_call" ||
       hookName === "tool_result_transform"
-    )
+    ) {
       return true;
-    if (!isConversationHookName(hookName)) return false;
+    }
+    if (!isConversationHookName(hookName)) {
+      return false;
+    }
     const owner = target.plugins.find((plugin) => plugin.id === pluginId);
     const policy = config?.plugins?.entries?.[pluginId]?.hooks;
     // Prepared generations replace the root hook view. Preserve the admitted

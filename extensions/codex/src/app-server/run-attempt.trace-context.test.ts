@@ -3,14 +3,12 @@ import path from "node:path";
 import { runWithDiagnosticTraceContext } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it } from "vitest";
 import {
-  createAppServerHarness,
+  createStartedThreadHarness,
   createCodexRuntimePlanFixture,
   createParams,
   runCodexAppServerAttempt,
   setupRunAttemptTestHooks,
   tempDir,
-  threadStartResult,
-  turnStartResult,
 } from "./run-attempt-test-harness.js";
 
 setupRunAttemptTestHooks();
@@ -22,7 +20,7 @@ const diagnosticTrace = {
 };
 
 function readRequestOptions(
-  request: ReturnType<typeof createAppServerHarness>["request"],
+  request: ReturnType<typeof createStartedThreadHarness>["request"],
   method: string,
 ): { trace?: { traceparent?: string } } | undefined {
   return request.mock.calls.find(([candidate]) => candidate === method)?.[2] as
@@ -35,15 +33,7 @@ describe("Codex app-server diagnostic trace context", () => {
     { enabled: true, label: "propagates" },
     { enabled: false, label: "omits" },
   ])("$label trace context when diagnostics enabled=$enabled", async ({ enabled }) => {
-    const harness = createAppServerHarness(async (method) => {
-      if (method === "thread/start") {
-        return threadStartResult();
-      }
-      if (method === "turn/start") {
-        return turnStartResult("turn-1", "completed");
-      }
-      return {};
-    });
+    const harness = createStartedThreadHarness();
     const params = createParams(
       path.join(tempDir, `trace-${enabled}.jsonl`),
       path.join(tempDir, `workspace-trace-${enabled}`),
@@ -53,9 +43,15 @@ describe("Codex app-server diagnostic trace context", () => {
     params.config = { diagnostics: { enabled } } as never;
 
     const run = runWithDiagnosticTraceContext(diagnosticTrace, () =>
-      runCodexAppServerAttempt(params, { turnCompletionIdleTimeoutMs: 5 }),
+      runCodexAppServerAttempt(params),
     );
-    await harness.waitForMethod("turn/start");
+    await Promise.race([
+      harness.waitForMethod("turn/start"),
+      run.then((result) => {
+        throw new Error(`Attempt ended before turn/start: ${JSON.stringify(result)}`);
+      }),
+    ]);
+    await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
     await run;
 
     const threadStart = readRequestOptions(harness.request, "thread/start");

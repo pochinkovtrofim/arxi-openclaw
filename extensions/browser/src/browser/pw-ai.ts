@@ -11,6 +11,7 @@ import {
   getObservedBrowserStateViaPlaywright,
   getMainFrameDocumentIdentityViaPlaywright,
   getPageForTargetId,
+  hasCachedPlaywrightBrowserConnection,
   isBrowserObservedDialogBlockedError,
   listPagesViaPlaywright,
   markObservedDialogsHandledRemotelyForPage,
@@ -29,6 +30,7 @@ import {
 import {
   armDialogViaPlaywright,
   armFileUploadViaPlaywright,
+  downloadCurrentDocumentViaPlaywright,
   downloadViaPlaywright,
   uploadViaPlaywright,
   waitForDownloadViaPlaywright,
@@ -85,6 +87,7 @@ import { traceStartViaPlaywright, traceStopViaPlaywright } from "./pw-tools-core
 
 export const pwAi = {
   withPageScopedCdpClient,
+  downloadCurrentDocumentViaPlaywright,
   closePageByTargetIdViaPlaywright,
   closePlaywrightBrowserConnection,
   retirePlaywrightBrowserConnection,
@@ -98,6 +101,7 @@ export const pwAi = {
   getObservedBrowserStateViaPlaywright,
   getMainFrameDocumentIdentityViaPlaywright,
   getPageForTargetId,
+  hasCachedPlaywrightBrowserConnection,
   isBrowserObservedDialogBlockedError,
   listPagesViaPlaywright,
   markObservedDialogsHandledRemotelyForPage,

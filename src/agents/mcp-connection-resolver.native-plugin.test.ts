@@ -72,7 +72,7 @@ it("keeps a native plugin MCP server requester-scoped when the plugin registers 
     config,
     includeDisabled: true,
   });
-  const threadConfig = loadCodexBundleMcpThreadConfigCore({
+  const threadConfig = await loadCodexBundleMcpThreadConfigCore({
     workspaceDir,
     cfg: config,
     manifestRegistry,

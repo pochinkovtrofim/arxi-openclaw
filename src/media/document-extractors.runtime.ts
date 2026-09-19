@@ -23,7 +23,9 @@ export async function extractDocumentContent(
   },
 ): Promise<(DocumentExtractionResult & { extractor: string }) | null> {
   const mimeType = normalizeLowercaseStringOrEmpty(params.mimeType);
+  params.signal?.throwIfAborted();
   const extractors = await documentExtractorLoader.load(params.config);
+  params.signal?.throwIfAborted();
   // Keep config and loader-only fields out of plugin calls; extractors receive the SDK request shape.
   const request: DocumentExtractionRequest = {
     buffer: params.buffer,
@@ -36,6 +38,7 @@ export async function extractDocumentContent(
     signal: params.signal,
     ...(params.password ? { password: params.password } : {}),
     ...(params.pageNumbers ? { pageNumbers: params.pageNumbers } : {}),
+    ...(params.signal ? { signal: params.signal } : {}),
     ...(params.onImageExtractionError
       ? { onImageExtractionError: params.onImageExtractionError }
       : {}),
@@ -50,6 +53,7 @@ export async function extractDocumentContent(
     }
     try {
       const result = await extractor.extract(request);
+      params.signal?.throwIfAborted();
       if (result) {
         return {
           ...result,
@@ -57,6 +61,7 @@ export async function extractDocumentContent(
         };
       }
     } catch (error) {
+      params.signal?.throwIfAborted();
       errors.push(error);
     }
   }

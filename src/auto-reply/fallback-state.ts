@@ -1,4 +1,5 @@
 /** Formats model-fallback notice state for UI/status messages and persisted transition tracking. */
+import { buildModelCatalogRef } from "@openclaw/model-catalog-core/model-catalog-refs";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { formatRawAssistantErrorForUi } from "../agents/embedded-agent-helpers.js";
@@ -6,7 +7,6 @@ import { areRuntimeModelRefsEquivalent } from "../agents/model-runtime-aliases.j
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { arxiUserCopy } from "../shared/arxi-user-copy.js";
 import type { FallbackNoticeState } from "../status/fallback-notice-state.js";
-import { formatProviderModelRef } from "./model-runtime.js";
 import type { RuntimeFallbackAttempt } from "./reply/agent-runner-execution.types.js";
 
 const FALLBACK_REASON_PART_MAX = 80;
@@ -71,7 +71,7 @@ function formatFallbackAttemptReason(attempt: RuntimeFallbackAttempt): string {
 }
 
 function formatFallbackAttemptSummary(attempt: RuntimeFallbackAttempt): string {
-  return `${formatProviderModelRef(attempt.provider, attempt.model)} ${formatFallbackAttemptReason(attempt)}`;
+  return `${buildModelCatalogRef(attempt.provider, attempt.model)} ${formatFallbackAttemptReason(attempt)}`;
 }
 
 function buildFallbackReasonSummary(attempts: RuntimeFallbackAttempt[]): string {
@@ -98,8 +98,8 @@ export function buildFallbackNotice(params: {
   attempts: RuntimeFallbackAttempt[];
   cfg?: OpenClawConfig;
 }): string | null {
-  const selected = formatProviderModelRef(params.selectedProvider, params.selectedModel);
-  const active = formatProviderModelRef(params.activeProvider, params.activeModel);
+  const selected = buildModelCatalogRef(params.selectedProvider, params.selectedModel);
+  const active = buildModelCatalogRef(params.activeProvider, params.activeModel);
   if (areRuntimeModelRefsEquivalent(selected, active, { config: params.cfg })) {
     return null;
   }
@@ -110,13 +110,28 @@ export function buildFallbackNotice(params: {
   );
 }
 
+/** Builds the visible notice shown after a successful embedded provider-policy retry. */
+export function buildProviderPolicyRetryNotice(params: {
+  provider: string;
+  model: string;
+  cfg?: OpenClawConfig;
+}): string {
+  const target = buildModelCatalogRef(params.provider, params.model);
+  const label = areRuntimeModelRefsEquivalent(target, "openai/gpt-daybreak-blue-latest", {
+    config: params.cfg,
+  })
+    ? "Daybreak"
+    : target;
+  return `↪️ Retried on ${label}`;
+}
+
 /** Builds the visible notice shown when runtime returns to the selected model. */
 export function buildFallbackClearedNotice(params: {
   selectedProvider: string;
   selectedModel: string;
   previousActiveModel?: string;
 }): string {
-  const selected = formatProviderModelRef(params.selectedProvider, params.selectedModel);
+  const selected = buildModelCatalogRef(params.selectedProvider, params.selectedModel);
   const previous = normalizeOptionalString(params.previousActiveModel);
   if (previous && previous !== selected) {
     return arxiUserCopy(
@@ -158,8 +173,8 @@ export function resolveFallbackTransition(params: {
   state?: FallbackNoticeState;
   cfg?: OpenClawConfig;
 }): ResolvedFallbackTransition {
-  const selectedModelRef = formatProviderModelRef(params.selectedProvider, params.selectedModel);
-  const activeModelRef = formatProviderModelRef(params.activeProvider, params.activeModel);
+  const selectedModelRef = buildModelCatalogRef(params.selectedProvider, params.selectedModel);
+  const activeModelRef = buildModelCatalogRef(params.activeProvider, params.activeModel);
   const previousState = {
     selectedModel: normalizeOptionalString(params.state?.fallbackNotice?.selectedModel),
     activeModel: normalizeOptionalString(params.state?.fallbackNotice?.activeModel),

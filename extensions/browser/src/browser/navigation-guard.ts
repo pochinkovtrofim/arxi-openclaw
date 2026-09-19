@@ -121,8 +121,10 @@ export async function assertBrowserNavigationAllowed(
   opts: {
     url: string;
     lookupFn?: LookupFn;
+    signal?: AbortSignal;
   } & BrowserNavigationPolicyOptions,
 ): Promise<void> {
+  opts.signal?.throwIfAborted();
   const parsed = parseBrowserNavigationUrl(opts.url);
 
   if (!NETWORK_NAVIGATION_PROTOCOLS.has(parsed.protocol)) {
@@ -178,6 +180,7 @@ export async function assertBrowserNavigationAllowed(
   await resolvePinnedHostnameWithPolicy(parsed.hostname, {
     lookupFn: opts.lookupFn,
     policy: opts.ssrfPolicy,
+    signal: opts.signal,
   });
 }
 
@@ -191,8 +194,10 @@ export async function assertBrowserNavigationResultAllowed(
   opts: {
     url: string;
     lookupFn?: LookupFn;
+    signal?: AbortSignal;
   } & BrowserNavigationPolicyOptions,
 ): Promise<void> {
+  opts.signal?.throwIfAborted();
   const rawUrl = opts.url.trim();
   if (!rawUrl) {
     return;
@@ -216,8 +221,10 @@ export async function assertBrowserNavigationRedirectChainAllowed(
   opts: {
     request?: BrowserNavigationRequestLike | null;
     lookupFn?: LookupFn;
+    signal?: AbortSignal;
   } & BrowserNavigationPolicyOptions,
 ): Promise<void> {
+  opts.signal?.throwIfAborted();
   const chain: string[] = [];
   let current = opts.request ?? null;
   while (current) {
@@ -230,6 +237,7 @@ export async function assertBrowserNavigationRedirectChainAllowed(
       lookupFn: opts.lookupFn,
       ssrfPolicy: opts.ssrfPolicy,
       browserProxyMode: opts.browserProxyMode,
+      signal: opts.signal,
     });
   }
 }

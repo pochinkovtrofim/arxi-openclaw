@@ -40,6 +40,11 @@ import {
 } from "../../tasks/task-flow-runtime-internal.js";
 import type { TaskDeliveryState } from "../../tasks/task-registry.types.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
+import {
+  asManagedTaskFlowRecord,
+  mapFlowTaskRunResult,
+  mapFlowUpdateResult,
+} from "./runtime-managed-flow-result.js";
 import type {
   BoundTaskFlowRuntime,
   BoundTaskFlowHistoryController,
@@ -57,37 +62,6 @@ function assertSessionKey(sessionKey: string | undefined, errorMessage: string):
     throw new Error(errorMessage);
   }
   return normalized;
-}
-
-function asManagedTaskFlowRecord(
-  flow: TaskFlowRecord | undefined,
-): ManagedTaskFlowRecord | undefined {
-  if (!flow || flow.syncMode !== "managed" || !flow.controllerId) {
-    return undefined;
-  }
-  return flow as ManagedTaskFlowRecord;
-}
-
-function mapFlowUpdateResult(result: TaskFlowUpdateResult): ManagedTaskFlowMutationResult {
-  if (result.applied) {
-    const managed = asManagedTaskFlowRecord(result.flow);
-    if (!managed) {
-      return {
-        applied: false,
-        code: "not_managed",
-        current: result.flow,
-      };
-    }
-    return {
-      applied: true,
-      flow: managed,
-    };
-  }
-  return {
-    applied: false,
-    code: result.reason,
-    ...(result.current ? { current: result.current } : {}),
-  };
 }
 
 function applyManagedFlowMutationForOwner(params: {
@@ -317,41 +291,41 @@ function createBoundTaskFlowRuntime(params: {
     };
   };
 
-  const createManagedWithCurrentAutomationObligation = (params: {
+  const createManagedWithCurrentAutomationObligation = (input: {
     flow: ManagedTaskFlowCreateParams;
     obligation: { triggerAtMs: number; triggerKind: string; triggerDigest: string };
     history?: import("../../tasks/task-flow-registry.store.types.js").TaskFlowHistoryRegistration;
   }) => {
     const prepared = prepareManagedTaskFlowMutation({
       ownerKey,
-      controllerId: params.flow.controllerId,
+      controllerId: input.flow.controllerId,
       create: {
         requesterOrigin,
-        status: params.flow.status,
-        notifyPolicy: params.flow.notifyPolicy,
-        goal: params.flow.goal,
-        currentStep: params.flow.currentStep,
-        stateJson: params.flow.stateJson,
-        waitJson: params.flow.waitJson,
-        cancelRequestedAt: params.flow.cancelRequestedAt,
-        createdAt: params.flow.createdAt,
-        updatedAt: params.flow.updatedAt,
-        endedAt: params.flow.endedAt,
+        status: input.flow.status,
+        notifyPolicy: input.flow.notifyPolicy,
+        goal: input.flow.goal,
+        currentStep: input.flow.currentStep,
+        stateJson: input.flow.stateJson,
+        waitJson: input.flow.waitJson,
+        cancelRequestedAt: input.flow.cancelRequestedAt,
+        createdAt: input.flow.createdAt,
+        updatedAt: input.flow.updatedAt,
+        endedAt: input.flow.endedAt,
       },
-      ...(params.history ? { history: params.history } : {}),
+      ...(input.history ? { history: input.history } : {}),
     });
     if (!isPreparedManagedTaskFlowMutation(prepared)) {
       throw new Error("Managed Flow creation could not be prepared.");
     }
-    return commitPreparedWithCurrentAutomation({ prepared, obligation: params.obligation });
+    return commitPreparedWithCurrentAutomation({ prepared, obligation: input.obligation });
   };
 
-  const commitTerminalManagedFlow = (params: {
+  const commitTerminalManagedFlow = (input: {
     flowId: string;
     expectedRevision: number;
     patch: Parameters<typeof prepareManagedTaskFlowMutation>[0]["patch"];
   }): ManagedTaskFlowMutationResult => {
-    const current = getTaskFlowByIdForOwner({ flowId: params.flowId, callerOwnerKey: ownerKey });
+    const current = getTaskFlowByIdForOwner({ flowId: input.flowId, callerOwnerKey: ownerKey });
     const managed = asManagedTaskFlowRecord(current);
     if (!managed) {
       return {
@@ -364,8 +338,8 @@ function createBoundTaskFlowRuntime(params: {
       ownerKey,
       controllerId: managed.controllerId,
       flowId: managed.flowId,
-      expectedRevision: params.expectedRevision,
-      patch: params.patch,
+      expectedRevision: input.expectedRevision,
+      patch: input.patch,
     });
     if (!isPreparedManagedTaskFlowMutation(prepared)) {
       return mapFlowUpdateResult(prepared);
@@ -629,36 +603,7 @@ function createBoundTaskFlowRuntime(params: {
         lastEventAt: input.lastEventAt,
         progressSummary: input.progressSummary,
       });
-      if (!created.created) {
-        return {
-          created: false,
-          found: created.found,
-          reason: created.reason ?? "Task was not created.",
-          ...(created.flow ? { flow: created.flow } : {}),
-        };
-      }
-      const managed = asManagedTaskFlowRecord(created.flow);
-      if (!managed) {
-        return {
-          created: false,
-          found: true,
-          reason: "TaskFlow does not accept managed child tasks.",
-          flow: created.flow,
-        };
-      }
-      if (!created.task) {
-        return {
-          created: false,
-          found: true,
-          reason: "Task was not created.",
-          flow: created.flow,
-        };
-      }
-      return {
-        created: true,
-        flow: managed,
-        task: created.task,
-      };
+      return mapFlowTaskRunResult(created);
     },
   };
 }
