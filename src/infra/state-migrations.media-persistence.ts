@@ -37,6 +37,7 @@ import { withLegacySessionParticipantsSchema } from "../state/openclaw-agent-par
 import { OPENCLAW_AGENT_SCHEMA_SQL } from "../state/openclaw-agent-schema.js";
 import { OPENCLAW_SQLITE_BUSY_TIMEOUT_MS } from "../state/openclaw-state-db.js";
 import { VERSION } from "../version.js";
+import { migrateArxiCredentialSchema } from "./arxi-credential-schema-migration.js";
 import { formatErrorMessage } from "./errors.js";
 import {
   executeSqliteQuerySync,
@@ -567,6 +568,11 @@ export async function migrateLegacyMediaPersistence(
   const refusedAgentDatabasePaths: string[] = [];
   try {
     await withAgentDatabaseMaintenanceLease({ env }, async (maintenance) => {
+      if (await migrateArxiCredentialSchema(env, maintenance)) {
+        changes.push(
+          "Upgraded the imported Arxi credential database schema without moving its auth profiles.",
+        );
+      }
       const discovery = resolveAgentDatabaseMigrationTargets({
         changes,
         configuredAgentDatabaseTargets: params.configuredAgentDatabaseTargets ?? [],
