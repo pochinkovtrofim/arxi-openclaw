@@ -604,6 +604,7 @@ export async function prepareModelsListResult(
     };
   }
   const { evaluateEntry } = projector;
+  const runtimeCatalogView = createModelCatalogView({ cfg, catalog, routeVariants });
   const evaluations = new Map<string, ModelAuthAvailabilityEvaluation>();
   const runtimeChoiceReaders = new Map<string, () => ModelRuntimeChoice[]>();
   const projectPublic = createPublicModelsListProjector({
@@ -703,7 +704,24 @@ export async function prepareModelsListResult(
             throw new Error("Model catalog publication omitted prepared auth evaluation");
           }
           const runtimeChoices = runtimeChoiceReaders.get(key)?.();
-          const projected = projectPublic(entry, evaluation);
+          const runtimeId = resolveCatalogDecisionRuntime({
+            cfg,
+            agentId,
+            entry,
+            evaluation,
+            pluginRegistry: preparedPluginRegistry,
+          })?.id;
+          const selected = selectModelCatalogRuntimeEntry({
+            entry,
+            routeVariants: runtimeCatalogView.variantsOf(entry) ?? [entry],
+            runtimeId: runtimeId ?? "openclaw",
+          });
+          // Host route projection may retain only an opaque model's identity.
+          // Its selected native runtime still owns the observed capabilities;
+          // a sibling runtime or host donor must not supply them.
+          const publicEntry =
+            runtimeId && selected.entry.nativeRuntime === runtimeId ? selected.entry : entry;
+          const projected = projectPublic(publicEntry, evaluation);
           if (runtimeChoices?.length) {
             projected.runtimeChoices = runtimeChoices;
           }

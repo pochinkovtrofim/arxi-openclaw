@@ -16,6 +16,100 @@ import {
 import { WITHOUT_OPENAI_ENV_AUTH } from "./models-list-result.openai-routes.test-support.js";
 
 describe("models.list configured runtime choices", () => {
+  it.each([
+    { view: "all" as const, nativeInput: ["text", "image"] as const },
+    { view: "default" as const, nativeInput: ["text", "image"] as const },
+    { view: "all" as const, nativeInput: ["text"] as const },
+  ])(
+    "keeps opaque native capabilities with stored host auth ($view, $nativeInput)",
+    async ({ view, nativeInput }) => {
+      await withOpenClawTestState(
+        {
+          layout: "state-only",
+          prefix: "native-catalog-capabilities-",
+          agentEnv: "main",
+          env: WITHOUT_OPENAI_ENV_AUTH,
+        },
+        async (state) => {
+          const model = "opaque-native-model";
+          const cfg: OpenClawConfig = {
+            agents: {
+              defaults: {
+                workspace: state.workspaceDir,
+                model: `openai/${model}`,
+                models: { [`openai/${model}`]: { agentRuntime: { id: "codex" } } },
+              },
+            },
+          };
+          const native: ModelCatalogEntry = {
+            provider: "openai",
+            id: model,
+            name: "Native model",
+            nativeRuntime: "codex",
+            input: [...nativeInput],
+            reasoning: true,
+          };
+          const sibling: ModelCatalogEntry = {
+            ...native,
+            nativeRuntime: "other-native",
+            input: ["text", "image", "audio"],
+          };
+          const snapshot: ModelCatalogSnapshot = {
+            entries: [native],
+            routeVariants: [sibling, native],
+          };
+          const pluginRegistry = createEmptyPluginRegistry();
+          pluginRegistry.agentHarnesses.push({
+            pluginId: "codex",
+            source: "test",
+            harness: {
+              id: "codex",
+              label: "Codex fixture",
+              authBootstrap: "harness",
+              supports: () => ({ supported: true }),
+              runAttempt: vi.fn(),
+              readModelCatalogReadiness: () => ({ accountType: "apiKey" }),
+            },
+          });
+          const projector = createGatewayAgentModelCatalogProjector({
+            cfg,
+            agentId: "main",
+            snapshot,
+            metadataSnapshot: createPluginMetadataSnapshotFixture({ plugins: [] }),
+            preparedAuthStore: {
+              version: 1,
+              profiles: {
+                "openai:test": { type: "api_key", provider: "openai", key: "synthetic-test-key" },
+              },
+            },
+            pluginRegistry,
+          });
+          const prepared = await prepareModelsListResult({
+            source: {
+              kind: "gateway",
+              context: {
+                getRuntimeConfig: () => cfg,
+                loadGatewayModelCatalogSnapshot: vi.fn(),
+                logGateway: { debug: vi.fn() },
+              },
+            },
+            agentId: "main",
+            params: { view, includeDetails: true },
+            preloadedCatalog: { agentId: "main", config: cfg, snapshot },
+            preloadedOnly: true,
+            catalogProjector: projector,
+          });
+          expect(prepared.read().models.find((entry) => entry.id === model)).toMatchObject({
+            provider: "openai",
+            agentRuntime: { id: "codex" },
+            input: [...nativeInput],
+            reasoning: true,
+          });
+        },
+      );
+    },
+  );
+
   it.each([false, true])(
     "indexes configured rows once while projecting several logical models (auth rejects: %s)",
     async (rejectAuth) => {
