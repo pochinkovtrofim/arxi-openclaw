@@ -41,7 +41,9 @@ function completed(value: unknown): CodeModeHeadlessResult {
 }
 
 function captureRunEvents() {
-  const events: DiagnosticEventPayload[] = [];
+  const events: Array<
+    Extract<DiagnosticEventPayload, { type: "headless.run.started" | "headless.run.completed" }>
+  > = [];
   const stop = onTrustedInternalDiagnosticEvent((event, metadata, privateData) => {
     if (event.type === "headless.run.started" || event.type === "headless.run.completed") {
       expect(metadata.trusted).toBe(true);
@@ -101,7 +103,7 @@ describe("headless Cron condition diagnostic lifecycle", () => {
       prepareRuntime: async () => preparedRuntime(config),
       runHeadless: async () => ({
         status: "failed",
-        code: "runtime_error",
+        code: "internal_error",
         error: "private fixture detail",
         output: [],
         toolCallCount: 0,
@@ -111,7 +113,7 @@ describe("headless Cron condition diagnostic lifecycle", () => {
     try {
       await expect(
         runtime.evaluateTrigger({ jobId: "failed", script: "throw new Error()", state: null }),
-      ).resolves.toMatchObject({ kind: "error", code: "runtime_error" });
+      ).resolves.toMatchObject({ kind: "error", code: "internal_error" });
       await waitForDiagnosticEventsDrained();
     } finally {
       captured.stop();
@@ -119,7 +121,7 @@ describe("headless Cron condition diagnostic lifecycle", () => {
     expect(captured.events.at(-1)).toMatchObject({
       type: "headless.run.completed",
       outcome: "error",
-      errorCategory: "runtime_error",
+      errorCategory: "internal_error",
     });
     expect(JSON.stringify(captured.events)).not.toContain("private fixture detail");
   });

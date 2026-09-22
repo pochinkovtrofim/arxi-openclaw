@@ -39,7 +39,11 @@ function createExecution(
     assertContextCurrent?: () => void;
     admittedConversationId?: string;
     admittedRequesterSenderId?: string;
+    deliveryChatType?: "direct" | "group" | "channel";
+    deliver?: boolean;
+    groupId?: string;
     operatorAdminClient?: "local" | "remote";
+    senderIsOwner?: boolean;
   } = {},
 ) {
   const abortCleanup = vi.fn();
@@ -86,7 +90,7 @@ function createExecution(
         userTurn: {
           execApprovalFollowupHandoffClaimId: "claim",
           message: "continue",
-          senderIsOwner: false,
+          senderIsOwner: options.senderIsOwner ?? false,
           suppressPromptPersistence: false,
         },
         workspaceOverride: "/workspace/A",
@@ -97,7 +101,10 @@ function createExecution(
       },
       cfg: {},
       activeSessionAgentId: "main",
-      delivery: {},
+      delivery: {
+        deliver: options.deliver ?? false,
+        resolvedChatType: options.deliveryChatType,
+      },
       isNewSession: false,
       isRawModelRun: true,
       isOneShotModelRun: true,
@@ -106,6 +113,7 @@ function createExecution(
       images: [],
       imageOrder: [],
       media: [],
+      groupId: options.groupId,
       runId: "owner-test",
       agentDedupeKeys: [],
       bestEffortDeliver: false,
@@ -328,7 +336,9 @@ describe("startAgentRunExecution Gateway ownership", () => {
     });
     dispatchAgentRunFromGateway.mockImplementationOnce(resolveDispatched);
 
-    runWithDiagnosticTraceContext(admissionTrace, () => startAgentRunExecution(execution.params));
+    void runWithDiagnosticTraceContext(admissionTrace, () =>
+      startAgentRunExecution(execution.params),
+    );
 
     await dispatched;
     const dispatch = dispatchAgentRunFromGateway.mock.calls[0]?.[0];
@@ -356,7 +366,7 @@ describe("startAgentRunExecution Gateway ownership", () => {
     });
     dispatchAgentRunFromGateway.mockImplementationOnce(resolveTrusted);
 
-    startAgentRunExecution(trusted.params);
+    void startAgentRunExecution(trusted.params);
     await trustedDispatched;
     expect(dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.runContext).toMatchObject({
       chatId: "telegram-chat:42",
@@ -374,11 +384,67 @@ describe("startAgentRunExecution Gateway ownership", () => {
     });
     dispatchAgentRunFromGateway.mockImplementationOnce(resolveUntrusted);
 
-    startAgentRunExecution(untrusted.params);
+    void startAgentRunExecution(untrusted.params);
     await untrustedDispatched;
     const runContext = dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.runContext;
     expect(runContext?.chatId).toBeUndefined();
     expect(runContext?.senderId).toBeUndefined();
+  });
+
+  it.each([
+    {
+      name: "trusted private owner reply",
+      operatorAdminClient: "local" as const,
+      deliveryChatType: "direct" as const,
+      deliver: true,
+      senderIsOwner: true,
+      expectedPurpose: "direct_owner_reply",
+    },
+    {
+      name: "remote operator",
+      operatorAdminClient: "remote" as const,
+      deliveryChatType: "direct" as const,
+      deliver: true,
+      senderIsOwner: true,
+    },
+    {
+      name: "unknown destination type",
+      operatorAdminClient: "local" as const,
+      deliver: true,
+      senderIsOwner: true,
+    },
+    {
+      name: "group destination",
+      operatorAdminClient: "local" as const,
+      deliveryChatType: "group" as const,
+      deliver: true,
+      senderIsOwner: true,
+      groupId: "group-1",
+    },
+    {
+      name: "patron return-only turn",
+      operatorAdminClient: "local" as const,
+      deliveryChatType: "direct" as const,
+      senderIsOwner: true,
+    },
+  ])("stamps delivery purpose only for a $name", async (testCase) => {
+    const execution = createExecution({
+      ...testCase,
+      admittedConversationId: "telegram-chat:42",
+      admittedRequesterSenderId: "owner:principal",
+    });
+    let resolveDispatched!: () => void;
+    const dispatched = new Promise<void>((resolve) => {
+      resolveDispatched = resolve;
+    });
+    dispatchAgentRunFromGateway.mockImplementationOnce(resolveDispatched);
+
+    void startAgentRunExecution(execution.params);
+    await dispatched;
+
+    expect(dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.nativeDeliveryPurpose).toBe(
+      testCase.expectedPurpose,
+    );
   });
 
   it("keeps the gateway message lifecycle open until the agent run settles", async () => {
@@ -402,7 +468,7 @@ describe("startAgentRunExecution Gateway ownership", () => {
     });
     dispatchAgentRunFromGateway.mockImplementationOnce(resolveDispatched);
 
-    startAgentRunExecution(execution.params);
+    void startAgentRunExecution(execution.params);
 
     await dispatched;
     expect(logMessageDispatchStarted).toHaveBeenCalledOnce();
@@ -429,7 +495,7 @@ describe("startAgentRunExecution Gateway ownership", () => {
       throw new Error("dispatch unavailable");
     });
 
-    startAgentRunExecution(execution.params);
+    void startAgentRunExecution(execution.params);
 
     await execution.runtimeReleased;
     expect(logMessageDispatchStarted).toHaveBeenCalledOnce();

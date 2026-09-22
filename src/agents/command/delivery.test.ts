@@ -183,6 +183,7 @@ function latestOutboundDeliveryArgs(): {
   bestEffort?: boolean;
   queuePolicy?: string;
   replyPayloadSendingHook?: ReplyPayloadSendingHookArgs;
+  nativeDeliveryPurpose?: "cron_failure_alert" | "direct_owner_reply" | "exact_reminder";
 } {
   const args = lastMockArg(deliverOutboundPayloadsMock, "outbound delivery arguments");
   if (!args || typeof args !== "object") {
@@ -198,6 +199,7 @@ function latestOutboundDeliveryArgs(): {
     bestEffort?: boolean;
     queuePolicy?: string;
     replyPayloadSendingHook?: ReplyPayloadSendingHookArgs;
+    nativeDeliveryPurpose?: "cron_failure_alert" | "direct_owner_reply" | "exact_reminder";
   };
 }
 
@@ -499,6 +501,15 @@ describe("deliverAgentCommandResult payload normalization", () => {
     expect(latestOutboundDeliveryArgs()).toMatchObject({
       identity: { name: testCase.name, emoji: ":robot_face:" },
     });
+  });
+
+  it("carries the gateway-owned delivery purpose through durable final delivery", async () => {
+    await deliverAgentCommandResultForTest({
+      opts: { nativeDeliveryPurpose: "direct_owner_reply" },
+      payloads: [{ text: "final answer" }],
+    });
+
+    expect(latestOutboundDeliveryArgs().nativeDeliveryPurpose).toBe("direct_owner_reply");
   });
 
   it("keeps Gateway reset status notices through the durable delivery handoff", async () => {

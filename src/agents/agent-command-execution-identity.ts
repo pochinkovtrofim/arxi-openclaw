@@ -221,8 +221,10 @@ export function prepareAgentCommandExecutionIdentity(params: {
 export function sanitizePublicAgentCommandIngressOpts(
   opts: AgentCommandIngressOpts,
 ): AgentCommandGatewayIngressOpts {
+  const { nativeDeliveryPurpose: _nativeDeliveryPurpose, ...publicOpts } =
+    opts as AgentCommandIngressOpts & { nativeDeliveryPurpose?: unknown };
   return withoutAgentCommandExecutionIdentitySpawnFacts({
-    ...opts,
+    ...publicOpts,
     runtimeContextFragments: undefined,
     senderIsOwner: false,
     mainRestartRecoveryOwnerLease: undefined,
