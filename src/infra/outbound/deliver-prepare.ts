@@ -271,6 +271,9 @@ export async function prepareOutboundPayloadBatch(
     ...(params.executionIdentityToken
       ? { executionIdentityToken: params.executionIdentityToken }
       : {}),
+    ...(params.nativeDeliveryPurpose
+      ? { nativeDeliveryPurpose: params.nativeDeliveryPurpose }
+      : {}),
     entries,
   };
 }

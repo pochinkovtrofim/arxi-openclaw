@@ -26,6 +26,7 @@ import {
 import { upsertDeliveryQueueEntryInDatabase } from "../delivery-queue-sqlite.kernel.js";
 import { generateSecureUuid } from "../secure-random.js";
 import { failPendingDelivery } from "./delivery-queue-ack.js";
+import { clearDeliveryDeferral } from "./delivery-queue-deferral.js";
 import { collectEntrySpoolPaths } from "./delivery-queue-media-spool.js";
 import {
   DELIVERY_QUEUE_MEDIA_STAGING_QUEUE_NAME,
@@ -303,13 +304,12 @@ export async function failDelivery(
     id,
     stateDir,
     (entry) => ({
-      ...entry,
+      ...clearDeliveryDeferral(entry),
       retryCount: entry.retryCount + 1,
       lastAttemptAt: Date.now(),
       lastError: error,
       // The failed attempt has settled. Keep platform evidence for recovery,
       // but release the live owner so another process can reconcile or retry.
-      availableAt: undefined,
       producerClaimId: undefined,
       recoveryState: entry.recoveryState === "producer_claimed" ? undefined : entry.recoveryState,
     }),
@@ -330,12 +330,11 @@ export async function failDeliveryBeforePlatformSend(
     id,
     stateDir,
     (entry) => ({
-      ...entry,
+      ...clearDeliveryDeferral(entry),
       retryCount: entry.retryCount + 1,
       lastAttemptAt: Date.now(),
       lastError: error,
       // Clear both fields together; retaining either would preserve false send evidence.
-      availableAt: undefined,
       producerClaimId: undefined,
       platformSendAttemptId: undefined,
       platformSendStartedAt: undefined,
@@ -358,11 +357,10 @@ export async function failDeliveryAfterPlatformSend(
     id,
     stateDir,
     (entry) => ({
-      ...entry,
+      ...clearDeliveryDeferral(entry),
       retryCount: entry.retryCount + 1,
       lastAttemptAt: Date.now(),
       lastError: error,
-      availableAt: undefined,
       producerClaimId: undefined,
       platformSendStartedAt: entry.platformSendStartedAt ?? Date.now(),
       recoveryState: "unknown_after_send",
@@ -482,8 +480,7 @@ export async function markDeliveryPlatformSendAttemptStarted(
     id,
     stateDir,
     (entry) => ({
-      ...entry,
-      availableAt: undefined,
+      ...clearDeliveryDeferral(entry),
       producerClaimId: undefined,
       platformSendStartedAt: entry.platformSendStartedAt ?? Date.now(),
       ...(route && "replyToId" in route ? { effectiveReplyToId: route.replyToId ?? null } : {}),
@@ -516,8 +513,7 @@ export async function markDeliveryPlatformSendDispatched(
     id,
     stateDir,
     (entry) => ({
-      ...entry,
-      availableAt: undefined,
+      ...clearDeliveryDeferral(entry),
       producerClaimId: undefined,
       platformSendStartedAt: Date.now(),
       ...(route && "replyToId" in route ? { effectiveReplyToId: route.replyToId ?? null } : {}),

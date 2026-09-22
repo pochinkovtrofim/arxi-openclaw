@@ -22,6 +22,7 @@ const GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS = [
 
 const GATEWAY_LIFECYCLE_TIME_BASED_PRODUCERS = [
   { id: "cron", wakeSource: "CronService.getSuspendWakeSnapshot" },
+  { id: "outbound-deferred", wakeSource: "getNextDeferredOutboundDeliveryAtMs" },
 ] as const;
 
 describe("Arxi lifecycle upgrade inventory", () => {
@@ -38,6 +39,7 @@ describe("Arxi lifecycle upgrade inventory", () => {
   it("keeps every reviewed time producer in the wake contract", () => {
     expect(GATEWAY_LIFECYCLE_TIME_BASED_PRODUCERS).toEqual([
       { id: "cron", wakeSource: "CronService.getSuspendWakeSnapshot" },
+      { id: "outbound-deferred", wakeSource: "getNextDeferredOutboundDeliveryAtMs" },
     ]);
   });
 

@@ -21,6 +21,7 @@ import {
   isOutboundDeliveryError,
   PlatformMessageNotDispatchedError,
 } from "../../infra/outbound/deliver-types.js";
+import type { NativeDeliveryPurpose } from "../../infra/outbound/prepared-batch.js";
 import { buildOutboundSessionContext } from "../../infra/outbound/session-context.js";
 import { hasReplyPayloadContent } from "../../interactive/payload.js";
 import { normalizeAccountId } from "../../routing/account-id.js";
@@ -125,6 +126,8 @@ type RouteReplyParams = {
   runId?: string;
   /** @internal Stable producer-owned block delivery intent. */
   deliveryIntentId?: string;
+  /** @internal Core-authored purpose retained by durable delivery custody. */
+  nativeDeliveryPurpose?: NativeDeliveryPurpose;
   /** Model/session context for response-prefix template interpolation. */
   responsePrefixContext?: ResponsePrefixContext;
 };
@@ -386,6 +389,9 @@ export async function routeReply(params: RouteReplyParams): Promise<RouteReplyRe
             completionRetention: BLOCK_REPLY_COMPLETION_RETENTION,
             durability: "required" as const,
           }
+        : {}),
+      ...(params.nativeDeliveryPurpose
+        ? { nativeDeliveryPurpose: params.nativeDeliveryPurpose }
         : {}),
       mirror:
         params.mirror !== false && params.sessionKey

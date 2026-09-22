@@ -9,6 +9,7 @@ import type { CliDeps } from "../cli/deps.types.js";
 import { createOutboundSendDeps } from "../cli/outbound-send-deps.js";
 import type { OpenClawConfig } from "../config/types.js";
 import { resolveAgentOutboundIdentity } from "../infra/outbound/identity.js";
+import type { NativeDeliveryPurpose } from "../infra/outbound/prepared-batch.js";
 import { buildOutboundSessionContext } from "../infra/outbound/session-context.js";
 import { resolveCronDeliveryPlan } from "./delivery-plan.js";
 import {
@@ -98,6 +99,8 @@ export async function sendCronAnnouncePayloadStrict(params: {
   target: CronAnnounceTarget;
   payload: ReplyPayload;
   abortSignal: AbortSignal;
+  /** Core-authored purpose unavailable to public message/tool inputs. */
+  nativeDeliveryPurpose?: NativeDeliveryPurpose;
   onDeliveryAttempt?: (reachedRecipient: boolean) => void;
 }): Promise<CronAnnounceDeliveryOutcome> {
   const delivery = await resolveCronAnnounceDelivery(params);
@@ -118,6 +121,9 @@ export async function sendCronAnnouncePayloadStrict(params: {
     accountId: delivery.resolvedTarget.accountId,
     threadId: delivery.resolvedTarget.threadId,
     payloads: [params.payload],
+    ...(params.nativeDeliveryPurpose
+      ? { nativeDeliveryPurpose: params.nativeDeliveryPurpose }
+      : {}),
     session: delivery.session,
     identity: delivery.identity,
     bestEffort: false,

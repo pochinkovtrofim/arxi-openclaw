@@ -412,6 +412,7 @@ async function sendGatewayCronFailureAlertUnderAdmission(
             runtimeConfig,
           ),
         },
+        nativeDeliveryPurpose: "cron_failure_alert",
         abortSignal: abortController.signal,
         onDeliveryAttempt,
       }),

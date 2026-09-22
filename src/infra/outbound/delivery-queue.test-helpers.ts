@@ -95,6 +95,7 @@ export function setQueuedEntryState(
     recoveryState?: "send_attempt_started" | "unknown_after_send";
     producerClaimId?: string;
     availableAt?: number;
+    deferredUntilMs?: number;
   },
 ): void {
   const entry = readQueuedEntry(tmpDir, id);
@@ -123,6 +124,9 @@ export function setQueuedEntryState(
   }
   if (state.availableAt !== undefined) {
     entry.availableAt = state.availableAt;
+  }
+  if (state.deferredUntilMs !== undefined) {
+    entry.deferredUntilMs = state.deferredUntilMs;
   }
   const { db } = openOpenClawStateDatabase({ env: { ...process.env, OPENCLAW_STATE_DIR: tmpDir } });
   db.prepare(

@@ -39,6 +39,7 @@ export function restoreQueuedDeliveryCustody(
     attemptCount: _attemptCount,
     requiresProducerClaim: _requiresProducerClaim,
     availableAt: _availableAt,
+    deferredUntilMs: _deferredUntilMs,
     producerClaimId: _producerClaimId,
     lastAttemptAt: _lastAttemptAt,
     lastError: _lastError,

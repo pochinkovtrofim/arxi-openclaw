@@ -20,12 +20,24 @@ import { trackAsyncWork } from "../shared/async-work-scope.js";
 import { projectModelContextMessages } from "../shared/model-context-message.js";
 import { concatOptionalTextSegments } from "../shared/text/join-segments.js";
 import {
+  createPluginCronHookInvocation,
+  type PluginCoreCronReconciledContext,
+  type PluginCoreGatewayHookContext,
+} from "./hook-cron-context.js";
+import {
   type GateHookResult,
   type InputGateDecision,
   isHookDecision,
 } from "./hook-decision-types.js";
 import { cloneHookIsolationValue, HookIsolationError } from "./hook-isolation.js";
 import type { GlobalHookRunnerRegistry, HookRunnerRegistry } from "./hook-registry.types.js";
+import {
+  DEFAULT_MODIFYING_HOOK_TIMEOUT_MS_BY_HOOK,
+  DEFAULT_VOID_HOOK_TIMEOUT_MS_BY_HOOK,
+  type HookFailurePolicy,
+  type HookRunnerOptions,
+  type VoidHookRunOptions,
+} from "./hook-runner-options.js";
 import { isPluginHookReplyDispatchKind } from "./hook-types.js";
 import type {
   PluginHookAfterToolCallEvent,
@@ -77,84 +89,17 @@ import {
   type PluginToolMatcherScope,
 } from "./tool-hook-matcher.js";
 
-// Re-export types for consumers
+export type { VoidHookRunOptions } from "./hook-runner-options.js";
 
-type HookRunnerLogger = {
-  debug?: (message: string) => void;
-  warn: (message: string) => void;
-  error: (message: string) => void;
-};
-
-type HookFailurePolicy = "fail-open" | "fail-closed";
-export type VoidHookRunOptions = {
-  unrefTimeout?: boolean;
-};
+type VoidHookContext<K extends PluginHookName> = K extends "cron_reconciled"
+  ? PluginCoreCronReconciledContext
+  : K extends "gateway_start" | "gateway_stop" | "cron_changed"
+    ? PluginCoreGatewayHookContext
+    : Parameters<NonNullable<PluginHookRegistration<K>["handler"]>>[1];
 
 type BeforeAgentFinalizeRetry = NonNullable<PluginHookBeforeAgentFinalizeResult["retry"]>;
 type BeforeAgentFinalizeResultWithRetryCandidates = PluginHookBeforeAgentFinalizeResult & {
   retryCandidates?: BeforeAgentFinalizeRetry[];
-};
-
-type HookRunnerOptions = {
-  logger?: HookRunnerLogger;
-  /** If true, errors in hooks will be caught and logged instead of thrown */
-  catchErrors?: boolean;
-  /**
-   * Optional per-hook failure policy.
-   * Defaults to fail-open unless explicitly overridden for a hook name.
-   */
-  failurePolicyByHook?: Partial<Record<PluginHookName, HookFailurePolicy>>;
-  /**
-   * Optional timeout for void/observation hooks. A timed-out hook is logged and
-   * the runner continues, but the plugin's underlying work is not cancelled.
-   */
-  voidHookTimeoutMsByHook?: Partial<Record<PluginHookName, number>>;
-  /**
-   * Optional timeout for modifying hooks. A timed-out hook is logged and skipped,
-   * but the plugin's underlying work is not cancelled.
-   */
-  modifyingHookTimeoutMsByHook?: Partial<Record<PluginHookName, number>>;
-};
-
-const DEFAULT_VOID_HOOK_TIMEOUT_MS_BY_HOOK: Partial<Record<PluginHookName, number>> = {
-  agent_end: 30_000,
-  channel_pairing_requested: 2_000,
-  // Defensive default for the compaction lifecycle hooks. Without a budget an
-  // unresponsive handler runs fully unbounded, and in the codex agent harness
-  // these hooks fire on the serialized notification queue
-  // (event-projector handleItemStarted awaits before_compaction / after_compaction
-  // for a contextCompaction item), so a hung handler freezes every later codex
-  // notification — including turn/completed — and the whole turn hangs. These
-  // hooks can legitimately do real work (e.g. a memory flush), so the budget
-  // matches agent_end's 30s rather than the tighter modifying-hook defaults.
-  // The runner is fail-open for void hooks, so a timed-out handler is logged
-  // and compaction proceeds.
-  before_compaction: 30_000,
-  after_compaction: 30_000,
-  skill_changed: 30_000,
-  skill_proposal_changed: 30_000,
-  // Shutdown hooks share the Gateway's five-second teardown budget. They fail
-  // open after logging so one plugin cannot consume the process watchdog.
-  gateway_stop: 5_000,
-};
-const DEFAULT_MODIFYING_HOOK_TIMEOUT_MS_BY_HOOK: Partial<Record<PluginHookName, number>> = {
-  before_agent_run: 15_000,
-  // Policy hooks fail closed in the global runner. A bounded timeout turns a
-  // stalled policy process into a denial instead of freezing the operation.
-  before_install: 15_000,
-  before_tool_call: 15_000,
-  tool_result_transform: 2_000,
-  // Terminal finalization hooks sit on the runner's completion path. A hung
-  // handler must not freeze final delivery or keep compaction retry recovery
-  // unresolved; timeout fail-opens with the original final answer.
-  before_agent_finalize: 15_000,
-  before_prompt_build: 15_000,
-  // Outbound modifying hooks run inside the serialized reply delivery lane.
-  // A hung plugin must fail open so later hooks and queued replies can settle.
-  message_sending: 15_000,
-  reply_payload_sending: 15_000,
-  resolve_exec_env: 15_000,
-  skill_proposal_evaluate: 120_000,
 };
 
 function deepFreezeHookValue<T>(value: T, seen = new WeakSet<object>()): T {
@@ -770,7 +715,7 @@ export function createHookRunner(
   async function runVoidHook<K extends PluginHookName>(
     hookName: K,
     event: Parameters<NonNullable<PluginHookRegistration<K>["handler"]>>[0],
-    ctx: Parameters<NonNullable<PluginHookRegistration<K>["handler"]>>[1],
+    ctx: VoidHookContext<K>,
     optionsValue: VoidHookRunOptions = {},
     matcherToolName?: string,
   ): Promise<void> {
@@ -783,16 +728,29 @@ export function createHookRunner(
 
     const promises = hooks.map(async (hook) => {
       try {
-        const invoke = () =>
-          (hook.handler as (event: unknown, ctx: unknown) => Promise<void> | void)(event, ctx);
+        const invocation = createPluginCronHookInvocation({
+          context: ctx,
+          pluginId: hook.pluginId,
+          invoke: (hookContext) =>
+            (hook.handler as (event: unknown, ctx: unknown) => Promise<void> | void)(
+              event,
+              hookContext,
+            ),
+        });
         const promise = Promise.resolve(
-          hookName === "gateway_stop" ? runPluginCleanup(hook.handler, invoke) : invoke(),
+          hookName === "gateway_stop"
+            ? runPluginCleanup(hook.handler, invocation.invoke)
+            : invocation.invoke(),
         );
         const timeoutMs = getVoidHookTimeoutMs(hookName, hook);
-        if (timeoutMs) {
-          await withHookTimeout(promise, timeoutMs, { unref: optionsValue.unrefTimeout ?? true });
-        } else {
-          await promise;
+        try {
+          if (timeoutMs) {
+            await withHookTimeout(promise, timeoutMs, { unref: optionsValue.unrefTimeout ?? true });
+          } else {
+            await promise;
+          }
+        } finally {
+          invocation.expire();
         }
       } catch (err) {
         handleHookError({ hookName, pluginId: hook.pluginId, error: err });
@@ -812,7 +770,7 @@ export function createHookRunner(
 
   const bindVoidHook =
     <K extends PluginHookName>(hookName: K) =>
-    (event: HookEvent<K>, ctx: HookContext<K>) =>
+    (event: HookEvent<K>, ctx: VoidHookContext<K>) =>
       runVoidHook(hookName, event, ctx);
 
   const bindModifyingHook =
@@ -827,7 +785,7 @@ export function createHookRunner(
 
   const bindFrozenVoidHook =
     <K extends PluginHookName>(hookName: K) =>
-    (event: HookEvent<K>, ctx: HookContext<K>) =>
+    (event: HookEvent<K>, ctx: VoidHookContext<K>) =>
       runVoidHook(hookName, deepFreezeHookValue(structuredClone(event)), ctx);
 
   /**

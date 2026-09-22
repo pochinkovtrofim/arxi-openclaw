@@ -13,6 +13,7 @@ import {
   countPendingDeliveryQueueEntriesInDatabase,
   deleteDeliveryQueueEntryInDatabase,
   getDeliveryQueueEntryOwnersInDatabase,
+  inspectPendingDeliveryQueueDeferralsInDatabase,
   loadDeliveryQueueEntriesInDatabase,
   prepareDeliveryQueueTerminalEntry,
   pruneExpiredDeliveryQueueTombstonesInDatabase,
@@ -163,6 +164,22 @@ export async function countFailedDeliveryQueueEntries(
   return executeDeliveryQueueOperation(context, stateDir, {
     type: "deliveryQueue.countFailed",
     input: undefined,
+  });
+}
+
+/** Read a content-free pending/semantic-deferral inventory under the state worker owner. */
+export async function inspectPendingDeliveryQueueDeferrals(
+  queueName: string,
+  nowMs: number,
+  stateDir?: string,
+  context?: DeliveryQueueStateContext,
+): Promise<ReturnType<typeof inspectPendingDeliveryQueueDeferralsInDatabase>> {
+  if (!queueName || !Number.isSafeInteger(nowMs) || nowMs < 0) {
+    throw new Error("Invalid delivery queue deferral inventory request");
+  }
+  return executeDeliveryQueueOperation(context, stateDir, {
+    type: "deliveryQueue.inspectPendingDeferrals",
+    input: { queueName, nowMs },
   });
 }
 

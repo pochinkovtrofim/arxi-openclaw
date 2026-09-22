@@ -758,6 +758,48 @@ describe("drainPendingDeliveriesCore for reconnect", () => {
     expect(deliver).toHaveBeenCalledTimes(1);
   });
 
+  it("never bypasses a semantic delivery deferral on reconnect", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-09-22T22:00:00.000Z");
+    const retryAtMs = now.getTime() + 60_000;
+    vi.setSystemTime(now);
+    try {
+      const deliver = vi.fn<DeliverFn>(async () => {});
+      const id = await enqueueFailedDirectChatDelivery({ accountId: "acct1", stateDir: tmpDir });
+      const deferredEntry = readQueuedEntry(tmpDir, id);
+      setQueuedEntryState(tmpDir, id, {
+        retryCount: Number(deferredEntry.retryCount),
+        availableAt: retryAtMs,
+        deferredUntilMs: retryAtMs,
+        lastError: NO_LISTENER_ERROR,
+      });
+
+      await drainAcct1DirectChatReconnect({
+        deliver,
+        log: createRecoveryLog(),
+        stateDir: tmpDir,
+      });
+
+      expect(deliver).not.toHaveBeenCalled();
+      expect(readQueuedEntry(tmpDir, id)).toMatchObject({
+        availableAt: retryAtMs,
+        deferredUntilMs: retryAtMs,
+      });
+
+      vi.setSystemTime(retryAtMs);
+      await drainAcct1DirectChatReconnect({
+        deliver,
+        log: createRecoveryLog(),
+        stateDir: tmpDir,
+      });
+
+      expect(deliver).toHaveBeenCalledOnce();
+      expect(await loadPendingDeliveries(tmpDir)).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ignores other channels even when reconnect drain runs", async () => {
     const log = createRecoveryLog();
     const deliver = vi.fn<DeliverFn>(async () => {});

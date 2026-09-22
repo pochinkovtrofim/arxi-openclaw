@@ -7,7 +7,6 @@ import { isTruthyEnvValue } from "../infra/env.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
 import { prepareGatewayPluginMetadataSnapshotPublication } from "../plugins/current-plugin-metadata-snapshot.js";
-import type { PluginHookGatewayCronService } from "../plugins/hook-types.js";
 import {
   PluginHostCleanupTimeoutError,
   withPluginHostCleanupTimeout,
@@ -159,8 +158,7 @@ export async function reloadGatewayPlugins(
     port,
     pluginWorkspaceDir,
     log,
-    // SAFETY: Gateway cron implements the SDK hook surface, which erases core-only job fields.
-    getCron: kernel.getCronService as () => PluginHookGatewayCronService,
+    getCron: kernel.getCronService,
     recordCleanup,
     retainRetirement: (retire) => kernel.pluginMetadata.retire(cache, retire),
   });

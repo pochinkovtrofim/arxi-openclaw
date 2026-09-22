@@ -123,6 +123,17 @@ const HealthSnapshotSchema = closedObject({
           oldestFailedAt: Type.Optional(Type.Integer({ minimum: 0 })),
         }),
       ),
+      outbound: Type.Optional(
+        Type.Union([
+          closedObject({
+            complete: Type.Literal(true),
+            pendingCount: Type.Integer({ minimum: 0 }),
+            futureDeferredCount: Type.Integer({ minimum: 0 }),
+            earliestDeferredUntilMs: Type.Optional(Type.Integer({ minimum: 0 })),
+          }),
+          closedObject({ complete: Type.Literal(false) }),
+        ]),
+      ),
       ingressFailed: Type.Optional(
         Type.Array(
           closedObject({

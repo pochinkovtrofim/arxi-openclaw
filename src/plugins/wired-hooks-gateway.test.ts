@@ -7,17 +7,64 @@
  */
 import { expectDefined } from "@openclaw/normalization-core";
 import { describe, expect, it, vi } from "vitest";
-import { createHookRunnerWithRegistry } from "./hooks.test-fixtures.js";
+import type { CronJob } from "../cron/types.js";
+import type { PluginCoreGatewayHookContext } from "./hook-cron-context.js";
+import { createHookRunner } from "./hooks.js";
+import {
+  addTestHook,
+  createHookRunnerWithRegistry,
+  createMockPluginRegistry,
+} from "./hooks.test-fixtures.js";
+import type { PluginServiceCronHost } from "./service-cron.js";
 import type {
   PluginHookCronChangedEvent,
   PluginHookCronReconciledContext,
   PluginHookCronReconciledEvent,
   PluginHookGatewayContext,
+  PluginHookGatewayCronService,
   PluginHookHandlerMap,
   PluginHookGatewayStopEvent,
 } from "./types.js";
 
 type PluginHookGatewayStartEvent = Parameters<PluginHookHandlerMap["gateway_start"]>[0];
+
+function createRawCronHost() {
+  let job: CronJob = {
+    id: "owner-steward",
+    declarationKey: "arxi:proactive-steward:main",
+    name: "Owner proactive steward",
+    enabled: true,
+    createdAtMs: 1,
+    updatedAtMs: 1,
+    schedule: { kind: "cron", expr: "0 8 * * *" },
+    sessionTarget: "main",
+    wakeMode: "now",
+    payload: { kind: "systemEvent", text: "proactive steward" },
+    state: {},
+  };
+  const host: PluginServiceCronHost = {
+    list: async () => [job],
+    add: async () => job,
+    update: async () => job,
+    updateWithPrecondition: async (id, patch, precondition, options) => {
+      options?.commitGuard?.();
+      if (id !== job.id) {
+        throw new Error("Cron job not found");
+      }
+      await precondition(job, Date.now());
+      options?.commitGuard?.();
+      job = {
+        ...job,
+        state: { ...job.state, ...patch.state },
+        updatedAtMs: job.updatedAtMs + 1,
+      };
+      return job;
+    },
+    remove: async () => ({ ok: true, removed: false }),
+    removeStaleJobFamily: async () => 0,
+  };
+  return { host, readJob: () => job };
+}
 
 async function expectGatewayHookCall(params: {
   hookName: "gateway_start" | "gateway_stop";
@@ -187,5 +234,93 @@ describe("gateway hook runner methods", () => {
     expect(runner.hasHooks("cron_reconciled")).toBe(true);
     expect(runner.hasHooks("cron_changed")).toBe(true);
     expect(runner.hasHooks("gateway_stop")).toBe(false);
+  });
+
+  it("binds raw gateway cron state to the hook plugin and fences retained handles", async () => {
+    const { host, readJob } = createRawCronHost();
+    let retained: PluginHookGatewayCronService | undefined;
+    const ownerHandler: PluginHookHandlerMap["gateway_start"] = async (_event, context) => {
+      retained = expectDefined(context.getCron?.(), "hook cron service");
+      await retained.mutateTriggerState("owner-steward", {
+        key: "arxiOwnerBackgroundPolicy",
+        expectedRevision: 0,
+        value: { revision: 1, timezone: "Europe/Madrid" },
+      });
+    };
+    const ownerRegistry = createMockPluginRegistry([]);
+    addTestHook({
+      registry: ownerRegistry,
+      pluginId: "arxi",
+      hookName: "gateway_start",
+      handler: ownerHandler,
+    });
+    const rawContext: PluginCoreGatewayHookContext = {
+      config: {} as never,
+      getCron: () => host,
+    };
+
+    await createHookRunner(ownerRegistry).runGatewayStart({ port: 18789 }, rawContext);
+
+    expect(readJob().state.triggerState).toEqual({
+      arxiOwnerBackgroundPolicy: { revision: 1, timezone: "Europe/Madrid" },
+    });
+    await expect(retained?.list()).rejects.toThrow("no longer active");
+
+    const unrelatedHandler: PluginHookHandlerMap["gateway_start"] = async (_event, context) => {
+      const cron = expectDefined(context.getCron?.(), "unrelated hook cron service");
+      await cron.mutateTriggerState("owner-steward", {
+        key: "arxiOwnerBackgroundPolicy",
+        expectedRevision: 1,
+        value: { revision: 2 },
+      });
+    };
+    const unrelatedRegistry = createMockPluginRegistry([]);
+    addTestHook({
+      registry: unrelatedRegistry,
+      pluginId: "unrelated",
+      hookName: "gateway_start",
+      handler: unrelatedHandler,
+    });
+    await expect(
+      createHookRunner(unrelatedRegistry, { catchErrors: false }).runGatewayStart(
+        { port: 18789 },
+        rawContext,
+      ),
+    ).rejects.toThrow("not owned by this plugin");
+    expect(readJob().state.triggerState).toEqual({
+      arxiOwnerBackgroundPolicy: { revision: 1, timezone: "Europe/Madrid" },
+    });
+  });
+
+  it("revokes a retained cron handle as soon as a gateway_stop hook times out", async () => {
+    const { host, readJob } = createRawCronHost();
+    let retained: PluginHookGatewayCronService | undefined;
+    const handler: PluginHookHandlerMap["gateway_stop"] = async (_event, context) => {
+      retained = expectDefined(context.getCron?.(), "hook cron service");
+      await new Promise<void>(() => {});
+    };
+    const registry = createMockPluginRegistry([]);
+    addTestHook({
+      registry,
+      pluginId: "arxi",
+      hookName: "gateway_stop",
+      handler,
+      timeoutMs: 1,
+    });
+    const rawContext: PluginCoreGatewayHookContext = {
+      config: {} as never,
+      getCron: () => host,
+    };
+
+    await createHookRunner(registry).runGatewayStop({ reason: "plugin reload" }, rawContext);
+
+    await expect(
+      retained?.mutateTriggerState("owner-steward", {
+        key: "arxiOwnerBackgroundPolicy",
+        expectedRevision: 0,
+        value: { revision: 1 },
+      }),
+    ).rejects.toThrow("no longer active");
+    expect(readJob().state.triggerState).toBeUndefined();
   });
 });

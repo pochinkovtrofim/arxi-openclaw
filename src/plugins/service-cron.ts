@@ -31,21 +31,14 @@ function validateTriggerStateMutation(mutation: {
   }
 }
 
-export function createPluginServiceCronGetter(params: {
+function createBoundPluginCronGetter(params: {
   getCron: () => PluginServiceCronHost | null | undefined;
-  lease: PluginRuntimeCapabilityLease;
   pluginId: string;
-  isStopping: () => boolean;
+  assertActive: () => void;
 }): () => PluginHookGatewayCronService | undefined {
   let current: { cron: PluginServiceCronHost; service: PluginHookGatewayCronService } | undefined;
-  const assertServiceActive = () => {
-    params.lease.assertActive("cron scheduler");
-    if (params.isStopping()) {
-      throw new Error("Plugin service cron scheduler is stopping");
-    }
-  };
   return () => {
-    assertServiceActive();
+    params.assertActive();
     const cron = params.getCron();
     if (!cron) {
       return undefined;
@@ -54,7 +47,7 @@ export function createPluginServiceCronGetter(params: {
       return current.service;
     }
     const commitGuard = () => {
-      assertServiceActive();
+      params.assertActive();
       if (params.getCron() !== cron) {
         throw new Error("Plugin service cron scheduler was replaced");
       }
@@ -141,4 +134,30 @@ export function createPluginServiceCronGetter(params: {
     current = { cron, service };
     return service;
   };
+}
+
+export function createPluginHookCronGetter(params: {
+  getCron: () => PluginServiceCronHost | null | undefined;
+  pluginId: string;
+  assertActive: () => void;
+}): () => PluginHookGatewayCronService | undefined {
+  return createBoundPluginCronGetter(params);
+}
+
+export function createPluginServiceCronGetter(params: {
+  getCron: () => PluginServiceCronHost | null | undefined;
+  lease: PluginRuntimeCapabilityLease;
+  pluginId: string;
+  isStopping: () => boolean;
+}): () => PluginHookGatewayCronService | undefined {
+  return createBoundPluginCronGetter({
+    getCron: params.getCron,
+    pluginId: params.pluginId,
+    assertActive: () => {
+      params.lease.assertActive("cron scheduler");
+      if (params.isStopping()) {
+        throw new Error("Plugin service cron scheduler is stopping");
+      }
+    },
+  });
 }

@@ -10,6 +10,7 @@ import type { ChannelApprovalKind } from "../../infra/approval-types.js";
 import type { OutboundDeliveryResult } from "../../infra/outbound/deliver-types.js";
 import type { OutboundDeliveryFormattingOptions } from "../../infra/outbound/formatting.js";
 import type { OutboundIdentity } from "../../infra/outbound/identity-types.js";
+import type { NativeDeliveryPurpose } from "../../infra/outbound/prepared-batch.js";
 import type { OutboundSendDeps } from "../../infra/outbound/send-deps.js";
 import type { MessagePresentation, ReplyPayloadDeliveryPin } from "../../interactive/payload.js";
 import type { OutboundMediaAccess } from "../../media/load-options.js";
@@ -45,6 +46,8 @@ export type ChannelOutboundContext = {
   gatewayClientScopes?: readonly string[];
   /** @internal Exact originating run retained through durable delivery and recovery. */
   sourceRunId?: string;
+  /** @internal Core-authored purpose retained through durable delivery and recovery. */
+  nativeDeliveryPurpose?: NativeDeliveryPurpose;
   /** @internal Opaque durable intent id for exact provider-side send reconciliation. */
   deliveryQueueId?: string;
   /** @internal Stable platform-send index within one durable payload. */

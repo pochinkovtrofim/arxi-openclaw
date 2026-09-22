@@ -11,7 +11,7 @@ import { isTruthyEnvValue } from "../infra/env.js";
 import type { GatewayActiveWorkInspectors } from "../infra/gateway-active-work.js";
 import { hasRestartSentinel } from "../infra/restart-sentinel.js";
 import type { createGatewayUpdateCheck } from "../infra/update-startup.js";
-import type { PluginHookGatewayCronService } from "../plugins/hook-types.js";
+import { isPluginServiceCronHost } from "../plugins/hook-cron-context.js";
 import type { createHookRunner } from "../plugins/hooks.js";
 import type { loadOpenClawPlugins } from "../plugins/loader.js";
 import type { PluginManifestRecord } from "../plugins/manifest-registry.js";
@@ -1430,10 +1430,10 @@ export async function startGatewayPostAttachRuntime(
                   port: params.port,
                   config: params.gatewayPluginConfigAtStart,
                   workspaceDir: params.defaultWorkspaceDir,
-                  getCron: () =>
-                    (params.getCronService?.() ?? params.deps.cron) as
-                      | PluginHookGatewayCronService
-                      | undefined,
+                  getCron: () => {
+                    const cron = params.getCronService?.() ?? params.deps.cron;
+                    return isPluginServiceCronHost(cron) ? cron : undefined;
+                  },
                 },
               ),
             );

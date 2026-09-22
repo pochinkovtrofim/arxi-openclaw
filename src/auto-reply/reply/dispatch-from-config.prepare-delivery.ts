@@ -1,8 +1,10 @@
 import { isParentOwnedBackgroundAcpSession } from "@openclaw/acp-core/session-interaction-mode";
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
 import { readAcpSessionEntry } from "../../acp/runtime/session-meta.js";
+import { normalizeChatType } from "../../channels/chat-type.js";
 import { logVerbose } from "../../globals.js";
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
+import { resolveCommandAuthorization } from "../command-auth.js";
 import { resolveCommandTurnTargetSessionKey } from "../command-turn-context.js";
 import {
   copyReplyPayloadMetadata,
@@ -97,6 +99,13 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
   const replyContextAccountId = routeReplyChannel
     ? resolveReplyDeliveryAccountId(cfg, routeReplyChannel, replyRoute.accountId)
     : undefined;
+  const directOwnerReply =
+    normalizeChatType(ctx.ChatType) === "direct" &&
+    resolveCommandAuthorization({
+      ctx,
+      cfg,
+      commandAuthorized: ctx.CommandAuthorized === true,
+    }).senderIsOwner;
   let normalizeReplyMediaPaths:
     | ReturnType<
         (typeof import("./reply-media-paths.runtime.js"))["createReplyMediaPathNormalizer"]
@@ -195,6 +204,7 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
       runId: state.params.replyOptions?.runId,
       responsePrefixContext: options?.responsePrefixContext,
       deliveryIntentId: options?.deliveryIntentId,
+      ...(directOwnerReply ? { nativeDeliveryPurpose: "direct_owner_reply" as const } : {}),
     });
     // Routed sends settle here: the transport result is the settlement. This is
     // the single routed choke point, so every routed lane feeds the turn ledger.

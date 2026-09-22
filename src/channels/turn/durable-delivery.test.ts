@@ -40,6 +40,7 @@ type SendDurableMessageBatchRequest = {
   gatewayClientScopes?: readonly string[];
   runId?: string;
   executionIdentityToken?: unknown;
+  nativeDeliveryPurpose?: string;
 };
 
 type DeliverySupportRequest = {
@@ -143,6 +144,36 @@ describe("durable inbound reply delivery", () => {
     });
     expect(latestSendDurableMessageBatchRequest().requireUnknownSendReconciliation).toBeUndefined();
   });
+
+  it.each([
+    { sender: "owner", chatType: "direct", purpose: "direct_owner_reply" },
+    { sender: "guest", chatType: "direct", purpose: undefined },
+    { sender: "owner", chatType: "group", purpose: undefined },
+    { sender: "owner", chatType: "channel", purpose: undefined },
+    { sender: "owner", chatType: undefined, purpose: undefined },
+    { sender: "owner", chatType: "unknown", purpose: undefined },
+  ] as const)(
+    "derives trusted direct-owner purpose for $sender in $chatType chat",
+    async ({ sender, chatType, purpose }) => {
+      await deliverInboundReplyWithMessageSendContextCore({
+        cfg: { commands: { ownerAllowFrom: ["telegram:owner"] } },
+        channel: "telegram",
+        agentId: "main",
+        info: { kind: "final" },
+        payload: { text: "final" },
+        ctxPayload: ctxPayload({
+          Provider: "telegram",
+          Surface: "telegram",
+          OriginatingTo: "chat-1",
+          From: `telegram:${sender}`,
+          SenderId: sender,
+          ChatType: chatType,
+        }),
+      });
+
+      expect(latestSendDurableMessageBatchRequest().nativeDeliveryPurpose).toBe(purpose);
+    },
+  );
 
   it("uses required durability when a caller explicitly requires unknown-send reconciliation", async () => {
     await deliverInboundReplyWithMessageSendContextCore({

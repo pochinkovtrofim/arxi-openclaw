@@ -27,10 +27,11 @@ import {
 } from "./deliver-payload.js";
 import { createDeliveryResultRecorder } from "./deliver-results.js";
 import { mirrorDeliveredPayloads } from "./deliver-transcript.js";
-import type {
-  OutboundDeliveryResult,
-  OutboundPayloadDeliveryKind,
-  OutboundPayloadDeliveryOutcome,
+import {
+  OutboundDeliveryDeferredError,
+  type OutboundDeliveryResult,
+  type OutboundPayloadDeliveryKind,
+  type OutboundPayloadDeliveryOutcome,
 } from "./deliver-types.js";
 import {
   assertStableMediaFanout,
@@ -502,6 +503,16 @@ export async function deliverOutboundPayloadsCore(
       });
       completeDeliveryDiagnostics(deliveredResults.length);
     } catch (caughtError) {
+      if (caughtError instanceof OutboundDeliveryDeferredError) {
+        recordPayloadOutcome(
+          suppressedPayloadOutcome({
+            index: payloadIndex,
+            reason: "adapter_returned_no_send",
+          }),
+        );
+        completeDeliveryDiagnostics(0);
+        throw caughtError;
+      }
       let err = caughtError;
       if (!payloadSendStarted) {
         // Rendering and handler preparation cannot have dispatched this payload.

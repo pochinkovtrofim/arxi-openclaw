@@ -3,7 +3,6 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { sleepWithAbort } from "../infra/backoff.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
-import type { PluginHookGatewayCronService } from "../plugins/hook-types.js";
 import { createHookRunner } from "../plugins/hooks.js";
 import {
   PluginHostCleanupTimeoutError,
@@ -15,6 +14,7 @@ import { PluginInstanceDrainTimeoutError } from "../plugins/plugin-instance-erro
 import { getPluginInstance } from "../plugins/plugin-instance-scope.js";
 import type { PluginRegistry } from "../plugins/registry-types.js";
 import { disposePluginRegistryInstances } from "../plugins/runtime.js";
+import type { PluginServiceCronHost } from "../plugins/service-cron.js";
 import {
   PLUGIN_SERVICE_REPLACEMENT_STOP_TIMEOUT_MS,
   type PluginServicesHandle,
@@ -38,7 +38,7 @@ export function createPluginReloadCleanup({
   changedPluginIds: ReadonlySet<string>;
   port: number;
   pluginWorkspaceDir: string | undefined;
-  getCron: () => PluginHookGatewayCronService;
+  getCron: () => PluginServiceCronHost;
   log: ReturnType<typeof createSubsystemLogger>;
   recordCleanup: (result: PluginHostCleanupResult) => void;
   retainRetirement: (retire: () => Promise<PluginHostCleanupResult>) => void;

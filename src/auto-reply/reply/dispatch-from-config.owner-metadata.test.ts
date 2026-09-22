@@ -137,3 +137,75 @@ it.each([
     await dispatcher.waitForIdle();
   }
 });
+
+it.each([
+  { sender: "owner", chatType: "direct", purpose: "direct_owner_reply" },
+  { sender: "guest", chatType: "direct", purpose: undefined },
+  { sender: "owner", chatType: "group", purpose: undefined },
+  { sender: "owner", chatType: "channel", purpose: undefined },
+  { sender: "owner", chatType: undefined, purpose: undefined },
+  { sender: "owner", chatType: "unknown", purpose: undefined },
+] as const)(
+  "keeps routed delivery purpose trusted for $sender in $chatType chat",
+  async ({ sender, chatType, purpose }) => {
+    state = await createOpenClawTestState({ label: "dispatch-owner-delivery-purpose" });
+    const cfg: OpenClawConfig = {
+      agents: {
+        ownership: "explicit",
+        entries: { main: {} },
+        defaults: { workspace: state.workspaceDir },
+      },
+      commands: { ownerAllowFrom: ["telegram:owner"] },
+      plugins: { enabled: false },
+      session: { scope: "global" },
+    };
+    await state.writeConfig(cfg);
+    const routeReply = vi.fn(async (_params: { nativeDeliveryPurpose?: string }) => ({
+      ok: true,
+      delivered: true,
+      messageId: "sent",
+    }));
+    vi.spyOn(runtimeLoaders, "loadRouteReplyRuntime").mockResolvedValue({
+      isRoutableChannel: () => true,
+      routeReply,
+    });
+    const dispatcher = createReplyDispatcher({ deliver: async () => undefined });
+    try {
+      const gathered = await gatherDispatchRequest(
+        {
+          cfg,
+          ctx: {
+            AgentId: "main",
+            SessionKey: "global",
+            Body: "hello",
+            Provider: "telegram",
+            Surface: "telegram",
+            OriginatingChannel: "telegram",
+            OriginatingTo: "owner-chat",
+            From: `telegram:${sender}`,
+            SenderId: sender,
+            ...(chatType ? { ChatType: chatType } : {}),
+            CommandAuthorized: false,
+          },
+          dispatcher,
+        },
+        undefined,
+      );
+      expect(gathered.status).toBe("ready");
+      if (gathered.status !== "ready") {
+        throw new Error("dispatch gather did not prepare the turn");
+      }
+      const prepared = await prepareDispatchDelivery(gathered.state);
+      await prepared.state.routeReplyToOriginating(
+        { text: "owner reply" },
+        { deliveryIntentId: `intent-${sender}-${chatType ?? "unknown"}` },
+      );
+
+      expect(routeReply).toHaveBeenCalledOnce();
+      expect(routeReply.mock.calls[0]?.[0]?.nativeDeliveryPurpose).toBe(purpose);
+    } finally {
+      dispatcher.markComplete();
+      await dispatcher.waitForIdle();
+    }
+  },
+);

@@ -1,7 +1,7 @@
 // Reconciles adapter progress results with hook-bearing final delivery results.
 import { expectDefined } from "@openclaw/normalization-core";
 import { hasDeliveryResultIdentity } from "./deliver-payload.js";
-import type { OutboundDeliveryResult } from "./deliver-types.js";
+import { OutboundDeliveryDeferredError, type OutboundDeliveryResult } from "./deliver-types.js";
 
 export function createDeliveryResultRecorder(params: {
   results: OutboundDeliveryResult[];
@@ -11,6 +11,9 @@ export function createDeliveryResultRecorder(params: {
   let reportedResults: Array<{ identityKey: string; resultIndex: number }> = [];
   let suppressionReason: "adapter_returned_no_send" | "adapter_returned_no_identity" | undefined;
   const observeDeliveryResult = (delivery: OutboundDeliveryResult): boolean => {
+    if (delivery.outcome === "deferred") {
+      throw new OutboundDeliveryDeferredError(delivery.retryAtMs ?? Number.NaN);
+    }
     if (hasDeliveryResultIdentity(delivery)) {
       return true;
     }

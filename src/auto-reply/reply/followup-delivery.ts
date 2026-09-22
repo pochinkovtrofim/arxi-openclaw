@@ -11,6 +11,7 @@ import {
   hasIntentionalTerminalCompletion,
 } from "../../agents/embedded-agent-runner/result-fallback-classifier.js";
 import { buildAgentRuntimeDeliveryPlan } from "../../agents/runtime-plan/build.js";
+import { normalizeChatType } from "../../channels/chat-type.js";
 import { logVerbose } from "../../globals.js";
 import { isSubagentSessionKey } from "../../routing/session-key.js";
 import { defaultRuntime } from "../../runtime.js";
@@ -433,6 +434,10 @@ async function sendFollowupPayloads(params: {
             : params.mirror,
         replyKind: params.kind,
         runId: params.runId,
+        ...(turn.queued.run.senderIsOwner === true &&
+        normalizeChatType(turn.queued.originatingChatType ?? turn.queued.run.chatType) === "direct"
+          ? { nativeDeliveryPurpose: "direct_owner_reply" as const }
+          : {}),
       });
       if (!result.delivered && (result.queueCustody === "held" || result.ambiguous)) {
         logVerbose(

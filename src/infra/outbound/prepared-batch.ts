@@ -9,6 +9,9 @@ import { summarizeOutboundPayloadForTransport } from "./payloads.js";
 
 export const PREPARED_OUTBOUND_BATCH_SCHEMA_VERSION = 1 as const;
 
+/** Core-authored delivery purpose that channel policy may trust. */
+export type NativeDeliveryPurpose = "cron_failure_alert" | "direct_owner_reply" | "exact_reminder";
+
 type PreparedOutboundAcceptedEntry = {
   sourceIndex: number;
   status: "accepted";
@@ -41,6 +44,8 @@ export type PreparedOutboundBatch = {
   runId?: string;
   replyKind?: ReplyDispatchKind;
   executionIdentityToken?: ExecutionIdentityAdmissionToken;
+  /** Native provenance retained through durable retry and recovery. */
+  nativeDeliveryPurpose?: NativeDeliveryPurpose;
   entries: PreparedOutboundBatchEntry[];
 };
 

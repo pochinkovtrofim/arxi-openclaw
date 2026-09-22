@@ -13,6 +13,7 @@ export type PlatformSendRoute = {
 /** Channel send result or explicit non-outcome normalized for delivery accounting. */
 export type OutboundDeliveryResult = {
   outcome?: MessageReceiptSourceResult["outcome"];
+  retryAtMs?: MessageReceiptSourceResult["retryAtMs"];
   channel: ChannelId;
   messageId: string;
   target?: {
@@ -30,7 +31,7 @@ export type OutboundDeliveryResult = {
 /** Count platform sends without double-counting equivalent receipt representations. */
 export function countPhysicalOutboundSends(results: readonly OutboundDeliveryResult[]): number {
   return results.reduce((count, result) => {
-    if (result.outcome === "not_sent") {
+    if (result.outcome !== undefined) {
       return count;
     }
     const receipt = result.receipt;
@@ -168,6 +169,26 @@ export class OutboundDeliveryError extends Error {
 
 /** Internal control flow for lifecycle closure before recipient-visible dispatch. */
 export class OutboundDeliveryAdmissionClosedError extends Error {}
+
+const MAX_OUTBOUND_DELIVERY_DEFER_MS = 24 * 60 * 60_000;
+
+/** Internal control flow for a provider-confirmed deferral before platform dispatch. */
+export class OutboundDeliveryDeferredError extends Error {
+  readonly retryAtMs: number;
+
+  constructor(retryAtMs: number, now = Date.now()) {
+    if (
+      !Number.isSafeInteger(retryAtMs) ||
+      retryAtMs <= now ||
+      retryAtMs - now > MAX_OUTBOUND_DELIVERY_DEFER_MS
+    ) {
+      throw new Error("Deferred delivery retryAtMs must be within the next 24 hours");
+    }
+    super("Outbound delivery deferred before platform dispatch");
+    this.name = "OutboundDeliveryDeferredError";
+    this.retryAtMs = retryAtMs;
+  }
+}
 
 export const isOutboundDeliveryAdmissionClosedError = (error: unknown): boolean =>
   error instanceof OutboundDeliveryAdmissionClosedError ||

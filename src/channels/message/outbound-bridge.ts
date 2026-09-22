@@ -91,6 +91,7 @@ function toMessageSendResult(
     // Preserve sanctioned owner facts for delivery hooks without exposing private
     // provider fields or trusting a provider-authored channel identity.
     ...(result.outcome !== undefined ? { outcome: result.outcome } : {}),
+    ...(result.retryAtMs !== undefined ? { retryAtMs: result.retryAtMs } : {}),
     ...(result.target !== undefined ? { target: result.target } : {}),
     ...(result.chatId !== undefined ? { chatId: result.chatId } : {}),
     ...(result.channelId !== undefined ? { channelId: result.channelId } : {}),
