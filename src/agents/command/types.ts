@@ -8,6 +8,7 @@ import type { PromptMode } from "../../agents/system-prompt.types.js";
 import type { SourceReplyDeliveryMode } from "../../auto-reply/get-reply-options.types.js";
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.public.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
+import type { NativeDeliveryPurpose } from "../../infra/outbound/prepared-batch.js";
 import type { MediaFact } from "../../media/media-facts.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { PluginHookChannelContext } from "../../plugins/hook-types.js";
@@ -119,6 +120,8 @@ export type AgentCommandOpts = {
   execApprovalContinuationTranscriptPromptRange?: ExecApprovalContinuationPromptRange;
   /** Trusted sender identity bit for command/channel-action auth; defaults true for local CLI calls. */
   senderIsOwner?: boolean;
+  /** Gateway-owned delivery purpose; public ingress cannot author this policy exemption. */
+  nativeDeliveryPurpose?: NativeDeliveryPurpose;
   /** Whether this caller is authorized to use provider/model per-run overrides. */
   allowModelOverride?: boolean;
   /** Optional runtime tool allow-list; when set, only these tools are exposed for this run. */
@@ -248,6 +251,7 @@ export type AgentCommandIngressOpts = Omit<
   AgentCommandOpts,
   | "runtimeContextFragments"
   | "senderIsOwner"
+  | "nativeDeliveryPurpose"
   | "allowModelOverride"
   | "mainRestartRecoveryOwnerLease"
   | "mainRestartRecoveryAdmitted"
@@ -280,6 +284,7 @@ export type AgentCommandGatewayIngressOpts = AgentCommandIngressOpts &
     | "operationalRunInstance"
     | "skillLibraryAuthoring"
     | "cronCreatorAuthorityCapability"
+    | "nativeDeliveryPurpose"
     | "onAdmittedRunContext"
     | "onPostAdmittedRunContext"
   >;

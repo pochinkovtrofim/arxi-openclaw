@@ -349,6 +349,9 @@ export async function startAgentRunExecution(params: {
         }
         const senderIsOwner = prepared.userTurn.senderIsOwner;
         const userTurnTranscriptRecorder = prepared.userTurn.recorder;
+        const trustedHostAdmission =
+          params.client?.internal?.isLocalClient === true &&
+          params.client.connect?.scopes?.includes("operator.admin");
 
         const ingressAgentId = params.resolvedSessionKey
           ? params.activeSessionAgentId
@@ -395,15 +398,8 @@ export async function startAgentRunExecution(params: {
             restartRecoveryChannelContext?.requesterAccountId ?? params.delivery.resolvedAccountId,
           senderId:
             restartRecoveryChannelContext?.requesterSenderId ??
-            (params.client?.internal?.isLocalClient === true &&
-            params.client.connect?.scopes?.includes("operator.admin")
-              ? params.request.admittedRequesterSenderId
-              : undefined),
-          chatId:
-            params.client?.internal?.isLocalClient === true &&
-            params.client.connect?.scopes?.includes("operator.admin")
-              ? params.request.admittedConversationId
-              : undefined,
+            (trustedHostAdmission ? params.request.admittedRequesterSenderId : undefined),
+          chatId: trustedHostAdmission ? params.request.admittedConversationId : undefined,
           groupId: params.groupId,
           groupChannel: params.groupChannel,
           groupSpace: params.groupSpace,
@@ -417,6 +413,15 @@ export async function startAgentRunExecution(params: {
           runContext,
           restartRecoveryChannelContext?.sameChannelThreadRequired,
         );
+        const directOwnerReply =
+          trustedHostAdmission &&
+          senderIsOwner &&
+          Boolean(runContext.senderId && runContext.chatId) &&
+          !params.groupId &&
+          !params.groupChannel &&
+          !params.groupSpace &&
+          params.delivery.deliver &&
+          params.delivery.resolvedChatType === "direct";
 
         const localUserIngress = getGatewayLocalUserIngress(params.client);
         if (params.isRestartRecoveryResumeRun) {
@@ -531,6 +536,9 @@ export async function startAgentRunExecution(params: {
                 runtimeContextFragments: params.client?.internal?.runtimeContextFragments,
                 inputProvenance: params.inputProvenance,
                 senderIsOwner,
+                ...(directOwnerReply
+                  ? { nativeDeliveryPurpose: "direct_owner_reply" as const }
+                  : {}),
                 sessionEffects: params.sessionEffects,
                 skipInitialSessionTouch: params.skipAgentInitialSessionTouch,
                 preserveUserFacingSessionModelState:

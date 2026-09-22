@@ -1,5 +1,6 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
+import { normalizeChatType, type ChatType } from "../../channels/chat-type.js";
 import { resolveAgentIdFromSessionKey, type SessionEntry } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
@@ -31,6 +32,7 @@ export type AgentDeliveryPhaseResult = {
   deliveryTargetMode: DeliveryPlan["deliveryTargetMode"];
   resolvedAccountId: DeliveryPlan["resolvedAccountId"];
   resolvedTo: DeliveryPlan["resolvedTo"];
+  resolvedChatType?: ChatType;
   originMessageChannel?: string;
   deliver: boolean;
   explicitThreadId?: string;
@@ -224,6 +226,9 @@ export async function resolveAgentDeliveryPhase(params: {
       isInternalNonDeliveryChannel(normalizedTurnSource))
       ? normalizedTurnSource
       : undefined;
+  const resolvedChatType = resolvedTo
+    ? normalizeChatType(effectivePlan.plugin?.messaging?.inferTargetChatType?.({ to: resolvedTo }))
+    : undefined;
   return {
     activeSessionAgentId,
     deliveryPlan: effectivePlan,
@@ -231,6 +236,7 @@ export async function resolveAgentDeliveryPhase(params: {
     deliveryTargetMode,
     resolvedAccountId,
     resolvedTo,
+    ...(resolvedChatType ? { resolvedChatType } : {}),
     originMessageChannel:
       turnSourceMessageChannel ??
       (params.client?.connect && params.isWebchatConnect(params.client.connect)

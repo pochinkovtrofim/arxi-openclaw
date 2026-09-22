@@ -42,6 +42,7 @@ describe("sanitizePublicAgentCommandIngressOpts", () => {
     const opts = {
       prompt: "create an automation",
       cronCreatorAuthorityCapability: forgedCapability,
+      nativeDeliveryPurpose: "direct_owner_reply",
       pinnedWidgetAuthoring: true,
       assertSourceCurrent: () => {},
     } as unknown as AgentCommandIngressOpts;
@@ -52,6 +53,7 @@ describe("sanitizePublicAgentCommandIngressOpts", () => {
       pinnedWidgetAuthoring: undefined,
       assertSourceCurrent: undefined,
     });
+    expect(sanitizePublicAgentCommandIngressOpts(opts)).not.toHaveProperty("nativeDeliveryPurpose");
   });
 });
 

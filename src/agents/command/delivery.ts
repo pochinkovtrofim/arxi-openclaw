@@ -961,6 +961,9 @@ export async function deliverAgentCommandResult(
             : {}),
           session: outboundSession,
           identity: resolveAgentOutboundIdentity(cfg, deliveryAgentId),
+          ...(opts.nativeDeliveryPurpose
+            ? { nativeDeliveryPurpose: opts.nativeDeliveryPurpose }
+            : {}),
           replyPayloadSendingHook: {
             kind: "final",
             channel: deliveryChannel,

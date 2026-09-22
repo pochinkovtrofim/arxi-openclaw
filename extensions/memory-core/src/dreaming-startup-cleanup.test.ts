@@ -68,6 +68,7 @@ function createGateway(
     }),
     add: vi.fn(async () => ({})),
     update: vi.fn(async () => ({})),
+    mutateTriggerState: vi.fn(async () => ({ id: "test-cron-job" })),
     remove: vi.fn(async () => ({ removed: false })),
     removeStaleJobFamily: vi.fn(async () => 0),
   };

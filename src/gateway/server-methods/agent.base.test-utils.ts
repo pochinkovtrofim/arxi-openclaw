@@ -10,6 +10,11 @@ import {
   isAgentRunRestartAbortReason,
 } from "../../agents/run-termination.js";
 import {
+  captureActivePluginRegistrySnapshot,
+  restoreActivePluginRegistrySnapshot,
+  setActivePluginRegistry,
+} from "../../plugins/runtime.js";
+import {
   beginSessionWorkAdmission,
   cancelSessionWorkAdmissionHandoff,
   interruptSessionWorkAdmissions,
@@ -17,6 +22,10 @@ import {
 } from "../../sessions/session-lifecycle-admission.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { withTestDir } from "../../test-helpers/temp-dir.js";
+import {
+  createChannelTestPluginBase,
+  createTestRegistry,
+} from "../../test-utils/channel-plugins.js";
 import { normalizeSessionDeliveryState } from "../../utils/delivery-context.shared.js";
 import {
   getAgentTestMocks,
@@ -176,6 +185,111 @@ describe("gateway agent handler", () => {
     );
 
     await waitForAssertion(() => expect(capability?.active).toBe(false));
+  });
+
+  it.each([
+    {
+      name: "trusted private owner reply",
+      local: true,
+      deliver: true,
+      destinationChatType: "direct" as const,
+      expectedPurpose: "direct_owner_reply",
+    },
+    {
+      name: "remote operator",
+      local: false,
+      deliver: true,
+      destinationChatType: "direct" as const,
+    },
+    {
+      name: "unknown destination type",
+      local: true,
+      deliver: true,
+    },
+    {
+      name: "group destination",
+      local: true,
+      deliver: true,
+      destinationChatType: "group" as const,
+    },
+    {
+      name: "patron return-only turn",
+      local: true,
+      deliver: false,
+      destinationChatType: "direct" as const,
+    },
+  ])("stamps trusted delivery purpose for $name", async (testCase) => {
+    await withTestDir({ prefix: "openclaw-agent-native-purpose-" }, async (root) => {
+      const sessionsDir = `${root}/agents/main/sessions`;
+      const storePath = `${sessionsDir}/sessions.json`;
+      await fs.mkdir(sessionsDir, { recursive: true });
+      useTestStateDir(root);
+      mocks.userTurnStorePath = storePath;
+      mocks.loadSessionEntry.mockReturnValue({
+        cfg: {},
+        storePath,
+        entry: { sessionId: "existing-session-id", updatedAt: Date.now() },
+        canonicalKey: "agent:main:external:owner",
+      });
+      mocks.updateSessionStore.mockResolvedValue(undefined);
+      const arxiPlugin = {
+        ...createChannelTestPluginBase({
+          id: "arxi",
+          label: "Arxi",
+          capabilities: { chatTypes: ["direct", "group"] },
+        }),
+        messaging: {
+          inferTargetChatType: () => testCase.destinationChatType,
+        },
+        outbound: { deliveryMode: "gateway" as const },
+      };
+      const registrySnapshot = captureActivePluginRegistrySnapshot();
+      setActivePluginRegistry(
+        createTestRegistry([{ pluginId: "arxi", plugin: arxiPlugin, source: "test" }]),
+      );
+      try {
+        mocks.getChannelPlugin.mockImplementation((channel: string) =>
+          channel === "arxi" ? arxiPlugin : undefined,
+        );
+        mocks.agentCommand.mockResolvedValue({
+          payloads: [{ text: "ok" }],
+          meta: { durationMs: 100 },
+        });
+        const client = {
+          ...operatorWriteCliClient(["operator.admin"]),
+          ...(testCase.local ? { internal: { isLocalClient: true } } : {}),
+        } as AgentHandlerArgs["client"];
+
+        const respond = await invokeAgent(
+          {
+            message: "reply to admitted owner",
+            agentId: "main",
+            sessionKey: "agent:main:external:owner",
+            idempotencyKey: `native-purpose-${testCase.name}`,
+            deliver: testCase.deliver,
+            channel: "arxi",
+            to: "owner",
+            admittedConversationId: "telegram-chat:42",
+            admittedRequesterSenderId: "owner:principal",
+          } as AgentParams,
+          { client },
+        );
+
+        const accepted = respond.mock.calls.some(
+          ([ok, payload]) =>
+            ok === true && (payload as { status?: string } | undefined)?.status === "accepted",
+        );
+        if (!accepted) {
+          throw new Error(`Agent RPC was not accepted: ${JSON.stringify(respond.mock.calls)}`);
+        }
+        const call = await waitForAgentCommandCall<{
+          nativeDeliveryPurpose?: string;
+        }>();
+        expect(call.nativeDeliveryPurpose).toBe(testCase.expectedPurpose);
+      } finally {
+        restoreActivePluginRegistrySnapshot(registrySnapshot);
+      }
+    });
   });
 
   it("resolves explicit recipient sessions before Gateway admission", async () => {
