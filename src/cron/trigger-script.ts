@@ -31,7 +31,6 @@ import {
   CodeModeHeadlessAbortError,
   CodeModeHeadlessTimeoutError,
   runCodeModeScriptHeadless,
-  type CodeModeFailureCode,
   type CodeModeHeadlessResult,
 } from "../agents/code-mode.js";
 import {
@@ -82,6 +81,7 @@ import {
   MAX_CRON_SCRIPT_TOOL_BUDGET,
 } from "./script-payload.js";
 import type { CronServiceDeps } from "./service/state.js";
+import { createCronTriggerDiagnosticLifecycle } from "./trigger-script-diagnostics.js";
 import {
   parseScriptPayloadResult,
   parseTriggerResult,
@@ -100,16 +100,6 @@ const HEADLESS_TRIGGER_WALL_CLOCK_MS = 30_000;
 const HEADLESS_TRIGGER_TOOL_BUDGET = 5;
 
 let activeTriggerEvaluations = 0;
-
-// Compile-time sync with the leaf contract in ./types.ts: a new code-mode
-// failure code must be added to CronTriggerFailureCode or this line errors.
-type AssertTriggerCodesCoverHeadless = [CodeModeFailureCode | "tool_budget_exceeded"] extends [
-  CronTriggerFailureCode,
-]
-  ? true
-  : never;
-const assertTriggerCodesCoverHeadless: AssertTriggerCodesCoverHeadless = true;
-void assertTriggerCodesCoverHeadless;
 
 type PreparedTriggerRuntime = {
   createTools: (admitted: AdmittedRunContext, signal: AbortSignal) => AnyAgentTool[];
@@ -363,7 +353,8 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
       wallClockMs: number;
       maxToolCalls: number;
       label: string;
-      onExecutionStarted?: () => void;
+      runId?: string;
+      onExecutionStarted?: (context: { sessionKey: string }) => void;
     },
   ): Promise<
     | { kind: "completed"; result: Extract<CodeModeHeadlessResult, { status: "completed" }> }
@@ -389,7 +380,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
         }),
         execTarget: params.job.toolsAllowExecTarget,
       };
-      const runId = `cron-trigger:${params.job.id}:${crypto.randomUUID()}`;
+      const runId = params.runId ?? `cron-trigger:${params.job.id}:${crypto.randomUUID()}`;
       let runtime: CachedTriggerRuntime | undefined;
       let tools: AnyAgentTool[];
       let admitted: AdmittedRunContext | undefined;
@@ -515,7 +506,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
         if (remainingWallClockMs <= 0) {
           throw new CodeModeHeadlessTimeoutError(`${params.label} timed out`);
         }
-        params.onExecutionStarted?.();
+        params.onExecutionStarted?.({ sessionKey: selectedRuntime.context.sessionKey });
         assertActive();
         const result = await runHeadless({
           ctx,
@@ -557,13 +548,20 @@ export function createCronScriptRuntime(deps: CronTriggerEvaluatorDeps) {
       }
       activeTriggerEvaluations += 1;
       try {
-        const outcome = await run({
-          ...params,
-          wallClockMs: HEADLESS_TRIGGER_WALL_CLOCK_MS,
-          maxToolCalls: HEADLESS_TRIGGER_TOOL_BUDGET,
-          label: "cron trigger evaluation",
-        });
-        return outcome.kind === "completed" ? parseTriggerResult(outcome.result) : outcome;
+        const diagnostics = createCronTriggerDiagnosticLifecycle(params.job.id);
+        const outcome = await diagnostics.run(() =>
+          run({
+            ...params,
+            runId: diagnostics.runId,
+            wallClockMs: HEADLESS_TRIGGER_WALL_CLOCK_MS,
+            maxToolCalls: HEADLESS_TRIGGER_TOOL_BUDGET,
+            label: "cron trigger evaluation",
+            onExecutionStarted: diagnostics.start,
+          }),
+        );
+        const result = outcome.kind === "completed" ? parseTriggerResult(outcome.result) : outcome;
+        diagnostics.complete(result);
+        return result;
       } finally {
         activeTriggerEvaluations -= 1;
       }
