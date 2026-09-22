@@ -62,6 +62,7 @@ describe("CronService persists delivery suppression", () => {
           lastDelivered: false,
           lastDeliveryStatus: "not-delivered",
           deliverySuppressionReason: "channel_transform",
+          consecutiveErrors: 0,
         });
         expect.soft(persisted?.state.lastDeliveryError).toBeUndefined();
         expect

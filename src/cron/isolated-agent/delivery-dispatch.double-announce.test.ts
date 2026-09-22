@@ -551,6 +551,33 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     },
   );
 
+  it("records a provider-confirmed no-send as intentional suppression", async () => {
+    const params = makeBaseParams({ synthesizedText: "Deferred owner finding" });
+    vi.mocked(deliverOutboundPayloads).mockImplementationOnce(async (deliveryParams) => {
+      deliveryParams.onPayloadDeliveryOutcome?.({
+        index: 0,
+        status: "suppressed",
+        reason: "adapter_returned_no_send",
+      });
+      return [];
+    });
+
+    const state = await dispatchCronDelivery(params);
+
+    expect(state).toMatchObject({
+      status: "ok",
+      delivered: false,
+      deliveryAttempted: true,
+      deliverySuppressionReason: "adapter_returned_no_send",
+    });
+    expect(state.deliveryError).toBeUndefined();
+    expect(state.result).toMatchObject({
+      status: "ok",
+      delivered: false,
+      deliverySuppressionReason: "adapter_returned_no_send",
+    });
+  });
+
   it("records heartbeat acknowledgement suppression without transport", async () => {
     const params = makeBaseParams({ synthesizedText: "HEARTBEAT_OK" });
     params.skipDelivery = "heartbeat";

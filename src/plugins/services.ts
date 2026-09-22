@@ -483,6 +483,7 @@ async function startPreparedPluginServices({
       ? createPluginServiceCronGetter({
           getCron: getCronService,
           lease,
+          pluginId,
           isStopping: () => ownedService.owner.closed || ownedService.stopRequested,
         })
       : undefined;
