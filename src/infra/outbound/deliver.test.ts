@@ -866,6 +866,37 @@ describe("deliverOutboundPayloads", () => {
     );
   });
 
+  it.each([
+    ["ordinary delivery", undefined],
+    ["cron failure alert", "cron_failure_alert"],
+    ["direct owner reply", "direct_owner_reply"],
+    ["exact reminder", "exact_reminder"],
+  ] as const satisfies ReadonlyArray<
+    readonly [string, MatrixDeliveryArgs["nativeDeliveryPurpose"]]
+  >)(
+    "passes the trusted native purpose for %s to the channel message adapter",
+    async (_, purpose) => {
+      const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
+        messageId: "message-adapter-1",
+        receipt: createMessageReceiptFromOutboundResults({
+          results: [{ channel: "matrix", messageId: "message-adapter-1" }],
+          kind: "text",
+        }),
+      }));
+      setMatrixMessageAdapter({
+        id: "matrix",
+        durableFinal: { capabilities: { text: true } },
+        send: { text: messageSendText },
+      });
+
+      await deliverMatrix({ nativeDeliveryPurpose: purpose });
+
+      expect(messageSendText).toHaveBeenCalledWith(
+        expect.objectContaining({ nativeDeliveryPurpose: purpose }),
+      );
+    },
+  );
+
   it("passes an explicitly classified durable final run without a reply dispatcher", async () => {
     const messageSendText = vi.fn(async (_ctx: ChannelMessageSendTextContext) => ({
       messageId: "message-adapter-1",
