@@ -101,6 +101,8 @@ export type QueuedDelivery = Omit<QueuedDeliveryPayload, "preparedBatch" | "payl
   retryCount: number;
   attemptCount: number;
   availableAt?: number;
+  /** Semantic provider deferral deadline, distinct from a short owner lease. */
+  deferredUntilMs?: number;
   producerClaimId?: string;
   lastAttemptAt?: number;
   lastError?: string;

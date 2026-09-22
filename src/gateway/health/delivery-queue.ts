@@ -5,10 +5,12 @@ import {
 import {
   captureDeliveryQueueStateContext,
   countFailedDeliveryQueueEntries,
+  inspectPendingDeliveryQueueDeferrals,
   type DeliveryQueueStateContext,
 } from "../../infra/delivery-queue-sqlite.js";
 import { isDiagnosticFlagEnabled } from "../../infra/diagnostic-flags.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { OUTBOUND_DELIVERY_QUEUE_NAME } from "../../infra/outbound/delivery-queue-namespaces.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 
 const healthLog = createSubsystemLogger("health");
@@ -51,6 +53,25 @@ export async function buildDeliveryQueueHealthSummary(
     }
     return countFailedDeliveryQueueEntries(undefined, context.stateContext);
   });
+  const outbound = await (async () => {
+    try {
+      if ("error" in context) {
+        throw context.error;
+      }
+      return {
+        complete: true as const,
+        ...(await inspectPendingDeliveryQueueDeferrals(
+          OUTBOUND_DELIVERY_QUEUE_NAME,
+          Date.now(),
+          undefined,
+          context.stateContext,
+        )),
+      };
+    } catch (error) {
+      debugHealth("outbound delivery queue rollback inventory read failed", error);
+      return { complete: false as const };
+    }
+  })();
   const ingressFailed = await readQueueHealth(
     "channel ingress failed queue health read failed",
     countFailedChannelIngressQueueEntries,
@@ -62,11 +83,9 @@ export async function buildDeliveryQueueHealthSummary(
       countChannelIngressQueuePressure,
     ));
 
-  if (failed.length === 0 && ingressFailed.length === 0 && ingressPressure.length === 0) {
-    return undefined;
-  }
   return {
     failed,
+    outbound,
     ...(ingressFailed.length > 0 ? { ingressFailed } : {}),
     ...(ingressPressure.length > 0 ? { ingressPressure } : {}),
   };

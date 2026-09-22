@@ -1,11 +1,8 @@
 // Gateway cron reconciliation lifecycle.
 // Suppresses stale scheduler completions across reload and shutdown boundaries.
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type {
-  PluginHookCronReconciledContext,
-  PluginHookCronReconciledEvent,
-  PluginHookGatewayCronService,
-} from "../plugins/hook-types.js";
+import type { PluginCoreCronReconciledContext } from "../plugins/hook-cron-context.js";
+import type { PluginHookCronReconciledEvent } from "../plugins/hook-types.js";
 import type { GatewayCronState } from "./server-cron.js";
 
 type GatewayCronReconciliationArmParams = {
@@ -27,7 +24,7 @@ export function createGatewayCronReconciliation(params: {
   isClosing: () => boolean;
   runHook: (
     event: PluginHookCronReconciledEvent,
-    ctx: PluginHookCronReconciledContext,
+    ctx: PluginCoreCronReconciledContext,
   ) => Promise<void>;
 }): GatewayCronReconciliation {
   let lifecycleGeneration = 0;
@@ -45,7 +42,7 @@ export function createGatewayCronReconciliation(params: {
       const generation = lifecycleGeneration;
       const abortController = new AbortController();
       activeAbortController = abortController;
-      const cron = cronState.cron as PluginHookGatewayCronService;
+      const cron = cronState.cron;
       const event: PluginHookCronReconciledEvent = {
         reason,
         enabled: cronState.cronEnabled,

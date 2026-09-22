@@ -52,6 +52,7 @@ import {
   retryTransientDirectCronDelivery,
   waitForCompletedDirectCronDelivery,
 } from "./delivery-dispatch-policy.js";
+import { resolveCronNativePurpose, resolveCronSuppression } from "./delivery-dispatch-result.js";
 import type {
   DispatchCronDeliveryParams,
   DispatchCronDeliveryState,
@@ -360,6 +361,7 @@ export async function dispatchCronDelivery(
           completionRetention: DIRECT_CRON_DELIVERY_COMPLETION_RETENTION,
           deps: createOutboundSendDeps(params.deps),
           signal: params.abortSignal,
+          nativeDeliveryPurpose: resolveCronNativePurpose(params.job),
           onError,
           onPayload: (payload) => {
             attemptedPayloadsForMirror.push(payload);
@@ -399,13 +401,11 @@ export async function dispatchCronDelivery(
           deliveryState.error ??= formatErrorMessage(send.error);
         }
         if (send.status === "suppressed") {
-          // The first suppressed payload can precede an identityless platform send.
-          const uncertain = durableMessageBatchMayHaveReachedRecipient(send);
-          const reason = uncertain ? "adapter_returned_no_identity" : send.reason;
-          recordDelivery(
-            uncertain ? "unknown" : "not-delivered",
-            `cron delivery ${uncertain ? "outcome is unknown" : "was suppressed"}: ${reason}`,
-          );
+          const suppression = resolveCronSuppression({
+            uncertain: durableMessageBatchMayHaveReachedRecipient(send),
+            reason: send.reason,
+          });
+          recordDelivery(suppression.status, suppression.error, suppression.reason);
         }
         return send.status === "sent" || send.status === "partial_failed" ? send.results : [];
       };

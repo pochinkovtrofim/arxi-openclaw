@@ -85,12 +85,9 @@ import { listConfiguredMessageChannels } from "../infra/outbound/channel-selecti
 import { withSystemEventOwner } from "../infra/system-event-ownership.js";
 import { enqueueSystemEventWithReceipt } from "../infra/system-events.js";
 import { getChildLogger, getResolvedLoggerSettings, toPinoLikeLogger } from "../logging.js";
+import type { PluginCoreGatewayHookContext } from "../plugins/hook-cron-context.js";
 import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
-import type {
-  PluginHookCronChangedEvent,
-  PluginHookGatewayCronService,
-  PluginHookGatewayContext,
-} from "../plugins/hook-types.js";
+import type { PluginHookCronChangedEvent } from "../plugins/hook-types.js";
 import {
   getGatewaySuspendAdmissionPhase,
   runWithGatewayIndependentRootWorkAdmission,
@@ -560,9 +557,9 @@ export function buildGatewayCronService(params: {
     if (!hookRunner?.hasHooks("cron_changed")) {
       return;
     }
-    const hookCtx: PluginHookGatewayContext = {
+    const hookCtx: PluginCoreGatewayHookContext = {
       config: getRuntimeConfig(),
-      getCron: () => cron as PluginHookGatewayCronService,
+      getCron: () => cron,
     };
     // Hook execution is detached from the cron mutation/tick that emitted it.
     // Keep the whole plugin callback visible until its user-state effects settle.

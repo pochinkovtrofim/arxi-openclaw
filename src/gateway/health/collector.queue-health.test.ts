@@ -62,7 +62,11 @@ describe("queue health collector", () => {
       const snapshot = await pending;
       expect(snapshot).toMatchObject({
         channels: {},
-        deliveryQueues: { failed: [], ingressFailed: failed },
+        deliveryQueues: {
+          failed: [],
+          outbound: { complete: false },
+          ingressFailed: failed,
+        },
       });
       expect(capture).toHaveBeenCalledTimes(1);
       expect(countOutbound).not.toHaveBeenCalled();
@@ -85,7 +89,10 @@ describe("queue health collector", () => {
         await import("../../infra/delivery-queue-sqlite.kernel.js");
       const { openOpenClawStateDatabase } = await import("../../state/openclaw-state-db.js");
       const clean = await collectHealth();
-      expect(clean.deliveryQueues).toBeUndefined();
+      expect(clean.deliveryQueues).toEqual({
+        failed: [],
+        outbound: { complete: true, pendingCount: 0, futureDeferredCount: 0 },
+      });
 
       const entry = {
         id: "dead-1",
@@ -116,6 +123,7 @@ describe("queue health collector", () => {
       const snap = await collectHealth();
       expect(snap.deliveryQueues).toEqual({
         failed: [{ queueName: "outbound", count: 1, oldestFailedAt: expect.any(Number) }],
+        outbound: { complete: true, pendingCount: 0, futureDeferredCount: 0 },
         ingressFailed: [
           { channelId: "telegram", accountId: "ops", count: 1, oldestFailedAt: 50_000 },
         ],
@@ -192,6 +200,7 @@ describe("queue health collector", () => {
       const snap = await collectHealth();
       expect(snap.deliveryQueues).toEqual({
         failed: [],
+        outbound: { complete: true, pendingCount: 0, futureDeferredCount: 0 },
         ingressPressure: [
           {
             channelId: "telegram",

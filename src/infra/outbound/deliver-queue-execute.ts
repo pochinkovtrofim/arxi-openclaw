@@ -11,7 +11,6 @@ import type {
   PlatformSendRoute,
 } from "./deliver-contracts.js";
 import { deliverOutboundPayloadsCore } from "./deliver-core.js";
-import { assertOutboundHandoffCurrent } from "./deliver-handoff.js";
 import { OUTBOUND_DELIVERY_LOG_SCOPE } from "./deliver-log.js";
 import {
   findTerminalBatchRejection,
@@ -33,6 +32,7 @@ import {
 } from "./deliver-types.js";
 import { runOutboundDeliveryCommitHooks } from "./delivery-commit-hooks.js";
 import { settleDurableDelivery } from "./delivery-completion.js";
+import { settlePreDispatchDeliveryError } from "./delivery-queue-deferred-result.js";
 import type { DeliveryProducerLease } from "./delivery-queue-lease.js";
 import {
   failDelivery,
@@ -575,19 +575,23 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
       if (isOutboundDeliveryAdmissionClosedError(err)) {
         throw err;
       }
-      if (
-        !platformSendStarted &&
-        deliveredResults.length === 0 &&
-        queuedPostSendState === undefined &&
-        !(err instanceof OutboundDeliveryError && err.sentBeforeError)
-      ) {
-        // Initial handler/bootstrap failures precede every adapter handoff.
-        try {
-          assertOutboundHandoffCurrent(wrappedParams.assertDirectAdapterHandoff);
-        } catch (rejection) {
-          err = rejection;
-        }
+      const deferred = settlePreDispatchDeliveryError({
+        error: err,
+        platformQueueId,
+        queueOwner,
+        platformSendStarted,
+        deliveredResultCount: deliveredResults.length,
+        dispatchedPayloadCount: platformDispatchedPayloads.size,
+        queuedPostSendState,
+        assertDirectAdapterHandoff: wrappedParams.assertDirectAdapterHandoff,
+      });
+      if (deferred.accepted) {
+        return [];
       }
+      if (deferred.propagate) {
+        throw deferred.error;
+      }
+      err = deferred.error;
       if (err instanceof OutboundDeliveryError && err.results.length > 0) {
         deliveredResults = err.results;
       }

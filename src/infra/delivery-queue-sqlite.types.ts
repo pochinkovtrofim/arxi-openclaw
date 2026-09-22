@@ -88,6 +88,8 @@ export type DeliveryQueueEntryState = {
   enqueuedAt: number;
   retryCount: number;
   availableAt?: number;
+  /** Semantic provider deferral deadline, distinct from short ownership leases. */
+  deferredUntilMs?: number;
   /** Only explicit reusable producers retain a platform-send ownership lease. */
   requiresProducerClaim?: boolean;
   producerClaimId?: string;

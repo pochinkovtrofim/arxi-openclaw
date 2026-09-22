@@ -47,3 +47,57 @@ export function restoreDeliveryAttemptBeforeDispatchInDatabase(
     throw new Error(`Delivery platform claim was lost: ${entry.id}`);
   }
 }
+
+/** Release an exact pre-dispatch owner while retaining the durable payload for later. */
+export function deferDeliveryAttemptBeforeDispatchInDatabase(
+  database: OpenClawStateDatabase,
+  params: {
+    id: string;
+    retryAtMs: number;
+    claimedAttemptId: string;
+    restoreAttemptCount?: number;
+  },
+): void {
+  const deferred = transitionOwnedDeliveryQueueEntryInDatabase(
+    database,
+    {
+      queueName: OUTBOUND_DELIVERY_QUEUE_NAME,
+      id: params.id,
+      platformSendAttemptId: params.claimedAttemptId,
+    },
+    (currentRow) => {
+      // SAFETY: The claimed row belongs to the prepared outbound namespace.
+      const current = currentRow as QueuedDelivery;
+      if (current.recoveryState === "unknown_after_send" || current.settlement) {
+        throw new Error(`Delivery already crossed the platform boundary: ${params.id}`);
+      }
+      if (
+        params.restoreAttemptCount !== undefined &&
+        current.attemptCount !== params.restoreAttemptCount + 1
+      ) {
+        throw new Error(`Delivery attempt reservation changed before deferral: ${params.id}`);
+      }
+      upsertDeliveryQueueEntryInDatabase(
+        {
+          queueName: OUTBOUND_DELIVERY_QUEUE_NAME,
+          entry: {
+            ...current,
+            ...(params.restoreAttemptCount !== undefined
+              ? { attemptCount: params.restoreAttemptCount }
+              : {}),
+            availableAt: params.retryAtMs,
+            deferredUntilMs: params.retryAtMs,
+            producerClaimId: undefined,
+            platformSendAttemptId: undefined,
+            platformSendStartedAt: undefined,
+            recoveryState: undefined,
+          },
+        },
+        database,
+      );
+    },
+  );
+  if (!deferred) {
+    throw new Error(`Delivery platform claim was lost: ${params.id}`);
+  }
+}

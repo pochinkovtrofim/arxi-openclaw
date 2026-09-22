@@ -7,6 +7,7 @@ import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { ReplyToMode } from "../../config/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { OutboundDeliveryFormattingOptions } from "../../infra/outbound/formatting.js";
+import type { NativeDeliveryPurpose } from "../../infra/outbound/prepared-batch.js";
 import type { OutboundSendDeps } from "../../infra/outbound/send-deps.js";
 import type { OutboundMediaAccess } from "../../media/load-options.js";
 import type { PollInput } from "../../polls.js";
@@ -54,7 +55,9 @@ type DurableFinalDeliveryPayloadShape = {
 /** Raw platform result shape normalized into a message receipt. */
 export type MessageReceiptSourceResult = {
   /** Provider-confirmed intentional omission before dispatch, never an ambiguous send. */
-  outcome?: "not_sent";
+  outcome?: "not_sent" | "deferred";
+  /** Earliest retry time for provider-confirmed deferral before dispatch. */
+  retryAtMs?: number;
   channel?: string;
   messageId?: string;
   target?: {
@@ -192,6 +195,8 @@ export type ChannelMessageSendTextContext<TConfig = OpenClawConfig> = {
   gatewayClientScopes?: readonly string[];
   /** @internal Exact originating run retained through durable delivery and recovery. */
   sourceRunId?: string;
+  /** @internal Core-authored purpose retained through durable delivery and recovery. */
+  nativeDeliveryPurpose?: NativeDeliveryPurpose;
   /** @internal Opaque durable intent id for exact provider-side send reconciliation. */
   deliveryQueueId?: string;
   /** @internal Stable platform-send index within one durable payload. */
@@ -248,6 +253,7 @@ export type ChannelMessageSendPollContext<TConfig = OpenClawConfig> = Omit<
 /** Adapter send result normalized to a receipt plus optional legacy message id. */
 export type ChannelMessageSendResult = {
   outcome?: MessageReceiptSourceResult["outcome"];
+  retryAtMs?: MessageReceiptSourceResult["retryAtMs"];
   receipt: MessageReceipt;
   messageId?: string;
   target?: MessageReceiptSourceResult["target"];

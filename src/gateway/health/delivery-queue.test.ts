@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import * as deliveryQueueState from "../../infra/delivery-queue-sqlite.js";
 
 const countOutbound = vi.fn();
+const inspectOutbound = vi.fn();
 const countIngressFailed = vi.fn();
 const countIngressPressure = vi.fn();
 
@@ -11,6 +12,7 @@ vi.mock("../../infra/delivery-queue-sqlite.js", async (importOriginal) => {
   return {
     ...actual,
     countFailedDeliveryQueueEntries: () => countOutbound(),
+    inspectPendingDeliveryQueueDeferrals: () => inspectOutbound(),
   };
 });
 
@@ -40,10 +42,19 @@ const ingressPressure = [
     oldestReceivedAt: 1_000,
   },
 ];
+const outbound = {
+  complete: true,
+  pendingCount: 0,
+  futureDeferredCount: 0,
+} as const;
 
 describe("buildDeliveryQueueHealthSummary", () => {
   beforeEach(() => {
     countOutbound.mockReset().mockResolvedValue([]);
+    inspectOutbound.mockReset().mockResolvedValue({
+      pendingCount: 0,
+      futureDeferredCount: 0,
+    });
     countIngressFailed.mockReset().mockReturnValue([]);
     countIngressPressure.mockReset().mockReturnValue([]);
   });
@@ -57,7 +68,7 @@ describe("buildDeliveryQueueHealthSummary", () => {
           throw new Error("ingress database unavailable");
         });
       },
-      expected: { failed: outboundFailed },
+      expected: { failed: outboundFailed, outbound },
     },
     {
       name: "ingress failures when the outbound read fails",
@@ -65,7 +76,7 @@ describe("buildDeliveryQueueHealthSummary", () => {
         countOutbound.mockRejectedValue(new Error("outbound database unavailable"));
         countIngressFailed.mockReturnValue(ingressFailed);
       },
-      expected: { failed: [], ingressFailed },
+      expected: { failed: [], outbound, ingressFailed },
     },
     {
       name: "dead letters when the ingress pressure read fails",
@@ -75,7 +86,7 @@ describe("buildDeliveryQueueHealthSummary", () => {
           throw new Error("ingress pressure read unavailable");
         });
       },
-      expected: { failed: [], ingressFailed },
+      expected: { failed: [], outbound, ingressFailed },
     },
     {
       name: "ingress pressure when the dead-letter read fails",
@@ -85,7 +96,7 @@ describe("buildDeliveryQueueHealthSummary", () => {
         });
         countIngressPressure.mockReturnValue(ingressPressure);
       },
-      expected: { failed: [], ingressPressure },
+      expected: { failed: [], outbound, ingressPressure },
     },
   ])("preserves $name", async ({ arrange, expected }) => {
     arrange();
@@ -95,6 +106,7 @@ describe("buildDeliveryQueueHealthSummary", () => {
   it("uses cached ingress pressure without rerunning its reader", async () => {
     expect(await buildDeliveryQueueHealthSummary(ingressPressure)).toEqual({
       failed: [],
+      outbound,
       ingressPressure,
     });
     expect(countIngressPressure).not.toHaveBeenCalled();
@@ -110,14 +122,43 @@ describe("buildDeliveryQueueHealthSummary", () => {
     try {
       expect(await buildDeliveryQueueHealthSummary(ingressPressure)).toEqual({
         failed: [],
+        outbound: { complete: false },
         ingressFailed,
         ingressPressure,
       });
       expect(capture).toHaveBeenCalledTimes(1);
       expect(countOutbound).not.toHaveBeenCalled();
+      expect(inspectOutbound).not.toHaveBeenCalled();
       expect(countIngressPressure).not.toHaveBeenCalled();
     } finally {
       capture.mockRestore();
     }
+  });
+
+  it("reports a content-free rollback inventory with the earliest future deadline", async () => {
+    inspectOutbound.mockResolvedValue({
+      pendingCount: 3,
+      futureDeferredCount: 2,
+      earliestDeferredUntilMs: 25_000,
+    });
+
+    expect(await buildDeliveryQueueHealthSummary()).toEqual({
+      failed: [],
+      outbound: {
+        complete: true,
+        pendingCount: 3,
+        futureDeferredCount: 2,
+        earliestDeferredUntilMs: 25_000,
+      },
+    });
+  });
+
+  it("fails the rollback inventory closed without suppressing other health", async () => {
+    inspectOutbound.mockRejectedValue(new Error("worker unavailable"));
+
+    expect(await buildDeliveryQueueHealthSummary()).toEqual({
+      failed: [],
+      outbound: { complete: false },
+    });
   });
 });

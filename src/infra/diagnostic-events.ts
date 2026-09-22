@@ -642,6 +642,24 @@ export type DiagnosticRunCompletedEvent = DiagnosticRunBaseEvent & {
   blockedBy?: string;
 };
 
+type DiagnosticHeadlessRunBaseEvent = DiagnosticBaseEvent & {
+  type: "headless.run.started" | "headless.run.completed";
+  runId: string;
+  sessionKey?: string;
+  trigger: "cron";
+};
+
+export type DiagnosticHeadlessRunStartedEvent = DiagnosticHeadlessRunBaseEvent & {
+  type: "headless.run.started";
+};
+
+export type DiagnosticHeadlessRunCompletedEvent = DiagnosticHeadlessRunBaseEvent & {
+  type: "headless.run.completed";
+  durationMs: number;
+  outcome: "fired" | "not_fired" | "error";
+  errorCategory?: string;
+};
+
 export type DiagnosticHarnessRunPhase = "prepare" | "start" | "send" | "resolve" | "cleanup";
 export type DiagnosticHarnessRunOutcome = "completed" | "aborted" | "timed_out" | "error";
 
@@ -896,6 +914,8 @@ export type DiagnosticEventPayload =
   | DiagnosticExecApprovalFollowupSuppressedEvent
   | DiagnosticRunStartedEvent
   | DiagnosticRunCompletedEvent
+  | DiagnosticHeadlessRunStartedEvent
+  | DiagnosticHeadlessRunCompletedEvent
   | DiagnosticHarnessRunStartedEvent
   | DiagnosticHarnessRunCompletedEvent
   | DiagnosticHarnessRunErrorEvent
@@ -1055,6 +1075,7 @@ const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
   "model.call.error",
   "run.progress",
   "run.execution_phase",
+  "headless.run.completed",
   "harness.run.completed",
   "harness.run.error",
   "context.assembled",
@@ -1068,6 +1089,7 @@ const PRIORITY_ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["ty
   "tool.execution.blocked",
   "model.call.completed",
   "model.call.error",
+  "headless.run.completed",
   "harness.run.completed",
   "harness.run.error",
 ]);

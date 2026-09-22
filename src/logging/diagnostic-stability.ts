@@ -500,6 +500,15 @@ function sanitizeDiagnosticEvent(event: DiagnosticEventPayload): DiagnosticStabi
       record.outcome = event.outcome;
       assignReasonCode(record, event.errorCategory);
       break;
+    case "headless.run.started":
+      record.source = event.trigger;
+      break;
+    case "headless.run.completed":
+      record.source = event.trigger;
+      record.durationMs = event.durationMs;
+      record.outcome = event.outcome;
+      assignReasonCode(record, event.errorCategory);
+      break;
     case "harness.run.started":
       record.source = event.harnessId;
       record.pluginId = event.pluginId;

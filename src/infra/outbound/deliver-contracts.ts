@@ -37,7 +37,7 @@ import type { OutboundMessageSendOverrides } from "./message-plan.js";
 import type { MessageSentEvent } from "./message-sent-hook.js";
 import type { DeliveryMirror } from "./mirror.js";
 import type { NormalizedOutboundPayload } from "./payloads.js";
-import type { PreparedOutboundBatch } from "./prepared-batch.js";
+import type { NativeDeliveryPurpose, PreparedOutboundBatch } from "./prepared-batch.js";
 import type { OutboundSendDeps } from "./send-deps.js";
 import type { OutboundSessionContext } from "./session-context.js";
 
@@ -163,6 +163,8 @@ export type ChannelHandlerParams = {
   mediaAccess?: OutboundMediaAccess;
   gatewayClientScopes?: readonly string[];
   conversationReadOrigin?: "delegated" | "direct-operator";
+  /** @internal Trusted native source classification; never model or public gateway input. */
+  nativeDeliveryPurpose?: NativeDeliveryPurpose;
   deliveryQueueId?: string;
   preparedMessageId?: string;
   requiredUnknownSendReconciliation?: boolean;
@@ -186,6 +188,8 @@ export type DeliverOutboundPayloadsCoreParams = {
   replyKind?: ReplyDispatchKind;
   /** @internal Exact admitted execution provenance copied into durable custody. */
   executionIdentityToken?: ExecutionIdentityAdmissionToken;
+  /** @internal Core-authored purpose unavailable to public message/tool inputs. */
+  nativeDeliveryPurpose?: NativeDeliveryPurpose;
   /** @internal Canonical post-policy batch used by queue recovery and physical delivery. */
   preparedBatch?: PreparedOutboundBatch;
   reply?: OutboundReplyFacts;

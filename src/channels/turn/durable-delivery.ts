@@ -1,6 +1,7 @@
 // Durable final-reply delivery for inbound channel turns.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { ExecutionIdentityAdmissionToken } from "../../audit/execution-identity-admission.js";
+import { resolveCommandAuthorization } from "../../auto-reply/command-auth.js";
 import { getGroupThreadDispatchContext } from "../../auto-reply/group-thread-context.js";
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { FinalizedMsgContext } from "../../auto-reply/templating.js";
@@ -14,6 +15,7 @@ import {
   resolveOutboundDurableFinalDeliverySupport,
 } from "../../infra/outbound/deliver.js";
 import { buildOutboundSessionContext } from "../../infra/outbound/session-context.js";
+import { normalizeChatType } from "../chat-type.js";
 import { deriveDurableFinalDeliveryRequirements } from "../message/capabilities.js";
 import {
   durableMessageBatchMayHaveReachedRecipient,
@@ -221,6 +223,14 @@ export async function deliverInboundReplyWithMessageSendContextCore(
     requesterSenderUsername: params.ctxPayload.SenderUsername,
     requesterSenderE164: params.ctxPayload.SenderE164,
   });
+  const directOwnerReply =
+    !group &&
+    normalizeChatType(params.ctxPayload.ChatType) === "direct" &&
+    resolveCommandAuthorization({
+      ctx: params.ctxPayload,
+      cfg: params.cfg,
+      commandAuthorized: params.ctxPayload.CommandAuthorized,
+    }).senderIsOwner;
   const send = await sendDurableMessageBatchCore({
     cfg: params.cfg,
     channel,
@@ -249,6 +259,7 @@ export async function deliverInboundReplyWithMessageSendContextCore(
       : {}),
     session,
     gatewayClientScopes: params.ctxPayload.GatewayClientScopes ?? [],
+    ...(directOwnerReply ? { nativeDeliveryPurpose: "direct_owner_reply" as const } : {}),
   });
   if (send.status === "failed") {
     return { status: "failed" as const, error: send.error };

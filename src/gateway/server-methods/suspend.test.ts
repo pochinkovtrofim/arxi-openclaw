@@ -9,12 +9,18 @@ const coordinator = vi.hoisted(() => ({
   status: vi.fn(),
   resume: vi.fn(),
 }));
+const outbound = vi.hoisted(() => ({ inspect: vi.fn() }));
 
 vi.mock("../../infra/gateway-suspend-coordinator.js", () => ({
   prepareGatewaySuspend: coordinator.prepare,
   getGatewaySuspendStatus: coordinator.status,
   resumeGatewaySuspend: coordinator.resume,
 }));
+
+vi.mock("../../infra/delivery-queue-sqlite.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../infra/delivery-queue-sqlite.js")>();
+  return { ...actual, inspectPendingDeliveryQueueDeferrals: outbound.inspect };
+});
 
 vi.mock("../server-active-work.js", () => ({
   createGatewayServerActiveWorkInspectors: vi.fn(() => ({ getChatRuns: vi.fn(() => 0) })),
@@ -42,6 +48,7 @@ function invoke(method: keyof typeof suspendHandlers, params: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  outbound.inspect.mockResolvedValue({ pendingCount: 0, futureDeferredCount: 0 });
 });
 
 describe("gateway suspend handlers", () => {
@@ -101,6 +108,71 @@ describe("gateway suspend handlers", () => {
         retryable: true,
       }),
     );
+  });
+
+  it("holds an empty outbound rollback fence across an idempotent ordinary retry", async () => {
+    const ready = {
+      status: "ready",
+      suspensionId: "suspension-empty-outbound",
+      expiresAtMs: Date.now() + 60_000,
+      activeCount: 0,
+      blockers: [],
+      wakeRequirement: { kind: "external-event-only" },
+    };
+    coordinator.prepare.mockReturnValue(ready);
+    coordinator.status.mockReturnValue(ready);
+
+    const fenced = await invoke("gateway.suspend.prepare", {
+      requestId: "request-empty-outbound",
+      requireEmptyOutbound: true,
+    });
+    const lifecycleRetry = await invoke("gateway.suspend.prepare", {
+      requestId: "request-empty-outbound",
+    });
+
+    expect(fenced.respond).toHaveBeenCalledWith(true, ready);
+    expect(lifecycleRetry.respond).toHaveBeenCalledWith(true, ready);
+    expect(outbound.inspect).toHaveBeenCalledOnce();
+    expect(coordinator.resume).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "pending outbound custody",
+      arrange: () =>
+        outbound.inspect.mockResolvedValue({ pendingCount: 1, futureDeferredCount: 0 }),
+    },
+    {
+      name: "an ambiguous inventory read",
+      arrange: () => outbound.inspect.mockRejectedValue(new Error("state worker unavailable")),
+    },
+  ])("releases the suspension after $name", async ({ arrange }) => {
+    const ready = {
+      status: "ready",
+      suspensionId: "suspension-blocked-outbound",
+      expiresAtMs: Date.now() + 60_000,
+      activeCount: 0,
+      blockers: [],
+      wakeRequirement: { kind: "external-event-only" },
+    };
+    coordinator.prepare.mockReturnValue(ready);
+    coordinator.status.mockReturnValue(ready);
+    coordinator.resume.mockReturnValue({ ok: true, status: "running", resumed: true });
+    arrange();
+
+    const { respond } = await invoke("gateway.suspend.prepare", {
+      requestId: "request-blocked-outbound",
+      requireEmptyOutbound: true,
+    });
+
+    expect(coordinator.resume).toHaveBeenCalledWith(ready.suspensionId);
+    expect(respond).toHaveBeenCalledWith(false, undefined, {
+      code: "UNAVAILABLE",
+      message: "gateway suspension preflight is unavailable",
+      retryable: true,
+      retryAfterMs: 1_000,
+      details: { reason: "gateway-suspension-preflight-failed" },
+    });
   });
 
   it("passes an explicit preserve-only drain through without changing its wire result", async () => {

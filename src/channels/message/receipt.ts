@@ -18,7 +18,7 @@ const normalizeIdentity = (value: string | undefined): string | undefined =>
   value?.trim() || undefined;
 
 export function resolveReceiptSourceId(result: MessageReceiptInputResult): string | undefined {
-  if (result.outcome === "not_sent") {
+  if (result.outcome === "not_sent" || result.outcome === "deferred") {
     return undefined;
   }
   return (
@@ -43,7 +43,7 @@ export function createMessageReceiptFromOutboundResults(params: {
   replyToId?: string;
   sentAt?: number;
 }): MessageReceipt {
-  const sentResults = params.results.filter((result) => result.outcome !== "not_sent");
+  const sentResults = params.results.filter((result) => result.outcome === undefined);
   const requestedThreadId = normalizeIdentity(params.threadId);
   const providerThreadIds = normalizeUniqueStringEntries(
     sentResults.flatMap(({ receipt }) =>

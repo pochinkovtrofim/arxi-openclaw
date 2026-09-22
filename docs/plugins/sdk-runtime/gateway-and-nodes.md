@@ -188,8 +188,14 @@ Reach the Gateway and paired nodes from plugin code, and the events a long-lived
 ## Gateway service events
 
 Gateway-hosted services also receive `ctx.getCron?.()` for the scheduler operations
-already available to Gateway hooks: `list`, `add`, `update`, `remove`, and
-`removeStaleJobFamily`. Non-Gateway service hosts omit this getter.
+already available to Gateway hooks: `list`, `add`, `update`, `mutateTriggerState`,
+`remove`, and `removeStaleJobFamily`. Non-Gateway service hosts omit this getter.
+`mutateTriggerState(id, { key, expectedRevision, value })` atomically replaces one
+top-level trigger-state namespace while retaining all other namespaces and runtime
+state. The namespace `value` must be a bounded plain JSON object whose safe integer
+`revision` is exactly `expectedRevision + 1`; a missing namespace has revision `0`.
+The current job's `declarationKey` must belong to the calling plugin id namespace.
+Call `list()` again after a revision conflict before planning another mutation.
 
 Service cleanup retains the owning plugin's cleanup context so `stop()` can
 release resources after ordinary call admission closes. Keep the resources and

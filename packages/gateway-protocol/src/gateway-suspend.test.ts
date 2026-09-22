@@ -30,6 +30,18 @@ describe("gateway suspension protocol", () => {
     expect(
       validateGatewaySuspendPrepareParams({
         requestId: "host-request",
+        requireEmptyOutbound: true,
+      }),
+    ).toBe(true);
+    expect(
+      validateGatewaySuspendPrepareParams({
+        requestId: "host-request",
+        requireEmptyOutbound: false,
+      }),
+    ).toBe(false);
+    expect(
+      validateGatewaySuspendPrepareParams({
+        requestId: "host-request",
         terminalPolicy: "preserve",
       }),
     ).toBe(true);

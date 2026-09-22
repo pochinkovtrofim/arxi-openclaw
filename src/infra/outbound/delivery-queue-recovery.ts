@@ -16,7 +16,6 @@ import {
   createEmptyDeliveryRecoverySummary,
   findPlatformMessageRejectedError,
   getErrnoCode,
-  isDeliveryRecoveryRetryEligible,
   isProvenDeliveryNotSentError,
   resolveDeliveryRecoveryDeadlineMs,
   type ActiveDeliveryRecoveryClaimResult,
@@ -37,6 +36,7 @@ import {
 } from "./deliver-queue-state.js";
 import {
   areOutboundPayloadsIntentionallySuppressed,
+  OutboundDeliveryDeferredError,
   isOutboundDeliveryError,
   isOutboundDeliveryAdmissionClosedError,
   OutboundDeliveryAdmissionClosedError,
@@ -63,6 +63,11 @@ import {
   buildUnknownSendContext,
   reconcileUnknownQueuedDelivery,
 } from "./delivery-queue-reconciliation.js";
+import {
+  isQueuedDeliveryRetryReady,
+  resolveDeliveryRecoveryAttemptCount,
+  resolveDeliveryRecoveryMaxRetries,
+} from "./delivery-queue-recovery-policy.js";
 import {
   claimDeliveryPlatformSendAttempt,
   failDelivery,
@@ -99,8 +104,6 @@ export interface RecoveryLogger {
   warn(msg: string): void;
   error(msg: string): void;
 }
-
-const DEFAULT_MAX_RETRIES = 5;
 
 const PERMANENT_ERROR_PATTERNS: readonly RegExp[] = [
   /no conversation reference found/i,
@@ -222,20 +225,6 @@ function emitRecoveredTerminalSuccess(entry: QueuedDelivery, result: OutboundDel
   );
 }
 
-function resolveMaxRetries(entry: QueuedDelivery): number {
-  const configured = entry.maxRetries;
-  return typeof configured === "number" && Number.isInteger(configured) && configured > 0
-    ? configured
-    : DEFAULT_MAX_RETRIES;
-}
-
-function resolveAttemptCount(entry: QueuedDelivery): number {
-  const persisted = entry.attemptCount;
-  const attemptCount =
-    typeof persisted === "number" && Number.isInteger(persisted) && persisted >= 0 ? persisted : 0;
-  return Math.max(attemptCount, entry.retryCount);
-}
-
 function emitQueuedAuditTerminals(
   entry: QueuedDelivery,
   terminals: Parameters<typeof emitOutboundAuditTerminals>[0]["terminals"],
@@ -278,12 +267,13 @@ function buildRecoveryDeliverParams(
     channel: entry.channel,
     to: entry.to,
     accountId: entry.accountId,
-    ...(entry.queuePolicy !== undefined ? { queuePolicy: entry.queuePolicy } : {}),
+    queuePolicy: entry.queuePolicy,
     ...(entry.requireUnknownSendReconciliation === true
       ? { requireUnknownSendReconciliation: true }
       : {}),
     payloads: queuedDeliveryPayloads(entry),
     preparedBatch: entry.preparedBatch,
+    nativeDeliveryPurpose: entry.preparedBatch.nativeDeliveryPurpose,
     renderedBatchPlan: entry.renderedBatchPlan,
     threadId: entry.threadId,
     reply: entry.reply,
@@ -710,7 +700,7 @@ async function drainQueuedEntry(
   },
   stateContext: DeliveryQueueStateContext,
   internalDeliver?: InternalRecoveryDeliver,
-): Promise<"recovered" | "failed" | "moved-to-failed" | "already-gone" | "stopped"> {
+): Promise<"recovered" | "deferred" | "failed" | "moved-to-failed" | "already-gone" | "stopped"> {
   const { entry } = opts;
   const deliver: DeliverFn = internalDeliver
     ? (params) => internalDeliver(params, stateContext)
@@ -723,8 +713,8 @@ async function drainQueuedEntry(
     },
     stateContext,
   );
-  const maxRetries = resolveMaxRetries(entry);
-  const attemptBudgetExhausted = resolveAttemptCount(entry) >= maxRetries;
+  const maxRetries = resolveDeliveryRecoveryMaxRetries(entry);
+  const attemptBudgetExhausted = resolveDeliveryRecoveryAttemptCount(entry) >= maxRetries;
   let reconciledPlatformSendAttemptId: string | undefined;
   let reconciledPlatformSendStartedAt: number | undefined;
   const ownerState = await resolveCompletedOwnerBeforeRecovery({ ...opts, owner }, stateContext);
@@ -898,6 +888,7 @@ async function drainQueuedEntry(
   }
   const recoverySpoolPaths = collectEntrySpoolPaths(queuedDeliveryPayloads(entry), opts.stateDir);
   let mediaRecoveryLeaseId: string | undefined;
+  let dispatchAdmitted = false;
   try {
     // The pending row owns these artifacts until the lease exists. Fallback
     // acks may then remove replay intent without exposing active media to GC.
@@ -917,7 +908,6 @@ async function drainQueuedEntry(
       opts.stateDir,
       producerClaimId,
     );
-    let dispatchAdmitted = false;
     const result = await deliver({
       ...deliveryParams,
       deliveryQueueOwner: owner,
@@ -1096,6 +1086,11 @@ async function drainQueuedEntry(
       );
       return "stopped";
     }
+    if (err instanceof OutboundDeliveryDeferredError && !dispatchAdmitted) {
+      owner.defer(err.retryAtMs, entry.attemptCount);
+      opts.log.info(`Delivery entry ${entry.id} deferred until ${err.retryAtMs}`);
+      return "deferred";
+    }
     const errMsg = formatErrorMessage(err);
     opts.onFailed?.(entry, errMsg);
     if (isOutboundDeliveryError(err) && err.results.length > 0) {
@@ -1273,8 +1268,8 @@ async function processQueuedRecovery(
     log.info(`${label} no longer matches, skipping`);
     return "continue";
   }
-  const maxRetries = resolveMaxRetries(entry);
-  const attemptCount = resolveAttemptCount(entry);
+  const maxRetries = resolveDeliveryRecoveryMaxRetries(entry);
+  const attemptCount = resolveDeliveryRecoveryAttemptCount(entry);
   if (attemptCount >= maxRetries && !needsUnknownSendReconciliation(entry)) {
     if (context.kind === "startup") {
       log.warn(`${label} exceeded max retries (${attemptCount}/${maxRetries}) — moving to failed/`);
@@ -1292,14 +1287,15 @@ async function processQueuedRecovery(
     }
     return "continue";
   }
-  const eligibility = isDeliveryRecoveryRetryEligible(entry, Date.now());
-  if (!decision.bypassBackoff && !eligibility.eligible) {
-    if (context.kind === "startup") {
-      context.summary.deferredBackoff += 1;
-    }
-    log.info(
-      `${label} not ready for retry yet — backoff ${eligibility.remainingBackoffMs}ms remaining`,
-    );
+  if (
+    !isQueuedDeliveryRetryReady(
+      entry,
+      decision.bypassBackoff === true,
+      label,
+      context.kind === "startup" ? () => (context.summary.deferredBackoff += 1) : undefined,
+      log,
+    )
+  ) {
     return "continue";
   }
   if (

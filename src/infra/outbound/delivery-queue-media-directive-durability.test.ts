@@ -54,7 +54,11 @@ function enqueuePhaseAdapter(mediaPaths: string[]): ChannelOutboundAdapter {
 type RecoveredSend = { mediaUrl: string; fromSpool: boolean; bytes?: string; error?: string };
 
 /** Adapter that reads the exact path the replayed send hands it (spool copy vs producer path). */
-function recoveryPhaseAdapter(records: RecoveredSend[], spoolRoot: string): ChannelOutboundAdapter {
+function recoveryPhaseAdapter(
+  records: RecoveredSend[],
+  spoolRoot: string,
+  failuresBeforeSuccess = 0,
+): ChannelOutboundAdapter {
   return {
     deliveryMode: "direct",
     sendText: async () => ({ channel: "matrix", messageId: "t" }),
@@ -71,6 +75,11 @@ function recoveryPhaseAdapter(records: RecoveredSend[], spoolRoot: string): Chan
       records.push({ mediaUrl, fromSpool, bytes, error });
       if (error) {
         throw new Error(error);
+      }
+      if (records.length <= failuresBeforeSuccess) {
+        throw new PlatformMessageNotDispatchedError("post-deferral retry failed before dispatch", {
+          cause: new Error("test"),
+        });
       }
       return { channel: "matrix", messageId: "recovered" };
     },
@@ -98,6 +107,7 @@ describe("delivery-queue MEDIA-directive durability (end-to-end)", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     resetPluginRuntimeStateForTest();
     setActivePluginRegistry(createEmptyPluginRegistry());
   });
@@ -169,6 +179,88 @@ describe("delivery-queue MEDIA-directive durability (end-to-end)", () => {
     expect(recovered[0]?.mediaUrl).not.toBe(source);
     // Terminal ack clears the durable row.
     expect(await loadPendingDeliveries(tmpDir)).toHaveLength(0);
+  });
+
+  it("retains deferred media through restart and sends the same spool after its deadline", async () => {
+    vi.useFakeTimers();
+    const startedAt = new Date("2026-09-22T01:00:00.000Z");
+    vi.setSystemTime(startedAt);
+    const retryAtMs = startedAt.getTime() + 60_000;
+    const source = path.join(sourceDir, "quiet-window.txt");
+    await fs.writeFile(source, bytes);
+    installMatrixAdapter({
+      deliveryMode: "direct",
+      sendText: async () => ({ channel: "matrix", messageId: "t" }),
+      sendMedia: async () => ({
+        outcome: "deferred",
+        channel: "matrix",
+        messageId: "",
+        retryAtMs,
+      }),
+    });
+
+    await expect(
+      deliverOutboundPayloads({
+        cfg,
+        channel: "matrix",
+        to,
+        payloads: [{ text: `quiet caption\nMEDIA:${source}` }],
+        queuePolicy: "required",
+        mediaAccess: { localRoots: [sourceDir] },
+      }),
+    ).resolves.toEqual([]);
+
+    const [deferred] = await loadPendingDeliveries(tmpDir);
+    expect(deferred).toMatchObject({
+      retryCount: 0,
+      attemptCount: 0,
+      availableAt: retryAtMs,
+      deferredUntilMs: retryAtMs,
+    });
+    const queuedPayloads = deferred
+      ? acceptedPreparedOutboundEntries(deferred.preparedBatch).map((entry) => entry.payload)
+      : [];
+    const [spoolPath] = [...new Set(collectEntrySpoolPaths(queuedPayloads, tmpDir))];
+    expect(await fs.readFile(spoolPath ?? "")).toEqual(bytes);
+    await fs.rm(source, { force: true });
+
+    const recovered: RecoveredSend[] = [];
+    installMatrixAdapter(recoveryPhaseAdapter(recovered, spoolRoot, 1));
+    const deliver = vi.fn<DeliverFn>(async (params) => deliverOutboundPayloads(params));
+    const drain = () =>
+      drainPendingDeliveriesCore({
+        drainKey: "deferred-media-test",
+        logLabel: "deferred media drain",
+        cfg,
+        log: createRecoveryLog(),
+        stateDir: tmpDir,
+        deliver,
+        selectEntry: () => ({ match: true, bypassBackoff: false }),
+      });
+
+    vi.setSystemTime(retryAtMs - 1);
+    await drain();
+    expect(recovered).toEqual([]);
+    expect(await fs.readFile(spoolPath ?? "")).toEqual(bytes);
+
+    vi.setSystemTime(retryAtMs);
+    await drain();
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]).toMatchObject({ fromSpool: true, bytes: bytes.toString("hex") });
+    const [failedAfterDue] = await loadPendingDeliveries(tmpDir);
+    expect(failedAfterDue).not.toHaveProperty("deferredUntilMs");
+    expect(failedAfterDue).not.toHaveProperty("availableAt");
+    expect(await fs.readFile(spoolPath ?? "")).toEqual(bytes);
+
+    vi.setSystemTime(retryAtMs + 4_999);
+    await drain();
+    expect(recovered).toHaveLength(1);
+    vi.setSystemTime(retryAtMs + 5_000);
+    await drain();
+    expect(recovered).toHaveLength(2);
+    expect(recovered[1]).toMatchObject({ fromSpool: true, bytes: bytes.toString("hex") });
+    expect(await loadPendingDeliveries(tmpDir)).toEqual([]);
+    await expect(fs.readFile(spoolPath ?? "")).rejects.toThrow();
   });
 
   it("fails a required send closed for sensitive directive media (no row, no spool)", async () => {

@@ -78,6 +78,26 @@ describe("sendCronAnnouncePayloadStrict", () => {
         bestEffort: false,
       }),
     );
+    expect(mocks.deliverOutboundPayloads.mock.calls[0]?.[0]).not.toHaveProperty(
+      "nativeDeliveryPurpose",
+    );
+  });
+
+  it("forwards native scheduler failure-alert provenance to channel delivery", async () => {
+    await sendCronAnnouncePayloadStrict({
+      deps: {} as never,
+      cfg: {} as never,
+      agentId: "main",
+      jobId: "job-1",
+      target: { channel: "telegram", to: "123" },
+      payload: { text: "Automation failed" },
+      nativeDeliveryPurpose: "cron_failure_alert",
+      abortSignal: new AbortController().signal,
+    });
+
+    expect(mocks.deliverOutboundPayloads).toHaveBeenCalledWith(
+      expect.objectContaining({ nativeDeliveryPurpose: "cron_failure_alert" }),
+    );
   });
 
   it("does not begin delivery when target resolution settles after cancellation", async () => {

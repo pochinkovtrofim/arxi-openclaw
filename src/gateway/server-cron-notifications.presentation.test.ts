@@ -97,6 +97,7 @@ describe("sendGatewayCronFailureAlert presentation", () => {
 
       expect(mocks.sendCronAnnouncePayloadStrict).toHaveBeenCalledWith(
         expect.objectContaining({
+          nativeDeliveryPurpose: "cron_failure_alert",
           payload: {
             text: expectedText,
             presentation: {

@@ -17,6 +17,7 @@ import {
 } from "./deliver-types.js";
 import { rejectDurableDelivery, type ConversationDeliveryTarget } from "./delivery-completion.js";
 import { retireUnsentDelivery } from "./delivery-queue-ack.js";
+import { deferDeliveryBeforePlatformSend } from "./delivery-queue-deferral.js";
 import { collectEntrySpoolPaths, releaseSpoolArtifacts } from "./delivery-queue-media-spool.js";
 import {
   ackDelivery,
@@ -137,6 +138,21 @@ export function createQueuedDeliveryOwner(
       return recordInState
         ? recordInState(owner.queueId, error, owner.stateDir, owner.claimId, context)
         : record(owner.queueId, error, owner.stateDir, owner.claimId);
+    },
+    defer(retryAtMs: number, restoreAttemptCount?: number): void {
+      owner.signal?.throwIfAborted();
+      if (!owner.claimId) {
+        throw new Error(`Delivery platform claim is missing: ${owner.queueId}`);
+      }
+      deferDeliveryBeforePlatformSend(
+        owner.queueId,
+        retryAtMs,
+        owner.stateDir,
+        owner.claimId,
+        context,
+        restoreAttemptCount,
+      );
+      custody = "released";
     },
     async retire(): Promise<void> {
       owner.signal?.throwIfAborted();

@@ -3,7 +3,7 @@ import { createDeferredCore } from "../../shared/deferred.js";
 import type { InternalDeliverOutboundPayloadsParams } from "./deliver-contracts.js";
 import { deliverOutboundPayloadsWithQueueCleanup } from "./deliver-queue-execute.js";
 import { createQueuedDeliveryOwner } from "./deliver-queue-state.js";
-import type { OutboundDeliveryResult } from "./deliver-types.js";
+import { OutboundDeliveryDeferredError, type OutboundDeliveryResult } from "./deliver-types.js";
 import type { DeliveryProducerLease } from "./delivery-queue-lease.js";
 
 const mocks = vi.hoisted(() => ({
@@ -77,6 +77,25 @@ describe("queued delivery lifecycle joins", () => {
     mocks.retire.mockImplementation(() => mocks.release);
     mocks.release.mockResolvedValue(undefined);
     mocks.ack.mockResolvedValue(undefined);
+  });
+
+  it("propagates a recovery-owned deferral before checking the direct handoff", async () => {
+    const deferred = new OutboundDeliveryDeferredError(Date.now() + 60_000);
+    const assertDirectAdapterHandoff = vi.fn(() => {
+      throw new Error("stale direct handoff");
+    });
+    mocks.core.mockRejectedValueOnce(deferred);
+    const params: InternalDeliverOutboundPayloadsParams = {
+      cfg: {},
+      channel: "matrix",
+      to: "!room:example",
+      payloads: [{ text: "defer under recovery custody" }],
+      deliveryQueueId: "recovery-owned",
+      assertDirectAdapterHandoff,
+    };
+
+    await expect(deliverOutboundPayloadsWithQueueCleanup(params, null, 1)).rejects.toBe(deferred);
+    expect(assertDirectAdapterHandoff).not.toHaveBeenCalled();
   });
 
   it("joins lease stop before cancellation retires custody and later releases preparation", async () => {

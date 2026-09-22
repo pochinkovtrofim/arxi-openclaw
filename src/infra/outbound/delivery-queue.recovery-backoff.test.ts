@@ -8,6 +8,7 @@ import {
   installDeliveryQueueTmpDirHooks,
   setQueuedEntryState,
 } from "./delivery-queue.test-helpers.js";
+import { createUnmodifiedPreparedOutboundBatch } from "./prepared-batch.js";
 
 describe("outbound delivery recovery retry backoff", () => {
   const { tmpDir } = installDeliveryQueueTmpDirHooks();
@@ -60,4 +61,24 @@ describe("outbound delivery recovery retry backoff", () => {
     expect(deliver).toHaveBeenCalledTimes(1);
     await expect(loadPendingDeliveries(stateDir)).resolves.toEqual([]);
   });
+
+  it.each(["cron_failure_alert", "direct_owner_reply", "exact_reminder"] as const)(
+    "preserves native purpose %s through queue recovery",
+    async (nativeDeliveryPurpose) => {
+      const preparedBatch = createUnmodifiedPreparedOutboundBatch([{ text: "trusted delivery" }]);
+      preparedBatch.nativeDeliveryPurpose = nativeDeliveryPurpose;
+      const stateDir = tmpDir();
+      await enqueueDelivery({ channel: "demo-channel-a", to: "+1", preparedBatch }, stateDir);
+      const deliver = vi.fn().mockResolvedValue([]);
+
+      await recoverPendingDeliveries({
+        deliver: asDeliverFn(deliver),
+        log: createRecoveryLog(),
+        cfg: {},
+        stateDir,
+      });
+
+      expect(deliver).toHaveBeenCalledWith(expect.objectContaining({ nativeDeliveryPurpose }));
+    },
+  );
 });

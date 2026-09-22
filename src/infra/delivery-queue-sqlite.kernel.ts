@@ -345,6 +345,58 @@ export function countFailedDeliveryQueueEntriesInDatabase(database: OpenClawStat
   );
 }
 
+export type PendingDeliveryQueueDeferralSummary = {
+  pendingCount: number;
+  futureDeferredCount: number;
+  earliestDeferredUntilMs?: number;
+};
+
+/** Content-free rollback inventory for one exact durable queue namespace. */
+export function inspectPendingDeliveryQueueDeferralsInDatabase(
+  database: OpenClawStateDatabase,
+  params: { queueName: string; nowMs: number },
+): PendingDeliveryQueueDeferralSummary {
+  const queueDb = getNodeSqliteKysely<DeliveryQueueDatabase>(database.db);
+  const rows = executeSqliteQuerySync(
+    database.db,
+    queueDb
+      .selectFrom("delivery_queue_entries")
+      .select("entry_json")
+      .where("queue_name", "=", params.queueName)
+      .where("status", "=", "pending"),
+  ).rows;
+  let futureDeferredCount = 0;
+  let earliestDeferredUntilMs: number | undefined;
+  for (const row of rows) {
+    const entry = safeParseJsonRecord(row.entry_json);
+    if (!entry) {
+      throw new Error(`Invalid pending delivery queue entry: ${params.queueName}`);
+    }
+    const deferredUntilMs = entry.deferredUntilMs;
+    if (deferredUntilMs === undefined) {
+      continue;
+    }
+    if (
+      typeof deferredUntilMs !== "number" ||
+      !Number.isSafeInteger(deferredUntilMs) ||
+      deferredUntilMs < 0
+    ) {
+      throw new Error(`Invalid pending delivery deferral deadline: ${params.queueName}`);
+    }
+    const deadline = deferredUntilMs;
+    if (deadline <= params.nowMs) {
+      continue;
+    }
+    futureDeferredCount += 1;
+    earliestDeferredUntilMs = Math.min(earliestDeferredUntilMs ?? deadline, deadline);
+  }
+  return {
+    pendingCount: rows.length,
+    futureDeferredCount,
+    ...(earliestDeferredUntilMs === undefined ? {} : { earliestDeferredUntilMs }),
+  };
+}
+
 export function countPendingDeliveryQueueEntriesInDatabase(
   database: Pick<OpenClawStateDatabase, "db">,
   queueNames: readonly string[],

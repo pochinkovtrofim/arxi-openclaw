@@ -92,6 +92,12 @@ describe("SnapshotSchema", () => {
       health: {
         deliveryQueues: {
           failed: [],
+          outbound: {
+            complete: true,
+            pendingCount: 2,
+            futureDeferredCount: 1,
+            earliestDeferredUntilMs: 3_000,
+          },
           ingressFailed: [
             { channelId: "telegram", accountId: "ops", count: 2, oldestFailedAt: 1_000 },
           ],
@@ -106,6 +112,20 @@ describe("SnapshotSchema", () => {
               oldestReceivedAt: 2_000,
             },
           ],
+        },
+      },
+    };
+
+    expect(Value.Check(SnapshotSchema, snapshot)).toBe(true);
+  });
+
+  it("accepts an incomplete content-free outbound queue inventory", () => {
+    const snapshot = {
+      ...snapshotWithPresence({ ts: 1 }),
+      health: {
+        deliveryQueues: {
+          failed: [],
+          outbound: { complete: false },
         },
       },
     };

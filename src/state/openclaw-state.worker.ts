@@ -12,7 +12,10 @@ import {
 import { loadMutableCronStoreInWorker } from "../cron/store/load.worker.js";
 import { executeCronStoreSaveCommand } from "../cron/store/save.worker.js";
 import { readDeferredPluginMigrations } from "../infra/deferred-plugin-migrations.js";
-import { countFailedDeliveryQueueEntriesInDatabase } from "../infra/delivery-queue-sqlite.kernel.js";
+import {
+  countFailedDeliveryQueueEntriesInDatabase,
+  inspectPendingDeliveryQueueDeferralsInDatabase,
+} from "../infra/delivery-queue-sqlite.kernel.js";
 import { executePromotionCommand } from "../infra/promotions-feed.worker.js";
 import {
   readApnsRegistrationFromDatabase,
@@ -322,6 +325,9 @@ function createSharedStateWorkerBackend(
       }
       if (command.type === "deliveryQueue.countFailed") {
         return countFailedDeliveryQueueEntriesInDatabase(database);
+      }
+      if (command.type === "deliveryQueue.inspectPendingDeferrals") {
+        return inspectPendingDeliveryQueueDeferralsInDatabase(database, command.input);
       }
       if (
         command.type === "sessionDelivery.enqueue" ||

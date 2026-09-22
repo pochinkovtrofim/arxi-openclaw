@@ -253,7 +253,7 @@ function createPluginHandler(
         throw error;
       }
       result = await dispatchToAdapter(ctx, () => send(ctx));
-      if (result.outcome !== "not_sent") {
+      if (result.outcome === undefined) {
         const successCtx = {
           ...ctx,
           result,
@@ -561,6 +561,7 @@ const createChannelOutboundContextBase = (params: ChannelHandlerParams) => ({
   mediaReadFile: params.mediaAccess?.readFile,
   gatewayClientScopes: params.gatewayClientScopes,
   conversationReadOrigin: params.conversationReadOrigin,
+  nativeDeliveryPurpose: params.nativeDeliveryPurpose,
   deliveryQueueId: params.deliveryQueueId,
   preparedMessageId: params.preparedMessageId,
   assertDirectAdapterHandoff: params.assertDirectAdapterHandoff,
