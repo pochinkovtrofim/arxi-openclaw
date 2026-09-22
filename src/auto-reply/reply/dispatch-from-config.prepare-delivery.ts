@@ -104,7 +104,7 @@ export async function prepareDispatchDelivery(state: GatherDispatchRequestReadyS
     resolveCommandAuthorization({
       ctx,
       cfg,
-      commandAuthorized: ctx.CommandAuthorized === true,
+      commandAuthorized: ctx.CommandAuthorized,
     }).senderIsOwner;
   let normalizeReplyMediaPaths:
     | ReturnType<

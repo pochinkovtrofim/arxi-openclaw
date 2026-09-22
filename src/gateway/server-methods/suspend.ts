@@ -135,7 +135,7 @@ export const suspendHandlers: GatewayRequestHandlers = {
       return;
     }
     if (result.status === "ready" && params.requireEmptyOutbound === true) {
-      let outboundEmpty = false;
+      let outboundEmpty: boolean;
       try {
         const inventory = await inspectPendingDeliveryQueueDeferrals(
           OUTBOUND_DELIVERY_QUEUE_NAME,

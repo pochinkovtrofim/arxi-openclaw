@@ -585,8 +585,12 @@ export async function deliverOutboundPayloadsWithQueueCleanup(
         queuedPostSendState,
         assertDirectAdapterHandoff: wrappedParams.assertDirectAdapterHandoff,
       });
-      if (deferred.accepted) return [];
-      if (deferred.propagate) throw deferred.error;
+      if (deferred.accepted) {
+        return [];
+      }
+      if (deferred.propagate) {
+        throw deferred.error;
+      }
       err = deferred.error;
       if (err instanceof OutboundDeliveryError && err.results.length > 0) {
         deliveredResults = err.results;

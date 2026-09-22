@@ -162,7 +162,11 @@ describe("headless Cron condition diagnostic lifecycle", () => {
     const callerTrace = createDiagnosticTraceContext();
     try {
       await runWithDiagnosticTraceContext(callerTrace, () =>
-        runtime.evaluateTrigger({ jobId: "fresh-root", script: "return { fire: false }", state: null }),
+        runtime.evaluateTrigger({
+          jobId: "fresh-root",
+          script: "return { fire: false }",
+          state: null,
+        }),
       );
       await waitForDiagnosticEventsDrained();
     } finally {

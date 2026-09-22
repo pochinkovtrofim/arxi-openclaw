@@ -556,7 +556,7 @@ export function createCronScriptRuntime(deps: CronTriggerEvaluatorDeps) {
             wallClockMs: HEADLESS_TRIGGER_WALL_CLOCK_MS,
             maxToolCalls: HEADLESS_TRIGGER_TOOL_BUDGET,
             label: "cron trigger evaluation",
-            onExecutionStarted: diagnostics.start,
+            onExecutionStarted: (context) => diagnostics.start(context),
           }),
         );
         const result = outcome.kind === "completed" ? parseTriggerResult(outcome.result) : outcome;

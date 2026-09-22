@@ -229,7 +229,7 @@ export async function deliverInboundReplyWithMessageSendContextCore(
     resolveCommandAuthorization({
       ctx: params.ctxPayload,
       cfg: params.cfg,
-      commandAuthorized: params.ctxPayload.CommandAuthorized === true,
+      commandAuthorized: params.ctxPayload.CommandAuthorized,
     }).senderIsOwner;
   const send = await sendDurableMessageBatchCore({
     cfg: params.cfg,

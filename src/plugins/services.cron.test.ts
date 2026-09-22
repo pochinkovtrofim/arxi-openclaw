@@ -198,7 +198,7 @@ describe("plugin service scheduler ownership", () => {
         value: { revision: 3, writer: "b" },
       }),
     ]);
-    expect(writers.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect(writers.map((result) => result.status).toSorted()).toEqual(["fulfilled", "rejected"]);
     const stored = cron.getJob(job.id);
     expect(stored?.state.triggerState).toMatchObject({
       arxiOwnerBackgroundPolicy: { revision: 3 },

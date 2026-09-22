@@ -56,7 +56,11 @@ export function createCronTriggerDiagnosticLifecycle(jobId: string) {
         trigger: "cron",
         durationMs: Math.max(0, Date.now() - startedAt),
         outcome:
-          result.kind === "error" ? "error" : result.kind === "evaluated" && result.fire ? "fired" : "not_fired",
+          result.kind === "error"
+            ? "error"
+            : result.kind === "evaluated" && result.fire
+              ? "fired"
+              : "not_fired",
         ...(result.kind === "error" ? { errorCategory: result.code } : {}),
         trace,
       });

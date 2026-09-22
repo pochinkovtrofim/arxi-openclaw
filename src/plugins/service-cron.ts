@@ -36,15 +36,15 @@ function createBoundPluginCronGetter(params: {
   pluginId: string;
   assertActive: () => void;
 }): () => PluginHookGatewayCronService | undefined {
-  let current: { cron: PluginServiceCronHost; service: PluginHookGatewayCronService } | undefined;
+  let cached: { cron: PluginServiceCronHost; service: PluginHookGatewayCronService } | undefined;
   return () => {
     params.assertActive();
     const cron = params.getCron();
     if (!cron) {
       return undefined;
     }
-    if (current?.cron === cron) {
-      return current.service;
+    if (cached?.cron === cron) {
+      return cached.service;
     }
     const commitGuard = () => {
       params.assertActive();
@@ -131,7 +131,7 @@ function createBoundPluginCronGetter(params: {
         return await cron.removeStaleJobFamily(family, { commitGuard });
       },
     };
-    current = { cron, service };
+    cached = { cron, service };
     return service;
   };
 }
