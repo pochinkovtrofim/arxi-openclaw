@@ -191,7 +191,12 @@ describe("delivery-queue MEDIA-directive durability (end-to-end)", () => {
     installMatrixAdapter({
       deliveryMode: "direct",
       sendText: async () => ({ channel: "matrix", messageId: "t" }),
-      sendMedia: async () => ({ outcome: "deferred", messageId: "", retryAtMs }),
+      sendMedia: async () => ({
+        outcome: "deferred",
+        channel: "matrix",
+        messageId: "",
+        retryAtMs,
+      }),
     });
 
     await expect(

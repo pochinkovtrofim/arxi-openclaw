@@ -414,7 +414,7 @@ describe("dispatchCronDelivery — double-announce guard", () => {
     { sessionTarget: "current", priorSuppressed: false, reason: "adapter_returned_no_identity" },
     { sessionTarget: "isolated", priorSuppressed: true, reason: "adapter_returned_no_identity" },
     { sessionTarget: "isolated", priorSuppressed: false, reason: "adapter_returned_no_send" },
-  ])(
+  ] as const)(
     "records $reason for $sessionTarget (prior suppression=$priorSuppressed)",
     async ({ sessionTarget, priorSuppressed, reason }) => {
       const params = makeBaseParams({ synthesizedText: "Report ready", sessionTarget });

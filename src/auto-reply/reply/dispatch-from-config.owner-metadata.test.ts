@@ -7,6 +7,7 @@ import {
   createOpenClawTestState,
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
+import type { OriginatingChannelType } from "../templating.js";
 import { gatherDispatchRequest } from "./dispatch-from-config.gather.js";
 import { prepareDispatchDelivery } from "./dispatch-from-config.prepare-delivery.js";
 import * as runtimeLoaders from "./dispatch-from-config.runtime-loaders.js";
@@ -166,7 +167,9 @@ it.each([
       messageId: "sent",
     }));
     vi.spyOn(runtimeLoaders, "loadRouteReplyRuntime").mockResolvedValue({
-      isRoutableChannel: () => true,
+      isRoutableChannel: (
+        channel: OriginatingChannelType | undefined,
+      ): channel is OriginatingChannelType => channel !== undefined,
       routeReply,
     });
     const dispatcher = createReplyDispatcher({ deliver: async () => undefined });
