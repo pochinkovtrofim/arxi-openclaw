@@ -40,6 +40,8 @@ import {
   OPENAI_GPT_55_PRO_MODEL_ID as OPENAI_CODEX_GPT_55_PRO_MODEL_ID,
   OPENAI_GPT_56_VARIANT_MODEL_IDS as OPENAI_CODEX_GPT_56_MODEL_IDS,
   OPENAI_GPT_6_ASTRA_MODEL_ID,
+  OPENAI_GPT_6_SOL_MODEL_ID,
+  OPENAI_GPT_6_LUNA_MODEL_ID,
 } from "./model-route-contract.js";
 import manifest from "./openclaw.plugin.json" with { type: "json" };
 import {
@@ -226,7 +228,11 @@ function resolveCodexForwardCompatModel(
   const lower = normalizeLowercaseStringOrEmpty(trimmedModelId);
   const synthBaseUrl = ctx.providerConfig?.baseUrl ?? OPENAI_CODEX_BASE_URL;
 
-  if (lower === OPENAI_GPT_6_ASTRA_MODEL_ID) {
+  if (
+    lower === OPENAI_GPT_6_ASTRA_MODEL_ID ||
+    lower === OPENAI_GPT_6_SOL_MODEL_ID ||
+    lower === OPENAI_GPT_6_LUNA_MODEL_ID
+  ) {
     // Discovery owns account-specific limits; the manifest supplies offline metadata.
     const catalogModel = OPENAI_MANIFEST_MODELS.find((model) => model.id === lower);
     if (!catalogModel || catalogModel.contextWindow === undefined) {
