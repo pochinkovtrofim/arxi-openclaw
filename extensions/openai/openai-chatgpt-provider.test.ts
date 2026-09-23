@@ -282,6 +282,27 @@ describe("OpenAI provider Codex transport hooks", () => {
     });
   });
 
+  it.each(["gpt-6-sol", "gpt-6-luna"])(
+    "resolves %s through the Codex Responses transport with image support",
+    (modelId) => {
+      const provider = buildOpenAIProvider();
+      const model = provider.resolveDynamicModel?.({
+        provider: "openai",
+        modelId,
+        providerConfig: { api: "openai-chatgpt-responses" },
+        modelRegistry: { find: () => undefined },
+      } as never);
+
+      expect(model).toMatchObject({
+        id: modelId,
+        provider: "openai",
+        api: "openai-chatgpt-responses",
+        baseUrl: "https://chatgpt.com/backend-api/codex",
+        input: ["text", "image"],
+      });
+    },
+  );
+
   it("keeps default Codex-backed OpenAI catalog models on the Codex Responses transport", () => {
     const provider = buildOpenAIProvider();
 
