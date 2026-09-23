@@ -1,0 +1,13 @@
+{
+  "name": "@openclaw/octen-plugin",
+  "version": "2026.9.5",
+  "description": "OpenClaw Octen web search plugin.",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@openclaw/plugin-sdk": "workspace:*"
+  },
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
+}

@@ -37,6 +37,7 @@ export {
   postTrustedWebToolsJson,
   throwWebSearchApiError,
   withArxiExaWebSearchEndpoint,
+  withArxiOctenWebSearchEndpoint,
   withSelfHostedWebSearchEndpoint,
   withTrustedWebSearchEndpoint,
   writeCachedSearchPayload,

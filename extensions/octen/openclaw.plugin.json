@@ -1,0 +1,31 @@
+{
+  "id": "octen",
+  "categories": ["web"],
+  "activation": { "onStartup": false },
+  "setup": { "providers": [{ "id": "octen", "envVars": ["OCTEN_API_KEY"] }] },
+  "uiHints": {
+    "webSearch.apiKey": {
+      "label": "Octen API Key",
+      "sensitive": true
+    },
+    "webSearch.baseUrl": {
+      "label": "Octen Search Base URL"
+    }
+  },
+  "contracts": { "webSearchProviders": ["octen"] },
+  "configGroups": [{ "id": "web-search", "title": "Web search", "order": 10, "properties": ["webSearch"] }],
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "webSearch": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "apiKey": { "type": ["string", "object"] },
+          "baseUrl": { "type": "string" }
+        }
+      }
+    }
+  }
+}
