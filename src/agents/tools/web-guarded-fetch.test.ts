@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchWithSsrFGuard, GUARDED_FETCH_MODE } from "../../infra/net/fetch-guard.js";
 import {
   withArxiExaWebToolsEndpoint,
+  withArxiOctenWebToolsEndpoint,
   withSelfHostedWebToolsEndpoint,
   withStrictWebToolsEndpoint,
   withTrustedWebToolsEndpoint,
@@ -113,6 +114,31 @@ describe("web-guarded-fetch", () => {
       "literal loopback route",
     );
     expect(fetchWithSsrFGuard).not.toHaveBeenCalled();
+  });
+
+  it("pins the Octen route without redirects or environment proxies", async () => {
+    vi.mocked(fetchWithSsrFGuard).mockResolvedValue({
+      response: new Response("ok", { status: 200 }),
+      finalUrl: "http://127.0.0.1:18080/octen/search",
+      release: async () => {},
+    });
+    await withArxiOctenWebToolsEndpoint(
+      { url: "http://127.0.0.1:18080/octen/search" },
+      async () => undefined,
+    );
+    const call = firstFetchCall();
+    expect(call.policy).toEqual({
+      allowedOrigins: ["http://127.0.0.1:18080"],
+      hostnameAllowlist: ["127.0.0.1"],
+    });
+    expect(call.maxRedirects).toBe(0);
+    expect(call.mode).toBe(GUARDED_FETCH_MODE.STRICT);
+    await expect(
+      withArxiOctenWebToolsEndpoint(
+        { url: "http://127.0.0.1:18080/search" },
+        async () => undefined,
+      ),
+    ).rejects.toThrow("literal loopback route");
   });
 
   it("keeps strict endpoint policy unchanged", async () => {

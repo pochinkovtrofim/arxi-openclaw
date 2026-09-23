@@ -15,6 +15,43 @@ function tool() {
 }
 
 describe("octen web search provider", () => {
+  it("uses only the fenced Arxi loopback route with a marker", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ code: 0, data: { results: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    const created = createOctenWebSearchProvider().createTool({
+      config: {
+        plugins: {
+          entries: {
+            octen: {
+              config: {
+                webSearch: {
+                  apiKey: "arxi-host-octen-v1",
+                  baseUrl: "http://127.0.0.1:18080/octen",
+                },
+              },
+            },
+          },
+        },
+      },
+      searchConfig: { cacheTtlMinutes: 0 },
+    } as never);
+    if (!created) {
+      throw new Error("Octen tool was unavailable");
+    }
+    try {
+      await created.execute({ query: "loopback octen" });
+      expect(String(fetchMock.mock.calls[0]?.[0])).toBe("http://127.0.0.1:18080/octen/search");
+      const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+      expect(headers.get("x-api-key")).toBe("arxi-host-octen-v1");
+    } finally {
+      fetchMock.mockRestore();
+    }
+  });
+
   it("maps publication filters and highlighted results without requesting full content", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
