@@ -23,7 +23,10 @@ import type { CacheEntry } from "./web-shared.js";
 
 type WebGuardedFetchModule = Pick<
   typeof import("./web-guarded-fetch.js"),
-  "withArxiExaWebToolsEndpoint" | "withSelfHostedWebToolsEndpoint" | "withTrustedWebToolsEndpoint"
+  | "withArxiExaWebToolsEndpoint"
+  | "withArxiOctenWebToolsEndpoint"
+  | "withSelfHostedWebToolsEndpoint"
+  | "withTrustedWebToolsEndpoint"
 >;
 
 const webGuardedFetchLoader = createLazyImportLoader<WebGuardedFetchModule>(
@@ -98,6 +101,14 @@ export async function withArxiExaWebSearchEndpoint<T>(
 ): Promise<T> {
   const withArxiExaWebToolsEndpoint = await loadArxiExaWebToolsEndpoint();
   return withArxiExaWebToolsEndpoint(params, async ({ response }) => run(response));
+}
+
+export async function withArxiOctenWebSearchEndpoint<T>(
+  params: WebSearchEndpointOptions,
+  run: (response: Response) => Promise<T>,
+): Promise<T> {
+  const { withArxiOctenWebToolsEndpoint } = await webGuardedFetchLoader.load();
+  return withArxiOctenWebToolsEndpoint(params, async ({ response }) => run(response));
 }
 
 export async function withSelfHostedWebSearchEndpoint<T>(
