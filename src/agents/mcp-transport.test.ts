@@ -133,11 +133,15 @@ describe("resolveMcpTransport", () => {
 
   it("uses renewed requester credentials for a later HTTP tool call", async () => {
     runtimeFetchMock.mockResolvedValue(new Response("ok"));
-    resolveMcpTransport("private-mail", {
-      url: "https://mail.example.com/mcp",
-      transport: "streamable-http",
-      headers: { Authorization: "Bearer expired" },
-    }, { refreshHeaders: async () => ({ Authorization: "Bearer renewed" }) });
+    resolveMcpTransport(
+      "private-mail",
+      {
+        url: "https://mail.example.com/mcp",
+        transport: "streamable-http",
+        headers: { Authorization: "Bearer expired" },
+      },
+      { refreshHeaders: async () => ({ Authorization: "Bearer renewed" }) },
+    );
 
     await latestStreamableFetch()(new URL("https://mail.example.com/mcp"), {
       method: "POST",
