@@ -154,6 +154,20 @@ export async function prepareEmbeddedAttemptPromptAssembly(input: {
     modelProviderId: attempt.model.provider,
     modelId: attempt.model.id,
     trigger: attempt.trigger,
+    ...(attempt.trigger === "user" && attempt.senderId && attempt.chatId
+      ? {
+          requester: {
+            senderId: attempt.senderId,
+            conversationId: attempt.chatId,
+            ...(attempt.chatType ? { chatType: attempt.chatType } : {}),
+            ...(attempt.messageChannel ? { channel: attempt.messageChannel } : {}),
+            ...(attempt.agentAccountId ? { accountId: attempt.agentAccountId } : {}),
+            ...(attempt.senderIsOwner !== undefined
+              ? { senderIsOwner: attempt.senderIsOwner }
+              : {}),
+          },
+        }
+      : {}),
     inputProvenance: attempt.inputProvenance,
     ...buildAgentHookContextChannelFields(attempt),
     ...buildAgentHookContextIdentityFields({

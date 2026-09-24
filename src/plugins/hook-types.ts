@@ -326,6 +326,8 @@ export type PluginHookAgentContext = {
   /** Sender identity for channel-originated runs when available. */
   senderId?: string;
   trigger?: string;
+  /** Host-derived requester of the current user turn. Absent for background work. */
+  requester?: PluginHookToolRequesterContext;
   channelId?: string;
   /**
    * Typed origin of the turn's user-role input. Absent when the producer did not

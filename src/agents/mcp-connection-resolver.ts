@@ -318,11 +318,53 @@ export async function resolveRequesterScopedMcpConnections(params: {
                   .toSorted(([a], [b]) => a.localeCompare(b)),
               )
             : undefined;
-        const connection = {
+        const connection: McpServerConnectionResolved = {
           url: result.url.trim(),
           ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
         } satisfies McpServerConnectionResolved;
         registerResolvedConnectionSecrets(connection);
+        const refreshAfterMs = result.refreshAfterMs;
+        if (
+          headers &&
+          typeof refreshAfterMs === "number" &&
+          Number.isSafeInteger(refreshAfterMs) &&
+          refreshAfterMs >= 1_000 &&
+          refreshAfterMs <= 5 * 60_000
+        ) {
+          const expectedKeys = Object.keys(headers).map((key) => key.toLowerCase()).toSorted();
+          let currentHeaders = headers;
+          let resolvedAt = Date.now();
+          let pending: Promise<Record<string, string>> | undefined;
+          connection.refreshHeaders = async () => {
+            if (Date.now() - resolvedAt < refreshAfterMs) {
+              return currentHeaders;
+            }
+            pending ??= (async () => {
+              const next = await raceWithTimeout(
+                Promise.resolve(entry.resolve(ctx)),
+                timeoutMs,
+              );
+              if (!next || next.url.trim() !== connection.url || !next.headers) {
+                throw new Error("MCP connection renewal unavailable");
+              }
+              const nextHeaders = Object.fromEntries(
+                Object.entries(next.headers)
+                  .filter((headerEntry): headerEntry is [string, string] =>
+                    typeof headerEntry[1] === "string")
+                  .toSorted(([a], [b]) => a.localeCompare(b)),
+              );
+              const nextKeys = Object.keys(nextHeaders).map((key) => key.toLowerCase()).toSorted();
+              if (JSON.stringify(nextKeys) !== JSON.stringify(expectedKeys)) {
+                throw new Error("MCP connection renewal changed header scope");
+              }
+              registerResolvedConnectionSecrets({ url: connection.url, headers: nextHeaders });
+              currentHeaders = nextHeaders;
+              resolvedAt = Date.now();
+              return currentHeaders;
+            })().finally(() => { pending = undefined; });
+            return await pending;
+          };
+        }
         return { serverName, connection };
       } catch (error) {
         // External plugin boundary: never fail the whole MCP run for one resolver.

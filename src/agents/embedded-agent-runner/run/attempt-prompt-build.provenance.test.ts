@@ -126,6 +126,33 @@ async function assembleWithCapturedHookCtx(
 }
 
 describe("prompt-build hook context input provenance", () => {
+  it("carries the admitted private requester into prompt enrichment", async () => {
+    const { captured } = await assembleWithCapturedHookCtx("business-owner-context", {
+      senderId: "42",
+      chatId: "telegram-chat:42",
+      chatType: "private",
+      senderIsOwner: true,
+      messageChannel: "arxi",
+    });
+
+    expect(captured[0]?.requester).toMatchObject({
+      senderId: "42",
+      conversationId: "telegram-chat:42",
+      chatType: "private",
+      senderIsOwner: true,
+    });
+  });
+
+  it("omits requester authority from background prompt enrichment", async () => {
+    const { captured } = await assembleWithCapturedHookCtx("business-background-context", {
+      trigger: "cron",
+      senderId: "42",
+      chatId: "telegram-chat:42",
+      senderIsOwner: true,
+    });
+    expect(captured[0]?.requester).toBeUndefined();
+  });
+
   it("exposes inter-session provenance on the before_prompt_build context", async () => {
     const { captured } = await assembleWithCapturedHookCtx("provenance-hook-inter-session", {
       inputProvenance: {

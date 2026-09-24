@@ -130,6 +130,7 @@ export function resolveMcpTransport(
     agentDir?: string;
     prepareDataDir?: string;
     requesterScope?: SessionMcpRequesterScope;
+    refreshHeaders?: () => Promise<Record<string, string>>;
   },
 ): ResolvedMcpTransport | null {
   const resolved = resolveMcpTransportConfig(serverName, rawServer);
@@ -203,11 +204,29 @@ export function resolveMcpTransport(
           config: resolved.oauth,
         })
       : baseFetch;
+  const refreshHeaders = options?.refreshHeaders;
+  const liveHttpFetch: FetchLike = refreshHeaders
+    ? async (url, init) => {
+        const target = new URL(url instanceof Request ? url.url : String(url));
+        if (target.origin !== new URL(resolved.url).origin) {
+          return await httpFetch(url, init);
+        }
+        const refreshed = await refreshHeaders();
+        const requestHeaders = new Headers(init?.headers);
+        for (const key of Object.keys(headers ?? {})) {
+          requestHeaders.delete(key);
+        }
+        for (const [key, value] of Object.entries(refreshed)) {
+          requestHeaders.set(key, value);
+        }
+        return await httpFetch(url, { ...(init as RequestInit), headers: requestHeaders });
+      }
+    : httpFetch;
   if (resolved.transportType === "streamable-http") {
     return {
       transport: new OpenClawStreamableHTTPClientTransport(new URL(resolved.url), {
         requestInit: resolved.auth === "oauth" || !headers ? undefined : { headers },
-        fetch: httpFetch,
+        fetch: liveHttpFetch,
       }),
       description: resolved.description,
       transportType: "streamable-http",
@@ -221,9 +240,9 @@ export function resolveMcpTransport(
   return {
     transport: new OpenClawSSEClientTransport(new URL(resolved.url), {
       requestInit: resolved.auth === "oauth" || !hasHeaders ? undefined : { headers: sseHeaders },
-      fetch: httpFetch,
+      fetch: liveHttpFetch,
       eventSourceInit: {
-        fetch: buildSseEventSourceFetch(resolved.auth === "oauth" ? {} : sseHeaders, httpFetch),
+        fetch: buildSseEventSourceFetch(resolved.auth === "oauth" ? {} : sseHeaders, liveHttpFetch),
       },
     }),
     description: resolved.description,
