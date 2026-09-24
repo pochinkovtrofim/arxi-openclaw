@@ -44,6 +44,6 @@ time-based wake producer.
 with the canonical snapshot and checks the reviewed upstream pin. The actual
 wake combination and outbound deferral are covered by
 `server-methods/suspend-wake.test.ts` and
-`outbound/delivery-queue-deferred-wake.test.ts`. Review this inventory and the
+`infra/outbound/delivery-queue-deferred-wake.test.ts`. Review this inventory and the
 wake mapping when updating upstream; the pin check alone does not exercise
 runtime behavior.
