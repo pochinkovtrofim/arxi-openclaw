@@ -23,6 +23,7 @@ import { getSessionMcpRequestSignal } from "./agent-bundle-mcp-request-context.j
 import { loadSessionMcpConfig } from "./agent-bundle-mcp-runtime-config.js";
 import { sessionMcpRuntimeOwners } from "./agent-bundle-mcp-runtime-owner.js";
 import type { CreateSessionMcpRuntime } from "./agent-bundle-mcp-runtime-shared.js";
+import { getBundleMcpTestState } from "./agent-bundle-mcp-test-state.js";
 import type {
   McpCatalogTool,
   McpRequestOptions,
@@ -85,20 +86,6 @@ const BUNDLE_MCP_MAX_LIST_PAGES = 128;
 const BUNDLE_MCP_MAX_LIST_ITEMS = 16_384;
 const BUNDLE_MCP_MAX_LIST_BYTES = 10 * 1024 * 1024;
 let bundleMcpCatalogListTimeoutMs: number | undefined;
-const BUNDLE_MCP_TEST_STATE_KEY = Symbol.for("openclaw.bundleMcpTestState");
-type BundleMcpTestState = { disposeTimeoutMs?: number };
-
-function getBundleMcpTestState(): BundleMcpTestState {
-  const globalStore = globalThis as Record<PropertyKey, unknown>;
-  const existing = globalStore[BUNDLE_MCP_TEST_STATE_KEY] as BundleMcpTestState | undefined;
-  if (existing) {
-    return existing;
-  }
-  const state: BundleMcpTestState = {};
-  globalStore[BUNDLE_MCP_TEST_STATE_KEY] = state;
-  return state;
-}
-
 type McpServerBackoffState = {
   session: BundleMcpSession;
   failures: number;
