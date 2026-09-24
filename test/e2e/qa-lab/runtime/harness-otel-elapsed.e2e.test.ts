@@ -11,7 +11,7 @@ import {
 // Verifies the exported OTLP span against the harness producer clock contract.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawPluginServiceContext } from "../../../../extensions/diagnostics-otel/api.js";
-import { createDiagnosticsOtelService } from "../../../../extensions/diagnostics-otel/src/service.js";
+import { createDiagnosticsOtelService } from "../../../../extensions/diagnostics-otel/runtime-api.js";
 import {
   runAgentHarnessLifecycleAttempt,
   runAgentHarnessLifecycleFinalization,
