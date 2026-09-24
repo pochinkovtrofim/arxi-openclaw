@@ -130,7 +130,7 @@ describe("prompt-build hook context input provenance", () => {
     const { captured } = await assembleWithCapturedHookCtx("business-owner-context", {
       senderId: "42",
       chatId: "telegram-chat:42",
-      chatType: "private",
+      chatType: "direct",
       senderIsOwner: true,
       messageChannel: "arxi",
     });
@@ -138,7 +138,7 @@ describe("prompt-build hook context input provenance", () => {
     expect(captured[0]?.requester).toMatchObject({
       senderId: "42",
       conversationId: "telegram-chat:42",
-      chatType: "private",
+      chatType: "direct",
       senderIsOwner: true,
     });
   });
