@@ -88,8 +88,12 @@ describe("headless Cron condition diagnostic lifecycle", () => {
   it.each([false, true])("records bounded source tool outcome for failure=%s", async (fails) => {
     const config: OpenClawConfig = {};
     const prepared = preparedRuntime(config);
+    const [preparedTool] = prepared.createTools();
+    if (!preparedTool) {
+      throw new Error("missing prepared probe tool");
+    }
     const tool: AnyAgentTool = {
-      ...prepared.createTools()[0],
+      ...preparedTool,
       execute: async () => {
         if (fails) {
           throw new Error("private fixture source detail");
