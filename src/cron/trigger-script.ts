@@ -22,6 +22,7 @@ import {
   createOpenClawCodingTools,
   resolveToolLoopDetectionConfig,
 } from "../agents/agent-tools.js";
+import { getBeforeToolCallHookContext } from "../agents/before-tool-call-metadata.js";
 import { createHeadlessDeadlineScope } from "../agents/code-mode-headless.js";
 import type {
   CodeModeNamespaceDescriptor,
@@ -57,6 +58,7 @@ import {
 import { ensureAgentWorkspace } from "../agents/workspace.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { GatewayContextResolver } from "../gateway/server-methods/types.js";
+import { getActiveDiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
 import { formatErrorMessageWithCode } from "../infra/errors.js";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
 import { PluginInstanceUnavailableError } from "../plugins/plugin-instance-error.js";
@@ -475,11 +477,17 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
         executeTool: (call) =>
           withGatewayToolCallerIdentity(caller, async () => {
             assertActive();
+            const toolContext = getBeforeToolCallHookContext(call.tool as AnyAgentTool);
             // Guard the final wrapper so catalog preparation cannot discard the invocation fence.
             const tool = wrapToolWithAbortSignal(
               rewrapToolWithBeforeToolCallHook(
                 // SAFETY: Headless registration and preparation retain AnyAgentTool instances.
                 bindAgentToolSourceExecutionGuard(call.tool as AnyAgentTool, assertActive),
+                {
+                  ...(toolContext ?? runtime.context),
+                  runId,
+                  trace: getActiveDiagnosticTraceContext(),
+                },
               ),
               evaluationScope.signal,
             );

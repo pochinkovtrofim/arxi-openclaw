@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { wrapToolWithBeforeToolCallHook } from "../agents/agent-tools.before-tool-call.js";
 import type { CodeModeHeadlessResult } from "../agents/code-mode.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
+import { jsonResult } from "../agents/tools/common.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   onTrustedInternalDiagnosticEvent,
@@ -54,6 +55,29 @@ function captureRunEvents() {
   return { events, stop };
 }
 
+function captureToolEvents() {
+  const events: Array<
+    Extract<
+      DiagnosticEventPayload,
+      {
+        type:
+          | "tool.execution.started"
+          | "tool.execution.completed"
+          | "tool.execution.error"
+          | "tool.execution.blocked";
+      }
+    >
+  > = [];
+  const stop = onTrustedInternalDiagnosticEvent((event, metadata, privateData) => {
+    if (event.type.startsWith("tool.execution.")) {
+      expect(metadata.trusted).toBe(true);
+      expect(privateData ?? {}).toEqual({});
+      events.push(event as (typeof events)[number]);
+    }
+  });
+  return { events, stop };
+}
+
 beforeEach(() => resetDiagnosticEventsForTest());
 afterEach(() => {
   resetDiagnosticEventsForTest();
@@ -61,6 +85,52 @@ afterEach(() => {
 });
 
 describe("headless Cron condition diagnostic lifecycle", () => {
+  it.each([false, true])("records bounded source tool outcome for failure=%s", async (fails) => {
+    const config: OpenClawConfig = {};
+    const prepared = preparedRuntime(config);
+    const tool: AnyAgentTool = {
+      ...prepared.createTools()[0],
+      execute: async () => {
+        if (fails) {
+          throw new Error("private fixture source detail");
+        }
+        return jsonResult({ observation: "private fixture value" });
+      },
+    };
+    const runtime = createCronScriptRuntimeFixture({
+      config,
+      prepareRuntime: async () => ({ ...prepared, createTools: () => [tool] }),
+    });
+    const captured = captureToolEvents();
+    const runCaptured = captureRunEvents();
+    try {
+      await runtime.evaluateTrigger({
+        jobId: "source-observation",
+        script: "await probe({}); return { fire: false };",
+        state: null,
+      });
+      await waitForDiagnosticEventsDrained();
+    } finally {
+      captured.stop();
+      runCaptured.stop();
+    }
+    expect(captured.events.map((event) => event.type)).toEqual([
+      "tool.execution.started",
+      fails ? "tool.execution.error" : "tool.execution.completed",
+    ]);
+    expect(captured.events[0]).toMatchObject({
+      toolName: "probe",
+      runId: expect.stringMatching(/^cron-trigger:source-observation:/),
+    });
+    expect(captured.events[0]?.runId).toBe(captured.events[1]?.runId);
+    expect(captured.events[0]?.trace).toEqual(captured.events[1]?.trace);
+    expect(runCaptured.events).toHaveLength(2);
+    expect(captured.events[0]?.runId).toBe(runCaptured.events[0]?.runId);
+    expect(captured.events[0]?.trace?.traceId).toBe(runCaptured.events[0]?.trace?.traceId);
+    expect(captured.events[0]?.trace?.parentSpanId).toBe(runCaptured.events[0]?.trace?.spanId);
+    expect(JSON.stringify(captured.events)).not.toContain("private fixture");
+  });
+
   it("closes a successful condition that does not fire", async () => {
     const config: OpenClawConfig = {};
     const runtime = createCronScriptRuntimeFixture({
