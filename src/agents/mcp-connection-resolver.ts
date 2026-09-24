@@ -331,7 +331,9 @@ export async function resolveRequesterScopedMcpConnections(params: {
           refreshAfterMs >= 1_000 &&
           refreshAfterMs <= 5 * 60_000
         ) {
-          const expectedKeys = Object.keys(headers).map((key) => key.toLowerCase()).toSorted();
+          const expectedKeys = Object.keys(headers)
+            .map((key) => key.toLowerCase())
+            .toSorted();
           let currentHeaders = headers;
           let resolvedAt = Date.now();
           let pending: Promise<Record<string, string>> | undefined;
@@ -340,20 +342,21 @@ export async function resolveRequesterScopedMcpConnections(params: {
               return currentHeaders;
             }
             pending ??= (async () => {
-              const next = await raceWithTimeout(
-                Promise.resolve(entry.resolve(ctx)),
-                timeoutMs,
-              );
+              const next = await raceWithTimeout(Promise.resolve(entry.resolve(ctx)), timeoutMs);
               if (!next || next.url.trim() !== connection.url || !next.headers) {
                 throw new Error("MCP connection renewal unavailable");
               }
               const nextHeaders = Object.fromEntries(
                 Object.entries(next.headers)
-                  .filter((headerEntry): headerEntry is [string, string] =>
-                    typeof headerEntry[1] === "string")
+                  .filter(
+                    (headerEntry): headerEntry is [string, string] =>
+                      typeof headerEntry[1] === "string",
+                  )
                   .toSorted(([a], [b]) => a.localeCompare(b)),
               );
-              const nextKeys = Object.keys(nextHeaders).map((key) => key.toLowerCase()).toSorted();
+              const nextKeys = Object.keys(nextHeaders)
+                .map((key) => key.toLowerCase())
+                .toSorted();
               if (JSON.stringify(nextKeys) !== JSON.stringify(expectedKeys)) {
                 throw new Error("MCP connection renewal changed header scope");
               }
@@ -361,7 +364,9 @@ export async function resolveRequesterScopedMcpConnections(params: {
               currentHeaders = nextHeaders;
               resolvedAt = Date.now();
               return currentHeaders;
-            })().finally(() => { pending = undefined; });
+            })().finally(() => {
+              pending = undefined;
+            });
             return await pending;
           };
         }
