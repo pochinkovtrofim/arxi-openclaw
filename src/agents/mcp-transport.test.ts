@@ -131,6 +131,22 @@ describe("resolveMcpTransport", () => {
     sseTransportConstructorMock.mockClear();
   });
 
+  it("uses renewed requester credentials for a later HTTP tool call", async () => {
+    runtimeFetchMock.mockResolvedValue(new Response("ok"));
+    resolveMcpTransport("private-mail", {
+      url: "https://mail.example.com/mcp",
+      transport: "streamable-http",
+      headers: { Authorization: "Bearer expired" },
+    }, { refreshHeaders: async () => ({ Authorization: "Bearer renewed" }) });
+
+    await latestStreamableFetch()(new URL("https://mail.example.com/mcp"), {
+      method: "POST",
+      headers: { Authorization: "Bearer expired" },
+    });
+    const [, init] = runtimeFetchCall(0);
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer renewed");
+  });
+
   it("scrubs custom headers when streamable HTTP follows a cross-origin redirect", async () => {
     // Cross-origin redirects keep safe protocol headers but drop operator
     // secrets such as API keys before following the Location target.

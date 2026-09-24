@@ -155,6 +155,31 @@ afterEach(() => {
 });
 
 describe("mcp connection resolver helpers", () => {
+  it("renews short-lived headers during one long tool run and coalesces concurrent renewals", async () => {
+    let now = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    let issues = 0;
+    testing.setMcpServerConnectionResolversForTest([{
+      serverName: "private-mail",
+      requiresRequesterIdentity: false,
+      resolve: async () => ({ url: "https://mail.example.test/mcp",
+        headers: { Authorization: `Bearer token-${++issues}` }, refreshAfterMs: 1_000 }),
+    }]);
+    const resolved = await resolveRequesterScopedMcpConnections({
+      serverNames: ["private-mail"], agentId: "main", sessionKey: "agent:main:owner",
+    });
+    const connection = resolved.get("private-mail");
+    expect(connection?.headers?.Authorization).toBe("Bearer token-1");
+    expect(await connection?.refreshHeaders?.()).toEqual({ Authorization: "Bearer token-1" });
+    now += 1_001;
+    const [first, second] = await Promise.all([
+      connection?.refreshHeaders?.(), connection?.refreshHeaders?.(),
+    ]);
+    expect(first).toEqual({ Authorization: "Bearer token-2" });
+    expect(second).toEqual(first);
+    expect(issues).toBe(2);
+  });
+
   it("partitions static vs requester-scoped servers deterministically", () => {
     const resolverRegistry = createMcpProofPluginRegistry();
     withPluginRuntimeRegistryScope(resolverRegistry.registry, () => {

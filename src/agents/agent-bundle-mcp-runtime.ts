@@ -724,6 +724,7 @@ function createServerMcpRuntime(
         agentDir: params.agentDir,
         prepareDataDir: loaded.prepareDataDirsByServer?.[serverName]?.dataDir,
         requesterScope: params.requesterScope,
+        refreshHeaders: override?.refreshHeaders,
       });
       if (!resolved) {
         return { version: 1, generatedAt: Date.now(), servers: {}, tools: [] };

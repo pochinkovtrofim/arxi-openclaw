@@ -31,6 +31,10 @@ export type McpServerConnectionResolved = {
   url: string;
   /** Per-user credentials; never logged, fingerprinted, or persisted by core. */
   headers?: Record<string, string>;
+  /** Re-resolve live headers during long tool runs before short-lived credentials expire. */
+  refreshAfterMs?: number;
+  /** Core-owned callback; plugin-supplied callbacks are ignored. */
+  refreshHeaders?: () => Promise<Record<string, string>>;
 };
 
 /**
