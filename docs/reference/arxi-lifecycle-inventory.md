@@ -25,10 +25,12 @@ Active work is covered by the canonical Gateway snapshot in
 - terminal persistence and open terminal sessions.
 
 External ingress reaches one of the root/session/queue/reply boundaries above;
-prepared suspension closes that admission before inspection. Cron is the sole
-reviewed time-based producer. Its enabled `at`, `every`, and `cron` schedules,
-including persisted retry/backoff timestamps, converge on the scheduler's
-canonical `nextWakeAtMs`.
+prepared suspension closes that admission before inspection. The reviewed
+time-based producers are cron and deferred outbound delivery. Enabled `at`,
+`every`, and `cron` schedules, including persisted retry/backoff timestamps,
+converge on the scheduler's canonical `nextWakeAtMs`. The Gateway combines
+that snapshot with the earliest semantic outbound delivery deferral and refuses
+suspension if either wake snapshot is incomplete.
 
 At this pin the configured heartbeat monitor is a system-owned Automation in
 the cron store. Cron owns its cadence, persisted due state, retry/backoff, busy
@@ -39,5 +41,9 @@ channel inputs are active blockers or external events and do not add another
 time-based wake producer.
 
 `gateway-lifecycle-inventory.test.ts` compares the declared active categories
-with the canonical snapshot and pins the reviewed upstream merge. Any upstream
-upgrade therefore fails until this inventory and the wake mapping are reviewed.
+with the canonical snapshot and checks the reviewed upstream pin. The actual
+wake combination and outbound deferral are covered by
+`server-methods/suspend-wake.test.ts` and
+`infra/outbound/delivery-queue-deferred-wake.test.ts`. Review this inventory and the
+wake mapping when updating upstream; the pin check alone does not exercise
+runtime behavior.

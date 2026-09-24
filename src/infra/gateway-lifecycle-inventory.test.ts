@@ -20,11 +20,6 @@ const GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS = [
   { id: "terminal-session", countKey: "terminalSessions" },
 ] as const;
 
-const GATEWAY_LIFECYCLE_TIME_BASED_PRODUCERS = [
-  { id: "cron", wakeSource: "CronService.getSuspendWakeSnapshot" },
-  { id: "outbound-deferred", wakeSource: "getNextDeferredOutboundDeliveryAtMs" },
-] as const;
-
 describe("Arxi lifecycle upgrade inventory", () => {
   it("covers every canonical active-work count", () => {
     const countKeys = Object.keys(createGatewayActiveWorkSnapshot().counts)
@@ -34,13 +29,6 @@ describe("Arxi lifecycle upgrade inventory", () => {
       (entry) => entry.countKey,
     ).toSorted();
     expect(inventoried).toEqual(countKeys);
-  });
-
-  it("keeps every reviewed time producer in the wake contract", () => {
-    expect(GATEWAY_LIFECYCLE_TIME_BASED_PRODUCERS).toEqual([
-      { id: "cron", wakeSource: "CronService.getSuspendWakeSnapshot" },
-      { id: "outbound-deferred", wakeSource: "getNextDeferredOutboundDeliveryAtMs" },
-    ]);
   });
 
   it("fails an upstream upgrade until the producer inventory is reviewed", () => {
