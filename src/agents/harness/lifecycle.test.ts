@@ -1,20 +1,9 @@
 // Verifies harness lifecycle capability checks, diagnostics, and trace scoping.
-import type { Model } from "openclaw/plugin-sdk/llm";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  createDiagnosticsOtelService,
-  type OpenClawPluginServiceContext,
-} from "../../../extensions/diagnostics-otel/runtime-api.js";
-import { startLocalOtlpReceiver } from "../../../test/e2e/qa-lab/runtime/otel-test-support.js";
 import { OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST } from "../../context-engine/host-compat.js";
 import type { ContextEngine } from "../../context-engine/types.js";
 import {
-  onTrustedInternalDiagnosticEvent,
-  emitTrustedDiagnosticEventWithPrivateData,
-  waitForDiagnosticEventsDrained,
   resetDiagnosticEventsForTest,
-  type DiagnosticEventPrivateData,
-  type DiagnosticEventMetadata,
   type DiagnosticEventPayload,
 } from "../../infra/diagnostic-events.js";
 import {
@@ -22,9 +11,7 @@ import {
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
-import { registerDiagnosticTracePropagationBridge } from "../../infra/diagnostic-trace-propagation.js";
 import type { EmbeddedRunAttemptResult } from "../embedded-agent-runner/run/types.js";
-import { createZeroUsageFixture } from "../test-helpers/usage-fixtures.js";
 import {
   getCoreTtsAttemptResultMediaUrls,
   markCoreTtsAttemptResult,
@@ -35,79 +22,16 @@ import {
   runAgentHarnessLifecycleAttempt,
   runAgentHarnessLifecycleFinalization,
 } from "./lifecycle.js";
+import {
+  captureDiagnosticEvents,
+  createAttemptParams,
+  createAttemptResult,
+  createDiagnosticTrace,
+  createFinalAssistant,
+  createFinalizationParams,
+} from "./lifecycle.test-support.js";
 import { EmptySettledTurnFinalizationError } from "./settled-turn-finalization-outcome.js";
-import type {
-  AgentHarness,
-  AgentHarnessAttemptParamsV2,
-  AgentHarnessAttemptResult,
-  AgentHarnessSettledTurnFinalizationAttemptParams,
-} from "./types.js";
-
-function createAttemptParams(): AgentHarnessAttemptParamsV2 {
-  return {
-    prompt: "hello",
-    sessionId: "session-1",
-    sessionKey: "session-key",
-    runId: "run-1",
-    sessionFile: "/tmp/session.jsonl",
-    workspaceDir: "/tmp/workspace",
-    timeoutMs: 5_000,
-    provider: "codex",
-    modelId: "gpt-5.4",
-    model: { id: "gpt-5.4", provider: "codex" } as Model,
-    authStorage: {} as never,
-    authProfileStore: { version: 1, profiles: {} },
-    modelRegistry: {} as never,
-    thinkLevel: "low",
-    messageChannel: "qa",
-    trigger: "manual",
-  } as unknown as AgentHarnessAttemptParamsV2;
-}
-
-function createFinalizationParams(): AgentHarnessSettledTurnFinalizationAttemptParams<AgentHarnessAttemptParamsV2> {
-  const { hostCapabilities: _hostCapabilities, ...params } = createAttemptParams();
-  return params;
-}
-
-function createDiagnosticTrace() {
-  return {
-    traceId: "11111111111111111111111111111111",
-    spanId: "2222222222222222",
-    traceFlags: "01",
-  };
-}
-
-function createFinalAssistant(): NonNullable<EmbeddedRunAttemptResult["lastAssistant"]> {
-  return {
-    role: "assistant",
-    content: [{ type: "text", text: "done" }],
-    api: "openai-responses",
-    provider: "openai",
-    model: "gpt-5.5",
-    usage: createZeroUsageFixture(),
-    stopReason: "stop",
-    timestamp: 0,
-  };
-}
-
-function createAttemptResult(): EmbeddedRunAttemptResult {
-  return {
-    terminal: { kind: "ok" },
-    sessionIdUsed: "session-1",
-    diagnosticTrace: createDiagnosticTrace(),
-    messagesSnapshot: [],
-    assistantTexts: ["ok"],
-    toolMetas: [],
-    lastAssistant: undefined,
-    didSendViaMessagingTool: false,
-    messagingToolSentTexts: [],
-    messagingToolSentMediaUrls: [],
-    messagingToolSentTargets: [],
-    cloudCodeAssistFormatError: false,
-    replayMetadata: { hadPotentialSideEffects: false, replaySafe: true },
-    itemLifecycle: { startedCount: 0, completedCount: 0, activeCount: 0 },
-  };
-}
+import type { AgentHarness, AgentHarnessAttemptResult } from "./types.js";
 
 function createContextEngineRequiringAssembly(): ContextEngine {
   // Requires the harness to advertise assemble-before-prompt. Tests use this
@@ -140,220 +64,10 @@ async function flushDiagnosticEvents(): Promise<void> {
   });
 }
 
-function captureDiagnosticEvents(
-  filter: (event: DiagnosticEventPayload) => boolean = (event) =>
-    event.type.startsWith("harness.run."),
-): {
-  events: Array<{
-    event: DiagnosticEventPayload;
-    metadata: DiagnosticEventMetadata;
-    privateData: DiagnosticEventPrivateData;
-  }>;
-  unsubscribe: () => void;
-} {
-  const events: Array<{
-    event: DiagnosticEventPayload;
-    metadata: DiagnosticEventMetadata;
-    privateData: DiagnosticEventPrivateData;
-  }> = [];
-  const unsubscribe = onTrustedInternalDiagnosticEvent((event, metadata, privateData) => {
-    if (filter(event)) {
-      events.push({ event, metadata, privateData });
-    }
-  });
-  return { events, unsubscribe };
-}
-
 describe("AgentHarness lifecycle runner", () => {
   afterEach(() => {
     resetDiagnosticEventsForTest();
   });
-
-  it.each([
-    ...[-3_600_000, 3_600_000].flatMap((wallStep) =>
-      ["attempt", "finalization"].flatMap((phase) =>
-        [false, true].flatMap((failed) =>
-          [false, true].map((missingStart) => ({
-            wallStep,
-            phase,
-            failed,
-            missingStart,
-            delta: 250,
-            expectedElapsed: 250 as number | undefined,
-            variant: "ordinary",
-          })),
-        ),
-      ),
-    ),
-    ...[
-      { delta: 0, expectedElapsed: 0 },
-      { delta: 0.9, expectedElapsed: 0 },
-      { delta: -1, expectedElapsed: undefined },
-      { delta: Number.NaN, expectedElapsed: undefined },
-      { delta: Number.POSITIVE_INFINITY, expectedElapsed: undefined },
-      { delta: 86_400_001, expectedElapsed: undefined },
-    ].map((clock) => ({
-      delta: clock.delta,
-      expectedElapsed: clock.expectedElapsed,
-      wallStep: -3_600_000,
-      phase: "attempt",
-      failed: false,
-      missingStart: false,
-      variant: "ordinary",
-    })),
-    ...["classified-error", "empty-finalization"].map((variant) => ({
-      variant,
-      wallStep: -3_600_000,
-      phase: variant === "classified-error" ? "attempt" : "finalization",
-      failed: false,
-      missingStart: false,
-      delta: 250,
-      expectedElapsed: 250,
-    })),
-  ])(
-    "exports producer elapsed ($wallStep/$phase/error=$failed/missingStart=$missingStart/delta=$delta/$variant)",
-    async ({ wallStep, phase, failed, missingStart, delta, expectedElapsed, variant }) => {
-      const receiver = startLocalOtlpReceiver();
-      const port = await receiver.listen();
-      const service = createDiagnosticsOtelService();
-      const ctx: OpenClawPluginServiceContext = {
-        config: {
-          diagnostics: {
-            enabled: true,
-            otel: {
-              enabled: true,
-              endpoint: `http://127.0.0.1:${port}`,
-              protocol: "http/protobuf",
-              traces: true,
-              metrics: false,
-              logs: false,
-            },
-          },
-        },
-        logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
-        stateDir: "/tmp/harness-elapsed-test",
-        internalDiagnostics: {
-          emit: emitTrustedDiagnosticEventWithPrivateData,
-          onEvent: (listener) =>
-            onTrustedInternalDiagnosticEvent((event, metadata, privateData) => {
-              if (missingStart && event.type === "harness.run.started") {
-                return;
-              }
-              // Delivery delay belongs to the consumer, not the producer interval.
-              if (event.type === "harness.run.completed" || event.type === "harness.run.error") {
-                wall += 9000;
-                monotonic += 9000;
-              }
-              listener(event, metadata, privateData);
-            }),
-          registerTracePropagationBridge: registerDiagnosticTracePropagationBridge,
-        },
-      };
-      const diagnostics = captureDiagnosticEvents();
-      let wall = 1_788_696_000_000;
-      let monotonic = 100;
-      const wallClock = vi.spyOn(Date, "now").mockImplementation(() => wall);
-      const processClock = vi.spyOn(performance, "now").mockImplementation(() => monotonic);
-      const execute = () => {
-        wall += wallStep + 250;
-        monotonic += delta;
-        if (failed) {
-          throw new Error("synthetic failure");
-        }
-      };
-      const harness: AgentHarness = {
-        id: "openclaw",
-        label: "Synthetic harness",
-        supports: () => ({ supported: true }),
-        runAttempt: async () => {
-          execute();
-          return variant === "classified-error"
-            ? {
-                ...createAttemptResult(),
-                terminal: {
-                  kind: "failed",
-                  error: new Error("classified failure"),
-                  source: "prompt",
-                },
-              }
-            : createAttemptResult();
-        },
-      };
-      try {
-        await service.start(ctx);
-        const run = runWithDiagnosticTraceContext(createDiagnosticTrace(), () =>
-          phase === "attempt"
-            ? runAgentHarnessLifecycleAttempt(harness, createAttemptParams())
-            : runAgentHarnessLifecycleFinalization(
-                harness,
-                createFinalizationParams(),
-                async () => {
-                  execute();
-                  return {
-                    assistant:
-                      variant === "empty-finalization"
-                        ? { ...createFinalAssistant(), content: [] }
-                        : createFinalAssistant(),
-                  };
-                },
-              ),
-        );
-        if (failed) {
-          await expect(run).rejects.toThrow("synthetic failure");
-        } else {
-          await run;
-        }
-        await waitForDiagnosticEventsDrained();
-        wallClock.mockRestore();
-        processClock.mockRestore();
-        await service.stop?.(ctx);
-        expect(
-          receiver.capturedRequests.some(
-            (request) => request.signal === "traces" && request.status === 200,
-          ),
-        ).toBe(true);
-        if (variant === "classified-error") {
-          expect(diagnostics.events.at(-1)?.event).toMatchObject({
-            type: "harness.run.completed",
-            outcome: "error",
-          });
-        }
-        expect(diagnostics.events.at(-1)?.event).toMatchObject({
-          timing: {
-            clock: "process-monotonic",
-            ...(expectedElapsed !== undefined ? { elapsedMs: expectedElapsed } : {}),
-            startedAtUnixMs: 1_788_696_000_000,
-            endedAtUnixMs: 1_788_696_000_000 + wallStep + 250,
-          },
-        });
-        const terminal = diagnostics.events.at(-1)?.event;
-        if (terminal?.type !== "harness.run.completed" && terminal?.type !== "harness.run.error") {
-          throw new Error("missing harness terminal");
-        }
-        expect(terminal.timing?.elapsedMs).toBe(expectedElapsed);
-        if (expectedElapsed === undefined) {
-          expect(terminal.timing).not.toHaveProperty("elapsedMs");
-        }
-        const spans = receiver.capturedSpans.filter((span) => span.name === "openclaw.harness.run");
-        expect(spans).toHaveLength(1);
-        expect(spans[0]?.attributes).toMatchObject({
-          "openclaw.harness.timing.clock": "process-monotonic",
-          ...(expectedElapsed !== undefined
-            ? { "openclaw.harness.timing.elapsed_ms": expectedElapsed }
-            : {}),
-          "openclaw.harness.timing.started_at_unix_ms": 1_788_696_000_000,
-          "openclaw.harness.timing.ended_at_unix_ms": 1_788_696_000_000 + wallStep + 250,
-        });
-        expect(spans[0]?.attributes["openclaw.harness.timing.elapsed_ms"]).toBe(expectedElapsed);
-      } finally {
-        wallClock.mockRestore();
-        processClock.mockRestore();
-        diagnostics.unsubscribe();
-        await service.stop?.(ctx);
-        await receiver.close();
-      }
-    },
-  );
 
   it("runs a harness attempt without changing attempt params", async () => {
     const params = createAttemptParams();
