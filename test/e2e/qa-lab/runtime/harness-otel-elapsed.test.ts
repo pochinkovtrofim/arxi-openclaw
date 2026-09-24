@@ -10,10 +10,12 @@ import {
 } from "openclaw/plugin-sdk/plugin-test-runtime";
 // Verifies the exported OTLP span against the harness producer clock contract.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { OpenClawPluginServiceContext } from "../../../../extensions/diagnostics-otel/api.js";
+import { createDiagnosticsOtelService } from "../../../../extensions/diagnostics-otel/src/service.js";
 import {
   runAgentHarnessLifecycleAttempt,
   runAgentHarnessLifecycleFinalization,
-} from "../../../src/agents/harness/lifecycle.js";
+} from "../../../../src/agents/harness/lifecycle.js";
 import {
   captureDiagnosticEvents,
   createAttemptParams,
@@ -21,11 +23,9 @@ import {
   createDiagnosticTrace,
   createFinalAssistant,
   createFinalizationParams,
-} from "../../../src/agents/harness/lifecycle.test-support.js";
-import type { AgentHarness } from "../../../src/agents/harness/types.js";
-import { startLocalOtlpReceiver } from "../../../test/e2e/qa-lab/runtime/otel-test-support.js";
-import type { OpenClawPluginServiceContext } from "../api.js";
-import { createDiagnosticsOtelService } from "./service.js";
+} from "../../../../src/agents/harness/lifecycle.test-support.js";
+import type { AgentHarness } from "../../../../src/agents/harness/types.js";
+import { startLocalOtlpReceiver } from "./otel-test-support.js";
 
 describe("AgentHarness lifecycle OTLP export", () => {
   afterEach(() => {
