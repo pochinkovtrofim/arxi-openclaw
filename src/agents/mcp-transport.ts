@@ -219,6 +219,7 @@ export function resolveMcpTransport(
         for (const [key, value] of Object.entries(refreshed)) {
           requestHeaders.set(key, value);
         }
+        // SAFETY: FetchLike init is a RequestInit-compatible object or undefined.
         return await httpFetch(url, { ...(init as RequestInit), headers: requestHeaders });
       }
     : httpFetch;
