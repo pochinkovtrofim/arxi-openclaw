@@ -9,7 +9,9 @@ function result(value) {
 }
 
 function withoutText(row) {
-  const { text: _text, ...metadata } = row;
+  // From/To headers are source content and become visible only after an exact
+  // read, not through the current-reference metadata listing.
+  const { text: _text, headers: _headers, senderRole: _senderRole, ...metadata } = row;
   return metadata;
 }
 
@@ -83,8 +85,13 @@ export default {
             registerReadEvent(ctx.sessionKey, "arxi_google_observation", row);
             return result({
               status: "full",
+              ...(row.source === "gmail" ? { senderRole: row.senderRole } : {}),
               observation: withoutText(row),
-              data: { id: row.resourceId, snippet: row.text, payload: { headers: [] } },
+              data: {
+                id: row.resourceId,
+                snippet: row.text,
+                payload: { headers: row.source === "gmail" ? row.headers : [] },
+              },
             });
           },
         };

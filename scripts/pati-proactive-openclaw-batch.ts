@@ -32,6 +32,8 @@ type GoogleToolSource = {
   sourceKind: "message" | "event";
   bootstrap: boolean;
   coverageMode: string;
+  headers?: Array<{ name: string; value: string }>;
+  senderRole?: "owner_outgoing" | "unknown";
   text: string;
 };
 type BusinessToolSource = {
@@ -260,6 +262,21 @@ function readToolFixtures(jsonl: string, requests: Request[]): Map<string, ToolF
       throw new Error(`invalid tool fixture at line ${index + 1}`);
     }
     const messages = new Map(request.input.messages.map((message) => [message.ref, message]));
+    const gmailHeaders = (direction: unknown) => {
+      const owner = "qa-owner@example.invalid";
+      const contact = "qa-contact@example.invalid";
+      return direction === "outgoing"
+        ? [
+            { name: "From", value: owner },
+            { name: "To", value: contact },
+          ]
+        : direction === "incoming"
+          ? [
+              { name: "From", value: contact },
+              { name: "To", value: owner },
+            ]
+          : null;
+    };
     const allowed = (item: { ref: string; text: string }, source: string) => {
       const message = messages.get(item?.ref);
       return (
@@ -280,6 +297,14 @@ function readToolFixtures(jsonl: string, requests: Request[]): Map<string, ToolF
         (item) =>
           !allowed(item, item.source) ||
           !["gmail", "calendar"].includes(item.source) ||
+          (item.source === "gmail" &&
+            JSON.stringify(item.headers) !==
+              JSON.stringify(gmailHeaders(messages.get(item.ref)?.direction))) ||
+          (item.source === "gmail" &&
+            item.senderRole !==
+              (messages.get(item.ref)?.direction === "outgoing" ? "owner_outgoing" : "unknown")) ||
+          (item.source === "calendar" &&
+            (item.headers !== undefined || item.senderRole !== undefined)) ||
           !item.connectionId ||
           !Number.isSafeInteger(item.generation) ||
           item.generation < 1 ||
