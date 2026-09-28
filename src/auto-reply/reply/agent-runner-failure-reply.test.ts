@@ -49,6 +49,23 @@ describe("buildEmptyInteractiveReplyPayload", () => {
 });
 
 describe("buildExternalRunFailureReply", () => {
+  it("makes a local personal-context refusal explicit to Owner without raw provider detail", () => {
+    const error = Object.assign(new Error("needs_expansion"), {
+      code: "needs_expansion",
+      status: 413,
+    });
+    const reply = buildKnownAgentRunFailureReplyPayload({
+      err: error,
+      sessionCtx: { ChatType: "direct" },
+      resolvedVerboseLevel: "off",
+    });
+    expect(reply).toMatchObject({
+      text: expect.stringContaining("needs_expansion"),
+      isError: true,
+    });
+    expect(reply?.text).not.toBe(GENERIC_EXTERNAL_RUN_FAILURE_TEXT);
+  });
+
   it("uses preserved format diagnostics without exposing raw details", () => {
     const message = "safe summary";
     const error = new FailoverError(message, {

@@ -11,6 +11,7 @@ import { markAuthProfileBlockedUntil } from "openclaw/plugin-sdk/agent-runtime";
 import { readStringField as readString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { CODEX_CONTROL_METHODS } from "./capabilities.js";
 import type { CodexAppServerClient } from "./client.js";
+import { CodexInferenceNeedsExpansionError } from "./inference-context.js";
 import { isJsonObject, type CodexServerNotification, type JsonValue } from "./protocol.js";
 import {
   readCodexRateLimitsRevision,
@@ -45,6 +46,11 @@ export class CodexUsageLimitPromptError extends Error {
 export function resolveCodexPromptError(
   source: Pick<CodexUsageLimitErrorSource, "message" | "codexErrorInfo" | "rateLimits">,
 ): string | Error | undefined {
+  // The managed OAuth proxy refuses before egress. Codex reports that refusal
+  // later as a failed turn, so restore the typed local outcome for the caller.
+  if (source.message?.includes("needs_expansion")) {
+    return new CodexInferenceNeedsExpansionError();
+  }
   const usageLimitMessage = formatCodexUsageLimitErrorMessage(source);
   if (usageLimitMessage) {
     return new CodexUsageLimitPromptError(usageLimitMessage);

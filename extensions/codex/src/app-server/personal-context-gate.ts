@@ -46,7 +46,9 @@ function toolOutput(item: unknown): ToolOutput | undefined {
 /**
  * The native OAuth request is the authority for what was actually inserted.
  * Full string leaves also charge every visible heading and separator around an
- * attributed source. This is a conservative byte upper bound, not a tokenizer.
+ * attributed source. Codex 0.156.1 unified_exec explicitly treats byte length
+ * as a conservative hard token bound for byte-fallback tokenizers. This is
+ * never an exact selected-model tokenizer count.
  */
 export function createCodexPersonalPreEgressGate(params: {
   promptText: string;
