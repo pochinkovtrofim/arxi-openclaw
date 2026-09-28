@@ -67,7 +67,7 @@ function parseArgs(argv: string[]) {
     output: required("--output"),
     policyFile: required("--policy-file"),
     sourceSha,
-    runtime,
+    runtime: runtime as "codex" | "openclaw",
     mode,
     model: options.get("--model") ?? "openai/gpt-5.6-luna",
     timeoutMs,
