@@ -163,6 +163,7 @@ describe("accepted input custody", () => {
     await promote(receipt);
     receipt.finish("interrupted");
     rotateAgentEventLifecycleGeneration();
+    closeOpenClawAgentDatabasesForTest();
 
     await expect(
       stage("external:ambiguous", {
@@ -184,6 +185,7 @@ describe("accepted input custody", () => {
     receipt.complete!(buildAgentRunTerminalOutcome({ status: "ok" }));
     receipt.finish("interrupted");
     rotateAgentEventLifecycleGeneration();
+    closeOpenClawAgentDatabasesForTest();
 
     const replay = await stage("external:completed", {
       trackCompletion: true,
