@@ -146,7 +146,8 @@ export function readSessionExternalInputReceipt(
       }),
     toDatabaseOptions(resolved),
   );
-  return result.found ? result.value : { status: "absent" };
+  // Missing storage cannot prove an earlier admitted run never wrote effects.
+  return result.found ? result.value : { status: "uncertain" };
 }
 const receiptOwners = new WeakMap<SessionPendingInputReceipt, SessionPendingInputOwner>();
 

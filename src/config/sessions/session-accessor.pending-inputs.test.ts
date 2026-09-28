@@ -167,14 +167,14 @@ describe("accepted input custody", () => {
     await promote(receipt);
     expect(
       readSessionExternalInputReceipt(scope(), "external:ambiguous:user", "external:ambiguous"),
-    ).toEqual({ status: "uncertain", runId: "external:ambiguous" });
+    ).toEqual({ status: "uncertain" });
     receipt.finish("interrupted");
     rotateAgentEventLifecycleGeneration();
     closeOpenClawAgentDatabasesForTest();
 
     expect(
       readSessionExternalInputReceipt(scope(), "external:ambiguous:user", "external:ambiguous"),
-    ).toEqual({ status: "uncertain", runId: "external:ambiguous" });
+    ).toEqual({ status: "uncertain" });
 
     await expect(
       stage("external:ambiguous", {
@@ -1017,6 +1017,13 @@ describe("accepted input custody", () => {
   it("does not create missing storage for a submitted-input lookup", () => {
     const storePath = path.join(fixture.sessionsDir(), "missing-agent.sqlite");
     expect(readSessionSubmittedInput({ ...scope(), storePath }, "missing:user")).toBeUndefined();
+    expect(
+      readSessionExternalInputReceipt(
+        { ...scope(), storePath },
+        "external:missing:user",
+        "external:missing",
+      ),
+    ).toEqual({ status: "uncertain" });
     expect(fs.existsSync(storePath)).toBe(false);
   });
 
