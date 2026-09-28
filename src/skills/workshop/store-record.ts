@@ -138,6 +138,16 @@ const skillProposalRecordSchema = z
     createdAt: z.string(),
     updatedAt: z.string(),
     autonomousCapture: z.literal(true).optional(),
+    reviewContext: z
+      .object({
+        agentId: z.string().min(1),
+        messageChannel: z.string().min(1).optional(),
+        chatType: z.string().min(1).optional(),
+        trigger: z.string().min(1).optional(),
+        senderIsOwner: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
     draftHash: z.string(),
     draftFile: z.string().regex(PROPOSAL_DRAFT_FILE_PATTERN),
     origin: z.unknown().optional(),

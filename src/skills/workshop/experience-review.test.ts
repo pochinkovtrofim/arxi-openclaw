@@ -541,6 +541,19 @@ describe("skill experience review scheduler", () => {
 });
 
 describe("skill experience review prompt", () => {
+  it("marks private proposals and excludes transferred conversation content", () => {
+    const privatePrompt = buildSkillExperienceReviewPrompt(
+      { privateConversation: true },
+      "propose",
+    );
+    expect(privatePrompt).toContain("<!-- workshop-private-procedure-v1 -->");
+    expect(privatePrompt).toContain("never copy or lightly paraphrase a private transcript");
+    expect(privatePrompt).toContain("content-free source references");
+    expect(buildSkillExperienceReviewPrompt({}, "propose")).not.toContain(
+      "workshop-private-procedure-v1",
+    );
+  });
+
   it("caps used and existing skill lists", () => {
     const skills = Array.from({ length: 120 }, (_, index) => ({
       name: `skill-${String(index).padStart(3, "0")}-${"x".repeat(180)}`,

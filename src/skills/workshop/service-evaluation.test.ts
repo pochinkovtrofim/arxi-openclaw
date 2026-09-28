@@ -112,6 +112,45 @@ async function createOwnedSkill(
 }
 
 describe("Skill Workshop proposal evaluation", () => {
+  it("keeps native review context across a draft revision and sends it to evaluators", async () => {
+    const workspaceDir = await tempDirs.make("openclaw-review-context-");
+    const reviewContext = {
+      agentId: "main",
+      messageChannel: "arxi",
+      chatType: "direct",
+      trigger: "user",
+      senderIsOwner: true,
+    };
+    const proposal = await proposeCreateSkill({
+      workspaceDir,
+      agentId: "main",
+      name: "Source Check",
+      description: "Check a current source",
+      content: "# Source Check\n",
+      reviewContext,
+      origin: { agentId: "main", runId: "foreground-run" },
+    });
+    const revised = await reviseSkillProposal({
+      workspaceDir,
+      agentId: "main",
+      proposalId: proposal.record.id,
+      expectedRevisionHash: proposal.revisionHash,
+      content: "# Source Check revised\n",
+      origin: { agentId: "main", runId: "later-run" },
+    });
+    expect(revised.record.reviewContext).toEqual(reviewContext);
+    hookMocks.evaluate.mockResolvedValue([]);
+    await evaluateSkillProposal({
+      workspaceDir,
+      agentId: "main",
+      proposalId: revised.record.id,
+      expectedRevisionHash: revised.revisionHash,
+    });
+    const hookEvent = hookMocks.evaluate.mock.calls[0]?.[0] as PluginHookSkillProposalEvaluateEvent;
+    expect(hookEvent.reviewContext).toEqual(reviewContext);
+    expect(hookEvent.proposal.revisionSha256).toBe(revised.revisionHash);
+  });
+
   it.each(["before", "during"])(
     "does not publish evaluation when a target directory becomes unreadable %s evaluation",
     async (phase) => {

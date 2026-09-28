@@ -748,6 +748,15 @@ const SkillProposalOriginSchema = closedObject({
   messageId: Type.Optional(NonEmptyString),
 });
 
+/** Host-captured source category of an autonomous experience review, never model input. */
+const SkillProposalReviewContextSchema = closedObject({
+  agentId: NonEmptyString,
+  messageChannel: Type.Optional(NonEmptyString),
+  chatType: Type.Optional(NonEmptyString),
+  trigger: Type.Optional(NonEmptyString),
+  senderIsOwner: Type.Optional(Type.Boolean()),
+});
+
 const SkillProposalEvaluationFindingSchema = closedObject({
   ruleId: Type.String({ minLength: 1, maxLength: 256 }),
   severity: Type.Union([Type.Literal("info"), Type.Literal("warn"), Type.Literal("critical")]),
@@ -825,6 +834,7 @@ const SkillProposalRecordSchema = closedObject({
   updatedAt: NonEmptyString,
   createdBy: SkillProposalSourceSchema,
   origin: Type.Optional(SkillProposalOriginSchema),
+  reviewContext: Type.Optional(SkillProposalReviewContextSchema),
   proposedVersion: NonEmptyString,
   draftFile: Type.Literal("PROPOSAL.md"),
   draftHash: NonEmptyString,

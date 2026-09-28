@@ -228,7 +228,14 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
         ...(executionRoot ? { skillsSnapshot: { prompt: "", skills: [] } } : {}),
         config,
         abortSignal,
-        prompt: buildSkillExperienceReviewPrompt({ ...candidate, existingSkills }, mode),
+        prompt: buildSkillExperienceReviewPrompt(
+          {
+            ...candidate,
+            existingSkills,
+            privateConversation: foregroundPromptContext.chatType === "direct",
+          },
+          mode,
+        ),
         provider: candidate.ctx.modelProviderId,
         model: candidate.ctx.modelId,
         ...(candidate.ctx.authProfileId
@@ -249,6 +256,22 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
           agentId: foregroundPromptContext.agentId,
           sessionKey,
           ...(candidate.ctx.runId ? { runId: candidate.ctx.runId } : {}),
+        },
+        // This category comes from the retained foreground run, not the proposal
+        // text or mutable origin. Evaluators can keep private-channel policy bound
+        // across later draft revisions and apply attempts.
+        skillWorkshopReviewContext: {
+          agentId: foregroundPromptContext.agentId,
+          ...(foregroundPromptContext.messageChannel
+            ? { messageChannel: foregroundPromptContext.messageChannel }
+            : {}),
+          ...(foregroundPromptContext.chatType
+            ? { chatType: foregroundPromptContext.chatType }
+            : {}),
+          ...(foregroundPromptContext.trigger ? { trigger: foregroundPromptContext.trigger } : {}),
+          ...(foregroundPromptContext.senderIsOwner !== undefined
+            ? { senderIsOwner: foregroundPromptContext.senderIsOwner }
+            : {}),
         },
         ...(capability ? { cronCreatorAuthorityCapability: capability } : {}),
       });
