@@ -168,7 +168,7 @@ function readBoundAutomationJob(params: {
   const job = row ? loadedCronStoreFromRows([row]).store.jobs[0] : undefined;
   if (
     !job ||
-    job.enabled !== true ||
+    !job.enabled ||
     job.pacing === undefined ||
     job.sessionKey !== params.ownerKey ||
     tryCronScheduleIdentity(job) !== binding.cronScheduleIdentity
