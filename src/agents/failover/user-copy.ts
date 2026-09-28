@@ -53,9 +53,14 @@ const SELECTED_AUTH_PROFILE_UNAVAILABLE_USER_TEXT = arxiUserCopy(
   "Подключение к ChatGPT недоступно. Подключи подписку заново в настройках.",
 );
 export const renderFailoverCodeUserCopy = (code: unknown): string | undefined =>
-  code === "selected_auth_profile_unavailable"
-    ? SELECTED_AUTH_PROFILE_UNAVAILABLE_USER_TEXT
-    : undefined;
+  code === "needs_expansion"
+    ? arxiUserCopy(
+        "Personal context needs_expansion before this request can continue. Review its sources or explicitly allow the larger context budget, then retry.",
+        "Не удалось безопасно собрать память для ответа (needs_expansion). Проверь её источники или разреши расширенный лимит, затем повтори запрос.",
+      )
+    : code === "selected_auth_profile_unavailable"
+      ? SELECTED_AUTH_PROFILE_UNAVAILABLE_USER_TEXT
+      : undefined;
 const MODEL_CAPACITY_ERROR_USER_MESSAGE = arxiUserCopy(
   "⚠️ Selected model is at capacity. Try a different model, or wait and retry.",
   "Сейчас слишком много запросов. Попробуй чуть позже.",

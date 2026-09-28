@@ -83,6 +83,11 @@ export async function handleEmbeddedPromptFailure(input: {
   traceAttempts: TraceAttempt[];
   previousRetryFailoverReason: FailoverReason | null;
 }): Promise<PromptFailureOutcome> {
+  // A local pre-egress refusal cannot succeed through auth retry or model
+  // failover. Keep its code for the Owner reply instead of replaying the turn.
+  if ((input.promptError as { code?: unknown } | null)?.code === "needs_expansion") {
+    throw input.promptError;
+  }
   // Only the local precheck owns this recovery; provider text cannot request it.
   if (
     input.promptErrorSource === "precheck" &&

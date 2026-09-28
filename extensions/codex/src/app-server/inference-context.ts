@@ -16,6 +16,9 @@ type Registration = {
 
 /** A generation-scoped guard can reject before either native transport sends. */
 export class CodexInferenceNeedsExpansionError extends Error {
+  readonly code = "needs_expansion";
+  readonly status = 413;
+
   constructor() {
     super("needs_expansion");
   }

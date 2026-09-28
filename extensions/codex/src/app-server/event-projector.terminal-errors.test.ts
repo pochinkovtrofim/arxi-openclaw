@@ -23,6 +23,30 @@ import {
 registerCodexEventProjectorTestLifecycle();
 
 describe("CodexAppServerEventProjector terminal errors", () => {
+  it("preserves a native OAuth pre-egress refusal as typed needs_expansion", async () => {
+    const projector = await createProjector();
+    await projector.handleNotification(
+      forCurrentTurn("turn/completed", {
+        turn: {
+          id: TURN_ID,
+          status: "failed",
+          items: [],
+          error: {
+            message: 'Unexpected status 413: {"error":{"code":"needs_expansion"}}',
+            codexErrorInfo: { responseTooManyFailedAttempts: { httpStatusCode: 413 } },
+          },
+        },
+      }),
+    );
+    expect(
+      readAttemptTerminal(projector.buildResult(buildEmptyToolTelemetry())).promptError,
+    ).toMatchObject({
+      message: "needs_expansion",
+      code: "needs_expansion",
+      status: 413,
+    });
+  });
+
   it.each([
     { codexErrorInfo: "rateLimitExceeded", status: 429 },
     { codexErrorInfo: "serverOverloaded", status: 503, code: "OVERLOADED" },

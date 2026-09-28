@@ -104,6 +104,9 @@ describe("Codex OAuth personal pre-egress gate", () => {
       instructions: legacy,
     });
     expect(Buffer.byteLength(cyrillicPacket, "utf8")).toBeGreaterThan(5_000);
+    expect(Buffer.byteLength(cyrillicPacket, "utf8")).toBeGreaterThan(
+      Array.from(cyrillicPacket).length,
+    );
     expect(bound).toBeGreaterThan(Buffer.byteLength(cyrillicPacket, "utf8"));
     expect(bound).toBeLessThan(8_000);
   });
