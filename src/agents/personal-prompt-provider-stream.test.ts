@@ -30,7 +30,7 @@ function makeGate(
           content: [{ type: "input_text" as const, text: params.packet ?? packetText }],
         },
       ],
-      stream: true,
+      stream: true as const,
     };
     const next = await options?.onPayload?.(payload, model);
     const finalRequest = (next ?? payload) as typeof payload;
