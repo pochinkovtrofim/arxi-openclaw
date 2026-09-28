@@ -1,6 +1,7 @@
 /** One isolated QA gateway for a prepared Pati frozen holdout JSONL batch. */
 import { createHash, randomUUID } from "node:crypto";
-import { access, readFile, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { createQaGatewayChild } from "../extensions/qa-lab/src/gateway-child.js";
@@ -20,6 +21,39 @@ type Request = {
   input: PreparedInput;
   sourceIds?: Record<string, unknown>;
   visibleRefs?: string[];
+};
+type GoogleToolSource = {
+  ref: string;
+  connectionId: string;
+  generation: number;
+  source: "gmail" | "calendar";
+  resourceId: string;
+  revision: string;
+  sourceKind: "message" | "event";
+  bootstrap: boolean;
+  coverageMode: string;
+  text: string;
+};
+type BusinessToolSource = {
+  ref: string;
+  connectionId: string;
+  chatId: number;
+  messageId: number;
+  updateId: number;
+  direction: string;
+  receivedAt: string;
+  text: string;
+};
+type ToolFixture = {
+  id: string;
+  google: GoogleToolSource[];
+  business: BusinessToolSource[];
+};
+type ToolReadEvent = {
+  sessionKey: string;
+  tool: "arxi_google_observation" | "arxi_business_context";
+  ref: string;
+  textSha256: string;
 };
 type PreparedContext = {
   id: string;
@@ -109,11 +143,16 @@ function parseArgs(argv: string[]) {
   if (codexHome && !path.isAbsolute(codexHome)) {
     throw new Error("--codex-home must be an absolute isolated directory");
   }
+  const toolFile = options.get("--tool-file");
+  if (toolFile && runtime !== "codex") {
+    throw new Error("--tool-file requires the isolated Codex QA runtime");
+  }
   return {
     input: required("--input"),
     output: required("--output"),
     policyFile: required("--policy-file"),
     contextFile: options.get("--context-file"),
+    toolFile,
     taskFile: options.get("--task-file"),
     opsSourceSha: options.get("--ops-source-sha"),
     sourceSha,
@@ -185,6 +224,111 @@ function readContexts(jsonl: string, requests: Request[]): Map<string, PreparedC
   return byId;
 }
 
+function readToolFixtures(jsonl: string, requests: Request[]): Map<string, ToolFixture> {
+  const expected = new Map(requests.map((request) => [request.id, request]));
+  const fixtures = new Map<string, ToolFixture>();
+  for (const [index, line] of jsonl
+    .split(/\r?\n/u)
+    .filter((value) => value.trim())
+    .entries()) {
+    const row = JSON.parse(line) as ToolFixture;
+    const request = expected.get(row?.id);
+    if (
+      !request ||
+      fixtures.has(row.id) ||
+      !Array.isArray(row.google) ||
+      !Array.isArray(row.business)
+    ) {
+      throw new Error(`invalid tool fixture at line ${index + 1}`);
+    }
+    const messages = new Map(request.input.messages.map((message) => [message.ref, message]));
+    const allowed = (item: { ref: string; text: string }, source: string) => {
+      const message = messages.get(item?.ref);
+      return (
+        message?.source === source &&
+        typeof item.text === "string" &&
+        item.text === message.text &&
+        message.unavailable !== true &&
+        !request.input.revokedRefs.includes(item.ref) &&
+        request.input.authorizedSources.includes(source) &&
+        !item.text.includes(request.id) &&
+        !Object.values(request.sourceIds ?? {}).some(
+          (sourceId) => typeof sourceId === "string" && item.text.includes(sourceId),
+        )
+      );
+    };
+    if (
+      row.google.some(
+        (item) =>
+          !allowed(item, item.source) ||
+          !["gmail", "calendar"].includes(item.source) ||
+          !item.connectionId ||
+          !Number.isSafeInteger(item.generation) ||
+          item.generation < 1 ||
+          !item.resourceId ||
+          !item.revision ||
+          !["message", "event"].includes(item.sourceKind) ||
+          typeof item.bootstrap !== "boolean" ||
+          item.bootstrap ||
+          !item.coverageMode,
+      ) ||
+      row.business.some(
+        (item) =>
+          !allowed(item, "telegram_business") ||
+          !item.connectionId ||
+          !Number.isSafeInteger(item.chatId) ||
+          item.chatId < 1 ||
+          !Number.isSafeInteger(item.messageId) ||
+          item.messageId < 1 ||
+          !Number.isSafeInteger(item.updateId) ||
+          item.updateId < 1 ||
+          !item.receivedAt,
+      )
+    ) {
+      throw new Error(`tool fixture contains an unauthorized or stale source at line ${index + 1}`);
+    }
+    fixtures.set(row.id, row);
+  }
+  if (fixtures.size !== expected.size) {
+    throw new Error("tool fixtures must cover exactly the requested episodes");
+  }
+  return fixtures;
+}
+
+function readToolEvents(
+  jsonl: string,
+  sessionKey: string,
+  fixture: ToolFixture,
+  knownSessionKeys: Set<string>,
+): ToolReadEvent[] {
+  const sources = new Map(
+    [...fixture.google, ...fixture.business].map((source) => [source.ref, source]),
+  );
+  const events: ToolReadEvent[] = [];
+  for (const line of jsonl.split(/\r?\n/u).filter((value) => value.trim())) {
+    const event = JSON.parse(line) as ToolReadEvent;
+    if (!knownSessionKeys.has(event?.sessionKey)) {
+      throw new Error("QA read event belongs to an unknown session");
+    }
+    if (event.sessionKey !== sessionKey) {
+      continue;
+    }
+    const source = sources.get(event.ref);
+    if (
+      !source ||
+      event.tool !==
+        (fixture.google.some((item) => item.ref === event.ref)
+          ? "arxi_google_observation"
+          : "arxi_business_context") ||
+      event.textSha256 !== createHash("sha256").update(source.text).digest("hex")
+    ) {
+      throw new Error("QA read event does not match an authorized exact source");
+    }
+    events.push(event);
+  }
+  return events;
+}
+
 function readRequests(jsonl: string): Request[] {
   const ids = new Set<string>();
   return jsonl
@@ -247,6 +391,9 @@ async function main() {
   const preparedBytes = await readFile(args.input);
   const preparedSha256 = createHash("sha256").update(preparedBytes).digest("hex");
   const requests = readRequests(preparedBytes.toString("utf8"));
+  const toolBytes = args.toolFile ? await readFile(args.toolFile) : null;
+  const toolFixtures = toolBytes ? readToolFixtures(toolBytes.toString("utf8"), requests) : null;
+  const toolFixtureSha256 = toolBytes ? createHash("sha256").update(toolBytes).digest("hex") : null;
   const policyBytes = await readFile(args.policyFile);
   const policy = policyBytes.toString("utf8").trim();
   const policySha256 = createHash("sha256").update(policyBytes).digest("hex");
@@ -273,6 +420,30 @@ async function main() {
   if (!policy || requests.length === 0) {
     throw new Error("holdout requires a nonempty policy and at least one prepared request");
   }
+  if (toolFixtures && !contexts) {
+    throw new Error("QA source tools require a bounded prepared context");
+  }
+  const sessions = new Map(
+    requests.map((request) => [request.id, `agent:qa:pati-holdout:${randomUUID()}`]),
+  );
+  const knownSessionKeys = new Set(sessions.values());
+  const fixtureDir = toolFixtures ? await mkdtemp(path.join(os.tmpdir(), "pati-qa-read-")) : null;
+  const fixturePath = fixtureDir ? path.join(fixtureDir, "sources.json") : null;
+  const eventsPath = fixtureDir ? path.join(fixtureDir, "read-events.jsonl") : null;
+  if (fixturePath && eventsPath && toolFixtures) {
+    const bySession = Object.fromEntries(
+      requests.map((request) => {
+        const sessionKey = sessions.get(request.id);
+        const fixture = toolFixtures.get(request.id);
+        if (!sessionKey || !fixture) {
+          throw new Error("missing QA source session");
+        }
+        return [sessionKey, { google: fixture.google, business: fixture.business }];
+      }),
+    );
+    await writeFile(fixturePath, JSON.stringify({ sessions: bySession }), { mode: 0o600 });
+    await writeFile(eventsPath, "", { mode: 0o600 });
+  }
   const output: string[] = [];
   const gatewayOwner = createQaGatewayChild();
   const lab = await startQaLabServer({ repoRoot, embeddedGateway: "disabled" });
@@ -293,17 +464,45 @@ async function main() {
         ? {
             // QA points the native user-home scope at a disposable credential copy.
             // Agent scope would start with an empty home despite CODEX_HOME preflight.
-            runtimeEnvPatch: { CODEX_HOME: args.codexHome },
+            runtimeEnvPatch: {
+              CODEX_HOME: args.codexHome,
+              ...(fixturePath && eventsPath
+                ? {
+                    PATI_QA_READ_FIXTURE_PATH: fixturePath,
+                    PATI_QA_READ_EVENTS_PATH: eventsPath,
+                  }
+                : {}),
+            },
             mutateConfig: (cfg: OpenClawConfig) => ({
               ...cfg,
               plugins: {
                 ...cfg.plugins,
+                ...(fixturePath
+                  ? {
+                      allow: [
+                        ...new Set([...(cfg.plugins?.allow ?? []), "pati-holdout-read-fixture"]),
+                      ],
+                      load: {
+                        ...cfg.plugins?.load,
+                        paths: [
+                          ...new Set([
+                            ...(cfg.plugins?.load?.paths ?? []),
+                            path.join(
+                              repoRoot,
+                              "extensions/qa-lab/test-fixtures/pati-holdout-read-plugin",
+                            ),
+                          ]),
+                        ],
+                      },
+                    }
+                  : {}),
                 entries: {
                   ...cfg.plugins?.entries,
                   codex: {
                     enabled: true,
                     config: { appServer: { homeScope: "user", sandbox: "workspace-write" } },
                   },
+                  ...(fixturePath ? { "pati-holdout-read-fixture": { enabled: true } } : {}),
                 },
               },
             }),
@@ -314,7 +513,10 @@ async function main() {
       controlUiEnabled: false,
     });
     for (const request of requests) {
-      const sessionKey = `agent:qa:pati-holdout:${randomUUID()}`;
+      const sessionKey = sessions.get(request.id);
+      if (!sessionKey) {
+        throw new Error("missing QA session key");
+      }
       const target = `dm:pati-holdout-${randomUUID()}`;
       const delivery = transportOwner.adapter.buildAgentDelivery({ target });
       const preparedContext = contexts?.get(request.id);
@@ -399,6 +601,15 @@ async function main() {
           ? totals.totalCost
           : null;
       const assistantUsage = historyUsageEvidence(history);
+      const toolReadEvents =
+        eventsPath && toolFixtures
+          ? readToolEvents(
+              await readFile(eventsPath, "utf8"),
+              sessionKey,
+              toolFixtures.get(request.id)!,
+              knownSessionKeys,
+            )
+          : null;
       const costUsd = sessionCostUsd ?? assistantUsage.providerReportedCostUsd;
       const costBasis =
         sessionCostUsd !== null
@@ -413,6 +624,7 @@ async function main() {
         opsSourceSha: args.opsSourceSha ?? null,
         policySha256,
         contextSha256,
+        toolFixtureSha256,
         taskSha256,
         hookStatus: preparedContext?.hookStatus ?? null,
         preparedSha256,
@@ -430,7 +642,8 @@ async function main() {
           ? "native_hook_prepared_context"
           : "included_in_model_input",
         contextReadEvents,
-        toolReadRefs: null,
+        toolReadRefs: toolReadEvents?.map((event) => event.ref) ?? null,
+        toolReadEvents,
         events: history?.messages ?? [],
         usageEvidence: {
           source: "sessions.usage",
@@ -444,7 +657,7 @@ async function main() {
         error,
       };
       output.push(JSON.stringify(record));
-      await writeFile(args.output, `${output.join("\n")}\n`);
+      await writeFile(args.output, `${output.join("\n")}\n`, { mode: 0o600 });
     }
   } finally {
     await transportOwner.cleanupBeforeGatewayStop();
@@ -453,6 +666,9 @@ async function main() {
       await transportOwner.cleanupAfterGatewayStop();
     }
     await lab.stop();
+    if (fixtureDir) {
+      await rm(fixtureDir, { recursive: true, force: true });
+    }
   }
   process.stdout.write(`Pati holdout ${args.mode}: ${output.length} episode receipts\n`);
 }
