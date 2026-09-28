@@ -320,8 +320,8 @@ export type PluginHookAgentContext = {
   modelId?: string;
   /**
    * Native USER/MEMORY content that this selected model will receive. Available
-   * during before_prompt_build only; the counter is absent unless the selected
-   * provider has an exact model-bound input-token endpoint.
+   * during before_prompt_build only. Exact token counts and conservative UTF-8
+   * upper bounds are distinct contracts and must not share a receipt label.
    */
   personalPrompt?: Readonly<{
     legacySegments: readonly Readonly<{
@@ -332,6 +332,7 @@ export type PluginHookAgentContext = {
       mandatory: true;
     }>[];
     countInputTokens?: (input: { instructions: string; prompt: string }) => Promise<number>;
+    countInputUtf8UpperBound?: (input: { instructions: string; prompt: string }) => number;
     /** Register the exact packet text for a provider-bound combined budget gate. */
     registerPreparedPacket?: (packet: { text: string; budgetTokens: number }) => void;
   }>;

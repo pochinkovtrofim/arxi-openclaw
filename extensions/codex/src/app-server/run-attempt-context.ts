@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import path from "node:path";
 import {
   bootstrapHarnessContextEngine,
   buildAgentHookContextChannelFields,
@@ -102,6 +104,34 @@ export async function prepareCodexAttemptContext(
       ? { contextWindowReferenceTokens: effectiveContextWindowInfo.referenceTokens }
       : {}),
   };
+  const personalPromptState: { packet?: { text: string; budgetTokens: number } } = {};
+  const legacySegments: Array<{
+    name: "USER.md" | "MEMORY.md";
+    path: string;
+    text: string;
+    sha256: string;
+    mandatory: true;
+  }> = [];
+  const personalPrompt = {
+    legacySegments,
+    countInputUtf8UpperBound: (input: { instructions: string; prompt: string }) =>
+      Buffer.byteLength([input.instructions, input.prompt].join("\n\n"), "utf8"),
+    registerPreparedPacket: (packet: { text: string; budgetTokens: number }) => {
+      if (!packet.text || (packet.budgetTokens !== 8_000 && packet.budgetTokens !== 16_000)) {
+        throw new Error("Codex personal packet registration is invalid");
+      }
+      if (personalPromptState.packet) {
+        if (
+          personalPromptState.packet.text !== packet.text ||
+          personalPromptState.packet.budgetTokens !== packet.budgetTokens
+        ) {
+          throw new Error("Codex personal packet changed during prompt rebuild");
+        }
+        return;
+      }
+      personalPromptState.packet = { ...packet };
+    },
+  };
   const hookContext = {
     runId: params.runId,
     agentId: sessionAgentId,
@@ -126,6 +156,7 @@ export async function prepareCodexAttemptContext(
       agentAccountId: params.agentAccountId,
     }),
     channelContext: params.channelContext,
+    personalPrompt,
     ...hookContextWindowFields,
   };
   const hookRunner = getAgentHarnessHookRunner();
@@ -177,6 +208,26 @@ export async function prepareCodexAttemptContext(
       isSystemAgentOnlyCodexDynamicToolAllowlist(runtimeParams.toolsAllow),
     sandboxed: sandbox?.enabled === true,
   });
+  const userFile = workspaceBootstrapContext.contextFiles.find(
+    (file) => path.basename(file.path).toLowerCase() === "user.md",
+  );
+  const memoryFile = workspaceBootstrapContext.promptContextFiles?.find(
+    (file) => path.basename(file.path).toLowerCase() === "memory.md",
+  );
+  for (const [name, file, text] of [
+    ["USER.md", userFile, workspaceBootstrapContext.turnScopedDeveloperInstructions],
+    ["MEMORY.md", memoryFile, workspaceBootstrapContext.promptContext],
+  ] as const) {
+    if (file && text) {
+      legacySegments.push({
+        name,
+        path: file.path,
+        text,
+        sha256: createHash("sha256").update(text).digest("hex"),
+        mandatory: true,
+      });
+    }
+  }
   // A thread keeps the bounded agent-workspace snapshot captured at creation.
   // Workspace edits take effect only in the next session.
   const agentWorkspaceDeveloperInstructions = workspaceBootstrapContext.threadDeveloperInstructions
@@ -244,6 +295,7 @@ export async function prepareCodexAttemptContext(
     activeTranscriptTarget,
     historyState,
     hookContext,
+    personalPromptState,
     hookContextWindowFields,
     hookRunner,
     buildActiveContextEngineRuntimeContext,
