@@ -10,7 +10,10 @@ import {
   resolvePinnedHostnameWithPolicy,
 } from "openclaw/plugin-sdk/ssrf-runtime";
 import { type RawData, WebSocket, WebSocketServer } from "openclaw/plugin-sdk/websocket-runtime";
-import { createCodexInferenceContext } from "./inference-context.js";
+import {
+  CodexInferenceNeedsExpansionError,
+  createCodexInferenceContext,
+} from "./inference-context.js";
 import { isJsonObject } from "./protocol.js";
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
@@ -31,6 +34,7 @@ const HOP_HEADERS = new Set([
   "content-length",
 ]);
 const FAILURE = "Codex parent-local inference transport failed; retry on a fresh connection.";
+const NEEDS_EXPANSION = JSON.stringify({ error: { code: "needs_expansion" } });
 
 /** Private, fixed-destination relay. No upstream credentials or model content are retained. */
 export async function createCodexInferenceProxy(params: {
@@ -161,10 +165,14 @@ export async function createCodexInferenceProxy(params: {
         } else {
           await guarded.response.body.pipeTo(Writable.toWeb(res), { signal });
         }
-      } catch {
+      } catch (error) {
         // Errors can contain headers, bodies, or the private URL: never log/reflect them.
         if (!res.headersSent && !res.destroyed) {
-          res.writeHead(502, { "content-type": "text/plain" }).end(FAILURE);
+          if (error instanceof CodexInferenceNeedsExpansionError) {
+            res.writeHead(413, { "content-type": "application/json" }).end(NEEDS_EXPANSION);
+          } else {
+            res.writeHead(502, { "content-type": "text/plain" }).end(FAILURE);
+          }
         } else {
           res.destroy();
         }
@@ -298,8 +306,14 @@ export async function createCodexInferenceProxy(params: {
                       close();
                     }
                   });
-                } catch {
-                  close();
+                } catch (error) {
+                  if (error instanceof CodexInferenceNeedsExpansionError && local) {
+                    remote?.off("close", close);
+                    remote?.terminate();
+                    local.close(1009, "needs_expansion");
+                  } else {
+                    close();
+                  }
                 }
               });
               accepted.once("close", () => releaseFrame());

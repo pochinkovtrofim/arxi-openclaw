@@ -7,7 +7,10 @@ import {
   WebSocketServer,
 } from "openclaw/plugin-sdk/websocket-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
+import {
+  CODEX_INFERENCE_GENERATION_KEY,
+  CodexInferenceNeedsExpansionError,
+} from "./inference-context.js";
 import { createCodexInferenceProxy, type CodexInferenceProxy } from "./inference-proxy.js";
 
 const transport = vi.hoisted(() => {
@@ -95,9 +98,17 @@ async function post(
   );
 }
 
-async function fixture(withInstructions = true) {
+async function fixture(
+  withInstructions = true,
+  options: {
+    oauth?: boolean;
+    preEgressGate?: (body: Record<string, unknown>) => void;
+  } = {},
+) {
   const proxy = await createCodexInferenceProxy({
-    upstream: new URL("https://api.openai.com/v1"),
+    upstream: new URL(
+      options.oauth ? "https://chatgpt.com/backend-api/codex" : "https://api.openai.com/v1",
+    ),
     assertCurrent: () => {},
   });
   proxies.push(proxy);
@@ -107,6 +118,7 @@ async function fixture(withInstructions = true) {
     text: "synthetic persona",
     signal: controller.signal,
     assertCurrent: () => {},
+    ...(options.preEgressGate ? { preEgressGate: options.preEgressGate } : {}),
   });
   const body = {
     ...(withInstructions ? { instructions: "native base" } : {}),
@@ -124,6 +136,46 @@ async function fixture(withInstructions = true) {
 }
 
 describe("private inference HTTP relay", () => {
+  it("gates final Codex OAuth HTTP prompt and continuation before upstream send", async () => {
+    const seen: Record<string, unknown>[] = [];
+    const { proxy, body } = await fixture(true, {
+      oauth: true,
+      preEgressGate: (payload) => {
+        seen.push(payload);
+        if (JSON.stringify(payload.input).includes("oversized source")) {
+          throw new CodexInferenceNeedsExpansionError();
+        }
+      },
+    });
+    body.input = [{ role: "user", content: "packet" }];
+    transport.fetch.mockResolvedValue({
+      response: new Response("ok"),
+      release: async () => {},
+    });
+    const initial = await post(proxy.baseUrl + "/responses", {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    expect(initial.status).toBe(200);
+    const continuationInput = [
+      ...body.input,
+      { type: "function_call_output", call_id: "read-1", output: "oversized source" },
+    ];
+    const continuation = await post(proxy.baseUrl + "/responses", {
+      method: "POST",
+      body: JSON.stringify({ ...body, input: continuationInput }),
+    });
+    expect(continuation.status).toBe(413);
+    expect(JSON.parse(await continuation.text())).toEqual({ error: { code: "needs_expansion" } });
+    expect(transport.fetch).toHaveBeenCalledTimes(1);
+    expect(transport.fetch.mock.calls[0]?.[0].url).toBe(
+      "https://chatgpt.com/backend-api/codex/responses",
+    );
+    expect(seen[0]?.instructions).toBe("native base\n\nsynthetic persona");
+    expect(seen[0]?.input).toEqual(body.input);
+    expect(seen[1]?.input).toEqual(continuationInput);
+  });
+
   it.each([
     { zstd: false, withInstructions: true },
     { zstd: true, withInstructions: true },
@@ -220,6 +272,75 @@ describe("private inference HTTP relay", () => {
 });
 
 describe("private inference WebSocket relay", () => {
+  it("gates final Codex OAuth WebSocket continuation and closes with needs_expansion", async () => {
+    const server = createServer();
+    const wss = new WebSocketServer({ server });
+    const received: unknown[] = [];
+    wss.on("connection", (peer) => {
+      peer.on("message", (data) => {
+        received.push(JSON.parse(data.toString()));
+        peer.send('{"type":"response.completed","response":{"id":"response-1"}}');
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (!address || typeof address === "string") {
+      throw new Error("fixture did not listen");
+    }
+    transport.upstream = `ws://127.0.0.1:${address.port}`;
+    const seen: Record<string, unknown>[] = [];
+    const { proxy, body } = await fixture(true, {
+      oauth: true,
+      preEgressGate: (payload) => {
+        seen.push(payload);
+        if (JSON.stringify(payload.input).includes("oversized source")) {
+          throw new CodexInferenceNeedsExpansionError();
+        }
+      },
+    });
+    const socket = new WebSocket(proxy.baseUrl.replace("http:", "ws:") + "/responses");
+    try {
+      await once(socket, "open");
+      const initialInput = [{ role: "user", content: "packet" }];
+      socket.send(JSON.stringify({ ...body, type: "response.create", input: initialInput }));
+      await once(socket, "message");
+      const closed = once(socket, "close");
+      const continuationInput = [
+        { type: "function_call_output", call_id: "read-1", output: "oversized source" },
+      ];
+      socket.send(
+        JSON.stringify({
+          ...body,
+          type: "response.create",
+          previous_response_id: "response-1",
+          input: continuationInput,
+        }),
+      );
+      const [code, reason] = await closed;
+      expect(code).toBe(1009);
+      expect(reason.toString()).toBe("needs_expansion");
+      expect(received).toHaveLength(1);
+      expect(seen[0]?.instructions).toBe("native base\n\nsynthetic persona");
+      expect(seen[0]?.input).toEqual(initialInput);
+      expect(seen[1]?.input).toEqual(continuationInput);
+      expect(transport.dials).toEqual(["wss://chatgpt.com/backend-api/codex/responses"]);
+    } finally {
+      socket.terminate();
+      proxy.close();
+      for (const peer of wss.clients) {
+        peer.terminate();
+      }
+      await new Promise<void>((resolve) => {
+        wss.close(() => resolve());
+      });
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+    }
+  });
+
   it.each(["unavailable", "private"] as const)(
     "rejects %s destination DNS on a direct WebSocket route",
     async (resolution) => {
