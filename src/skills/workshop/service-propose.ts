@@ -255,6 +255,7 @@ async function createPendingSkillProposal(
     updatedAt: now,
     createdBy: input.createdBy ?? "skill-workshop",
     ...(input.autonomousCapture ? { autonomousCapture: true as const } : {}),
+    ...(input.reviewContext ? { reviewContext: input.reviewContext } : {}),
     ...(origin ? { origin } : {}),
     ...originRunProvenance,
     proposedVersion: "v1",

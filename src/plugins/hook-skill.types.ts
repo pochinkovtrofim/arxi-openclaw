@@ -24,6 +24,14 @@ export type PluginHookSkillProposalEvaluateEvent = {
     revisionSha256: string;
     targetCurrentSha256?: string;
   };
+  /** Immutable host-captured native experience category; candidate bytes cannot set it. */
+  reviewContext?: {
+    agentId: string;
+    messageChannel?: string;
+    chatType?: string;
+    trigger?: string;
+    senderIsOwner?: boolean;
+  };
   skill: {
     name: string;
     skillKey: string;

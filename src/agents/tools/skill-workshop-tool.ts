@@ -130,6 +130,7 @@ type SkillWorkshopToolOptions = {
   env?: NodeJS.ProcessEnv;
   agentId: string;
   origin?: SkillProposalOrigin;
+  reviewContext?: import("../../skills/workshop/types.js").SkillProposalReviewContext;
   /** Internal reviewers may inspect and draft bounded pending proposals, never change lifecycle state. */
   proposalOnly?: boolean;
   /** Allows proposal-only sessions to draft update proposals for existing live skills. */
@@ -511,6 +512,7 @@ export function createSkillWorkshopTool(options: SkillWorkshopToolOptions): AnyA
             createdBy: "skill-workshop",
             ...(options.autonomousCapture ? { autonomousCapture: true } : {}),
             ...(options.origin ? { origin: options.origin } : {}),
+            ...(options.reviewContext ? { reviewContext: options.reviewContext } : {}),
             goal,
             evidence,
           });
@@ -538,6 +540,7 @@ export function createSkillWorkshopTool(options: SkillWorkshopToolOptions): AnyA
             createdBy: "skill-workshop",
             ...(options.autonomousCapture || foregroundRepair ? { autonomousCapture: true } : {}),
             ...(options.origin ? { origin: options.origin } : {}),
+            ...(options.reviewContext ? { reviewContext: options.reviewContext } : {}),
             goal,
             evidence,
           });

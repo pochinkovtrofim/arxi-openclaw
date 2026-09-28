@@ -313,6 +313,7 @@ export async function prepareEmbeddedAttemptToolBase(params: {
               ...(attempt.skillWorkshopUpdateProposals ? { updateProposals: true } : {}),
               ...(attempt.skillWorkshopAutonomousCapture ? { autonomousCapture: true } : {}),
               origin: attempt.skillWorkshopOrigin,
+              reviewContext: attempt.skillWorkshopReviewContext,
               proposalMutationBudget: attempt.skillWorkshopProposalMutationBudget,
               proposalRevision: attempt.skillWorkshopProposalRevision,
               libraryAuthoring: attempt.skillLibraryAuthoring,
