@@ -481,6 +481,22 @@ async function main() {
             },
             mutateConfig: (cfg: OpenClawConfig) => ({
               ...cfg,
+              ...(fixturePath
+                ? {
+                    tools: {
+                      ...cfg.tools,
+                      // The QA coding profile only lists core tools. Grant these
+                      // two read-only fixture tools without widening the profile.
+                      alsoAllow: [
+                        ...new Set([
+                          ...(cfg.tools?.alsoAllow ?? []),
+                          "arxi_google_observation",
+                          "arxi_business_context",
+                        ]),
+                      ],
+                    },
+                  }
+                : {}),
               plugins: {
                 ...cfg.plugins,
                 ...(fixturePath ? { enabled: true } : {}),
