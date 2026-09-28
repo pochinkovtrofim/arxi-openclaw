@@ -39,6 +39,7 @@ export type AgentHarnessHookContext = {
   chatId?: string;
   channel?: string;
   channelContext?: PluginHookChannelContext;
+  personalPrompt?: PluginHookAgentContext["personalPrompt"];
 };
 
 /** Builds the sparse hook context object passed to agent harness plugin hooks. */
@@ -66,6 +67,7 @@ export function buildAgentHookContext(params: AgentHarnessHookContext): PluginHo
     ...(params.contextWindowReferenceTokens
       ? { contextWindowReferenceTokens: params.contextWindowReferenceTokens }
       : {}),
+    ...(params.personalPrompt ? { personalPrompt: params.personalPrompt } : {}),
     ...buildAgentHookContextIdentityFields({
       trigger: params.trigger,
       senderId: params.senderId,
