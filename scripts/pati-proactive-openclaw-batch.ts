@@ -61,15 +61,14 @@ function historyUsageEvidence(history: History | null) {
         row.cost.total >= 0
       );
     });
+  const validated = usage as Array<{ cost: { total: number }; totalTokens: number }>;
   return {
     assistantCount: assistant.length,
     coveredAssistantCount: complete ? assistant.length : 0,
     providerReportedCostUsd: complete
-      ? usage.reduce((sum, value) => sum + (value as { cost: { total: number } }).cost.total, 0)
+      ? validated.reduce((sum, value) => sum + value.cost.total, 0)
       : null,
-    reportedTokens: complete
-      ? usage.reduce((sum, value) => sum + (value as { totalTokens: number }).totalTokens, 0)
-      : null,
+    reportedTokens: complete ? validated.reduce((sum, value) => sum + value.totalTokens, 0) : null,
   };
 }
 
