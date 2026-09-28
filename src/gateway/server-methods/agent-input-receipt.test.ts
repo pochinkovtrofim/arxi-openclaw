@@ -6,7 +6,8 @@ import {
 import { resolveRequestedSessionAgentId } from "../session-request-agent.js";
 import { agentInputReceiptHandler } from "./agent-input-receipt.js";
 
-vi.mock("../../config/sessions/session-accessor.js", () => ({
+vi.mock("../../config/sessions/session-accessor.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../config/sessions/session-accessor.js")>()),
   loadSessionEntryReadOnly: vi.fn(),
   readSessionExternalInputReceipt: vi.fn(),
 }));
