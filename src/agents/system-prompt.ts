@@ -208,6 +208,78 @@ function prepareContextFilesForPrompt(contextFiles: EmbeddedContextFile[]) {
   );
 }
 
+export type EffectivePersonalPromptSegment = Readonly<{
+  name: "USER.md" | "MEMORY.md";
+  path: string;
+  text: string;
+  sha256: string;
+  mandatory: true;
+}>;
+
+/** The same filtered and sanitized USER/MEMORY content rendered in Project Context. */
+export function selectEffectivePersonalPromptSegments(params: {
+  contextFiles?: EmbeddedContextFile[];
+  activeProjectKeys?: readonly string[];
+  renderedPrompt: string;
+}): EffectivePersonalPromptSegment[] {
+  const files = prepareContextFilesForPrompt(
+    filterProjectScopedCuratedContextFiles(params).filter(
+      (file) => typeof file.path === "string" && file.path.trim().length > 0,
+    ),
+  );
+  const seen = new Set<string>();
+  return files.flatMap(({ file, basename }) => {
+    if (basename !== "user.md" && basename !== "memory.md") {
+      return [];
+    }
+    const content = sanitizeContextFileContentForPrompt(file.content);
+    if (!content.trim()) {
+      return [];
+    }
+    const contentDigest = createHash("sha256").update(content).digest("hex");
+    if (seen.has(contentDigest)) {
+      throw new Error("Effective personal prompt contains duplicate USER/MEMORY content");
+    }
+    seen.add(contentDigest);
+    const heading = `## ${file.path}\n`;
+    const headingMatches = params.renderedPrompt.split(heading).length - 1;
+    const headingStart = params.renderedPrompt.indexOf(heading);
+    const afterHeading = params.renderedPrompt.slice(headingStart + heading.length);
+    const separator = afterHeading.startsWith("\n") ? "\n" : "";
+    const renderedContentStart = headingStart + heading.length + separator.length;
+    const renderedContent = params.renderedPrompt.slice(renderedContentStart);
+    // The cache boundary splits the stable prefix with trimEnd(). When the last
+    // context file ends in whitespace, count the exact rendered segment rather
+    // than restoring whitespace that the provider never receives.
+    const trimmedContent = content.trimEnd();
+    const contentIsExact = renderedContent.startsWith(content);
+    const contentIsBoundaryTrimmed =
+      trimmedContent !== content &&
+      renderedContent.startsWith(trimmedContent) &&
+      renderedContent
+        .slice(trimmedContent.length)
+        .startsWith("\n<!-- /openclaw:attempt:STABLE -->");
+    if (headingMatches !== 1 || (!contentIsExact && !contentIsBoundaryTrimmed)) {
+      throw new Error(
+        `Effective USER/MEMORY source absent from rendered prompt (headingMatches=${headingMatches})`,
+      );
+    }
+    const text = params.renderedPrompt.slice(
+      headingStart,
+      renderedContentStart + (contentIsExact ? content.length : trimmedContent.length),
+    );
+    return [
+      {
+        name: basename === "user.md" ? ("USER.md" as const) : ("MEMORY.md" as const),
+        path: file.path,
+        text,
+        sha256: createHash("sha256").update(text).digest("hex"),
+        mandatory: true as const,
+      },
+    ];
+  });
+}
+
 function buildProjectContextSection(files: ReturnType<typeof prepareContextFilesForPrompt>) {
   if (files.length === 0) {
     return [];

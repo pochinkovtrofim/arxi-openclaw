@@ -318,6 +318,23 @@ export type PluginHookAgentContext = {
   activeProjectKeys?: string[];
   modelProviderId?: string;
   modelId?: string;
+  /**
+   * Native USER/MEMORY content that this selected model will receive. Available
+   * during before_prompt_build only; the counter is absent unless the selected
+   * provider has an exact model-bound input-token endpoint.
+   */
+  personalPrompt?: Readonly<{
+    legacySegments: readonly Readonly<{
+      name: "USER.md" | "MEMORY.md";
+      path: string;
+      text: string;
+      sha256: string;
+      mandatory: true;
+    }>[];
+    countInputTokens?: (input: { instructions: string; prompt: string }) => Promise<number>;
+    /** Register the exact packet text for a provider-bound combined budget gate. */
+    registerPreparedPacket?: (packet: { text: string; budgetTokens: number }) => void;
+  }>;
   messageProvider?: string;
   /** Channel/plugin id for channel-originated runs, e.g. `discord`. */
   channel?: string;

@@ -61,6 +61,8 @@ afterEach(() => {
 async function assembleWithCapturedHookCtx(
   runId: string,
   attemptOverrides?: Partial<EmbeddedRunAttemptParams>,
+  personalPrompt?: PluginHookAgentContext["personalPrompt"],
+  systemPromptOverride?: string,
 ) {
   const { session, sessionManager, modelRegistry } = await createTestSession();
   const admission = prepareSystemAgentRunAdmission({}, runId, "main", "provenance-hook-test");
@@ -101,6 +103,9 @@ async function assembleWithCapturedHookCtx(
         source: "test",
         handler: async (_event: unknown, ctx: PluginHookAgentContext) => {
           captured.push(ctx);
+          return systemPromptOverride === undefined
+            ? undefined
+            : { systemPrompt: systemPromptOverride };
         },
       },
     ],
@@ -117,7 +122,8 @@ async function assembleWithCapturedHookCtx(
     isRawModelRun: false,
     sessionAgentId: "main",
     runtimeModel: testModel.id,
-    systemPromptText: "Base system prompt",
+    systemPromptText: `Base system prompt\n${personalPrompt?.legacySegments.map(({ text }) => text).join("\n") ?? ""}`,
+    personalPrompt,
     applyPromptBuildToolsAllow: () => [],
     setActiveSessionSystemPrompt: vi.fn(),
     setLeasedSteering,
@@ -126,6 +132,53 @@ async function assembleWithCapturedHookCtx(
 }
 
 describe("prompt-build hook context input provenance", () => {
+  it("passes the selected native personal source and token counter to the registered hook", async () => {
+    const countInputTokens = vi.fn(async () => 42);
+    const personalPrompt: NonNullable<PluginHookAgentContext["personalPrompt"]> = {
+      legacySegments: [
+        {
+          name: "USER.md",
+          path: "/tmp/provenance-hook-test/USER.md",
+          text: "## USER.md\nOwner preference",
+          sha256: "source-digest",
+          mandatory: true,
+        },
+      ],
+      countInputTokens,
+    };
+    const { captured } = await assembleWithCapturedHookCtx(
+      "personal-source-hook",
+      undefined,
+      personalPrompt,
+    );
+    expect(captured[0]?.personalPrompt?.legacySegments).toEqual(personalPrompt.legacySegments);
+    expect(
+      await captured[0]?.personalPrompt?.countInputTokens?.({
+        instructions: "Owner preference",
+        prompt: "packet",
+      }),
+    ).toBe(42);
+    expect(countInputTokens).toHaveBeenCalledOnce();
+  });
+
+  it("rejects a later hook override that drops selected USER/MEMORY", async () => {
+    const segment = {
+      name: "USER.md" as const,
+      path: "/tmp/provenance-hook-test/USER.md",
+      text: "## USER.md\nOwner preference",
+      sha256: "source-digest",
+      mandatory: true as const,
+    };
+    await expect(
+      assembleWithCapturedHookCtx(
+        "personal-source-override",
+        undefined,
+        { legacySegments: [segment] },
+        "Overridden system prompt",
+      ),
+    ).rejects.toThrow("missing or duplicated after prompt hooks");
+  });
+
   it("carries the admitted private requester into prompt enrichment", async () => {
     const { captured } = await assembleWithCapturedHookCtx("business-owner-context", {
       senderId: "42",

@@ -113,6 +113,7 @@ export async function prepareEmbeddedAttemptPromptAssembly(input: {
   sessionAgentId: string;
   runtimeModel: string;
   systemPromptText: string;
+  personalPrompt?: PromptBuildHookContext["personalPrompt"];
   applyPromptBuildToolsAllow: (toolsAllow: string[] | undefined) => string[];
   setActiveSessionSystemPrompt: (systemPrompt: string) => void;
   setLeasedSteering: (lease: EmbeddedAttemptSteeringLease) => void;
@@ -153,6 +154,7 @@ export async function prepareEmbeddedAttemptPromptAssembly(input: {
     activeProjectKeys: [...(attempt.preparedModelRuntime?.activeProjectKeys ?? [])],
     modelProviderId: attempt.model.provider,
     modelId: attempt.model.id,
+    ...(input.personalPrompt ? { personalPrompt: input.personalPrompt } : {}),
     trigger: attempt.trigger,
     ...(attempt.trigger === "user" && attempt.senderId && attempt.chatId
       ? {
@@ -262,6 +264,14 @@ export async function prepareEmbeddedAttemptPromptAssembly(input: {
       });
   if (modelAwareSystemPrompt !== systemPromptText) {
     setSystemPrompt(modelAwareSystemPrompt);
+  }
+  // A later hook may replace the whole system prompt after native bootstrap
+  // selection. Never expose a source receipt for memory absent from the final
+  // prompt, or allow a second copy inserted by another hook.
+  for (const segment of input.personalPrompt?.legacySegments ?? []) {
+    if (systemPromptText.split(segment.text).length !== 2) {
+      throw new Error("Effective USER/MEMORY segment missing or duplicated after prompt hooks");
+    }
   }
 
   const routingSummary = describeProviderRequestRoutingSummary({

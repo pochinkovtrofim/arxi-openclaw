@@ -190,6 +190,20 @@ export const responsesPromptObserver = {
   },
 };
 
+// This guard runs after request sanitization and replay selection, immediately
+// before each SDK dispatch. Unlike onPayload, it observes the actual attempt.
+const PROVIDER_REQUEST_GATE = Symbol("openaiResponsesProviderRequestGate");
+type ResponsesProviderRequestGate = (request: OpenAIResponsesRequestParams) => Promise<void>;
+export const responsesProviderRequestGate = {
+  set(options: object, gate: ResponsesProviderRequestGate): void {
+    Reflect.set(options, PROVIDER_REQUEST_GATE, gate);
+  },
+  get(options: object | undefined): ResponsesProviderRequestGate | undefined {
+    const gate = options && Reflect.get(options, PROVIDER_REQUEST_GATE);
+    return typeof gate === "function" ? gate : undefined;
+  },
+};
+
 export type OpenAIResponsesReplayContext = {
   provider: string;
   api: Api;
