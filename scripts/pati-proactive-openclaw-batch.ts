@@ -77,7 +77,12 @@ type SessionUsage = {
 type History = { messages?: Array<Record<string, unknown>> };
 
 function historyUsageEvidence(history: History | null) {
-  const assistant = history?.messages?.filter((message) => message.role === "assistant") ?? [];
+  // A Codex commentary stream fallback is a projection of the same turn, not
+  // another provider call. It can carry zero usage before the terminal record.
+  const assistant =
+    history?.messages?.filter(
+      (message) => message.role === "assistant" && !message.openclawStreamFallback,
+    ) ?? [];
   const usage = assistant.map((message) => message.usage);
   const complete =
     assistant.length > 0 &&
@@ -460,6 +465,7 @@ async function main() {
       transportBaseUrl: lab.listenUrl,
       providerMode: "live-frontier",
       forcedRuntime: args.runtime,
+      ...(toolFixtures ? { enabledPluginIds: ["pati-holdout-read-fixture"] } : {}),
       ...(args.codexHome
         ? {
             // QA points the native user-home scope at a disposable credential copy.
@@ -477,6 +483,7 @@ async function main() {
               ...cfg,
               plugins: {
                 ...cfg.plugins,
+                ...(fixturePath ? { enabled: true } : {}),
                 ...(fixturePath
                   ? {
                       allow: [
@@ -512,6 +519,20 @@ async function main() {
       alternateModel: args.model,
       controlUiEnabled: false,
     });
+    let qaPluginState: string | null = null;
+    let qaPluginProbeError: string | null = null;
+    if (toolFixtures) {
+      try {
+        const listed = (await gateway.call("plugins.list", {})) as {
+          plugins?: Array<{ id: string; runtime?: { state?: string } }>;
+        };
+        qaPluginState =
+          listed.plugins?.find((plugin) => plugin.id === "pati-holdout-read-fixture")?.runtime
+            ?.state ?? "absent";
+      } catch (cause) {
+        qaPluginProbeError = createQaGatewayCliError(cause).message;
+      }
+    }
     for (const request of requests) {
       const sessionKey = sessions.get(request.id);
       if (!sessionKey) {
@@ -601,6 +622,26 @@ async function main() {
           ? totals.totalCost
           : null;
       const assistantUsage = historyUsageEvidence(history);
+      let qaEffectiveToolIds: string[] | null = null;
+      let qaToolProbeError: string | null = null;
+      if (toolFixtures) {
+        try {
+          const inventory = (await gateway.call("tools.effective", {
+            sessionKey,
+            agentId: "qa",
+          })) as { groups?: Array<{ tools?: Array<{ id?: string }> }> };
+          qaEffectiveToolIds =
+            inventory.groups
+              ?.flatMap((group) => group.tools ?? [])
+              .map((tool) => tool.id)
+              .filter(
+                (id): id is string =>
+                  id === "arxi_google_observation" || id === "arxi_business_context",
+              ) ?? [];
+        } catch (cause) {
+          qaToolProbeError = createQaGatewayCliError(cause).message;
+        }
+      }
       const toolReadEvents =
         eventsPath && toolFixtures
           ? readToolEvents(
@@ -644,6 +685,14 @@ async function main() {
         contextReadEvents,
         toolReadRefs: toolReadEvents?.map((event) => event.ref) ?? null,
         toolReadEvents,
+        qaToolAvailability: toolFixtures
+          ? {
+              pluginState: qaPluginState,
+              pluginProbeError: qaPluginProbeError,
+              effectiveToolIds: qaEffectiveToolIds,
+              toolProbeError: qaToolProbeError,
+            }
+          : null,
         events: history?.messages ?? [],
         usageEvidence: {
           source: "sessions.usage",
