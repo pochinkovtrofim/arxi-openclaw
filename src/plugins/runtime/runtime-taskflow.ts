@@ -1,7 +1,7 @@
 // Runtime task-flow helpers adapt plugin task descriptors into executable task flows.
 import type { DatabaseSync } from "node:sqlite";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { resolvePacedNextRunAtMs } from "../../cron/pacing.js";
+import { resolvePacedNextRunWithObligationAtMs } from "../../cron/pacing.js";
 import { tryCronScheduleIdentity } from "../../cron/schedule-identity.js";
 import { loadedCronStoreFromRows, loadCronRows } from "../../cron/store/row-codec.js";
 import {
@@ -236,10 +236,11 @@ function createBoundTaskFlowRuntime(params: {
         if (!pacing) {
           throw new Error("Managed Flow obligation current Automation pacing is unavailable.");
         }
-        const scheduledAtMs = resolvePacedNextRunAtMs({
+        const scheduledAtMs = resolvePacedNextRunWithObligationAtMs({
           nowMs: now,
           delayMs: input.obligation.triggerAtMs - now,
           pacing,
+          scheduledAtMs: input.obligation.triggerAtMs,
         });
         if (
           typeof scheduledAtMs !== "number" ||

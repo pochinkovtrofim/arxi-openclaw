@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resolvePacedNextRunAtMs } from "../../cron/pacing.js";
 import { tryCronScheduleIdentity } from "../../cron/schedule-identity.js";
 import { saveCronJobsStore } from "../../cron/store.js";
 import { cronStoreKey } from "../../cron/store/key.js";
@@ -63,6 +64,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  vi.useRealTimers();
   clearAgentRunContext(runId);
   await resetRuntimeTaskTestState();
   await saveCronJobsStore(storePath, { version: 1, jobs: [] });
@@ -86,6 +88,53 @@ function receipts() {
 }
 
 describe("current Automation atomic managed Flow contract", () => {
+  it("wakes at an earlier Flow deadline while retaining the ordinary pacing ceiling", async () => {
+    const now = Date.now();
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const pacing = { min: "5m", max: "5m" };
+    job = { ...job, pacing };
+    await saveCronJobsStore(storePath, { version: 1, jobs: [job] });
+    const identity = tryCronScheduleIdentity(job);
+    if (!identity) {
+      throw new Error("expected valid schedule");
+    }
+    clearAgentRunContext(runId);
+    claimAgentRunContext(runId, {
+      cronRunsByJobId: new Map([
+        [
+          job.id,
+          {
+            pacingEnabled: true,
+            scheduledAutomation: true,
+            cronStoreKey: cronStoreKey(storePath),
+            cronScheduleIdentity: identity,
+          },
+        ],
+      ]),
+    });
+    expect(resolvePacedNextRunAtMs({ nowMs: now, delayMs: 180_000, pacing })).toBe(now + 300_000);
+
+    const flows = bound();
+    const distant = flows.createManagedWithCurrentAutomationObligation({
+      flow: { controllerId, goal: "distant", status: "waiting" },
+      obligation: trigger(600_000),
+    });
+    expect(distant.nextRunAtMs).toBe(now + 300_000);
+    expect(receipts().find((entry) => entry.flowId === distant.flow.flowId)?.scheduledAtMs).toBe(
+      now + 300_000,
+    );
+
+    const earlier = flows.createManagedWithCurrentAutomationObligation({
+      flow: { controllerId, goal: "earlier", status: "waiting" },
+      obligation: trigger(180_000),
+    });
+    expect(earlier.nextRunAtMs).toBe(now + 180_000);
+    expect(receipts().find((entry) => entry.flowId === earlier.flow.flowId)?.scheduledAtMs).toBe(
+      now + 180_000,
+    );
+  });
+
   it("commits history and two Flow obligations with the earliest unchanged paced timestamp", () => {
     const flows = bound();
     const history = flows.registerHistoryController({ controllerId });
