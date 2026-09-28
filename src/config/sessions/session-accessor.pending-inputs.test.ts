@@ -30,6 +30,7 @@ import {
   listSessionPendingInputReceipts,
   listSessionPendingInputs,
   readSessionPendingInput,
+  readSessionExternalInputReceipt,
   SessionInputProcessingUncertainError,
   stageSessionPendingInput,
   withSessionPendingInputPersistence,
@@ -156,14 +157,24 @@ describe("accepted input custody", () => {
   });
 
   it("does not reexecute a consumed external input whose terminal receipt was lost", async () => {
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:ambiguous:user", "external:ambiguous"),
+    ).toEqual({ status: "absent" });
     const receipt = await stage("external:ambiguous", {
       trackCompletion: true,
       rejectCommittedWithoutCompletion: true,
     });
     await promote(receipt);
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:ambiguous:user", "external:ambiguous"),
+    ).toEqual({ status: "uncertain", runId: "external:ambiguous" });
     receipt.finish("interrupted");
     rotateAgentEventLifecycleGeneration();
     closeOpenClawAgentDatabasesForTest();
+
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:ambiguous:user", "external:ambiguous"),
+    ).toEqual({ status: "uncertain", runId: "external:ambiguous" });
 
     await expect(
       stage("external:ambiguous", {
@@ -172,7 +183,10 @@ describe("accepted input custody", () => {
       }),
     ).rejects.toBeInstanceOf(SessionInputProcessingUncertainError);
     expect(
-      (await loadTranscriptEvents(scope())).filter((event) => event.type === "message"),
+      (await loadTranscriptEvents(scope())).filter(
+        (event) =>
+          event && typeof event === "object" && "type" in event && event.type === "message",
+      ),
     ).toHaveLength(1);
   });
 
@@ -187,6 +201,10 @@ describe("accepted input custody", () => {
     rotateAgentEventLifecycleGeneration();
     closeOpenClawAgentDatabasesForTest();
 
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:completed:user", "external:completed"),
+    ).toMatchObject({ status: "completed", runId: "external:completed" });
+
     const replay = await stage("external:completed", {
       trackCompletion: true,
       rejectCommittedWithoutCompletion: true,
@@ -194,6 +212,18 @@ describe("accepted input custody", () => {
     expect(replay.state).toBe("consumed");
     expect(replay.completion).toMatchObject({ status: "ok", reason: "completed" });
     expect(() => replay.run(() => {})).toThrow("already completed");
+  });
+
+  it("does not certify a failed external outcome as processed", async () => {
+    const receipt = await stage("external:failed", {
+      trackCompletion: true,
+      rejectCommittedWithoutCompletion: true,
+    });
+    await promote(receipt);
+    receipt.complete!(buildAgentRunTerminalOutcome({ status: "error" }));
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:failed:user", "external:failed"),
+    ).toEqual({ status: "uncertain", runId: "external:failed" });
   });
 
   it("mirrors a correlated input to another session without borrowing or consuming source custody", async () => {

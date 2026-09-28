@@ -20,44 +20,44 @@ describe("external input replay custody", () => {
   it.each([
     { backend: true, expected: true },
     { backend: false, expected: false },
-  ])("tracks stable Owner ingress only with backend authority (backend=$backend)", async ({
-    backend,
-    expected,
-  }) => {
-    const sessionEntry: SessionEntry = { sessionId: "session-1", updatedAt: 1 };
-    await prepareAgentRunUserTurn({
-      assertCurrent: () => {},
-      request: {
+  ])(
+    "tracks stable Owner ingress only with backend authority (backend=$backend)",
+    async ({ backend, expected }) => {
+      const sessionEntry: SessionEntry = { sessionId: "session-1", updatedAt: 1 };
+      await prepareAgentRunUserTurn({
+        assertCurrent: () => {},
+        request: {
+          message: "Synthetic request",
+          idempotencyKey: `external:${"a".repeat(64)}`,
+          channel: "arxi",
+          to: "owner",
+          admittedConversationId: "telegram-private:synthetic",
+        },
+        cfg: {},
+        sessionEntry,
+        resolvedSessionKey: "agent:main:external:synthetic",
+        admittedSessionId: sessionEntry.sessionId,
+        activeSessionAgentId: "main",
+        suppressVisibleSessionEffects: false,
+        requestedPromptPersistenceSuppression: false,
+        canUseInternalRuntimeHandoff: backend,
         message: "Synthetic request",
-        idempotencyKey: `external:${"a".repeat(64)}`,
-        channel: "arxi",
-        to: "owner",
-        admittedConversationId: "telegram-private:synthetic",
-      },
-      cfg: {},
-      sessionEntry,
-      resolvedSessionKey: "agent:main:external:synthetic",
-      admittedSessionId: sessionEntry.sessionId,
-      activeSessionAgentId: "main",
-      suppressVisibleSessionEffects: false,
-      requestedPromptPersistenceSuppression: false,
-      canUseInternalRuntimeHandoff: backend,
-      message: "Synthetic request",
-      effectiveTranscriptInputText: "Synthetic request",
-      images: [],
-      offloadedRefs: [],
-      runId: `external:${"a".repeat(64)}`,
-      client: backend
-        ? { connect: { client: { mode: "backend" }, scopes: ["operator.write"] } }
-        : null,
-      context: { logGateway: { warn: vi.fn() } },
-    } as never);
+        effectiveTranscriptInputText: "Synthetic request",
+        images: [],
+        offloadedRefs: [],
+        runId: `external:${"a".repeat(64)}`,
+        client: backend
+          ? { connect: { client: { mode: "backend" }, scopes: ["operator.write"] } }
+          : null,
+        context: { logGateway: { warn: vi.fn() } },
+      } as never);
 
-    expect(createRecorder).toHaveBeenCalledWith(
-      expect.objectContaining({
-        trackInputCompletion: expected,
-        rejectCommittedWithoutCompletion: expected,
-      }),
-    );
-  });
+      expect(createRecorder).toHaveBeenCalledWith(
+        expect.objectContaining({
+          trackInputCompletion: expected,
+          rejectCommittedWithoutCompletion: expected,
+        }),
+      );
+    },
+  );
 });

@@ -10,6 +10,7 @@ export {
   listSessionPendingInputReceipts,
   listSessionPendingInputs,
   readSessionPendingInput,
+  readSessionExternalInputReceipt,
   readSessionSubmittedInput,
   stageSessionPendingInput,
   withSessionPendingInputPersistence,
@@ -17,6 +18,7 @@ export {
   type SessionPendingInput,
   type SessionPendingInputPage,
   type SessionPendingInputReceipt,
+  type SessionExternalInputReceipt,
 } from "./session-accessor.pending-inputs.js";
 export type {
   BranchSessionFromCompactionCheckpointParams,
