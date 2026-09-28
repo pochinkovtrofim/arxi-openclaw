@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   CODEX_INFERENCE_GENERATION_KEY,
+  CodexInferenceNeedsExpansionError,
   createCodexInferenceContext,
 } from "./inference-context.js";
 import type { JsonObject } from "./protocol.js";
@@ -22,6 +23,36 @@ function request(threadId: string, generation?: string, extra: JsonObject = {}):
 }
 
 describe("parent-local inference context", () => {
+  it("shows the final native prompt and continuation tool output to one generation gate", () => {
+    const seen: JsonObject[] = [];
+    const context = createCodexInferenceContext(() => {});
+    const registered = context.register({
+      threadId: "root",
+      text: "owner-local header",
+      signal: new AbortController().signal,
+      assertCurrent: () => {},
+      preEgressGate: (body) => {
+        seen.push(body);
+        if (JSON.stringify(body.input).includes("oversized source")) {
+          throw new CodexInferenceNeedsExpansionError();
+        }
+      },
+    });
+    const first = request("root", registered.generation);
+    first.input = [{ type: "message", role: "user", content: "packet" }];
+    context.prepare(first);
+    const continuation = {
+      ...request("root", registered.generation),
+      input: [{ type: "function_call_output", call_id: "read-1", output: "oversized source" }],
+      previous_response_id: "response-1",
+    };
+    expect(() => context.prepare(continuation)).toThrow(CodexInferenceNeedsExpansionError);
+    expect(seen[0]?.instructions).toBe("native base\n\nowner-local header");
+    expect(seen[0]?.input).toEqual(first.input);
+    expect(seen[1]?.input).toEqual(continuation.input);
+    context.close();
+  });
+
   it("refreshes and removes overlays for native input-only requests without changing history", () => {
     const context = createCodexInferenceContext(() => {});
     const register = (text: string) =>
