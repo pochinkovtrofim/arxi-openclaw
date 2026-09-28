@@ -25,6 +25,7 @@ export type {
   WizardNotFoundErrorDetails,
   SetupAdmissionBusyErrorDetails,
   SessionWorkspaceRecoveryRequiredErrorDetails,
+  InputProcessingUncertainErrorDetails,
 } from "./gateway-error-details.js";
 export {
   CronJobNotFoundErrorDetailsSchema,
@@ -37,6 +38,7 @@ export {
   WizardNotFoundErrorDetailsSchema,
   SetupAdmissionBusyErrorDetailsSchema,
   SessionWorkspaceRecoveryRequiredErrorDetailsSchema,
+  InputProcessingUncertainErrorDetailsSchema,
   buildMissingScopeErrorDetails,
   errorShape,
   missingScopeErrorShape,

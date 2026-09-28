@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { trackSqliteStatementExecutions } from "../../../test/helpers/sqlite-statement-execution-counter.js";
+import { buildAgentRunTerminalOutcome } from "../../agents/agent-run-terminal-outcome.js";
 import { MAX_PAYLOAD_BYTES } from "../../gateway/server-constants.js";
 import { rotateAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
@@ -29,6 +30,7 @@ import {
   listSessionPendingInputReceipts,
   listSessionPendingInputs,
   readSessionPendingInput,
+  SessionInputProcessingUncertainError,
   stageSessionPendingInput,
   withSessionPendingInputPersistence,
   type SessionPendingInputReceipt,
@@ -167,10 +169,29 @@ describe("accepted input custody", () => {
         trackCompletion: true,
         rejectCommittedWithoutCompletion: true,
       }),
-    ).rejects.toMatchObject({ detailCode: "INPUT_PROCESSING_UNCERTAIN" });
+    ).rejects.toBeInstanceOf(SessionInputProcessingUncertainError);
     expect(
       (await loadTranscriptEvents(scope())).filter((event) => event.type === "message"),
     ).toHaveLength(1);
+  });
+
+  it("replays the same completed external run after lifecycle recovery", async () => {
+    const receipt = await stage("external:completed", {
+      trackCompletion: true,
+      rejectCommittedWithoutCompletion: true,
+    });
+    await promote(receipt);
+    receipt.complete!(buildAgentRunTerminalOutcome({ status: "ok" }));
+    receipt.finish("interrupted");
+    rotateAgentEventLifecycleGeneration();
+
+    const replay = await stage("external:completed", {
+      trackCompletion: true,
+      rejectCommittedWithoutCompletion: true,
+    });
+    expect(replay.state).toBe("consumed");
+    expect(replay.completion).toMatchObject({ status: "ok", reason: "completed" });
+    expect(() => replay.run(() => {})).toThrow("already completed");
   });
 
   it("mirrors a correlated input to another session without borrowing or consuming source custody", async () => {

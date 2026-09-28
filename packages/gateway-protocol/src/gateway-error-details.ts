@@ -41,6 +41,7 @@ export const GatewayErrorDetailCodes = {
   SETUP_ADMISSION_BUSY: "SETUP_ADMISSION_BUSY",
   GITHUB_PUBLICATION_SELECTION_REJECTED: "GITHUB_PUBLICATION_SELECTION_REJECTED",
   SESSION_WORKSPACE_RECOVERY_REQUIRED: "SESSION_WORKSPACE_RECOVERY_REQUIRED",
+  INPUT_PROCESSING_UNCERTAIN: "INPUT_PROCESSING_UNCERTAIN",
 } as const;
 
 /** Missing cron automation identified by its exact store key. */
@@ -122,6 +123,11 @@ export type SessionWorkspaceRecoveryRequiredErrorDetails = {
   source: SessionMoveExpectedSource;
 };
 
+/** A durable input was consumed, but its run has no terminal processing receipt. */
+export type InputProcessingUncertainErrorDetails = {
+  code: typeof GatewayErrorDetailCodes.INPUT_PROCESSING_UNCERTAIN;
+};
+
 /** Structured details emitted by method-level failures. */
 export type GatewayErrorDetails =
   | CronJobNotFoundErrorDetails
@@ -135,7 +141,8 @@ export type GatewayErrorDetails =
   | WizardNotFoundErrorDetails
   | SetupAdmissionBusyErrorDetails
   | GitHubPublicationSelectionRejectedErrorDetails
-  | SessionWorkspaceRecoveryRequiredErrorDetails;
+  | SessionWorkspaceRecoveryRequiredErrorDetails
+  | InputProcessingUncertainErrorDetails;
 
 type GatewayErrorLike = {
   code?: unknown;
