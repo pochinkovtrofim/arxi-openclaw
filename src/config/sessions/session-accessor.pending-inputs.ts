@@ -81,6 +81,13 @@ export type SessionPendingInputReceipt = {
   completion?: AgentRunTerminalOutcome;
   complete?: (outcome: AgentRunTerminalOutcome) => AgentRunTerminalOutcome;
 };
+
+/** The input reached the transcript, so a fresh run could repeat visible effects. */
+export class SessionInputProcessingUncertainError extends Error {
+  constructor() {
+    super("Input processing is uncertain; reconcile the original run before retrying");
+  }
+}
 const receiptOwners = new WeakMap<SessionPendingInputReceipt, SessionPendingInputOwner>();
 
 function ownerReceipt(owner: SessionPendingInputOwner): SessionPendingInputReceipt {
@@ -188,6 +195,8 @@ export async function stageSessionPendingInput(
     requestFingerprint?: string;
     /** Records processing completion separately from canonical transcript consumption. */
     trackCompletion?: boolean;
+    /** External ingress may resume only before transcript consumption or after a final receipt. */
+    rejectCommittedWithoutCompletion?: boolean;
     message: PersistedUserTurnMessage;
     prepareMessageAfterIdempotencyCheck?: (
       message: PersistedUserTurnMessage,
@@ -275,6 +284,9 @@ export async function stageSessionPendingInput(
           throw new Error("Pending input idempotency key conflicts with the accepted input");
         }
         if (existing.consumed_event_id != null) {
+          if (options.rejectCommittedWithoutCompletion) {
+            throw new SessionInputProcessingUncertainError();
+          }
           return {
             state: "consumed",
             inputId: existing.input_id,
@@ -317,6 +329,9 @@ export async function stageSessionPendingInput(
           if (stableStringify(stablePrepared) !== stableStringify(stableCommitted)) {
             throw new Error("Input completion retry conflicts with the committed input");
           }
+        }
+        if (options.rejectCommittedWithoutCompletion) {
+          throw new SessionInputProcessingUncertainError();
         }
         // Committed transcript replay keeps its existing contract and never creates new custody.
         return {

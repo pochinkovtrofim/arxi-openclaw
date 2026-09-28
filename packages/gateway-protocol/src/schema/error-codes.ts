@@ -28,6 +28,7 @@ export {
   type SetupAdmissionBusyErrorDetails,
   type GitHubPublicationSelectionRejectedErrorDetails,
   type SessionWorkspaceRecoveryRequiredErrorDetails,
+  type InputProcessingUncertainErrorDetails,
   readGitHubPublicationSelectionRejectedError,
   readCronJobNotFoundError,
   isMcpAppViewExpiredError,
@@ -70,6 +71,10 @@ export const UnknownAgentIdErrorDetailsSchema = closedObject({
 
 export const SetupAdmissionBusyErrorDetailsSchema = closedObject({
   code: Type.Literal(GatewayErrorDetailCodes.SETUP_ADMISSION_BUSY),
+});
+
+export const InputProcessingUncertainErrorDetailsSchema = closedObject({
+  code: Type.Literal(GatewayErrorDetailCodes.INPUT_PROCESSING_UNCERTAIN),
 });
 
 export const GitHubPublicationSelectionRejectedErrorDetailsSchema = closedObject({
@@ -120,6 +125,7 @@ export const GatewayErrorDetailsSchema = Type.Union([
   UnknownAgentIdErrorDetailsSchema,
   WizardNotFoundErrorDetailsSchema,
   SetupAdmissionBusyErrorDetailsSchema,
+  InputProcessingUncertainErrorDetailsSchema,
   GitHubPublicationSelectionRejectedErrorDetailsSchema,
   SessionWorkspaceRecoveryRequiredErrorDetailsSchema,
 ]);
