@@ -261,6 +261,7 @@ describe("listGatewayMethods", () => {
       "plugins.skills.read",
       "diagnostics.heapProfile",
       "desktop.release",
+      "agent.inputReceipt",
     ]);
   });
 
