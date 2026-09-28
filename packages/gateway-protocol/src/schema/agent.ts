@@ -386,6 +386,13 @@ export const AgentWaitParamsSchema = closedObject({
   timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
 });
 
+/** Backend inspection of one exact external input, without admitting a new turn. */
+export const AgentInputReceiptParamsSchema = closedObject({
+  sessionKey: NonEmptyString,
+  idempotencyKey: Type.String({ pattern: "^external:[0-9a-f]{64}:user$" }),
+  expectedRunId: Type.String({ pattern: "^external:[0-9a-f]{64}$" }),
+});
+
 /** Wake request from external schedulers or devices into an agent session. */
 export const WakeParamsSchema = Type.Object(
   {
@@ -422,4 +429,5 @@ export type ConversationTurnResult = Static<typeof ConversationTurnResultSchema>
 export type MessageActionParams = Static<typeof MessageActionParamsSchema>;
 export type PollParams = Static<typeof PollParamsSchema>;
 export type AgentWaitParams = Static<typeof AgentWaitParamsSchema>;
+export type AgentInputReceiptParams = Static<typeof AgentInputReceiptParamsSchema>;
 export type WakeParams = Static<typeof WakeParamsSchema>;

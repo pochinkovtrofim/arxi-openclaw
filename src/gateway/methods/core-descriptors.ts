@@ -678,4 +678,6 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["plugins.skills.read", "plugins", "operator.read", "2026.9"],
   ["diagnostics.heapProfile", "diagnostics", "operator.admin", "2026.9"],
   ["desktop.release", "environments", "operator.admin", "2026.9", { startup: true }],
+  // Backend-only inspection of one external input; the handler enforces backend authority.
+  ["agent.inputReceipt", "agent", "operator.read", "2026.9"],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];
