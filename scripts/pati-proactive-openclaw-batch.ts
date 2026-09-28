@@ -1,6 +1,6 @@
 /** One isolated QA gateway for a prepared Pati frozen holdout JSONL batch. */
 import { createHash, randomUUID } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { createQaGatewayChild } from "../extensions/qa-lab/src/gateway-child.js";
@@ -58,11 +58,16 @@ function parseArgs(argv: string[]) {
   if (!/^[0-9a-f]{40}$/u.test(sourceSha)) {
     throw new Error("--source-sha must be a full Git SHA");
   }
+  const runtime = required("--runtime");
+  if (runtime !== "codex" && runtime !== "openclaw") {
+    throw new Error("--runtime must be codex or openclaw");
+  }
   return {
     input: required("--input"),
     output: required("--output"),
     policyFile: required("--policy-file"),
     sourceSha,
+    runtime,
     mode,
     model: options.get("--model") ?? "openai/gpt-5.6-luna",
     timeoutMs,
@@ -116,6 +121,15 @@ function completed(waited: { status?: string; error?: string }) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const repoRoot = path.resolve(import.meta.dirname, "..");
+  for (const pluginId of ["qa-channel", "qa-lab"]) {
+    try {
+      await access(path.join(repoRoot, "dist", "extensions", pluginId, "index.js"));
+    } catch {
+      throw new Error(
+        `missing ${pluginId} QA runtime; build with OPENCLAW_BUILD_PRIVATE_QA=1 before running the batch`,
+      );
+    }
+  }
   const preparedBytes = await readFile(args.input);
   const preparedSha256 = createHash("sha256").update(preparedBytes).digest("hex");
   const requests = readRequests(preparedBytes.toString("utf8"));
@@ -140,6 +154,7 @@ async function main() {
       transport: transportOwner.adapter,
       transportBaseUrl: lab.listenUrl,
       providerMode: "live-frontier",
+      forcedRuntime: args.runtime,
       primaryModel: args.model,
       alternateModel: args.model,
       controlUiEnabled: false,
@@ -231,6 +246,7 @@ async function main() {
         preparedSha256,
         inputSha256,
         model: args.model,
+        runtime: args.runtime,
         runId,
         completed: Boolean(waited && completed(waited) && reply?.trim()),
         elapsedMs: Date.now() - startedAt,
