@@ -153,6 +153,26 @@ describe("accepted input custody", () => {
     expect(() => receipt.run(() => {})).toThrow("ownership ended");
   });
 
+  it("does not reexecute a consumed external input whose terminal receipt was lost", async () => {
+    const receipt = await stage("external:ambiguous", {
+      trackCompletion: true,
+      rejectCommittedWithoutCompletion: true,
+    });
+    await promote(receipt);
+    receipt.finish("interrupted");
+    rotateAgentEventLifecycleGeneration();
+
+    await expect(
+      stage("external:ambiguous", {
+        trackCompletion: true,
+        rejectCommittedWithoutCompletion: true,
+      }),
+    ).rejects.toMatchObject({ detailCode: "INPUT_PROCESSING_UNCERTAIN" });
+    expect(
+      (await loadTranscriptEvents(scope())).filter((event) => event.type === "message"),
+    ).toHaveLength(1);
+  });
+
   it("mirrors a correlated input to another session without borrowing or consuming source custody", async () => {
     const target = {
       ...scope(),
