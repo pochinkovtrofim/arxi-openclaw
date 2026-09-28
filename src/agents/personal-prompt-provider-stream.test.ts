@@ -25,7 +25,10 @@ function makeGate(
       model: "gpt-6-sol",
       instructions: `System\n${segmentText}`,
       input: [
-        { role: "user", content: [{ type: "input_text", text: params.packet ?? packetText }] },
+        {
+          role: "user" as const,
+          content: [{ type: "input_text" as const, text: params.packet ?? packetText }],
+        },
       ],
       stream: true,
     };

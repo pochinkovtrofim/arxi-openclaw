@@ -76,7 +76,7 @@ function run(onPayload?: (body: Record<string, unknown>) => Record<string, unkno
 describe("native final Responses personal context gate", () => {
   it("checks the sanitized provider attempt, counts combined source, and records a receipt", async () => {
     const test = run((body) => ({ ...body, metadata: { later: "override" } }));
-    await test.stream.result();
+    await (await test.stream).result();
     expect(sdk.requests).toHaveLength(1);
     expect(sdk.requests[0]?.store).toBe(false);
     expect(sdk.requests[0]?.metadata).toMatchObject({ later: "override" });
@@ -88,7 +88,7 @@ describe("native final Responses personal context gate", () => {
 
   it("blocks oversized mandatory context and late duplicate before SDK dispatch", async () => {
     const oversized = run(undefined, 9_200);
-    const oversizedResult = await oversized.stream.result();
+    const oversizedResult = await (await oversized.stream).result();
     expect(oversizedResult.errorMessage).toContain("needs_expansion");
     expect(sdk.requests).toHaveLength(0);
 
@@ -99,7 +99,7 @@ describe("native final Responses personal context gate", () => {
         { role: "user", content: [{ type: "input_text", text: packet }] },
       ],
     }));
-    const duplicateResult = await duplicate.stream.result();
+    const duplicateResult = await (await duplicate.stream).result();
     expect(duplicateResult.errorMessage).toContain("packet missing or duplicated");
     expect(sdk.requests).toHaveLength(0);
     expect(duplicate.countResponseInputTokens).not.toHaveBeenCalled();
