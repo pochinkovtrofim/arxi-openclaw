@@ -77,37 +77,50 @@ type SessionUsage = {
 type History = { messages?: Array<Record<string, unknown>> };
 
 function historyUsageEvidence(history: History | null) {
-  // A Codex commentary stream fallback is a projection of the same turn, not
-  // another provider call. It can carry zero usage before the terminal record.
+  // Codex projects tool turns into assistant rows with zero usage. The settled
+  // turn owns the provider token receipt; projections must not invalidate it.
   const assistant =
     history?.messages?.filter(
       (message) => message.role === "assistant" && !message.openclawStreamFallback,
     ) ?? [];
-  const usage = assistant.map((message) => message.usage);
-  const complete =
-    assistant.length > 0 &&
-    usage.every((value) => {
-      if (!value || typeof value !== "object") {
-        return false;
-      }
-      const row = value as { totalTokens?: unknown; cost?: { total?: unknown } };
-      return (
-        typeof row.totalTokens === "number" &&
-        Number.isFinite(row.totalTokens) &&
-        row.totalTokens > 0 &&
-        typeof row.cost?.total === "number" &&
-        Number.isFinite(row.cost.total) &&
-        row.cost.total >= 0
-      );
-    });
-  const validated = usage as Array<{ cost: { total: number }; totalTokens: number }>;
+  const metered: Array<{ totalTokens: number; cost: { total: number } }> = [];
+  let projectionCount = 0;
+  let invalidCount = 0;
+  for (const message of assistant) {
+    const value = message.usage;
+    if (!value || typeof value !== "object") {
+      invalidCount += 1;
+      continue;
+    }
+    const row = value as { totalTokens?: unknown; cost?: { total?: unknown } };
+    if (
+      typeof row.totalTokens !== "number" ||
+      !Number.isFinite(row.totalTokens) ||
+      row.totalTokens < 0 ||
+      typeof row.cost?.total !== "number" ||
+      !Number.isFinite(row.cost.total) ||
+      row.cost.total < 0
+    ) {
+      invalidCount += 1;
+    } else if (row.totalTokens === 0 && row.cost.total === 0) {
+      projectionCount += 1;
+    } else if (row.totalTokens > 0) {
+      metered.push(row as { totalTokens: number; cost: { total: number } });
+    } else {
+      invalidCount += 1;
+    }
+  }
+  const complete = assistant.length > 0 && invalidCount === 0 && metered.length > 0;
   return {
     assistantCount: assistant.length,
+    projectionCount,
+    meteredCount: metered.length,
+    invalidCount,
     coveredAssistantCount: complete ? assistant.length : 0,
     providerReportedCostUsd: complete
-      ? validated.reduce((sum, value) => sum + value.cost.total, 0)
+      ? metered.reduce((sum, value) => sum + value.cost.total, 0)
       : null,
-    reportedTokens: complete ? validated.reduce((sum, value) => sum + value.totalTokens, 0) : null,
+    reportedTokens: complete ? metered.reduce((sum, value) => sum + value.totalTokens, 0) : null,
   };
 }
 
@@ -667,12 +680,15 @@ async function main() {
               knownSessionKeys,
             )
           : null;
-      const costUsd = sessionCostUsd ?? assistantUsage.providerReportedCostUsd;
+      const providerReportedCostUsd = sessionCostUsd ?? assistantUsage.providerReportedCostUsd;
+      // Codex OAuth reports token usage but subscription metadata is not a
+      // measured billed spend. Keep monetary cost unknown, including reported 0.
+      const costUsd = args.runtime === "codex" ? null : providerReportedCostUsd;
       const costBasis =
-        sessionCostUsd !== null
-          ? "sessions_usage_provider_reported"
-          : assistantUsage.providerReportedCostUsd !== null
-            ? "assistant_history_provider_reported"
+        args.runtime === "codex"
+          ? "subscription_metadata_billed_spend_unknown"
+          : providerReportedCostUsd !== null
+            ? "provider_reported"
             : "unavailable";
       const record = {
         id: request.id,
@@ -716,7 +732,8 @@ async function main() {
           totals: totals ?? null,
           cacheStatus: usage?.cacheStatus ?? null,
           assistantUsage,
-          billingBasis: "provider_reported_subscription_metadata_not_billed_spend",
+          providerReportedCostUsd,
+          billingBasis: costBasis,
         },
         waited,
         error,
