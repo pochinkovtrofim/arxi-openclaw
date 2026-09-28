@@ -410,6 +410,7 @@ describe("Workshop draft-only review through the real provider and tool owners",
               },
             });
             expect(stored?.content).toContain(proposalBody);
+            expect(stored?.content).not.toContain("project=app region=us service=api health=/ready");
             await expect(fs.stat(stored!.record.target.skillFile)).rejects.toMatchObject({
               code: "ENOENT",
             });
