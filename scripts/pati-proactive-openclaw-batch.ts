@@ -8,6 +8,7 @@ import { createQaGatewayCliError } from "../extensions/qa-lab/src/gateway-log-re
 import { startQaLabServer } from "../extensions/qa-lab/src/lab-server.js";
 import { createQaTransportAdapter } from "../extensions/qa-lab/src/qa-transport-registry.js";
 import { resolveQaGatewayTimeoutWithGraceMs } from "../extensions/qa-lab/src/timer-timeouts.js";
+import type { OpenClawConfig } from "../src/config/types.openclaw.js";
 
 type PreparedInput = {
   authorizedSources: string[];
@@ -62,12 +63,17 @@ function parseArgs(argv: string[]) {
   if (runtime !== "codex" && runtime !== "openclaw") {
     throw new Error("--runtime must be codex or openclaw");
   }
+  const codexHome = runtime === "codex" ? required("--codex-home") : undefined;
+  if (codexHome && !path.isAbsolute(codexHome)) {
+    throw new Error("--codex-home must be an absolute isolated directory");
+  }
   return {
     input: required("--input"),
     output: required("--output"),
     policyFile: required("--policy-file"),
     sourceSha,
     runtime: runtime as "codex" | "openclaw",
+    codexHome,
     mode,
     model: options.get("--model") ?? "openai/gpt-5.6-luna",
     timeoutMs,
@@ -130,6 +136,9 @@ async function main() {
       );
     }
   }
+  if (args.codexHome) {
+    await access(path.join(args.codexHome, "auth.json"));
+  }
   const preparedBytes = await readFile(args.input);
   const preparedSha256 = createHash("sha256").update(preparedBytes).digest("hex");
   const requests = readRequests(preparedBytes.toString("utf8"));
@@ -155,6 +164,26 @@ async function main() {
       transportBaseUrl: lab.listenUrl,
       providerMode: "live-frontier",
       forcedRuntime: args.runtime,
+      ...(args.codexHome
+        ? {
+            // QA points the native user-home scope at a disposable credential copy.
+            // Agent scope would start with an empty home despite CODEX_HOME preflight.
+            runtimeEnvPatch: { CODEX_HOME: args.codexHome },
+            mutateConfig: (cfg: OpenClawConfig) => ({
+              ...cfg,
+              plugins: {
+                ...cfg.plugins,
+                entries: {
+                  ...cfg.plugins?.entries,
+                  codex: {
+                    enabled: true,
+                    config: { appServer: { homeScope: "user", sandbox: "workspace-write" } },
+                  },
+                },
+              },
+            }),
+          }
+        : {}),
       primaryModel: args.model,
       alternateModel: args.model,
       controlUiEnabled: false,
