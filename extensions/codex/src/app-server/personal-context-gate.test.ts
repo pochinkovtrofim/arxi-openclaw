@@ -25,6 +25,53 @@ function initial(): JsonObject {
 }
 
 describe("Codex OAuth personal pre-egress gate", () => {
+  it("separates proven ordinary history while charging an old personal hook archive", () => {
+    const user = "Current real admitted request";
+    const history = `[user]\n${"ordinary earlier conversation ".repeat(800)}\n\n`;
+    const finalPrompt = `${history}${packet}\n\n${user}`;
+    const config = {
+      promptText: finalPrompt,
+      currentUserMessage: user,
+      ordinarySessionSegments: [history],
+      developerInstructions: developer,
+      legacySegments: [{ name: "USER.md", text: legacy }],
+      packetText: packet,
+    };
+    const body = {
+      instructions: legacy,
+      input: [
+        { type: "message", role: "user", content: finalPrompt },
+        { type: "message", role: "developer", content: developer },
+      ],
+    };
+    let receipt: CodexPersonalContextReceipt | undefined;
+    createCodexPersonalPreEgressGate({
+      ...config,
+      onReceipt: (value) => {
+        receipt = value;
+      },
+    })(body);
+    expect(receipt?.ordinarySessionUpperBoundUtf8Bytes).toBeGreaterThan(8000);
+    expect(receipt?.upperBoundUtf8Bytes).toBe(
+      Buffer.byteLength(packet + "\n\n" + developer + legacy),
+    );
+    const archivedHook = "Old hook inserted private corpus: ".repeat(400);
+    expect(() =>
+      createCodexPersonalPreEgressGate({
+        ...config,
+        promptText: `${finalPrompt}\n${archivedHook}`,
+      })({
+        ...body,
+        input: [
+          { type: "message", role: "user", content: `${finalPrompt}\n${archivedHook}` },
+          { type: "message", role: "developer", content: developer },
+        ],
+      }),
+    ).toThrow(CodexInferenceNeedsExpansionError);
+    expect(() =>
+      createCodexPersonalPreEgressGate({ ...config, ordinarySessionSegments: [packet] })(body),
+    ).toThrow(CodexInferenceNeedsExpansionError);
+  });
   it("verifies declared static policy separately while charging unregistered personal additions", () => {
     const staticText = "Code-owned generic source instructions. ".repeat(250);
     const ownerConstraint = "Owner must retain this private quiet preference.";

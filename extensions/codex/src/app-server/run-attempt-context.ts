@@ -311,6 +311,7 @@ export async function prepareCodexAttemptContext(
   });
   const promptState = {
     promptText: params.prompt,
+    ordinarySessionSegments: [] as string[],
     promptContextRange: undefined as CodexProjectedContextRange | undefined,
     developerInstructions: baseDeveloperInstructions,
     prePromptMessageCount: historyState.messages.length,

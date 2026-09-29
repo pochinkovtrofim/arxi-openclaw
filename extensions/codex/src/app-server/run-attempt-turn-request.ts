@@ -200,7 +200,8 @@ export async function prepareCodexAttemptTurnRequest(
           ? {
               preEgressGate: createCodexPersonalPreEgressGate({
                 promptText: turnState.codexTurnPromptText,
-                currentUserMessage: context.promptState.promptText,
+                currentUserMessage: prompt.currentUserMessage,
+                ordinarySessionSegments: context.promptState.ordinarySessionSegments,
                 developerInstructions: turnState.promptBuild.developerInstructions,
                 // Context-engine additions can contain retrieved personal memory;
                 // only the original generic native developer policy is exempt.

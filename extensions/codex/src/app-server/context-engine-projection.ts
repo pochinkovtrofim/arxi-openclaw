@@ -15,6 +15,7 @@ type CodexContextProjection = {
   developerInstructionAddition?: string;
   promptText: string;
   promptContextRange?: CodexProjectedContextRange;
+  ordinarySessionSegments: string[];
   assembledMessages: AgentMessage[];
   prePromptMessageCount: number;
   imageGroups?: CodexProjectedImageGroup[];
@@ -135,6 +136,7 @@ export async function projectContextEngineAssemblyForCodex(params: {
       maxRenderedContextChars,
       prepareFileContext: params.prepareFileContext,
       currentUserTurnIdempotencyKey: params.currentUserTurnIdempotencyKey,
+      originalHistoryMessages: params.originalHistoryMessages,
     },
   );
   const boundedContext = context.text;
@@ -153,6 +155,7 @@ export async function projectContextEngineAssemblyForCodex(params: {
       ? { developerInstructionAddition: params.systemPromptAddition.trim() }
       : {}),
     promptText,
+    ordinarySessionSegments: context.ordinarySessionSegments,
     ...(promptContextRange ? { promptContextRange } : {}),
     assembledMessages: params.assembledMessages,
     prePromptMessageCount: params.originalHistoryMessages.length,
@@ -446,9 +449,24 @@ async function renderMessagesForCodexContext(
     maxRenderedContextChars: number;
     prepareFileContext?: PrepareContextFile;
     currentUserTurnIdempotencyKey?: string;
+    originalHistoryMessages: AgentMessage[];
   },
-): Promise<{ text: string; imageGroups: CodexProjectedImageGroup[] }> {
-  const tail: Array<{ text: string; separatorLength: number; images?: ImageContent[] }> = [];
+): Promise<{
+  text: string;
+  imageGroups: CodexProjectedImageGroup[];
+  ordinarySessionSegments: string[];
+}> {
+  // Only unchanged original transcript rows are ordinary session context.
+  // Engine-added memory and durable custom notes remain added personal data.
+  const originalRows = new Set(
+    options.originalHistoryMessages.map((message) => JSON.stringify(message)),
+  );
+  const tail: Array<{
+    text: string;
+    separatorLength: number;
+    images?: ImageContent[];
+    ordinary: boolean;
+  }> = [];
   let retainedImageChars = 0;
   let totalChars = 0;
   let retainedChars = 0;
@@ -499,6 +517,7 @@ async function renderMessagesForCodexContext(
       );
       tail.push({
         text: retained,
+        ordinary: message.role !== "custom" && originalRows.has(JSON.stringify(message)),
         separatorLength: separator.length,
         ...(imagesFit && files?.images.length && retained.length === chunk.length
           ? { images: files.images }
@@ -516,8 +535,16 @@ async function renderMessagesForCodexContext(
     totalChars,
   );
   const imageGroups: CodexProjectedImageGroup[] = [];
+  const ordinarySessionSegments: string[] = [];
   let offset = 0;
   for (const entry of ordered) {
+    if (entry.ordinary && offset + entry.text.length > fitted.retainedStart) {
+      const start =
+        Math.max(offset, fitted.retainedStart) - fitted.retainedStart + fitted.prefixLength;
+      const end = offset + entry.text.length - fitted.retainedStart + fitted.prefixLength;
+      const retained = fitted.text.slice(start, end);
+      if (retained) ordinarySessionSegments.push(retained);
+    }
     if (entry.images && offset >= fitted.retainedStart) {
       const start = offset - fitted.retainedStart + fitted.prefixLength;
       imageGroups.push({
@@ -531,6 +558,7 @@ async function renderMessagesForCodexContext(
   return {
     text: fitted.text,
     imageGroups,
+    ordinarySessionSegments,
   };
 }
 

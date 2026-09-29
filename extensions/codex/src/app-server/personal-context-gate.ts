@@ -18,6 +18,8 @@ export type CodexPersonalContextReceipt = {
   sources: readonly { name: string; sha256: string }[];
   staticPolicies: readonly { id: string; sha256: string; upperBoundUtf8Bytes: number }[];
   staticPolicyUpperBoundUtf8Bytes: number;
+  ordinarySessionUpperBoundUtf8Bytes: number;
+  ordinarySessionSha256: string;
   packetSha256?: string;
   newToolOutputs: number;
   cumulativeToolOutputs: number;
@@ -80,6 +82,7 @@ function toolOutput(item: unknown): ToolOutput | undefined {
 export function createCodexPersonalPreEgressGate(params: {
   promptText: string;
   currentUserMessage?: string;
+  ordinarySessionSegments?: readonly string[];
   developerInstructions: string;
   developerBaseInstructions?: string;
   staticPolicies?: readonly { id: string; text: string }[];
@@ -111,6 +114,7 @@ export function createCodexPersonalPreEgressGate(params: {
   // These finite declarations are made by reviewed plugin code, never inferred
   // from arbitrary hook output. Retain snapshots for this physical request gate.
   const staticPolicies = (params.staticPolicies ?? []).map((policy) => ({ ...policy }));
+  const ordinarySessionSegments = [...(params.ordinarySessionSegments ?? [])];
   const staticPolicyReceipt = staticPolicies.map((policy) => ({
     id: policy.id,
     sha256: createHash("sha256").update(policy.text).digest("hex"),
@@ -181,6 +185,13 @@ export function createCodexPersonalPreEgressGate(params: {
           (total, policy) => total + policy.upperBoundUtf8Bytes,
           0,
         ),
+        ordinarySessionUpperBoundUtf8Bytes: ordinarySessionSegments.reduce(
+          (total, text) => total + Buffer.byteLength(text, "utf8"),
+          0,
+        ),
+        ordinarySessionSha256: createHash("sha256")
+          .update(JSON.stringify(ordinarySessionSegments))
+          .digest("hex"),
         ...(params.expansionReason ? { expansionReason: params.expansionReason } : {}),
         ...(params.totalContextTokenBudget
           ? { totalContextTokenBudget: params.totalContextTokenBudget }
@@ -240,7 +251,7 @@ export function createCodexPersonalPreEgressGate(params: {
           refuse("source_attribution_changed");
         }
       }
-      const policyRanges = new Map<string, Array<{ start: number; end: number }>>();
+      const exemptionRanges = new Map<string, Array<{ start: number; end: number }>>();
       const policyIds = new Set<string>();
       for (const policy of staticPolicies) {
         if (!policy.text || policyIds.has(policy.id)) refuse("source_attribution_changed");
@@ -255,7 +266,7 @@ export function createCodexPersonalPreEgressGate(params: {
         const end = start + policy.text.length;
         const intersects = (range: { start: number; end: number }) =>
           start < range.end && range.start < end;
-        const previous = policyRanges.get(leaf) ?? [];
+        const previous = exemptionRanges.get(leaf) ?? [];
         if (previous.some(intersects)) refuse("source_attribution_changed");
         // Even a trusted declaration cannot exempt any part of mandatory files,
         // the packet/current prompt, or already exempted base native policy.
@@ -276,7 +287,44 @@ export function createCodexPersonalPreEgressGate(params: {
           }
         }
         previous.push({ start, end });
-        policyRanges.set(leaf, previous);
+        exemptionRanges.set(leaf, previous);
+      }
+      const ordinaryCounts = new Map<string, number>();
+      for (const text of ordinarySessionSegments) {
+        if (!text) refuse("source_attribution_changed");
+        ordinaryCounts.set(text, (ordinaryCounts.get(text) ?? 0) + 1);
+      }
+      for (const [text, expectedHits] of ordinaryCounts) {
+        const hits = leaves.reduce((total, leaf) => total + occurrences(leaf, text), 0);
+        const leaf =
+          leaves.find((entry) => entry.includes(text)) ?? refuse("source_attribution_changed");
+        if (hits !== expectedHits || !promptLeaves.has(leaf)) refuse("source_attribution_changed");
+        const ranges = exemptionRanges.get(leaf) ?? [];
+        for (let offset = 0; (offset = leaf.indexOf(text, offset)) >= 0; offset += text.length) {
+          const range = { start: offset, end: offset + text.length };
+          const intersects = (other: { start: number; end: number }) =>
+            range.start < other.end && other.start < range.end;
+          if (ranges.some(intersects)) refuse("source_attribution_changed");
+          for (const protectedText of [
+            base,
+            params.packetText,
+            ...params.legacySegments.map((segment) => segment.text),
+          ]) {
+            if (!protectedText) continue;
+            for (
+              let protectedOffset = 0;
+              (protectedOffset = leaf.indexOf(protectedText, protectedOffset)) >= 0;
+              protectedOffset += protectedText.length
+            ) {
+              if (
+                intersects({ start: protectedOffset, end: protectedOffset + protectedText.length })
+              )
+                refuse("source_attribution_changed");
+            }
+          }
+          ranges.push(range);
+        }
+        exemptionRanges.set(leaf, ranges);
       }
       {
         const measuredSourceUpperBound = [...attributedLeaves].reduce((total, leaf) => {
@@ -300,11 +348,15 @@ export function createCodexPersonalPreEgressGate(params: {
             leaf.includes(params.promptText) &&
             occurrences(leaf, user) === 1 &&
             !params.packetText?.includes(user) &&
-            !params.legacySegments.some((segment) => segment.text.includes(user));
+            !params.legacySegments.some((segment) => segment.text.includes(user)) &&
+            !(exemptionRanges.get(leaf) ?? []).some(
+              (range) =>
+                leaf.indexOf(user) < range.end && range.start < leaf.indexOf(user) + user.length,
+            );
           return (
             total +
             Buffer.byteLength(leaf, "utf8") -
-            (policyRanges.get(leaf) ?? []).reduce(
+            (exemptionRanges.get(leaf) ?? []).reduce(
               (bytes, range) =>
                 bytes + Buffer.byteLength(leaf.slice(range.start, range.end), "utf8"),
               0,
