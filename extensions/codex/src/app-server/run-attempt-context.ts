@@ -109,11 +109,13 @@ export async function prepareCodexAttemptContext(
     packet?: {
       text: string;
       budgetTokens: number;
+      needsExpansion?: boolean;
       expansionReason?: "complex_source_read";
       sourceRefs?: readonly { kind: string; sha256: string }[];
     };
     mandatorySourcesComplete: boolean;
-  } = { mandatorySourcesComplete: true };
+    staticPolicies: Array<{ id: string; text: string }>;
+  } = { mandatorySourcesComplete: true, staticPolicies: [] };
   const legacySegments: Array<{
     name: "USER.md" | "MEMORY.md";
     path: string;
@@ -123,11 +125,22 @@ export async function prepareCodexAttemptContext(
   }> = [];
   const personalPrompt = {
     legacySegments,
+    registerStaticPolicy: (policy: { id: string; text: string }) => {
+      if (!/^[a-z0-9_.-]{1,80}$/.test(policy.id) || !policy.text) {
+        throw new Error("Codex static policy registration is invalid");
+      }
+      const previous = personalPromptState.staticPolicies.find((entry) => entry.id === policy.id);
+      if (previous && previous.text !== policy.text) {
+        throw new Error("Codex static policy changed during prompt rebuild");
+      }
+      if (!previous) personalPromptState.staticPolicies.push({ ...policy });
+    },
     countInputUtf8UpperBound: (input: { instructions: string; prompt: string }) =>
       Buffer.byteLength([input.instructions, input.prompt].join("\n\n"), "utf8"),
     registerPreparedPacket: (packet: {
       text: string;
       budgetTokens: number;
+      needsExpansion?: boolean;
       expansionReason?: "complex_source_read";
       sourceRefs?: readonly { kind: string; sha256: string }[];
     }) => {
@@ -138,6 +151,7 @@ export async function prepareCodexAttemptContext(
         if (
           personalPromptState.packet.text !== packet.text ||
           personalPromptState.packet.budgetTokens !== packet.budgetTokens ||
+          personalPromptState.packet.needsExpansion !== packet.needsExpansion ||
           personalPromptState.packet.expansionReason !== packet.expansionReason
         ) {
           throw new Error("Codex personal packet changed during prompt rebuild");

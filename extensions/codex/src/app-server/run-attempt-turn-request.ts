@@ -205,10 +205,12 @@ export async function prepareCodexAttemptTurnRequest(
                 // Context-engine additions can contain retrieved personal memory;
                 // only the original generic native developer policy is exempt.
                 developerBaseInstructions: context.baseDeveloperInstructions,
+                staticPolicies: personalPromptState.staticPolicies,
                 legacySegments: hookContext.personalPrompt?.legacySegments ?? [],
                 packetText: personalPromptState.packet?.text,
                 expectedModel: resourceState.thread.model ?? effectiveRuntimeModelId,
                 mandatorySourcesComplete: personalPromptState.mandatorySourcesComplete,
+                preparedPacketNeedsExpansion: personalPromptState.packet?.needsExpansion,
                 budgetTokens: personalPromptState.packet?.budgetTokens ?? 8_000,
                 expansionReason: personalPromptState.packet?.expansionReason,
                 totalContextTokenBudget: runtime.effectiveContextTokenBudget,

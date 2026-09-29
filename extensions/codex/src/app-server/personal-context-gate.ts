@@ -16,6 +16,8 @@ export type CodexPersonalContextReceipt = {
   totalContextTokenBudget?: number;
   sourceRefs?: readonly { kind: string; sha256: string }[];
   sources: readonly { name: string; sha256: string }[];
+  staticPolicies: readonly { id: string; sha256: string; upperBoundUtf8Bytes: number }[];
+  staticPolicyUpperBoundUtf8Bytes: number;
   packetSha256?: string;
   newToolOutputs: number;
   cumulativeToolOutputs: number;
@@ -80,10 +82,12 @@ export function createCodexPersonalPreEgressGate(params: {
   currentUserMessage?: string;
   developerInstructions: string;
   developerBaseInstructions?: string;
+  staticPolicies?: readonly { id: string; text: string }[];
   legacySegments: readonly PersonalSource[];
   packetText?: string;
   expectedModel?: string;
   mandatorySourcesComplete?: boolean;
+  preparedPacketNeedsExpansion?: boolean;
   budgetTokens?: number;
   expansionReason?: "complex_source_read";
   totalContextTokenBudget?: number;
@@ -104,6 +108,14 @@ export function createCodexPersonalPreEgressGate(params: {
     throw new CodexInferenceNeedsExpansionError();
   }
   const base = params.developerBaseInstructions ?? "";
+  // These finite declarations are made by reviewed plugin code, never inferred
+  // from arbitrary hook output. Retain snapshots for this physical request gate.
+  const staticPolicies = (params.staticPolicies ?? []).map((policy) => ({ ...policy }));
+  const staticPolicyReceipt = staticPolicies.map((policy) => ({
+    id: policy.id,
+    sha256: createHash("sha256").update(policy.text).digest("hex"),
+    upperBoundUtf8Bytes: Buffer.byteLength(policy.text, "utf8"),
+  }));
   const developerOffset = base ? params.developerInstructions.indexOf(base) : -1;
   const developerAdditions =
     developerOffset < 0
@@ -164,6 +176,11 @@ export function createCodexPersonalPreEgressGate(params: {
         upperBoundUtf8Bytes: sourceUpperBound + toolOutputUpperBound,
         budgetTokens,
         sources: sourceReceipt,
+        staticPolicies: staticPolicyReceipt,
+        staticPolicyUpperBoundUtf8Bytes: staticPolicyReceipt.reduce(
+          (total, policy) => total + policy.upperBoundUtf8Bytes,
+          0,
+        ),
         ...(params.expansionReason ? { expansionReason: params.expansionReason } : {}),
         ...(params.totalContextTokenBudget
           ? { totalContextTokenBudget: params.totalContextTokenBudget }
@@ -180,7 +197,7 @@ export function createCodexPersonalPreEgressGate(params: {
       emitReceipt("needs_expansion", reason);
       throw new CodexInferenceNeedsExpansionError();
     };
-    if (params.mandatorySourcesComplete === false) {
+    if (params.mandatorySourcesComplete === false || params.preparedPacketNeedsExpansion === true) {
       refuse("mandatory_source_omitted");
     }
     const bodyInput = Array.isArray(body.input) ? body.input : refuse("invalid_request");
@@ -223,6 +240,44 @@ export function createCodexPersonalPreEgressGate(params: {
           refuse("source_attribution_changed");
         }
       }
+      const policyRanges = new Map<string, Array<{ start: number; end: number }>>();
+      const policyIds = new Set<string>();
+      for (const policy of staticPolicies) {
+        if (!policy.text || policyIds.has(policy.id)) refuse("source_attribution_changed");
+        policyIds.add(policy.id);
+        const hits = leaves.reduce((total, leaf) => total + occurrences(leaf, policy.text), 0);
+        const matching = leaves.find((leaf) => leaf.includes(policy.text));
+        if (hits !== 1 || !matching || !hookLeaves.has(matching)) {
+          refuse("source_attribution_changed");
+        }
+        const leaf = matching!;
+        const start = leaf.indexOf(policy.text);
+        const end = start + policy.text.length;
+        const intersects = (range: { start: number; end: number }) =>
+          start < range.end && range.start < end;
+        const previous = policyRanges.get(leaf) ?? [];
+        if (previous.some(intersects)) refuse("source_attribution_changed");
+        // Even a trusted declaration cannot exempt any part of mandatory files,
+        // the packet/current prompt, or already exempted base native policy.
+        for (const protectedText of [
+          ...params.legacySegments.map((segment) => segment.text),
+          params.promptText,
+          base,
+        ]) {
+          if (!protectedText) continue;
+          for (
+            let offset = 0;
+            (offset = leaf.indexOf(protectedText, offset)) >= 0;
+            offset += protectedText.length
+          ) {
+            if (intersects({ start: offset, end: offset + protectedText.length })) {
+              refuse("source_attribution_changed");
+            }
+          }
+        }
+        previous.push({ start, end });
+        policyRanges.set(leaf, previous);
+      }
       {
         const measuredSourceUpperBound = [...attributedLeaves].reduce((total, leaf) => {
           if (!hookLeaves.has(leaf) && !promptLeaves.has(leaf)) {
@@ -249,6 +304,11 @@ export function createCodexPersonalPreEgressGate(params: {
           return (
             total +
             Buffer.byteLength(leaf, "utf8") -
+            (policyRanges.get(leaf) ?? []).reduce(
+              (bytes, range) =>
+                bytes + Buffer.byteLength(leaf.slice(range.start, range.end), "utf8"),
+              0,
+            ) -
             (baseCanBeExcluded ? Buffer.byteLength(base, "utf8") : 0) -
             (userCanBeExcluded ? Buffer.byteLength(user, "utf8") : 0)
           );

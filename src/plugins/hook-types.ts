@@ -333,10 +333,18 @@ export type PluginHookAgentContext = {
     }>[];
     countInputTokens?: (input: { instructions: string; prompt: string }) => Promise<number>;
     countInputUtf8UpperBound?: (input: { instructions: string; prompt: string }) => number;
+    /**
+     * Declare only reviewed, artifact-owned static policy appended by this hook.
+     * Never register source data, owner preferences or mandatory personal files.
+     * The native final gate verifies its exact presence separately from personal data.
+     */
+    registerStaticPolicy?: (policy: { id: string; text: string }) => void;
     /** Register the exact packet text for a provider-bound combined budget gate. */
     registerPreparedPacket?: (packet: {
       text: string;
       budgetTokens: number;
+      /** The preparation could not retain its mandatory personal sources. */
+      needsExpansion?: boolean;
       expansionReason?: "complex_source_read";
       sourceRefs?: readonly { kind: string; sha256: string }[];
     }) => void;

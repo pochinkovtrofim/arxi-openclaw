@@ -25,6 +25,103 @@ function initial(): JsonObject {
 }
 
 describe("Codex OAuth personal pre-egress gate", () => {
+  it("verifies declared static policy separately while charging unregistered personal additions", () => {
+    const staticText = "Code-owned generic source instructions. ".repeat(250);
+    const ownerConstraint = "Owner must retain this private quiet preference.";
+    const actualDeveloper = `${staticText}\n\n${ownerConstraint}`;
+    const config = {
+      promptText: prompt,
+      developerInstructions: actualDeveloper,
+      staticPolicies: [{ id: "test.source-policy", text: staticText }],
+      legacySegments: [{ name: "USER.md", text: legacy }],
+      packetText: packet,
+    };
+    const body = {
+      ...initial(),
+      input: [
+        { type: "message", role: "developer", content: actualDeveloper },
+        { type: "message", role: "user", content: prompt },
+      ],
+    };
+    let receipt: CodexPersonalContextReceipt | undefined;
+    createCodexPersonalPreEgressGate({
+      ...config,
+      onReceipt: (value) => {
+        receipt = value;
+      },
+    })(body);
+    expect(receipt?.upperBoundUtf8Bytes).toBe(
+      Buffer.byteLength(prompt + legacy + ownerConstraint + "\n\n"),
+    );
+    expect(receipt?.staticPolicyUpperBoundUtf8Bytes).toBeGreaterThan(8000);
+    expect(receipt?.staticPolicies).toEqual([
+      {
+        id: "test.source-policy",
+        sha256: createHash("sha256").update(staticText).digest("hex"),
+        upperBoundUtf8Bytes: Buffer.byteLength(staticText),
+      },
+    ]);
+    expect(() => createCodexPersonalPreEgressGate({ ...config, staticPolicies: [] })(body)).toThrow(
+      CodexInferenceNeedsExpansionError,
+    );
+    const changed = {
+      ...body,
+      input: [
+        {
+          type: "message",
+          role: "developer",
+          content: actualDeveloper.replace("Code-owned", "Tampered"),
+        },
+        { type: "message", role: "user", content: prompt },
+      ],
+    };
+    expect(() => createCodexPersonalPreEgressGate(config)(changed)).toThrow(
+      CodexInferenceNeedsExpansionError,
+    );
+    const privateLarge = "Private owner preference. ".repeat(400);
+    expect(() =>
+      createCodexPersonalPreEgressGate({
+        ...config,
+        developerInstructions: `${actualDeveloper}\n${privateLarge}`,
+      })({
+        ...body,
+        input: [
+          { type: "message", role: "developer", content: `${actualDeveloper}\n${privateLarge}` },
+          { type: "message", role: "user", content: prompt },
+        ],
+      }),
+    ).toThrow(CodexInferenceNeedsExpansionError);
+  });
+
+  it("rejects static-policy declarations overlapping mandatory private content or another exemption", () => {
+    const config = {
+      promptText: prompt,
+      developerInstructions: `${developer}\n${legacy}`,
+      legacySegments: [{ name: "USER.md", text: legacy }],
+      packetText: packet,
+    };
+    const body = {
+      input: [
+        { type: "message", role: "developer", content: `${developer}\n${legacy}` },
+        { type: "message", role: "user", content: prompt },
+      ],
+    };
+    expect(() =>
+      createCodexPersonalPreEgressGate({
+        ...config,
+        staticPolicies: [{ id: "test.illegal", text: legacy }],
+      })(body),
+    ).toThrow(CodexInferenceNeedsExpansionError);
+    expect(() =>
+      createCodexPersonalPreEgressGate({
+        ...config,
+        staticPolicies: [
+          { id: "test.policy", text: developer },
+          { id: "test.overlap", text: "Owner source" },
+        ],
+      })(body),
+    ).toThrow(CodexInferenceNeedsExpansionError);
+  });
   it("binds content-free receipts to every final request, including a refused continuation", () => {
     const receipts: CodexPersonalContextReceipt[] = [];
     const gate = createCodexPersonalPreEgressGate({
@@ -111,6 +208,35 @@ describe("Codex OAuth personal pre-egress gate", () => {
       },
     });
     expect(() => gate(initial())).toThrow(CodexInferenceNeedsExpansionError);
+    expect(receipt).toMatchObject({
+      status: "needs_expansion",
+      reason: "mandatory_source_omitted",
+    });
+  });
+
+  it("refuses a compact prepared needs_expansion packet even when its final bytes fit", () => {
+    const compactPacket =
+      '[Owner packet] {"status":"needs_expansion","reason":"mandatory_personal_context_over_budget"}';
+    let receipt: CodexPersonalContextReceipt | undefined;
+    const gate = createCodexPersonalPreEgressGate({
+      promptText: compactPacket,
+      developerInstructions: developer,
+      legacySegments: [{ name: "USER.md", text: legacy }],
+      packetText: compactPacket,
+      preparedPacketNeedsExpansion: true,
+      onReceipt: (value) => {
+        receipt = value;
+      },
+    });
+    expect(() =>
+      gate({
+        instructions: legacy,
+        input: [
+          { type: "message", role: "user", content: compactPacket },
+          { type: "message", role: "developer", content: developer },
+        ],
+      }),
+    ).toThrow(CodexInferenceNeedsExpansionError);
     expect(receipt).toMatchObject({
       status: "needs_expansion",
       reason: "mandatory_source_omitted",
