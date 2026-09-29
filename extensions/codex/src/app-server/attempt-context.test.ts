@@ -21,6 +21,7 @@ import {
   readContextEngineThreadBootstrapProjection,
   readMirroredSessionHistoryMessages,
   resolveContextEngineBootstrapProjectionDecision,
+  restoreCodexMandatoryPersonalBootstrap,
 } from "./attempt-context.js";
 import type { CodexDynamicToolSpec } from "./protocol.js";
 import type { CodexAppServerContextEngineBinding } from "./session-binding.js";
@@ -32,6 +33,37 @@ afterEach(() => {
 });
 
 describe("Codex app-server attempt context", () => {
+  it("restores complete USER constraints for a personal packet after generic bootstrap trimming", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-owner-constraints-"));
+    const source = `${"profile detail\n".repeat(700)}Never send a message without owner approval.\n${"other detail\n".repeat(700)}`;
+    await fs.writeFile(path.join(workspaceDir, "USER.md"), source);
+    try {
+      const context = await buildCodexWorkspaceBootstrapContext({
+        params: {
+          sessionId: "session-1",
+          sessionKey: "agent:main:session-1",
+          config: { agents: { defaults: { workspace: workspaceDir } } },
+        } as EmbeddedRunAttemptParams,
+        resolvedWorkspace: workspaceDir,
+        executionWorkspace: workspaceDir,
+        effectiveWorkspace: workspaceDir,
+        sessionKey: "agent:main:session-1",
+        sessionAgentId: "main",
+        memoryToolNames: ["memory_search", "memory_get"],
+        ringZeroActive: false,
+      });
+      expect(context.turnScopedDeveloperInstructions).not.toContain("Never send a message");
+      expect(restoreCodexMandatoryPersonalBootstrap(context)).toEqual({ status: "complete" });
+      expect(context.turnScopedDeveloperInstructions).toContain(source.trimEnd());
+      expect(context.turnScopedDeveloperInstructions).not.toContain("[...truncated,");
+      expect(
+        context.contextFiles.find((file) => path.basename(file.path) === "USER.md")?.content,
+      ).toBe(source.trimEnd());
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it("treats missing mirrored session history as empty without hook warning", async () => {
     const warn = vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => undefined);
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-attempt-context-history-"));

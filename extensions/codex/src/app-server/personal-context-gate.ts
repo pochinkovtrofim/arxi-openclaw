@@ -4,8 +4,32 @@ import { isJsonObject, type JsonObject } from "./protocol.js";
 
 const DEFAULT_BUDGET = 8_000;
 
+export type CodexPersonalContextReceipt = {
+  accounting: "conservative_utf8_upper_bound";
+  exactPersonalTokens: null;
+  requestSha256: string;
+  model?: string;
+  requestSequence: number;
+  upperBoundUtf8Bytes: number;
+  budgetTokens: number;
+  expansionReason?: "complex_source_read";
+  totalContextTokenBudget?: number;
+  sourceRefs?: readonly { kind: string; sha256: string }[];
+  sources: readonly { name: string; sha256: string }[];
+  packetSha256?: string;
+  newToolOutputs: number;
+  cumulativeToolOutputs: number;
+  status: "within_bound" | "needs_expansion";
+  reason?:
+    | "invalid_request"
+    | "selected_model_changed"
+    | "source_attribution_changed"
+    | "personal_context_over_bound"
+    | "mandatory_source_omitted";
+};
+
 type PersonalSource = { name: string; text: string };
-type ToolOutput = { key: string; serialized: string };
+type ToolOutput = { key: string; callId: string; serialized: string };
 
 function stringLeaves(value: unknown): string[] {
   if (typeof value === "string") {
@@ -40,13 +64,14 @@ function toolOutput(item: unknown): ToolOutput | undefined {
   if (typeof callId !== "string" || !callId) {
     throw new CodexInferenceNeedsExpansionError();
   }
-  return { key: `${type}:${callId}`, serialized: JSON.stringify(item) };
+  return { key: `${type}:${callId}`, callId, serialized: JSON.stringify(item) };
 }
 
 /**
  * The native OAuth request is the authority for what was actually inserted.
- * Full string leaves also charge every visible heading and separator around an
- * attributed source. Codex 0.156.1 unified_exec explicitly treats byte length
+ * Personal file blocks include their exact headings and separators; generic
+ * sibling policy in the same native leaf is outside the personal budget.
+ * Codex 0.156.1 unified_exec explicitly treats byte length
  * as a conservative hard token bound for byte-fallback tokenizers. This is
  * never an exact selected-model tokenizer count.
  */
@@ -57,17 +82,25 @@ export function createCodexPersonalPreEgressGate(params: {
   developerBaseInstructions?: string;
   legacySegments: readonly PersonalSource[];
   packetText?: string;
+  expectedModel?: string;
+  mandatorySourcesComplete?: boolean;
   budgetTokens?: number;
-  onReceipt?: (receipt: {
-    upperBoundUtf8Bytes: number;
-    budgetTokens: number;
-    sources: readonly { name: string; sha256: string }[];
-    packetSha256?: string;
-    newToolOutputs: number;
-  }) => void;
+  expansionReason?: "complex_source_read";
+  totalContextTokenBudget?: number;
+  sourceRefs?: readonly { kind: string; sha256: string }[];
+  replayedToolReads?: readonly { callId: string; upperBoundUtf8Bytes: number }[];
+  onReceipt?: (receipt: CodexPersonalContextReceipt) => void;
 }): (body: JsonObject) => void {
   const budgetTokens = params.budgetTokens ?? DEFAULT_BUDGET;
   if (budgetTokens !== DEFAULT_BUDGET && budgetTokens !== 16_000) {
+    throw new CodexInferenceNeedsExpansionError();
+  }
+  if (
+    budgetTokens > DEFAULT_BUDGET &&
+    (params.expansionReason !== "complex_source_read" ||
+      !params.totalContextTokenBudget ||
+      params.totalContextTokenBudget < budgetTokens)
+  ) {
     throw new CodexInferenceNeedsExpansionError();
   }
   const base = params.developerBaseInstructions ?? "";
@@ -96,28 +129,88 @@ export function createCodexPersonalPreEgressGate(params: {
     throw new CodexInferenceNeedsExpansionError();
   }
   const seenOutputs = new Map<string, string>();
-  let checkedInitial = false;
-  let upperBoundUtf8Bytes = 0;
-  return (body) => {
-    if (!Array.isArray(body.input)) {
+  const replayedReads = new Map<string, number>();
+  for (const read of params.replayedToolReads ?? []) {
+    if (
+      !read.callId ||
+      !Number.isSafeInteger(read.upperBoundUtf8Bytes) ||
+      read.upperBoundUtf8Bytes < 0
+    ) {
       throw new CodexInferenceNeedsExpansionError();
+    }
+    replayedReads.set(
+      read.callId,
+      Math.max(replayedReads.get(read.callId) ?? 0, read.upperBoundUtf8Bytes),
+    );
+  }
+  let checkedInitial = false;
+  let sourceUpperBound = 0;
+  let toolOutputUpperBound = [...replayedReads.values()].reduce((total, bytes) => total + bytes, 0);
+  let cumulativeToolOutputs = replayedReads.size;
+  let requestSequence = 0;
+  return (body) => {
+    requestSequence++;
+    let newToolOutputs = 0;
+    const emitReceipt = (
+      status: CodexPersonalContextReceipt["status"],
+      reason?: CodexPersonalContextReceipt["reason"],
+    ) => {
+      params.onReceipt?.({
+        accounting: "conservative_utf8_upper_bound",
+        exactPersonalTokens: null,
+        requestSha256: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
+        ...(params.expectedModel ? { model: params.expectedModel } : {}),
+        requestSequence,
+        upperBoundUtf8Bytes: sourceUpperBound + toolOutputUpperBound,
+        budgetTokens,
+        sources: sourceReceipt,
+        ...(params.expansionReason ? { expansionReason: params.expansionReason } : {}),
+        ...(params.totalContextTokenBudget
+          ? { totalContextTokenBudget: params.totalContextTokenBudget }
+          : {}),
+        ...(params.sourceRefs ? { sourceRefs: params.sourceRefs } : {}),
+        ...(packetSha256 ? { packetSha256 } : {}),
+        newToolOutputs,
+        cumulativeToolOutputs,
+        status,
+        ...(reason ? { reason } : {}),
+      });
+    };
+    const refuse = (reason: NonNullable<CodexPersonalContextReceipt["reason"]>): never => {
+      emitReceipt("needs_expansion", reason);
+      throw new CodexInferenceNeedsExpansionError();
+    };
+    if (params.mandatorySourcesComplete === false) {
+      refuse("mandatory_source_omitted");
+    }
+    const bodyInput = Array.isArray(body.input) ? body.input : refuse("invalid_request");
+    if (
+      params.expectedModel &&
+      ((!checkedInitial && body.model !== params.expectedModel) ||
+        (body.model !== undefined && body.model !== params.expectedModel))
+    ) {
+      refuse("selected_model_changed");
     }
     const firstRequest = !checkedInitial;
     const fullHistory = body.previous_response_id == null;
     if (!checkedInitial || fullHistory) {
-      const leaves = stringLeaves([body.instructions, body.input]);
+      const leaves = stringLeaves([body.instructions, bodyInput]);
       const attributedLeaves = new Set<string>();
       const hookLeaves = new Set<string>();
+      const promptLeaves = new Set<string>();
       for (const source of sources) {
         const hits = leaves.reduce((total, leaf) => total + occurrences(leaf, source.text), 0);
         if (hits !== 1) {
-          throw new CodexInferenceNeedsExpansionError();
+          refuse("source_attribution_changed");
         }
         const matching = leaves.find((leaf) => leaf.includes(source.text));
         if (matching) {
           attributedLeaves.add(matching);
           if (source.name === "hook_developer") {
             hookLeaves.add(matching);
+          }
+          if (source.name === "turn_prompt") {
+            promptLeaves.add(matching);
           }
         }
       }
@@ -127,11 +220,19 @@ export function createCodexPersonalPreEgressGate(params: {
           0,
         );
         if (packetHits !== 1) {
-          throw new CodexInferenceNeedsExpansionError();
+          refuse("source_attribution_changed");
         }
       }
-      if (!checkedInitial) {
-        upperBoundUtf8Bytes = [...attributedLeaves].reduce((total, leaf) => {
+      {
+        const measuredSourceUpperBound = [...attributedLeaves].reduce((total, leaf) => {
+          if (!hookLeaves.has(leaf) && !promptLeaves.has(leaf)) {
+            return (
+              total +
+              params.legacySegments
+                .filter((segment) => leaf.includes(segment.text))
+                .reduce((bytes, segment) => bytes + Buffer.byteLength(segment.text, "utf8"), 0)
+            );
+          }
           const baseOccurrences = base ? occurrences(leaf, base) : 0;
           const baseCanBeExcluded =
             hookLeaves.has(leaf) &&
@@ -152,38 +253,35 @@ export function createCodexPersonalPreEgressGate(params: {
             (userCanBeExcluded ? Buffer.byteLength(user, "utf8") : 0)
           );
         }, 0);
+        // A full-history retry may change native wrappers around the same sources.
+        // Check its actual rendered leaves too; never reuse a smaller first-request bound.
+        sourceUpperBound = Math.max(sourceUpperBound, measuredSourceUpperBound);
         checkedInitial = true;
       }
     }
-    let newToolOutputs = 0;
-    for (const item of body.input) {
+    for (const item of bodyInput) {
       const output = toolOutput(item);
       if (!output) {
         continue;
       }
       const previous = seenOutputs.get(output.key);
       if (previous !== undefined && previous !== output.serialized) {
-        throw new CodexInferenceNeedsExpansionError();
+        refuse("source_attribution_changed");
       }
       if (previous === undefined) {
         seenOutputs.set(output.key, output.serialized);
-        if (!firstRequest) {
+        if (!firstRequest && !replayedReads.has(output.callId)) {
           // The first full-history body can contain old outputs. The caller
           // charges only outputs appearing after its initial physical request.
-          upperBoundUtf8Bytes += Buffer.byteLength(output.serialized, "utf8");
+          toolOutputUpperBound += Buffer.byteLength(output.serialized, "utf8");
           newToolOutputs++;
+          cumulativeToolOutputs++;
         }
       }
     }
-    if (upperBoundUtf8Bytes > budgetTokens) {
-      throw new CodexInferenceNeedsExpansionError();
+    if (sourceUpperBound + toolOutputUpperBound > budgetTokens) {
+      refuse("personal_context_over_bound");
     }
-    params.onReceipt?.({
-      upperBoundUtf8Bytes,
-      budgetTokens,
-      sources: sourceReceipt,
-      ...(packetSha256 ? { packetSha256 } : {}),
-      newToolOutputs,
-    });
+    emitReceipt("within_bound");
   };
 }

@@ -334,7 +334,12 @@ export type PluginHookAgentContext = {
     countInputTokens?: (input: { instructions: string; prompt: string }) => Promise<number>;
     countInputUtf8UpperBound?: (input: { instructions: string; prompt: string }) => number;
     /** Register the exact packet text for a provider-bound combined budget gate. */
-    registerPreparedPacket?: (packet: { text: string; budgetTokens: number }) => void;
+    registerPreparedPacket?: (packet: {
+      text: string;
+      budgetTokens: number;
+      expansionReason?: "complex_source_read";
+      sourceRefs?: readonly { kind: string; sha256: string }[];
+    }) => void;
   }>;
   messageProvider?: string;
   /** Channel/plugin id for channel-originated runs, e.g. `discord`. */

@@ -55,8 +55,8 @@ const SELECTED_AUTH_PROFILE_UNAVAILABLE_USER_TEXT = arxiUserCopy(
 export const renderFailoverCodeUserCopy = (code: unknown): string | undefined =>
   code === "needs_expansion"
     ? arxiUserCopy(
-        "Personal context needs_expansion before this request can continue. Review its sources or explicitly allow the larger context budget, then retry.",
-        "Не удалось безопасно собрать память для ответа (needs_expansion). Проверь её источники или разреши расширенный лимит, затем повтори запрос.",
+        "The personal context budget cannot safely fit this continuation (needs_expansion). I stopped before sending more context, preserving the required owner rules. A larger-context continuation is needed.",
+        "Не хватает места для личного контекста. Остановила продолжение, сохранив важные правила. Чтобы закончить запрос, нужен ход с расширенным контекстом.",
       )
     : code === "selected_auth_profile_unavailable"
       ? SELECTED_AUTH_PROFILE_UNAVAILABLE_USER_TEXT

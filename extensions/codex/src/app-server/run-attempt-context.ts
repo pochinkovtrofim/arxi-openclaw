@@ -18,6 +18,7 @@ import {
   getCodexWorkspaceMemoryToolNames,
   readMirroredSessionHistoryMessages,
   renderCodexSkillsCollaborationInstructions,
+  restoreCodexMandatoryPersonalBootstrap,
 } from "./attempt-context.js";
 import {
   resolveCodexContextEngineProjectionMaxChars,
@@ -104,7 +105,15 @@ export async function prepareCodexAttemptContext(
       ? { contextWindowReferenceTokens: effectiveContextWindowInfo.referenceTokens }
       : {}),
   };
-  const personalPromptState: { packet?: { text: string; budgetTokens: number } } = {};
+  const personalPromptState: {
+    packet?: {
+      text: string;
+      budgetTokens: number;
+      expansionReason?: "complex_source_read";
+      sourceRefs?: readonly { kind: string; sha256: string }[];
+    };
+    mandatorySourcesComplete: boolean;
+  } = { mandatorySourcesComplete: true };
   const legacySegments: Array<{
     name: "USER.md" | "MEMORY.md";
     path: string;
@@ -116,20 +125,44 @@ export async function prepareCodexAttemptContext(
     legacySegments,
     countInputUtf8UpperBound: (input: { instructions: string; prompt: string }) =>
       Buffer.byteLength([input.instructions, input.prompt].join("\n\n"), "utf8"),
-    registerPreparedPacket: (packet: { text: string; budgetTokens: number }) => {
+    registerPreparedPacket: (packet: {
+      text: string;
+      budgetTokens: number;
+      expansionReason?: "complex_source_read";
+      sourceRefs?: readonly { kind: string; sha256: string }[];
+    }) => {
       if (!packet.text || (packet.budgetTokens !== 8_000 && packet.budgetTokens !== 16_000)) {
         throw new Error("Codex personal packet registration is invalid");
       }
       if (personalPromptState.packet) {
         if (
           personalPromptState.packet.text !== packet.text ||
-          personalPromptState.packet.budgetTokens !== packet.budgetTokens
+          personalPromptState.packet.budgetTokens !== packet.budgetTokens ||
+          personalPromptState.packet.expansionReason !== packet.expansionReason
         ) {
           throw new Error("Codex personal packet changed during prompt rebuild");
         }
         return;
       }
-      personalPromptState.packet = { ...packet };
+      // The generic bootstrap may trim USER for ordinary Codex sessions. An
+      // owner packet requires the complete constraints: restore them at their
+      // projection producer, then let the final gate accept or needs_expansion.
+      personalPromptState.mandatorySourcesComplete =
+        restoreCodexMandatoryPersonalBootstrap(workspaceBootstrapContext).status === "complete";
+      const userSegment = legacySegments.find((segment) => segment.name === "USER.md");
+      if (userSegment && workspaceBootstrapContext.turnScopedDeveloperInstructions) {
+        const file = workspaceBootstrapContext.turnScopedDeveloperInstructionFiles?.find(
+          (entry) => path.basename(entry.path).toLowerCase() === "user.md",
+        );
+        if (file) {
+          userSegment.text = `### ${file.path}\n\n${file.content}\n\n`;
+        }
+        userSegment.sha256 = createHash("sha256").update(userSegment.text).digest("hex");
+      }
+      personalPromptState.packet = {
+        ...packet,
+        ...(packet.sourceRefs ? { sourceRefs: packet.sourceRefs.map((ref) => ({ ...ref })) } : {}),
+      };
     },
   };
   const hookContext = {
@@ -219,11 +252,15 @@ export async function prepareCodexAttemptContext(
     ["MEMORY.md", memoryFile, workspaceBootstrapContext.promptContext],
   ] as const) {
     if (file && text) {
+      const block = `${name === "USER.md" ? "###" : "##"} ${file.path}\n\n${file.content}`;
+      // Attribute the personal file's exact rendered block, not sibling SOUL,
+      // IDENTITY or TOOLS documents in the same native instruction leaf.
+      const renderedBlock = text.includes(block + "\n\n") ? block + "\n\n" : block;
       legacySegments.push({
         name,
         path: file.path,
-        text,
-        sha256: createHash("sha256").update(text).digest("hex"),
+        text: renderedBlock,
+        sha256: createHash("sha256").update(renderedBlock).digest("hex"),
         mandatory: true,
       });
     }

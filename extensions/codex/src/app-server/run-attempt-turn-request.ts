@@ -196,33 +196,42 @@ export async function prepareCodexAttemptTurnRequest(
               workspaceBootstrapContext.memoryCollaborationInstructions,
           }) ?? "",
         signal: runAbortController.signal,
-        ...(personalPromptState.packet || hookContext.personalPrompt?.legacySegments.length
+        ...(personalPromptState.packet
           ? {
               preEgressGate: createCodexPersonalPreEgressGate({
                 promptText: turnState.codexTurnPromptText,
                 currentUserMessage: context.promptState.promptText,
                 developerInstructions: turnState.promptBuild.developerInstructions,
-                developerBaseInstructions: context.promptState.developerInstructions,
+                // Context-engine additions can contain retrieved personal memory;
+                // only the original generic native developer policy is exempt.
+                developerBaseInstructions: context.baseDeveloperInstructions,
                 legacySegments: hookContext.personalPrompt?.legacySegments ?? [],
                 packetText: personalPromptState.packet?.text,
+                expectedModel: resourceState.thread.model ?? effectiveRuntimeModelId,
+                mandatorySourcesComplete: personalPromptState.mandatorySourcesComplete,
                 budgetTokens: personalPromptState.packet?.budgetTokens ?? 8_000,
-                onReceipt: ({
-                  upperBoundUtf8Bytes,
-                  budgetTokens,
-                  sources,
-                  packetSha256,
-                  newToolOutputs,
-                }) => {
+                expansionReason: personalPromptState.packet?.expansionReason,
+                totalContextTokenBudget: runtime.effectiveContextTokenBudget,
+                sourceRefs: personalPromptState.packet?.sourceRefs,
+                // These are host-committed results from this logical turn, not
+                // ambient chat history. A fresh native generation must not reset
+                // their read budget after a plugin runtime refresh.
+                replayedToolReads: (params.pluginRuntimeRefreshMessages ?? []).flatMap((message) =>
+                  message.role === "toolResult"
+                    ? [
+                        {
+                          callId: message.toolCallId,
+                          upperBoundUtf8Bytes: Buffer.byteLength(JSON.stringify(message), "utf8"),
+                        },
+                      ]
+                    : [],
+                ),
+                onReceipt: (receipt) => {
                   void emitCodexAppServerEvent(params, {
                     stream: "codex_app_server.lifecycle",
                     data: {
                       phase: "personal_context_pre_egress",
-                      accounting: "conservative_utf8_upper_bound",
-                      upperBoundUtf8Bytes,
-                      budgetTokens,
-                      sources,
-                      ...(packetSha256 ? { packetSha256 } : {}),
-                      newToolOutputs,
+                      ...receipt,
                     },
                   });
                 },
@@ -243,7 +252,7 @@ export async function prepareCodexAttemptTurnRequest(
         },
       });
       resourceState.releaseInferenceContext = registration.release;
-      if (personalPromptState.packet || hookContext.personalPrompt?.legacySegments.length) {
+      if (personalPromptState.packet) {
         void emitCodexAppServerEvent(params, {
           stream: "codex_app_server.lifecycle",
           data: {
@@ -257,7 +266,7 @@ export async function prepareCodexAttemptTurnRequest(
         ...turnStartParams.responsesapiClientMetadata,
         [CODEX_INFERENCE_GENERATION_KEY]: registration.generation,
       };
-    } else if (personalPromptState.packet || hookContext.personalPrompt?.legacySegments.length) {
+    } else if (personalPromptState.packet) {
       // A registered owner packet must never leave through an unobserved native
       // transport, even if the selected OAuth profile changed after hook work.
       throw new CodexInferenceNeedsExpansionError();

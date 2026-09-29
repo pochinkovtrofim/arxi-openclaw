@@ -903,6 +903,32 @@ function selectCodexWorkspaceDeveloperInstructionFiles(
     .toSorted(compareCodexContextFiles);
 }
 
+/** Owner packets preserve mandatory USER at its native projection producer. */
+export function restoreCodexMandatoryPersonalBootstrap(context: CodexWorkspaceBootstrapContext): {
+  status: "complete" | "omitted";
+} {
+  const rawUser = context.bootstrapFiles.find(
+    (file) => file.name.toLowerCase() === "user.md" && !file.missing,
+  );
+  if (!rawUser?.content?.trimEnd()) {
+    return { status: "complete" };
+  }
+  const projectedUser = context.turnScopedDeveloperInstructionFiles?.find(
+    (file) => path.basename(file.path).toLowerCase() === "user.md",
+  );
+  if (!projectedUser) {
+    return { status: "omitted" };
+  }
+  if (projectedUser.content !== rawUser.content.trimEnd()) {
+    projectedUser.content = rawUser.content.trimEnd();
+    context.turnScopedDeveloperInstructions =
+      renderCodexWorkspaceCollaborationDeveloperInstructions(
+        context.turnScopedDeveloperInstructionFiles ?? [],
+      );
+  }
+  return { status: "complete" };
+}
+
 function renderCodexWorkspaceCollaborationDeveloperInstructions(
   files: EmbeddedContextFile[],
 ): string | undefined {
