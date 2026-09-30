@@ -73,6 +73,7 @@ function countRequestShape(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new Error("Personal context provider payload unavailable");
   }
+  // SAFETY: the guard above rejects null, primitives, and arrays; fields remain unknown.
   const request = value as Record<string, unknown>;
   if (typeof request.model !== "string" || !request.model.trim() || request.input == null) {
     throw new Error("Personal context provider payload invalid");
@@ -129,6 +130,7 @@ export async function verifyProviderPersonalContext(input: {
       throw new Error("Effective USER/MEMORY missing or duplicated at provider boundary");
     }
     if (instructionMatches === 1) {
+      // SAFETY: instructionMatches can be one only in the typeof instructions === string branch.
       baseline.instructions = (instructions as string).replace(segment.text, "");
     } else {
       baseline.input = replacedInput.value;

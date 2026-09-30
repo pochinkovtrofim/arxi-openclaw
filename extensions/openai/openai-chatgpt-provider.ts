@@ -44,6 +44,7 @@ import {
   OPENAI_GPT_6_SOL_MODEL_ID,
   OPENAI_GPT_6_LUNA_MODEL_ID,
 } from "./model-route-contract.js";
+import { OPENAI_CODEX_IMAGE_CAPABLE_MODEL_IDS } from "./openai-chatgpt-image-models.js";
 import manifest from "./openclaw.plugin.json" with { type: "json" };
 import {
   buildOpenAIResponsesProviderHooks,
@@ -109,16 +110,6 @@ const OPENAI_CODEX_GPT_55_PRO_TEMPLATE_MODEL_IDS = [
   OPENAI_CODEX_GPT_54_PRO_MODEL_ID,
   ...OPENAI_CODEX_GPT_54_TEMPLATE_MODEL_IDS,
 ] as const;
-const OPENAI_CODEX_IMAGE_CAPABLE_MODEL_IDS = [
-  OPENAI_GPT_61_SOL_MODEL_ID,
-  ...OPENAI_CODEX_GPT_56_MODEL_IDS,
-  OPENAI_CODEX_GPT_55_MODEL_ID,
-  OPENAI_CODEX_GPT_55_PRO_MODEL_ID,
-  OPENAI_CODEX_GPT_54_MODEL_ID,
-  OPENAI_CODEX_GPT_54_PRO_MODEL_ID,
-  OPENAI_CODEX_GPT_54_MINI_MODEL_ID,
-] as const;
-
 function isOpenAIOrLegacyCodexProvider(provider: string | undefined): boolean {
   const normalized = normalizeProviderId(provider ?? "");
   return normalized === PROVIDER_ID;

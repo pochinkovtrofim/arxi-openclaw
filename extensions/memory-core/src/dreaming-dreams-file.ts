@@ -2,10 +2,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { extractErrorCode } from "openclaw/plugin-sdk/error-runtime";
+import type { MemoryArtifactSourceRef } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { replaceManagedMarkdownBlock } from "openclaw/plugin-sdk/memory-host-markdown";
 import { readRegularFile, replaceFileAtomic } from "openclaw/plugin-sdk/security-runtime";
 import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
+import { readDreamingSource, commitDreamingSourceWrite } from "./dreaming-source-lineage.js";
 import { withMemoryWorkspaceLock } from "./memory-workspace-lock.js";
+import { filterLiveShortTermRecallEntries } from "./short-term-promotion-record.js";
 import { readStore } from "./short-term-promotion-store.js";
 
 export const DREAMS_FILENAMES = ["DREAMS.md", "dreams.md"] as const;
@@ -85,15 +88,22 @@ async function writeDreamsFileAtomic(dreamsPath: string, content: string): Promi
 
 export async function updateDreamsFile<T>(params: {
   workspaceDir: string;
+  sourceRefs?: readonly MemoryArtifactSourceRef[];
   updater: (
     existing: string,
     dreamsPath: string,
   ) =>
-    | Promise<{ content: string; result: T; shouldWrite?: boolean }>
+    | Promise<{
+        content: string;
+        result: T;
+        shouldWrite?: boolean;
+        sourceRefs?: readonly MemoryArtifactSourceRef[];
+      }>
     | {
         content: string;
         result: T;
         shouldWrite?: boolean;
+        sourceRefs?: readonly MemoryArtifactSourceRef[];
       };
 }): Promise<T> {
   // Read and replace under the purge owner's lock so an awaited diary update
@@ -101,10 +111,23 @@ export async function updateDreamsFile<T>(params: {
   return await withMemoryWorkspaceLock(params.workspaceDir, async () => {
     const dreamsPath = await resolveDreamsPath(params.workspaceDir);
     const existing = await readDreamsFile(dreamsPath);
-    const { content, result, shouldWrite = true } = await params.updater(existing, dreamsPath);
+    const {
+      content,
+      result,
+      shouldWrite = true,
+      sourceRefs = params.sourceRefs,
+    } = await params.updater(existing, dreamsPath);
     if (shouldWrite) {
       await fs.mkdir(path.dirname(dreamsPath), { recursive: true });
-      await writeDreamsFileAtomic(dreamsPath, content.endsWith("\n") ? content : `${content}\n`);
+      const after = content.endsWith("\n") ? content : `${content}\n`;
+      await commitDreamingSourceWrite({
+        workspaceDir: params.workspaceDir,
+        filePath: dreamsPath,
+        before: existing,
+        after,
+        refs: sourceRefs,
+        commit: () => writeDreamsFileAtomic(dreamsPath, after),
+      });
     }
     return result;
   });
@@ -242,7 +265,9 @@ export async function readRecentDreamDiaryEntries(params: {
   let existing: string;
   try {
     const dreamsPath = await resolveDreamsPath(params.workspaceDir);
-    existing = await readDreamsFile(dreamsPath);
+    existing = (
+      await readDreamingSource(params.workspaceDir, dreamsPath, await readDreamsFile(dreamsPath))
+    ).content;
   } catch (err) {
     if (isOptionalDiaryContextReadError(err)) {
       return [];
@@ -250,6 +275,66 @@ export async function readRecentDreamDiaryEntries(params: {
     throw err;
   }
   return getDiaryContextEntries(existing).slice(-limit).toReversed();
+}
+
+/** Revalidate the actual selected entries and diary quotes, never infer source identities. */
+export async function readDreamNarrativeSources(params: {
+  workspaceDir: string;
+  sourceEntryKeys?: readonly string[];
+  recentDiaryEntries?: readonly string[];
+  entrySourceRefs?: readonly MemoryArtifactSourceRef[];
+  snippets?: readonly string[];
+}) {
+  const keys = params.sourceEntryKeys ?? [];
+  const store = keys.length
+    ? (await readStore(params.workspaceDir, new Date().toISOString())).entries
+    : {};
+  const live = await filterLiveShortTermRecallEntries({
+    workspaceDir: params.workspaceDir,
+    requireCurrentSource: true,
+    entries: keys.flatMap((key) => (store[key] ? [store[key]] : [])),
+  });
+  const liveKeys = new Set(live.map((entry) => entry.key));
+  if (keys.some((key) => !liveKeys.has(key))) {
+    return { current: false, sourceRefs: [] };
+  }
+  const refs = live.flatMap((entry) => entry.sourceRefs ?? []);
+  // For source-bound phase inputs, changed cached text cannot borrow the new
+  // file's authority merely because its recall key still exists.
+  if (
+    refs.length &&
+    params.snippets?.some((snippet) => !live.some((entry) => entry.snippet === snippet))
+  ) {
+    return { current: false, sourceRefs: [] };
+  }
+  if (params.recentDiaryEntries?.length) {
+    const file = await resolveDreamsPath(params.workspaceDir);
+    const source = await readDreamingSource(params.workspaceDir, file, await readDreamsFile(file));
+    const blocks = new Set(getDiaryContextEntries(source.content));
+    if (
+      params.recentDiaryEntries.some((block) => !blocks.has(clampDreamDiaryContextEntry(block)))
+    ) {
+      return { current: false, sourceRefs: [] };
+    }
+    refs.push(...source.refsForRange());
+  }
+  const sourceRefs = [
+    ...new Map(refs.map((ref) => [JSON.stringify([ref.ownerId, ref.value]), ref])).values(),
+  ];
+  if (params.entrySourceRefs) {
+    const key = (ref: MemoryArtifactSourceRef) => JSON.stringify([ref.ownerId, ref.value]);
+    // Diary context adds its own dependencies after the phase captured refs.
+    const currentEntryRefs = [
+      ...new Set(live.flatMap((entry) => entry.sourceRefs ?? []).map(key)),
+    ].toSorted();
+    if (
+      JSON.stringify([...new Set(params.entrySourceRefs.map(key))].toSorted()) !==
+      JSON.stringify(currentEntryRefs)
+    ) {
+      return { current: false, sourceRefs: [] };
+    }
+  }
+  return { current: true, sourceRefs };
 }
 
 function normalizeDiaryBlockFingerprint(block: string): string {
@@ -347,10 +432,12 @@ export async function writeBackfillDiaryEntries(params: {
     sourcePath?: string;
   }>;
   preserveExisting?: boolean;
+  sourceRefs?: readonly MemoryArtifactSourceRef[];
   timezone?: string;
 }): Promise<{ dreamsPath: string; written: number; replaced: number }> {
   return await updateDreamsFile({
     workspaceDir: params.workspaceDir,
+    sourceRefs: params.sourceRefs,
     updater: (existing, dreamsPath) => {
       const stripped = params.preserveExisting
         ? { updated: existing, removed: 0 }
@@ -469,25 +556,26 @@ export async function appendNarrativeEntry(params: {
   timezone?: string;
   sourceEntryKeys?: readonly string[];
   recentDiaryEntries?: readonly string[];
+  sourceRefs?: readonly MemoryArtifactSourceRef[];
+  sourceSnippets?: readonly string[];
 }): Promise<string | undefined> {
   const dateStr = formatNarrativeDate(params.nowMs, params.timezone);
   const entry = buildDiaryEntry(params.narrative, dateStr);
   return await updateDreamsFile<string | undefined>({
     workspaceDir: params.workspaceDir,
+    sourceRefs: params.sourceRefs,
     updater: async (existing, dreamsPath) => {
-      const sourceKeys = params.sourceEntryKeys ?? [];
-      const currentSources =
-        sourceKeys.length > 0
-          ? (await readStore(params.workspaceDir, new Date(params.nowMs).toISOString())).entries
-          : undefined;
-      const currentDiary = new Set(getDiaryContextEntries(existing));
-      // The updater holds the purge lock. Model work ran outside it, so both
-      // staged inputs and prior diary quotes must survive until this commit.
+      const sources = await readDreamNarrativeSources({
+        ...params,
+        snippets: params.sourceSnippets,
+      });
+      const identity = (refs: readonly MemoryArtifactSourceRef[]) =>
+        JSON.stringify(refs.map((ref) => JSON.stringify([ref.ownerId, ref.value])).toSorted());
+      // Model work ran outside the purge lock. The selected source set must
+      // remain current and exact, rather than blessing new refs after a change.
       if (
-        sourceKeys.some((key) => !currentSources?.[key]) ||
-        params.recentDiaryEntries?.some(
-          (block) => !currentDiary.has(clampDreamDiaryContextEntry(block)),
-        )
+        !sources.current ||
+        (params.sourceRefs && identity(params.sourceRefs) !== identity(sources.sourceRefs))
       ) {
         return { content: existing, result: undefined, shouldWrite: false };
       }
@@ -508,7 +596,7 @@ export async function appendNarrativeEntry(params: {
         const diarySection = `# Dream Diary\n\n${DIARY_START_MARKER}${entry}\n${DIARY_END_MARKER}\n`;
         updated = existing.trim().length === 0 ? diarySection : `${diarySection}\n${existing}`;
       }
-      return { content: updated, result: dreamsPath };
+      return { content: updated, result: dreamsPath, sourceRefs: sources.sourceRefs };
     },
   });
 }

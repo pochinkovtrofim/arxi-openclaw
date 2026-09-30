@@ -156,6 +156,8 @@ async function detectReadImageMimeType(
 export interface ReadToolOptions {
   /** Whether to auto-resize images to 2000x2000 max. Default: true */
   autoResizeImages?: boolean;
+  /** Trusted owning content projection, after guarded IO and before model-visible paging. */
+  projectContent?: (absolutePath: string, buffer: Buffer) => Promise<Buffer>;
   /** Custom operations for file reading. Default: local filesystem */
   operations?: ReadOperations;
   /** Complete model-visible call budget; individual pages never exceed the session ceiling. */
@@ -448,10 +450,11 @@ export function createReadToolDefinition(
                   if (aborted) {
                     return undefined;
                   }
-                  return {
-                    ...resolved,
-                    buffer: await ops.readFile(resolved.absolutePath),
-                  };
+                  const raw = await ops.readFile(resolved.absolutePath);
+                  const projected = options?.projectContent
+                    ? await options.projectContent(resolved.absolutePath, raw)
+                    : raw;
+                  return { ...resolved, buffer: projected };
                 },
               );
               if (!snapshot) {

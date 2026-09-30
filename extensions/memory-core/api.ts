@@ -24,3 +24,6 @@ export {
   registerMemoryCoreDoctorChecks,
 } from "./src/doctor-health.js";
 export { MISSING_LOCAL_MEMORY_EMBEDDING_PROVIDER_MESSAGE } from "./src/memory/local-embedding-provider.js";
+
+// Native source deletion uses the existing scoped forget implementation.
+export { forgetMemoryEntries } from "./src/memory-forget.js";

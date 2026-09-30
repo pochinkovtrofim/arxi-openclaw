@@ -39,6 +39,10 @@ export type {
 } from "../plugins/memory-state.js";
 export {
   listMemoryArtifactProvenance,
+  recordMemoryArtifactWriteProvenance,
+  projectMemoryArtifactSourceContent,
+  tombstoneMemoryArtifactSources,
+  readForgottenMemoryArtifactSources,
   readMemoryArtifactProvenance,
 } from "../memory/memory-artifact-provenance.js";
 export type {
@@ -52,3 +56,26 @@ export {
 } from "../plugins/memory-state.js";
 
 export { parseAgentSessionKey } from "../routing/session-key.js";
+
+export {
+  registerMemoryArtifactSourceResolver,
+  recordMemoryArtifactSourcesFromActiveTool,
+  checkMemoryArtifactSources,
+} from "../memory/memory-artifact-source-authority.js";
+export type {
+  MemoryArtifactSourceRef,
+  MemoryArtifactSourceStatus,
+} from "../memory/memory-artifact-source-authority.js";
+
+export { withFileMutationQueue as withMemoryArtifactMutationQueue } from "../agents/sessions/tools/file-mutation-queue.js";
+export {
+  prepareMemoryArtifactSourceForgetPlan,
+  reconcileMemoryArtifactSourceForgetPlan,
+  recordMemoryArtifactSourceForgetPending,
+} from "../memory/memory-artifact-source-forget.js";
+export type { MemoryArtifactSourceForgetPlan } from "../memory/memory-artifact-source-forget.js";
+
+export {
+  listWorkshopSourceMetadata,
+  forgetWorkshopSourceExamples,
+} from "../skills/workshop/store.js";

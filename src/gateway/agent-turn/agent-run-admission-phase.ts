@@ -63,6 +63,7 @@ import {
 } from "./agent-dedupe.js";
 import type { AgentDeliveryPhaseResult } from "./agent-delivery-phase.js";
 import type { RestoredCronContinuation } from "./agent-handler-helpers.js";
+import { releaseFailedAgentRunAdmission } from "./agent-run-admission-cleanup.js";
 import { createAgentRunAdmissionRevalidator } from "./agent-run-admission-revalidation.js";
 import { prepareAgentRunTaskTracking } from "./agent-run-task-tracking.js";
 import {
@@ -708,16 +709,6 @@ export async function prepareAgentRunDispatch(params: {
       restoreAdmittedRestartRecoveryInterrupted,
     };
   } catch (error) {
-    const failure = releasePreparedAgentRunUserTurnAfterFailure(userTurn, error, "interrupted");
-    try {
-      await cleanupPreaccept();
-    } catch (cleanupError) {
-      throw new AggregateError(
-        [failure, cleanupError],
-        `${formatForLog(failure)}; agent admission cleanup failed: ${formatForLog(cleanupError)}`,
-        { cause: cleanupError },
-      );
-    }
-    throw failure;
+    throw await releaseFailedAgentRunAdmission(userTurn, error, cleanupPreaccept);
   }
 }

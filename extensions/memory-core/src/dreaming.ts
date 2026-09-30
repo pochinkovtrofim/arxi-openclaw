@@ -22,7 +22,7 @@ import {
 } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { peekSystemEventEntries } from "openclaw/plugin-sdk/system-event-runtime";
 import { appendFailedDreamingEvent } from "./dreaming-events.js";
-import type { NarrativePhaseData } from "./dreaming-narrative.js";
+import { buildDeepPromotionNarrative } from "./dreaming-promotion-narrative.js";
 import {
   formatErrorMessage,
   formatRecallRepairDetails,
@@ -689,12 +689,7 @@ async function runShortTermDreamingPromotionIfTriggered(params: {
       });
       // Generate dream diary narrative from promoted memories.
       if (applied.applied > 0) {
-        const data: NarrativePhaseData = {
-          phase: "deep",
-          snippets: applied.appliedCandidates.map((c) => c.snippet).filter(Boolean),
-          promotions: applied.appliedCandidates.map((c) => c.snippet).filter(Boolean),
-          sourceEntryKeys: [...new Set(applied.appliedCandidates.map((c) => c.key))],
-        };
+        const data = buildDeepPromotionNarrative(applied.appliedCandidates);
         if (!params.subagent) {
           await appendFallbackNarrativeEntry({
             workspaceDir,

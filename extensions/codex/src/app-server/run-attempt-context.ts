@@ -321,10 +321,13 @@ export async function prepareCodexAttemptContext(
   });
   const promptState = {
     promptText: params.prompt,
+    // SAFETY: this initially empty collection is populated only with rendered session strings.
     ordinarySessionSegments: [] as string[],
+    // SAFETY: absence is allowed until the native prompt projection records its range.
     promptContextRange: undefined as CodexProjectedContextRange | undefined,
     developerInstructions: baseDeveloperInstructions,
     prePromptMessageCount: historyState.messages.length,
+    // SAFETY: the context-engine bootstrap projection is optional and starts absent.
     contextEngineProjection: undefined as CodexContextEngineThreadBootstrapProjection | undefined,
     precomputedStaleBindingContinuityProjectionApplied: false,
     staleBindingContinuityForcedFreshStart: false,

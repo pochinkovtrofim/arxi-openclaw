@@ -6,6 +6,7 @@ export const databaseWorkerExtensionTestRoots = [
 ];
 
 export const databaseWorkerExtensionTestFiles = [
+  "extensions/codex/src/app-server/attempt-context.test.ts",
   "extensions/codex/src/app-server/run-attempt.trace-context.test.ts",
   "extensions/acpx/doctor-contract-api.test.ts",
   "extensions/acpx/src/process-lease.test.ts",

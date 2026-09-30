@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { MemoryArtifactSourceRef } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { resolveMemoryRemDreamingConfig } from "openclaw/plugin-sdk/memory-core-host-status";
 import { resolvePreferredOpenClawTmpDir } from "openclaw/plugin-sdk/temp-path";
 import { resolveMemoryPluginConfig, withMemoryCommand } from "./cli-runtime-common.js";
@@ -7,6 +8,7 @@ import { defaultRuntime, shortenHomePath, theme } from "./cli.host.runtime.js";
 import type { MemoryRemBackfillOptions, MemoryRemHarnessOptions } from "./cli.types.js";
 import { removeBackfillDiaryEntries, writeBackfillDiaryEntries } from "./dreaming-dreams-file.js";
 import { seedHistoricalDailyMemorySignals } from "./dreaming-phases.js";
+import { copyDreamingSource } from "./dreaming-source-lineage.js";
 import type { MemoryCoreRuntimeHost } from "./memory/runtime-host.js";
 import { previewGroundedRemMarkdown } from "./rem-evidence.js";
 import { previewRemHarness } from "./rem-harness.js";
@@ -152,8 +154,11 @@ export async function runMemoryRemHarness(
         return { workspaceDir, sourceFiles: historical?.sourceFiles ?? [], seeded, preview };
       };
       const { workspaceDir, sourceFiles, seeded, preview } = opts.path
-        ? await withHistoricalMemoryWorkspace("rem-harness", opts.path, (historical) =>
-            previewWorkspace(historical.workspaceDir, historical),
+        ? await withHistoricalMemoryWorkspace(
+            "rem-harness",
+            opts.path,
+            managerWorkspaceDir ?? "",
+            (historical) => previewWorkspace(historical.workspaceDir, historical),
           )
         : await previewWorkspace(managerWorkspaceDir ?? "");
       const importedFileCount = seeded?.importedFileCount ?? 0;
@@ -327,7 +332,15 @@ export async function runMemoryRemBackfill(
       const result = await withHistoricalMemoryWorkspace(
         "rem-backfill",
         opts.path,
-        async ({ workspaceDir: scratchDir, sourceFiles, workspaceSourceFiles }) => {
+        workspaceDir,
+        async ({
+          workspaceDir: scratchDir,
+          sourceFiles,
+          workspaceSourceFiles,
+          sourceRefs,
+          assertCurrentSources,
+        }) => {
+          await assertCurrentSources();
           const grounded = await previewGroundedRemMarkdown({
             workspaceDir: scratchDir,
             inputPaths: workspaceSourceFiles,
@@ -354,8 +367,10 @@ export async function runMemoryRemBackfill(
               };
             })
             .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+          await assertCurrentSources();
           const written = await writeBackfillDiaryEntries({
             workspaceDir,
+            sourceRefs,
             entries,
             timezone: remConfig.timezone,
           });
@@ -460,13 +475,19 @@ type HistoricalMemoryWorkspace = {
   workspaceDir: string;
   sourceFiles: string[];
   workspaceSourceFiles: string[];
+  sourceRefs: MemoryArtifactSourceRef[];
+  assertCurrentSources: () => Promise<void>;
 };
 
 async function withHistoricalMemoryWorkspace<T>(
   command: "rem-harness" | "rem-backfill",
   inputPath: string,
+  sourceWorkspaceDir: string,
   run: (workspace: HistoricalMemoryWorkspace) => Promise<T>,
 ): Promise<T> {
+  if (!sourceWorkspaceDir) {
+    throw new Error("Historical dreaming requires the known source workspace");
+  }
   const sourceFiles = await listHistoricalDailyFiles(inputPath);
   if (sourceFiles.length === 0) {
     throw new Error(
@@ -482,12 +503,32 @@ async function withHistoricalMemoryWorkspace<T>(
     const memoryDir = path.join(workspaceDir, "memory");
     await fs.mkdir(memoryDir, { recursive: true });
     const workspaceSourceFiles: string[] = [];
+    const copies: Awaited<ReturnType<typeof copyDreamingSource>>[] = [];
     for (const filePath of sourceFiles) {
       const destination = path.join(memoryDir, path.basename(filePath));
-      await fs.copyFile(filePath, destination);
+      copies.push(
+        await copyDreamingSource({
+          sourceWorkspaceDir,
+          sourcePath: filePath,
+          workspaceDir,
+          destination,
+        }),
+      );
       workspaceSourceFiles.push(destination);
     }
-    return await run({ workspaceDir, sourceFiles, workspaceSourceFiles });
+    const assertCurrentSources = async () => {
+      for (const copy of copies) {
+        await copy.assertCurrent();
+      }
+    };
+    await assertCurrentSources();
+    return await run({
+      workspaceDir,
+      sourceFiles,
+      workspaceSourceFiles,
+      sourceRefs: copies.flatMap((copy) => copy.refs),
+      assertCurrentSources,
+    });
   } finally {
     await fs.rm(workspaceDir, { recursive: true, force: true });
   }

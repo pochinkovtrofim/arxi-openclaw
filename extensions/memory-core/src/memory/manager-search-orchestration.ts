@@ -6,6 +6,7 @@ import {
 } from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
 import {
   readMemoryFile,
+  hashText,
   MEMORY_INDEX_FTS_TABLE,
   MEMORY_INDEX_VECTOR_TABLE,
   MEMORY_SEARCH_DEADLINE_CONTROL,
@@ -14,6 +15,7 @@ import {
   type MemorySearchResult,
   type MemorySource,
 } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
+import { projectMemoryArtifactSourceContent } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { WorkerTaskError } from "openclaw/plugin-sdk/process-runtime";
 import { redactSensitiveText } from "openclaw/plugin-sdk/security-runtime";
 import { uniqueValues } from "openclaw/plugin-sdk/string-coerce-runtime";
@@ -87,14 +89,99 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
     relPath: string;
     from?: number;
     lines?: number;
+    signal?: AbortSignal;
   }): Promise<MemoryReadResult> {
-    return await readMemoryFile({
+    let depublish: { hash: string; ranges: Array<{ from: number; to: number }> } | undefined;
+    const result = await readMemoryFile({
       workspaceDir: this.workspaceDir,
       extraPaths: this.settings.extraPaths,
       relPath: params.relPath,
       from: params.from,
       lines: params.lines,
+      projectContent: async ({ relativePath, content }) => {
+        const projection = await projectMemoryArtifactSourceContent({
+          workspaceDir: this.workspaceDir,
+          relativePath,
+          content,
+          signal: params.signal,
+        });
+        depublish = { hash: hashText(content), ranges: projection.tombstonedRegions };
+        return projection.content;
+      },
     });
+    if (depublish?.ranges.length) {
+      await this.deleteIndexedSourceRegions(result.path, depublish.hash, depublish.ranges);
+    }
+    return result;
+  }
+
+  private async filterCurrentSourceResults(
+    results: MemorySearchResult[],
+    signal?: AbortSignal,
+    depublications?: Map<string, { hash: string; ranges: Array<{ from: number; to: number }> }>,
+  ): Promise<MemorySearchResult[]> {
+    const files = new Map<string, Promise<Array<{ from: number; to: number }> | undefined>>();
+    const current: MemorySearchResult[] = [];
+    for (const result of results) {
+      signal?.throwIfAborted();
+      if (result.source !== "memory") {
+        current.push(result);
+        continue;
+      }
+      let file = files.get(result.path);
+      if (!file) {
+        file = (async () => {
+          let blockedRegions: Array<{ from: number; to: number }> | undefined;
+          const read = await readMemoryFile({
+            workspaceDir: this.workspaceDir,
+            extraPaths: this.settings.extraPaths,
+            relPath: result.path,
+            from: 1,
+            lines: 1,
+            projectContent: async ({ relativePath, content }) => {
+              const projection = await projectMemoryArtifactSourceContent({
+                workspaceDir: this.workspaceDir,
+                relativePath,
+                content,
+                signal,
+              });
+              blockedRegions = projection.blockedRegions;
+              if (projection.lineageFileHash) {
+                const indexed = this.db
+                  .prepare("SELECT hash FROM memory_index_sources WHERE path=? AND source=?")
+                  // SAFETY: The owning source schema stores hash as text; SELECT may return no row.
+                  .get(relativePath, "memory") as { hash: string } | undefined;
+                if (indexed?.hash !== hashText(content)) {
+                  blockedRegions = undefined;
+                }
+              }
+              if (projection.tombstonedRegions.length) {
+                depublications?.set(relativePath, {
+                  hash: hashText(content),
+                  ranges: projection.tombstonedRegions,
+                });
+              }
+              return projection.content;
+            },
+          });
+          return read.status === "not_found" ? undefined : blockedRegions;
+        })().catch(() => {
+          // A missing, changed or unavailable owning source must never turn an
+          // old FTS/vector snippet into current recall.
+          return undefined;
+        });
+        files.set(result.path, file);
+      }
+      const blocked = await file;
+      signal?.throwIfAborted();
+      if (
+        blocked &&
+        !blocked.some((region) => region.from <= result.endLine && region.to >= result.startLine)
+      ) {
+        current.push(result);
+      }
+    }
+    return current;
   }
 
   private async searchCandidates(
@@ -102,6 +189,10 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
     opts?: MemoryIndexSearchOptions,
   ): Promise<MemorySearchResult[]> {
     let releaseGeneration: (() => Promise<void>) | undefined;
+    const depublications = new Map<
+      string,
+      { hash: string; ranges: Array<{ from: number; to: number }> }
+    >();
     const runSearch = async () => {
       opts?.onDebug?.({ backend: "builtin" });
       if (this.providerRequirement.mode === "required") {
@@ -344,7 +435,13 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         if (!keywordOnly && opts?.onPartialResults) {
           const memoryResults = results.filter((entry) => entry.source === "memory");
           if (memoryResults.length > 0) {
-            opts.onPartialResults(await finalizeKeywords(memoryResults));
+            opts.onPartialResults(
+              await this.filterCurrentSourceResults(
+                await finalizeKeywords(memoryResults),
+                opts.signal,
+                depublications,
+              ),
+            );
           }
         }
         return results;
@@ -513,7 +610,17 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
     };
     return await this.withManagerOperation(async () => {
       try {
-        return await runSearch();
+        const results = await this.filterCurrentSourceResults(
+          await runSearch(),
+          opts?.signal,
+          depublications,
+        );
+        await releaseGeneration?.();
+        releaseGeneration = undefined;
+        for (const [pathname, entry] of depublications) {
+          await this.deleteIndexedSourceRegions(pathname, entry.hash, entry.ranges);
+        }
+        return results;
       } finally {
         await releaseGeneration?.();
       }

@@ -1,5 +1,6 @@
 // Memory Core plugin module owns consolidation preimages and operator summaries.
 import { createHash } from "node:crypto";
+import type { MemoryArtifactSourceRef } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { updateDreamsFile } from "./dreaming-dreams-file.js";
 import {
   readMemoryCoreWorkspaceEntries,
@@ -72,6 +73,7 @@ export async function appendConsolidationSummary(params: {
   workspaceDir: string;
   result: MemoryConsolidationResult;
   nowMs: number;
+  sourceRefs?: readonly MemoryArtifactSourceRef[];
 }): Promise<void> {
   const timestamp = new Date(params.nowMs).toISOString();
   const lines = [
@@ -85,6 +87,7 @@ export async function appendConsolidationSummary(params: {
   ];
   await updateDreamsFile({
     workspaceDir: params.workspaceDir,
+    sourceRefs: params.sourceRefs,
     updater: (existing, dreamsPath) => {
       const heading = "## Memory Consolidation History";
       const base = existing.includes(heading)

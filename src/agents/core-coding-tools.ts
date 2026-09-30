@@ -190,11 +190,21 @@ export function createCoreCodingTools(options: CoreCodingToolsOptions): AnyAgent
       ? createSandboxedReadTool({
           root: sandboxRoot,
           bridge: sandboxFsBridge!,
+          memoryWriteProvenance: options.memoryWriteProvenance,
           modelContextWindowTokens: options.modelContextWindowTokens,
           imageSanitization: options.imageSanitization,
           modelHasVision: options.modelHasVision,
         })
       : createReadTool(options.codingRoot, {
+          projectContent: options.memoryWriteProvenance?.read
+            ? async (filePath, buffer) =>
+                (await options.memoryWriteProvenance!.classifies(filePath))
+                  ? Buffer.from(
+                      await options.memoryWriteProvenance!.read!(filePath, buffer.toString("utf8")),
+                      "utf8",
+                    )
+                  : buffer
+            : undefined,
           maxBytes: resolveAdaptiveReadMaxBytes(options),
           modelBudget: resolveToolResultBudget(options.modelContextWindowTokens),
           modelHasVision: options.modelHasVision,

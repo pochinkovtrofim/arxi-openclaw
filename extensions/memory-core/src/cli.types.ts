@@ -18,6 +18,7 @@ export type MemorySearchCommandOptions = MemoryCommandOptions & {
 export type MemoryResetCommandOptions = { agent?: string; yes?: boolean };
 
 export type MemoryForgetCommandOptions = MemoryCommandOptions & {
+  sourceKey?: string[];
   session?: string[];
   hookSource?: string[];
   participant?: string[];

@@ -1,12 +1,10 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 // Read/write/edit tool wrappers for host and sandbox workspaces.
 // Adds workspace-root guards, adaptive read paging, image validation, memory
 // append-only writes, and parameter cleanup around the session file tools.
-
-import fs from "node:fs/promises";
-import path from "node:path";
 import { URL } from "node:url";
 import { detectMime } from "@openclaw/media-core/mime";
-import type { Static, TSchema } from "typebox";
 import { Value } from "typebox/value";
 import { isWindowsDrivePath } from "../infra/archive-path.js";
 import { resolveRootPath } from "../infra/boundary-path.js";
@@ -28,6 +26,7 @@ import {
 import { sniffMimeFromBase64 } from "../media/sniff-mime-from-base64.js";
 import { clampNumber } from "../utils.js";
 import { captureAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";
+import { createMemoryReadProjection } from "./agent-tools.memory-provenance.js";
 import {
   REQUIRED_PARAM_GROUPS,
   assertRequiredParams,
@@ -36,6 +35,7 @@ import {
   normalizeFileToolPathParamsFromKeys,
   wrapToolParamValidation,
 } from "./agent-tools.params.js";
+import { eraseSessionFileTool } from "./agent-tools.session-tool.js";
 import type { AnyAgentTool } from "./agent-tools.types.js";
 import { writeHostFile } from "./host-file-write.js";
 import type { ImageSanitizationLimits } from "./image-sanitization.js";
@@ -44,7 +44,7 @@ import {
   withMemoryWriteProvenance,
 } from "./memory-write-provenance.js";
 import { resolveSandboxPathMapping, toRelativeWorkspacePath } from "./path-policy.js";
-import type { AgentTool, AgentToolResult } from "./runtime/index.js";
+import type { AgentToolResult } from "./runtime/index.js";
 import { assertSandboxPath, normalizeFileReferencePrefix } from "./sandbox-paths.js";
 import { resolveSandboxFileMutationQueueKey } from "./sandbox/file-mutation-identity.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
@@ -103,27 +103,6 @@ export type SkillInstructionDeliveryCache = Map<string, Promise<boolean>>;
 
 export function createSkillInstructionDeliveryCache(): SkillInstructionDeliveryCache {
   return new Map();
-}
-
-/** Erase a schema-specific session tool only after its input passes that owned schema. */
-function eraseSessionFileTool<TParameters extends TSchema, TDetails>(
-  tool: AgentTool<TParameters, TDetails>,
-): AnyAgentTool {
-  return {
-    ...tool,
-    execute: async (toolCallId, params, signal, onUpdate) => {
-      if (!Value.Check(tool.parameters, params)) {
-        throw new Error(`Invalid parameters for ${tool.name}`);
-      }
-      const typedParams = params as Static<TParameters>;
-      return await tool.execute(
-        toolCallId,
-        typedParams,
-        signal,
-        onUpdate ? (update) => onUpdate(update) : undefined,
-      );
-    },
-  };
 }
 
 type ReadTruncationDetails = {
@@ -1026,6 +1005,7 @@ export function createSandboxedReadTool(params: SandboxToolParams) {
   const base = eraseSessionFileTool(
     createReadTool(params.root, {
       operations: createSandboxReadOperations(params),
+      projectContent: createMemoryReadProjection(params),
       maxBytes: resolveAdaptiveReadMaxBytes(params),
       modelBudget: resolveToolResultBudget(params.modelContextWindowTokens),
       modelHasVision: params.modelHasVision,

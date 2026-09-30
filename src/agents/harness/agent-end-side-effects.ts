@@ -8,9 +8,11 @@ import { getRuntimeConfig } from "../../config/config.js";
 import { readActiveTranscriptEntryAnchor } from "../../config/sessions/session-accessor.sqlite-transcript-anchor.js";
 import type { TranscriptEntryAnchor } from "../../config/sessions/transcript-entry-anchor.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { captureMemoryArtifactSourceScope } from "../../memory/memory-artifact-source-authority.js";
 import { consumeRunSkillUsage } from "../../skills/runtime/run-usage.js";
 import { scheduleSkillExperienceReview } from "../../skills/workshop/experience-review-default.js";
 import type { EmbeddedForegroundPromptContext } from "../embedded-agent-runner/run/params.js";
+import { getCanonicalSkillWorkspace } from "../skill-workshop-workspace-context.js";
 import {
   awaitAgentHarnessAgentEndHook,
   runAgentHarnessAgentEndHook,
@@ -56,6 +58,10 @@ function runCoreAgentEndSideEffects(params: AgentEndSideEffectsParams): void {
       usedSkills,
       config,
       source: anchor,
+      sourceRefs: captureMemoryArtifactSourceScope(
+        params.ctx.runId,
+        getCanonicalSkillWorkspace() ?? params.ctx.workspaceDir ?? "",
+      ),
     });
   } catch (error) {
     // Side effects are observational; failures must not change the completed run result.

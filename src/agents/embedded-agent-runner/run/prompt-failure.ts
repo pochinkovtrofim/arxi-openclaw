@@ -85,6 +85,7 @@ export async function handleEmbeddedPromptFailure(input: {
 }): Promise<PromptFailureOutcome> {
   // A local pre-egress refusal cannot succeed through auth retry or model
   // failover. Keep its code for the Owner reply instead of replaying the turn.
+  // SAFETY: Only an optional unknown code is inspected; the original error is rethrown unchanged.
   if ((input.promptError as { code?: unknown } | null)?.code === "needs_expansion") {
     throw input.promptError;
   }

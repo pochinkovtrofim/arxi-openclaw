@@ -23,6 +23,10 @@ import {
   reviseSkillProposal,
   SkillProposalStaleTargetError,
 } from "../../skills/workshop/service.js";
+import {
+  mergeWorkshopSourceOrigins,
+  workshopSourceOrigin,
+} from "../../skills/workshop/source-provenance.js";
 import { PROPOSAL_DRAFT_FILE } from "../../skills/workshop/store-record.js";
 import type {
   SkillProposalOrigin,
@@ -130,6 +134,9 @@ type SkillWorkshopToolOptions = {
   env?: NodeJS.ProcessEnv;
   agentId: string;
   origin?: SkillProposalOrigin;
+  captureSourceRefs?: () =>
+    | readonly import("../../memory/memory-artifact-source-authority.js").MemoryArtifactSourceRef[]
+    | undefined;
   reviewContext?: import("../../skills/workshop/types.js").SkillProposalReviewContext;
   /** Internal reviewers may inspect and draft bounded pending proposals, never change lifecycle state. */
   proposalOnly?: boolean;
@@ -496,6 +503,11 @@ export function createSkillWorkshopTool(options: SkillWorkshopToolOptions): AnyA
           options.proposalMutationBudget.remaining -= 1;
         }
 
+        const refs = options.captureSourceRefs?.();
+        const origin = mergeWorkshopSourceOrigins(
+          options.origin,
+          refs?.length ? workshopSourceOrigin(options.workspaceDir, refs) : undefined,
+        );
         let proposal: SkillProposalReadResult;
         let contentText: string;
         if (action === "create") {
@@ -511,7 +523,7 @@ export function createSkillWorkshopTool(options: SkillWorkshopToolOptions): AnyA
             supportFiles,
             createdBy: "skill-workshop",
             ...(options.autonomousCapture ? { autonomousCapture: true } : {}),
-            ...(options.origin ? { origin: options.origin } : {}),
+            ...(origin ? { origin } : {}),
             ...(options.reviewContext ? { reviewContext: options.reviewContext } : {}),
             goal,
             evidence,
@@ -539,7 +551,7 @@ export function createSkillWorkshopTool(options: SkillWorkshopToolOptions): AnyA
                 }),
             createdBy: "skill-workshop",
             ...(options.autonomousCapture || foregroundRepair ? { autonomousCapture: true } : {}),
-            ...(options.origin ? { origin: options.origin } : {}),
+            ...(origin ? { origin } : {}),
             ...(options.reviewContext ? { reviewContext: options.reviewContext } : {}),
             goal,
             evidence,
@@ -578,7 +590,7 @@ export function createSkillWorkshopTool(options: SkillWorkshopToolOptions): AnyA
             content: proposalContent,
             supportFiles,
             description: readToolStringParam(params, "description"),
-            ...(options.origin ? { origin: options.origin } : {}),
+            ...(origin ? { origin } : {}),
             goal,
             evidence,
           });

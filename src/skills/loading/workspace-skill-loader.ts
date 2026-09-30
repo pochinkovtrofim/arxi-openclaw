@@ -23,6 +23,7 @@ import { mergeRemoteNodeSkillEntries } from "../runtime/remote-skills.js";
 import { fingerprintSkillSnapshotConfig } from "../runtime/snapshot-config-fingerprint.js";
 import type { SkillEligibilityContext, SkillEntry, SkillSnapshot } from "../types.js";
 import { resolveWorkshopSkillsDir } from "../workshop/skills-root.js";
+import { listWorkshopUnavailableSkillKeys } from "../workshop/store.js";
 import { resolveBundledSkillsDir } from "./bundled-dir.js";
 import { resolveBundledAllowlist, shouldIncludeSkill } from "./config.js";
 import { resolveSkillInvocationPolicy, resolveSkillKey } from "./frontmatter.js";
@@ -379,7 +380,13 @@ export async function resolveWorkspaceSkillPromptEntries(
     opts?.assertCurrent?.();
     const sourceVersion = getSkillsSnapshotVersion(workspaceDir);
     const skillFilter = resolveEffectiveWorkspaceSkillFilter(opts);
-    const skillEntries = opts?.entries ?? loadSkillEntries(workspaceDir, opts);
+    const unavailableWorkshop = await listWorkshopUnavailableSkillKeys({
+      workspaceDir,
+      agentId: opts?.agentId,
+    });
+    const skillEntries = (opts?.entries ?? loadSkillEntries(workspaceDir, opts)).filter(
+      (entry) => !unavailableWorkshop.has(resolveSkillKey(entry.skill, entry)),
+    );
     const probe = await prepareSkillBinaryProbe(skillEntries, opts, opts?.assertCurrent);
     if (
       probe.needsRetry() ||
@@ -479,9 +486,14 @@ export async function prepareWorkspaceSkills(
   for (;;) {
     assertCurrent?.();
     const sourceVersion = getSkillsSnapshotVersion(workspaceDir);
-    const { entries, effectiveSkillFilter, shouldFilter } = resolveWorkspaceSkillLoad(
+    const loaded = resolveWorkspaceSkillLoad(workspaceDir, opts);
+    const { effectiveSkillFilter, shouldFilter } = loaded;
+    const unavailableWorkshop = await listWorkshopUnavailableSkillKeys({
       workspaceDir,
-      opts,
+      agentId: opts?.agentId,
+    });
+    const entries = loaded.entries.filter(
+      (entry) => !unavailableWorkshop.has(resolveSkillKey(entry.skill, entry)),
     );
     if (!shouldFilter) {
       return entries;

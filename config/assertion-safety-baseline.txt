@@ -189,7 +189,6 @@ extensions/codex/src/app-server/plugin-thread-app-admission.ts	1
 extensions/codex/src/app-server/protocol-validators.ts	7
 extensions/codex/src/app-server/remote-workspace-media.ts	6
 extensions/codex/src/app-server/request.ts	2
-extensions/codex/src/app-server/run-attempt-context.ts	2
 extensions/codex/src/app-server/run-attempt-resources.ts	13
 extensions/codex/src/app-server/run-attempt-runtime.ts	1
 extensions/codex/src/app-server/run-attempt-server-requests.ts	2
@@ -728,10 +727,9 @@ extensions/memory-core/src/session-backfill-lifecycle.ts	2
 extensions/memory-core/src/session-backfill.ts	1
 extensions/memory-core/src/session-ingestion.ts	2
 extensions/memory-core/src/session-reset-recall-metadata.ts	3
-extensions/memory-core/src/short-term-promotion-apply.ts	4
+extensions/memory-core/src/short-term-promotion-apply.ts	2
 extensions/memory-core/src/short-term-promotion-memory-write.ts	2
 extensions/memory-core/src/short-term-promotion-record.ts	1
-extensions/memory-core/src/short-term-promotion-rehydrate.ts	1
 extensions/memory-core/src/short-term-promotion-utils.ts	4
 extensions/memory-core/src/short-term-promotion.ts	1
 extensions/memory-core/src/standing-intents-tool.ts	5
@@ -1565,7 +1563,7 @@ src/agents/agent-tools.before-tool-call.wrapper.ts	4
 src/agents/agent-tools.execution-preparer.ts	2
 src/agents/agent-tools.params.ts	5
 src/agents/agent-tools.policy.ts	1
-src/agents/agent-tools.read.ts	27
+src/agents/agent-tools.read.ts	26
 src/agents/agent-tools.ring-zero-context.ts	1
 src/agents/agent-tools.schema.ts	3
 src/agents/ai-transport-runtime-host.ts	9

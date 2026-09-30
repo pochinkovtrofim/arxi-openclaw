@@ -95,6 +95,46 @@ describe("Codex app-server attempt context", () => {
     ).toEqual({ status: "omitted" });
   });
 
+  it("refuses actual bootstrap read failure without treating literal UNREADABLE content as one", async () => {
+    await withTempDir("codex-bootstrap-read-failure-", async (workspaceDir) => {
+      await withTempDir("codex-bootstrap-outside-", async (outsideDir) => {
+        const build = () =>
+          buildCodexWorkspaceBootstrapContext({
+            params: {
+              sessionId: "read-failure",
+              sessionKey: "agent:main:read-failure",
+              config: { agents: { defaults: { workspace: workspaceDir } } },
+            } as EmbeddedRunAttemptParams,
+            resolvedWorkspace: workspaceDir,
+            effectiveWorkspace: workspaceDir,
+            sessionKey: "agent:main:read-failure",
+            sessionAgentId: "main",
+            memoryToolNames: ["memory_search", "memory_get"],
+            ringZeroActive: false,
+          });
+        for (const name of ["USER.md", "MEMORY.md"] as const) {
+          const outside = path.join(outsideDir, name);
+          const target = path.join(workspaceDir, name);
+          await fs.writeFile(outside, "Private file outside the trusted workspace.");
+          await fs.symlink(outside, target);
+          const failed = await build();
+          expect(failed.bootstrapFiles.find((file) => file.name === name)?.readFailed).toBe(true);
+          expect(restoreCodexMandatoryPersonalBootstrap(failed)).toEqual({ status: "omitted" });
+          await fs.unlink(target);
+          const literal = "[UNREADABLE: literal owner text, not a native reader failure.]";
+          await fs.writeFile(target, literal);
+          const readable = await build();
+          expect(readable.bootstrapFiles.find((file) => file.name === name)?.readFailed).not.toBe(
+            true,
+          );
+          expect(restoreCodexMandatoryPersonalBootstrap(readable)).toEqual({ status: "complete" });
+          expect(readable.bootstrapFiles.find((file) => file.name === name)?.content).toBe(literal);
+          await fs.unlink(target);
+        }
+      });
+    });
+  });
+
   it("restores complete USER constraints for a personal packet after generic bootstrap trimming", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-owner-constraints-"));
     const source = `${"profile detail\n".repeat(700)}Never send a message without owner approval.\n${"other detail\n".repeat(700)}`;

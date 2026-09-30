@@ -30,6 +30,7 @@ export type MemoryPublicationOperations = {
       path: string;
       source: "memory" | "sessions";
       expectedHash: string | undefined;
+      lineRanges?: Array<{ from: number; to: number }>;
       state: MemoryPublicationState;
     };
     output: MemoryPublicationResult<boolean>;

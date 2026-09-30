@@ -118,16 +118,16 @@ export function createCodexPersonalPreEgressGate(params: {
     throw new CodexInferenceNeedsExpansionError();
   }
   const base = params.developerBaseInstructions ?? "";
-  const instructionSegments = (params.mandatoryInstructionSegments ?? []).map((source) => ({
-    ...source,
-  }));
+  const instructionSegments = (params.mandatoryInstructionSegments ?? []).map((source) =>
+    Object.assign({}, source),
+  );
   const instructionSources = instructionSegments.map((source) => ({
     name: source.name,
     sha256: createHash("sha256").update(source.text).digest("hex"),
   }));
   // These finite declarations are made by reviewed plugin code, never inferred
   // from arbitrary hook output. Retain snapshots for this physical request gate.
-  const staticPolicies = (params.staticPolicies ?? []).map((policy) => ({ ...policy }));
+  const staticPolicies = (params.staticPolicies ?? []).map((policy) => Object.assign({}, policy));
   const ordinarySessionSegments = [...(params.ordinarySessionSegments ?? [])];
   const staticPolicyReceipt = staticPolicies.map((policy) => ({
     id: policy.id,
@@ -245,10 +245,14 @@ export function createCodexPersonalPreEgressGate(params: {
       // The immutable native thread may retain an identical older AGENTS
       // snapshot. Only the complete, exact producer-owned base can identify
       // that copy; it never substitutes for this turn's current carrier.
-      if (base && leaves.reduce((sum, leaf) => sum + occurrences(leaf, base), 0) > 1)
+      if (base && leaves.reduce((sum, leaf) => sum + occurrences(leaf, base), 0) > 1) {
         refuse("source_attribution_changed");
+      }
       for (const source of instructionSegments) {
-        if (!source.text) refuse("mandatory_source_omitted");
+        if (!source.text) {
+          refuse("mandatory_source_omitted");
+        }
+        // SAFETY: this empty collection receives only validated string-leaf offsets below.
         const current = [] as Array<{ leaf: string; start: number; end: number }>;
         for (const leaf of leaves) {
           const baseStart = base ? leaf.indexOf(base) : -1;
@@ -264,19 +268,25 @@ export function createCodexPersonalPreEgressGate(params: {
               baseStart >= 0 &&
               start >= baseStart &&
               start + source.text.trimEnd().length <= baseStart + base.length;
-            if (!frozenCopy) current.push({ leaf, start, end: start + source.text.length });
+            if (!frozenCopy) {
+              current.push({ leaf, start, end: start + source.text.length });
+            }
           }
         }
-        if (current.length !== 1) refuse("mandatory_source_omitted");
-        currentInstructionRanges.set(source.text, current[0]);
+        const selected = current[0] ?? refuse("mandatory_source_omitted");
+        if (current.length !== 1) {
+          refuse("mandatory_source_omitted");
+        }
+        currentInstructionRanges.set(source.text, selected);
       }
       if (
         params.totalContextTokenBudget !== undefined &&
         (!Number.isSafeInteger(params.totalContextTokenBudget) ||
           params.totalContextTokenBudget <= 0 ||
           nativeRequestUpperBoundUtf8Bytes > params.totalContextTokenBudget)
-      )
+      ) {
         refuse("native_request_over_bound");
+      }
     }
     if (
       params.expectedModel &&
@@ -325,20 +335,25 @@ export function createCodexPersonalPreEgressGate(params: {
         const ranges = exemptionRanges.get(leaf) ?? [];
         const intersects = (other: { start: number; end: number }) =>
           range.start < other.end && other.start < range.end;
-        if (ranges.some(intersects)) refuse("source_attribution_changed");
+        if (ranges.some(intersects)) {
+          refuse("source_attribution_changed");
+        }
         for (const protectedText of [
           ...params.legacySegments.map((value) => value.text),
           params.promptText,
           base,
         ]) {
-          if (!protectedText) continue;
+          if (!protectedText) {
+            continue;
+          }
           for (
             let offset = 0;
             (offset = leaf.indexOf(protectedText, offset)) >= 0;
             offset += protectedText.length
           ) {
-            if (intersects({ start: offset, end: offset + protectedText.length }))
+            if (intersects({ start: offset, end: offset + protectedText.length })) {
               refuse("source_attribution_changed");
+            }
           }
         }
         // Exact producer-owned system carriers retain their native budget even
@@ -348,7 +363,9 @@ export function createCodexPersonalPreEgressGate(params: {
       }
       const policyIds = new Set<string>();
       for (const policy of staticPolicies) {
-        if (!policy.text || policyIds.has(policy.id)) refuse("source_attribution_changed");
+        if (!policy.text || policyIds.has(policy.id)) {
+          refuse("source_attribution_changed");
+        }
         policyIds.add(policy.id);
         const hits = leaves.reduce((total, leaf) => total + occurrences(leaf, policy.text), 0);
         const matching = leaves.find((leaf) => leaf.includes(policy.text));
@@ -361,7 +378,9 @@ export function createCodexPersonalPreEgressGate(params: {
         const intersects = (range: { start: number; end: number }) =>
           start < range.end && range.start < end;
         const previous = exemptionRanges.get(leaf) ?? [];
-        if (previous.some(intersects)) refuse("source_attribution_changed");
+        if (previous.some(intersects)) {
+          refuse("source_attribution_changed");
+        }
         // Even a trusted declaration cannot exempt any part of mandatory files,
         // the packet/current prompt, or already exempted base native policy.
         for (const protectedText of [
@@ -369,7 +388,9 @@ export function createCodexPersonalPreEgressGate(params: {
           params.promptText,
           base,
         ]) {
-          if (!protectedText) continue;
+          if (!protectedText) {
+            continue;
+          }
           for (
             let offset = 0;
             (offset = leaf.indexOf(protectedText, offset)) >= 0;
@@ -385,26 +406,34 @@ export function createCodexPersonalPreEgressGate(params: {
       }
       const ordinaryCounts = new Map<string, number>();
       for (const text of ordinarySessionSegments) {
-        if (!text) refuse("source_attribution_changed");
+        if (!text) {
+          refuse("source_attribution_changed");
+        }
         ordinaryCounts.set(text, (ordinaryCounts.get(text) ?? 0) + 1);
       }
       for (const [text, expectedHits] of ordinaryCounts) {
         const hits = leaves.reduce((total, leaf) => total + occurrences(leaf, text), 0);
         const leaf =
           leaves.find((entry) => entry.includes(text)) ?? refuse("source_attribution_changed");
-        if (hits !== expectedHits || !promptLeaves.has(leaf)) refuse("source_attribution_changed");
+        if (hits !== expectedHits || !promptLeaves.has(leaf)) {
+          refuse("source_attribution_changed");
+        }
         const ranges = exemptionRanges.get(leaf) ?? [];
         for (let offset = 0; (offset = leaf.indexOf(text, offset)) >= 0; offset += text.length) {
           const range = { start: offset, end: offset + text.length };
           const intersects = (other: { start: number; end: number }) =>
             range.start < other.end && other.start < range.end;
-          if (ranges.some(intersects)) refuse("source_attribution_changed");
+          if (ranges.some(intersects)) {
+            refuse("source_attribution_changed");
+          }
           for (const protectedText of [
             base,
             params.packetText,
             ...params.legacySegments.map((segment) => segment.text),
           ]) {
-            if (!protectedText) continue;
+            if (!protectedText) {
+              continue;
+            }
             for (
               let protectedOffset = 0;
               (protectedOffset = leaf.indexOf(protectedText, protectedOffset)) >= 0;
@@ -412,8 +441,9 @@ export function createCodexPersonalPreEgressGate(params: {
             ) {
               if (
                 intersects({ start: protectedOffset, end: protectedOffset + protectedText.length })
-              )
+              ) {
                 refuse("source_attribution_changed");
+              }
             }
           }
           ranges.push(range);

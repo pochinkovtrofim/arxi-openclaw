@@ -20,6 +20,7 @@ import { normalizeStringEntries, uniqueStrings } from "openclaw/plugin-sdk/strin
 import { normalizeConceptToken } from "./concept-vocabulary.js";
 import { isPromotionOriginBlocked } from "./dreaming-consolidation-candidates.js";
 import { readRecentDreamDiaryEntries } from "./dreaming-dreams-file.js";
+import { dedupeEntries } from "./dreaming-entry-dedupe.js";
 import { appendFailedDreamingEvent } from "./dreaming-events.js";
 import {
   normalizeDailyIngestionState,
@@ -35,6 +36,7 @@ import {
   runDreamNarrative,
 } from "./dreaming-narrative.js";
 import { formatErrorMessage } from "./dreaming-shared.js";
+import { readDreamingSource } from "./dreaming-source-lineage.js";
 import {
   DREAMING_DAILY_INGESTION_NAMESPACE,
   normalizeMemoryCoreWorkspaceKey,
@@ -446,13 +448,14 @@ function stripManagedDailyDreamingLines(lines: string[]): string[] {
 
 function buildDailyIngestionResults(params: {
   raw: string;
+  rawFileHash?: string;
   path: string;
   limit: number;
   defaultObservedAt: number;
   recorded?: { fileHash: string; originClass: "agent" | "untrusted"; observedAt: number };
 }): Array<MemorySearchResult & { identitySnippet?: string }> {
   const provenance = resolveDailyFileProvenance({
-    currentHash: createHash("sha256").update(params.raw).digest("hex"),
+    currentHash: params.rawFileHash ?? createHash("sha256").update(params.raw).digest("hex"),
     defaultObservedAt: params.defaultObservedAt,
     ...(params.recorded ? { recorded: params.recorded } : {}),
   });
@@ -889,12 +892,8 @@ async function collectDailyIngestionBatches(params: {
     }
     changed = true;
 
-    const raw = await fs.readFile(filePath, "utf-8").catch((err: unknown) => {
-      if (extractErrorCode(err) === "ENOENT") {
-        return "";
-      }
-      throw err;
-    });
+    const current = await readDreamingSource(params.workspaceDir, filePath);
+    const raw = current.raw;
     if (!raw) {
       continue;
     }
@@ -903,7 +902,8 @@ async function collectDailyIngestionBatches(params: {
     // edits, imports, and pre-existing notes must stay promotable), except a
     // file the flush explicitly quarantined remains untrusted across edits.
     const results = buildDailyIngestionResults({
-      raw,
+      raw: current.content,
+      rawFileHash: createHash("sha256").update(current.raw).digest("hex"),
       path: relativePath,
       limit: Math.min(perFileCap, totalCap - total),
       defaultObservedAt: fingerprint.mtimeMs,
@@ -1057,13 +1057,11 @@ export async function seedHistoricalDailyMemorySignals(params: {
       if (importedSignalCount >= totalCap) {
         break;
       }
-      const raw = await fs.readFile(entry.filePath, "utf-8").catch((err: unknown) => {
-        if (extractErrorCode(err) === "ENOENT") {
-          skippedPaths.push(entry.filePath);
-          return "";
-        }
-        throw err;
-      });
+      const current = await readDreamingSource(params.workspaceDir, entry.filePath);
+      const raw = current.raw;
+      if (current.missing) {
+        skippedPaths.push(entry.filePath);
+      }
       if (!raw) {
         continue;
       }
@@ -1071,7 +1069,8 @@ export async function seedHistoricalDailyMemorySignals(params: {
       // Same owner-controlled default as live daily ingestion above: workspace
       // notes are 'agent' unless the flush explicitly recorded a downgrade.
       const results = buildDailyIngestionResults({
-        raw,
+        raw: current.content,
+        rawFileHash: createHash("sha256").update(current.raw).digest("hex"),
         path: entry.relativePath,
         limit: Math.min(perFileCap, totalCap - importedSignalCount),
         defaultObservedAt: params.nowMs,
@@ -1110,47 +1109,6 @@ function entryAverageScore(entry: ShortTermRecallEntry): number {
       Math.floor(entry.groundedCount ?? 0),
   );
   return signalCount > 0 ? Math.max(0, Math.min(1, entry.totalScore / signalCount)) : 0;
-}
-
-// Use the shared CJK-aware similarity helper so close-but-not-identical CJK
-// snippets do not slip past the dedupe threshold via the old ASCII-only path.
-function dedupeEntries(
-  entries: ShortTermRecallEntry[],
-  threshold: number,
-): Array<ShortTermRecallEntry & { sourceEntryKeys: string[] }> {
-  const deduped: Array<ShortTermRecallEntry & { sourceEntryKeys: string[] }> = [];
-  for (const entry of entries) {
-    const duplicate = deduped.find(
-      (candidate) =>
-        candidate.path === entry.path &&
-        snippetSimilarity(candidate.snippet, entry.snippet) >= threshold,
-    );
-    if (duplicate) {
-      // Merged tags also become narrative input, so retain their source keys.
-      duplicate.sourceEntryKeys.push(entry.key);
-      if (entry.recallCount > duplicate.recallCount) {
-        duplicate.recallCount = entry.recallCount;
-      }
-      duplicate.totalScore = Math.max(duplicate.totalScore, entry.totalScore);
-      duplicate.maxScore = Math.max(duplicate.maxScore, entry.maxScore);
-      duplicate.queryHashes = uniqueStrings([...duplicate.queryHashes, ...entry.queryHashes]);
-      duplicate.userQueryHashes = uniqueStrings([
-        ...(duplicate.userQueryHashes ?? []),
-        ...(entry.userQueryHashes ?? []),
-      ]);
-      duplicate.recallDays = [
-        ...new Set([...duplicate.recallDays, ...entry.recallDays]),
-      ].toSorted();
-      duplicate.conceptTags = uniqueStrings([...duplicate.conceptTags, ...entry.conceptTags]);
-      duplicate.lastRecalledAt =
-        compareStoreTimestampDesc(entry.lastRecalledAt, duplicate.lastRecalledAt) < 0
-          ? entry.lastRecalledAt
-          : duplicate.lastRecalledAt;
-      continue;
-    }
-    deduped.push({ ...entry, sourceEntryKeys: [entry.key] });
-  }
-  return deduped;
 }
 
 function normalizeDiaryCoverageText(text: string): string {
@@ -1378,6 +1336,7 @@ async function runLightDreaming(
     const recentEntries = (
       await filterLiveShortTermRecallEntries({
         workspaceDir: params.workspaceDir,
+        requireCurrentSource: true,
         entries: await filterFreshLightDreamingEntries({
           workspaceDir: params.workspaceDir,
           nowMs,
@@ -1413,6 +1372,7 @@ async function runLightDreaming(
       workspaceDir: params.workspaceDir,
       phase: "light",
       bodyLines,
+      sourceRefs: capped.flatMap((entry) => entry.sourceRefs ?? []),
       hasContent: capped.length > 0,
       nowMs,
       timezone: params.config.timezone,
@@ -1439,6 +1399,7 @@ async function runLightDreaming(
       phase: "light",
       snippets: capped.map((e) => e.snippet).filter(Boolean),
       sourceEntryKeys: capped.flatMap((entry) => entry.sourceEntryKeys),
+      sourceRefs: capped.flatMap((entry) => entry.sourceRefs ?? []),
       currentDate: formatMemoryDreamingDay(nowMs, params.config.timezone),
       ...(themes.length > 0 ? { themes } : {}),
       ...(recentDiaryEntries.length > 0 ? { recentDiaryEntries } : {}),
@@ -1466,6 +1427,7 @@ async function runRemDreaming(
     const allEntries = (
       await filterLiveShortTermRecallEntries({
         workspaceDir: params.workspaceDir,
+        requireCurrentSource: true,
         entries: filterRecallEntriesWithinLookback({
           entries: await readShortTermRecallEntries({ workspaceDir: params.workspaceDir, nowMs }),
           nowMs,
@@ -1491,6 +1453,7 @@ async function runRemDreaming(
       workspaceDir: params.workspaceDir,
       phase: "rem",
       bodyLines: preview.bodyLines,
+      sourceRefs: entries.flatMap((entry) => entry.sourceRefs ?? []),
       hasContent: entries.length > 0,
       nowMs,
       timezone: params.config.timezone,
@@ -1526,6 +1489,7 @@ async function runRemDreaming(
     const data: NarrativePhaseData = {
       phase: "rem",
       sourceEntryKeys: entries.map((entry) => entry.key),
+      sourceRefs: entries.flatMap((entry) => entry.sourceRefs ?? []),
       snippets:
         snippets.length > 0
           ? snippets

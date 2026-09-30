@@ -15,11 +15,12 @@ import type { ChatType } from "../channels/chat-type.js";
 import { isRootFileMissingFailure, openRootFile } from "../infra/boundary-file-read.js";
 import { isHardlinkFallbackError } from "../infra/directory-durability.js";
 import { hasErrnoCode } from "../infra/errno.js";
-import { sameFileIdentity, tempFile, type FileIdentityStat } from "../infra/fs-safe-advanced.js";
+import { tempFile } from "../infra/fs-safe-advanced.js";
 import { FsSafeError, pathExists, root as fsSafeRoot } from "../infra/fs-safe.js";
 import { isPathInside } from "../infra/path-guards.js";
 import { retryAsync } from "../infra/retry.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { projectMemoryArtifactSourceContent } from "../memory/memory-artifact-provenance.js";
 import {
   CANONICAL_ROOT_MEMORY_FILENAME,
   exactWorkspaceEntryExists,
@@ -41,6 +42,10 @@ import {
   LEGACY_WORKSPACE_STATE_CURRENT_FILENAME,
   LEGACY_WORKSPACE_STATE_DIRNAME,
 } from "./workspace-legacy-state.js";
+import {
+  setWorkspaceFileSourceIdentity,
+  type WorkspaceFileSourceIdentity,
+} from "./workspace-source-identity.js";
 import { WorkspaceVanishedError } from "./workspace-state-identity.js";
 import {
   clearExpiredWorkspaceStateForVanishedWorkspace,
@@ -53,6 +58,10 @@ import {
   type WorkspaceSetupState,
 } from "./workspace-state-store.js";
 import { resolveWorkspaceTemplateSearchDirs } from "./workspace-templates.js";
+export {
+  workspaceFileSourceIdentitiesMatch,
+  workspaceFilesShareSourceIdentity,
+} from "./workspace-source-identity.js";
 export { WORKSPACE_VANISHED_ERROR_CODE } from "./workspace-state-identity.js";
 export {
   DEFAULT_AGENT_WORKSPACE_DIR,
@@ -87,14 +96,6 @@ const workspaceLogger = createSubsystemLogger("workspace");
 const workspaceTemplateCache = new Map<string, Promise<string>>();
 const gitInitializationInFlight = new Map<string, Promise<void>>();
 
-type WorkspaceFileSourceIdentity = readonly [
-  canonicalPath: string,
-  stat: FileIdentityStat,
-  exactIdentity: string,
-];
-// Loader-owned records retain the pinned-open identity through final session filtering.
-const workspaceFileSourceIdentities = new WeakMap<object, WorkspaceFileSourceIdentity>();
-
 /**
  * Read workspace files via boundary-safe open and cache by inode/dev/size/mtime/ctime identity.
  */
@@ -108,39 +109,19 @@ function workspaceFileIdentity(stat: syncFs.Stats, canonicalPath: string): strin
   return `${canonicalPath}|${stat.dev}:${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
 }
 
-function setWorkspaceFileSourceIdentity(
-  file: object,
-  sourceIdentity: WorkspaceFileSourceIdentity,
-): void {
-  workspaceFileSourceIdentities.set(file, sourceIdentity);
-}
-
-function getWorkspaceFileSourceIdentity(file: object): WorkspaceFileSourceIdentity | undefined {
-  return workspaceFileSourceIdentities.get(file);
-}
-
-export function workspaceFileSourceIdentitiesMatch(left: object, right: object): boolean {
-  const leftIdentity = getWorkspaceFileSourceIdentity(left);
-  const rightIdentity = getWorkspaceFileSourceIdentity(right);
-  return leftIdentity?.[2] === rightIdentity?.[2];
-}
-
-export function workspaceFilesShareSourceIdentity(left: object, right: object): boolean {
-  const leftIdentity = getWorkspaceFileSourceIdentity(left);
-  const rightIdentity = getWorkspaceFileSourceIdentity(right);
-  if (!leftIdentity || !rightIdentity) {
-    return false;
-  }
-  return (
-    leftIdentity[0] === rightIdentity[0] || sameFileIdentity(leftIdentity[1], rightIdentity[1])
-  );
-}
-
 async function readWorkspaceFileWithGuards(params: {
   filePath: string;
   workspaceDir: string;
   useCache?: boolean;
 }): Promise<WorkspaceGuardedReadResult> {
+  const project = async (content: string) =>
+    (
+      await projectMemoryArtifactSourceContent({
+        workspaceDir: params.workspaceDir,
+        relativePath: path.relative(params.workspaceDir, params.filePath),
+        content,
+      })
+    ).content;
   try {
     // A transient FS race (EAGAIN/EWOULDBLOCK/EINTR under load) on the open or
     // read must not drop the agent's bootstrap file for the turn — this reader
@@ -172,7 +153,7 @@ async function readWorkspaceFileWithGuards(params: {
           params.useCache === false ? undefined : readWorkspaceFileCache(opened.path, identity);
         if (cached !== undefined) {
           syncFs.closeSync(opened.fd);
-          return { ok: true, content: cached, sourceIdentity };
+          return { ok: true, content: await project(cached), sourceIdentity };
         }
 
         try {
@@ -180,7 +161,7 @@ async function readWorkspaceFileWithGuards(params: {
           if (params.useCache !== false) {
             writeWorkspaceFileCache({ filePath: opened.path, content, identity });
           }
-          return { ok: true, content, sourceIdentity };
+          return { ok: true, content: await project(content), sourceIdentity };
         } finally {
           syncFs.closeSync(opened.fd);
         }
@@ -258,6 +239,8 @@ export type WorkspaceBootstrapFile = {
   path: string;
   content?: string;
   missing: boolean;
+  /** Native reader failure, independent of the file's user-authored content. */
+  readFailed?: boolean;
 };
 
 export type ExtraBootstrapLoadDiagnosticCode =
@@ -1323,6 +1306,7 @@ export async function loadWorkspaceBootstrapFiles(
         path: entry.filePath,
         content: `[UNREADABLE: ${reason}]`,
         missing: false,
+        readFailed: true,
       });
     }
   }

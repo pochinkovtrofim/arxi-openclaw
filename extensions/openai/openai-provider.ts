@@ -58,6 +58,7 @@ import {
   buildOpenAIChatGPTAuthMethodRuns,
   buildOpenAICodexProviderHooks,
 } from "./openai-chatgpt-provider.js";
+import { buildOpenAIModernCatalogEntries } from "./openai-modern-model-catalog.js";
 import manifest from "./openclaw.plugin.json" with { type: "json" };
 import { createOpenAIProvider } from "./provider-contract-api.js";
 import { resolveAuthoredOpenAIProviderConfig } from "./provider-policy-api.js";
@@ -1153,16 +1154,6 @@ export function buildOpenAIProvider(): ProviderPlugin {
     isModernModelRef: ({ modelId }) =>
       matchesExactOrPrefix(modelId, OPENAI_PROVIDER_MODERN_MODEL_IDS),
     augmentModelCatalog: (ctx) => {
-      const openAiGpt61SolTemplate = findCatalogTemplate({
-        entries: ctx.entries,
-        providerId: PROVIDER_ID,
-        templateIds: [OPENAI_GPT_61_SOL_MODEL_ID],
-      });
-      const openAiGpt55ProTemplate = findCatalogTemplate({
-        entries: ctx.entries,
-        providerId: PROVIDER_ID,
-        templateIds: OPENAI_GPT_55_PRO_TEMPLATE_MODEL_IDS,
-      });
       const openAiGpt54Template = findCatalogTemplate({
         entries: ctx.entries,
         providerId: PROVIDER_ID,
@@ -1184,18 +1175,10 @@ export function buildOpenAIProvider(): ProviderPlugin {
         templateIds: OPENAI_GPT_54_NANO_TEMPLATE_MODEL_IDS,
       });
       return [
-        buildOpenAISyntheticCatalogEntry(openAiGpt61SolTemplate, {
-          id: OPENAI_GPT_61_SOL_MODEL_ID,
-          reasoning: true,
-          input: ["text", "image"],
-          contextWindow: openAiGpt61SolTemplate?.contextWindow ?? 1_050_000,
-        }),
-        buildOpenAISyntheticCatalogEntry(openAiGpt55ProTemplate, {
-          id: OPENAI_GPT_55_PRO_MODEL_ID,
-          reasoning: true,
-          input: ["text", "image"],
-          contextWindow: OPENAI_GPT_55_PRO_CONTEXT_WINDOW,
-          contextTokens: OPENAI_DEFAULT_RUNTIME_CONTEXT_TOKENS,
+        ...buildOpenAIModernCatalogEntries(ctx.entries, {
+          gpt55ProTemplateIds: OPENAI_GPT_55_PRO_TEMPLATE_MODEL_IDS,
+          gpt55ProContextWindow: OPENAI_GPT_55_PRO_CONTEXT_WINDOW,
+          runtimeContextTokens: OPENAI_DEFAULT_RUNTIME_CONTEXT_TOKENS,
         }),
         buildOpenAISyntheticCatalogEntry(openAiGpt54Template, {
           id: OPENAI_GPT_54_MODEL_ID,

@@ -74,6 +74,7 @@ export function wrapStreamFnWithPersonalPromptProviderGate(params: {
       // gate on every model/tool turn. Stored HTTP continuation would omit it.
       onPayload: async (body: unknown, requestModel: Parameters<StreamFn>[0]) => {
         const transformed = await originalOnPayload?.(body, requestModel);
+        // SAFETY: only a shallow payload copy is made; the final request gate validates its fields.
         return { ...((transformed ?? body) as Record<string, unknown>), store: false };
       },
     };

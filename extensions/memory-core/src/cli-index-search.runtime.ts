@@ -285,6 +285,7 @@ export async function runMemoryForget(opts: MemoryForgetCommandOptions) {
       cfg,
       agentId,
       sessionIds: opts.session,
+      sourceKeys: opts.sourceKey,
       hookSources: opts.hookSource,
       participants: opts.participant,
       since: opts.since,

@@ -6,7 +6,14 @@ import {
   clearMemoryArtifactProvenance,
   normalizeMemoryArtifactRelativePath,
   recordMemoryArtifactWriteProvenance,
+  projectMemoryArtifactSourceContent,
+  readForgottenMemoryArtifactSources,
 } from "../memory/memory-artifact-provenance.js";
+import {
+  readMemoryArtifactSourceScope,
+  checkMemoryArtifactSources,
+  memoryArtifactSourceKey,
+} from "../memory/memory-artifact-source-authority.js";
 import { captureAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";
 
 export type MemoryWriteProvenanceObserver = {
@@ -17,6 +24,7 @@ export type MemoryWriteProvenanceObserver = {
     contentAfter: string;
     commit: () => Promise<void>;
   }) => Promise<void>;
+  read?: (absolutePath: string, content: string) => Promise<string>;
   clearAfterDelete: (absolutePath: string, contentBefore: string) => Promise<void>;
 };
 
@@ -107,6 +115,8 @@ export function createMemoryWriteProvenanceObserver(params: {
   resolveOriginClass: () => "agent" | "untrusted";
   sessionId?: string;
   sessionKey?: string;
+  runId?: string;
+  abortSignal?: AbortSignal;
   now?: () => number;
 }): MemoryWriteProvenanceObserver {
   const now = params.now ?? Date.now;
@@ -122,11 +132,30 @@ export function createMemoryWriteProvenanceObserver(params: {
   };
   return {
     classifies: async (absolutePath) => (await resolveRelativePath(absolutePath)) !== undefined,
+    read: async (absolutePath, content) => {
+      const relativePath = await resolveRelativePath(absolutePath);
+      if (!relativePath) {
+        return content;
+      }
+      return (
+        await projectMemoryArtifactSourceContent({
+          workspaceDir: params.workspaceDir,
+          relativePath,
+          content,
+          signal: params.abortSignal,
+        })
+      ).content;
+    },
     write: async ({ absolutePath, contentBefore, contentAfter, commit }) => {
       const relativePath = await resolveRelativePath(absolutePath);
       if (!relativePath) {
         await commit();
         return;
+      }
+      const refs = readMemoryArtifactSourceScope(params.runId, params.workspaceDir) ?? [];
+      const sourceStatuses = await checkMemoryArtifactSources(refs, { signal: params.abortSignal });
+      if ([...sourceStatuses.values()].some((status) => status !== "current")) {
+        throw new Error("Memory write source changed or unavailable; reread current source");
       }
       const rollback = await recordMemoryArtifactWriteProvenance({
         workspaceDir: params.workspaceDir,
@@ -137,8 +166,25 @@ export function createMemoryWriteProvenanceObserver(params: {
         observedAt: now(),
         sessionId: params.sessionId,
         sessionKey: params.sessionKey,
+        sourceRefs: refs,
       });
       try {
+        readMemoryArtifactSourceScope(params.runId, params.workspaceDir);
+        const current = await checkMemoryArtifactSources(refs, { signal: params.abortSignal });
+        if ([...current.values()].some((status) => status !== "current")) {
+          throw new Error("Memory write source changed before commit");
+        }
+        if (
+          (
+            await readForgottenMemoryArtifactSources({
+              workspaceDir: params.workspaceDir,
+              sourceKeys: refs.map(memoryArtifactSourceKey),
+            })
+          ).size
+        ) {
+          throw new Error("Memory source was forgotten before write");
+        }
+        readMemoryArtifactSourceScope(params.runId, params.workspaceDir);
         await commit();
       } catch (error) {
         try {

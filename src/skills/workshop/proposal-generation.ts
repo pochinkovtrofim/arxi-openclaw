@@ -172,3 +172,11 @@ async function removeGenerationPath(stateDir: string, relativePath: string): Pro
     recursive: true,
   });
 }
+
+/** Exact owning proposal bundle only; never the applied skill directory. */
+export async function discardSkillProposalSourceBundle(
+  record: SkillProposalRecord,
+  store?: SkillWorkshopStoreOptions,
+) {
+  await removeGenerationPath(resolveSkillWorkshopStateDir(store), proposalRelativeDir(record.id));
+}

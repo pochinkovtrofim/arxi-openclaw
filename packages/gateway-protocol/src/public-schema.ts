@@ -1,3 +1,4 @@
+export * from "./public-schema-agent-receipts.js";
 // Explicit schema exports keep public protocol changes reviewable.
 export * from "./schema/sessions-goal.js";
 export * from "./schema/human-mentions.js";
@@ -135,9 +136,6 @@ export {
   SendParamsSchema,
   PollParamsSchema,
   AgentParamsSchema,
-  AgentInputReceiptParamsSchema,
-  AgentIdentityParamsSchema,
-  AgentIdentityResultSchema,
   WakeParamsSchema,
   SecretStoreSecretEntrySchema,
   SecretStoreEnvEntrySchema,

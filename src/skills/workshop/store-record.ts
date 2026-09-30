@@ -150,6 +150,10 @@ const skillProposalRecordSchema = z
       .optional(),
     draftHash: z.string(),
     draftFile: z.string().regex(PROPOSAL_DRAFT_FILE_PATTERN),
+    sourceAppliedFiles: z
+      .array(z.object({ relativePath: z.string().min(1), sha256: sha256Schema }).strict())
+      .max(65)
+      .optional(),
     origin: z.unknown().optional(),
     originRunIds: z.unknown().optional(),
     originRunMutationCounts: z.unknown().optional(),

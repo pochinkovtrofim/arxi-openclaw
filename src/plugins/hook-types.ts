@@ -39,6 +39,10 @@ import type {
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
 } from "./hook-message.types.js";
+import type {
+  PluginHookPersonalContext,
+  PluginHookToolAuthority,
+} from "./hook-personal-context.js";
 import type { PluginHookToolRequesterContext } from "./hook-requester-context.types.js";
 import type {
   PluginHookSkillChangedEvent,
@@ -297,16 +301,9 @@ export type PluginHookRegistrationOptions<K extends PluginHookName> = {
       }
     : { requiresToolAuthority?: never });
 
-export type PluginHookToolAuthority = {
-  /** Opaque host fingerprint for the exact turn, route, policy, and active tool surface. */
-  readonly fingerprint: string;
-  /** Checks whether the finalized turn surface contains this exact tool. */
-  allows(toolName: string): boolean;
-  /** Rejects retained or timed-out capabilities after the host dispatch closes. */
-  assertActive(): void;
-};
+export type { PluginHookToolAuthority } from "./hook-personal-context.js";
 
-export type PluginHookAgentContext = {
+export type PluginHookAgentContext = PluginHookPersonalContext & {
   runId?: string;
   jobId?: string;
   trace?: DiagnosticTraceContext;
@@ -318,37 +315,6 @@ export type PluginHookAgentContext = {
   activeProjectKeys?: string[];
   modelProviderId?: string;
   modelId?: string;
-  /**
-   * Native USER/MEMORY content that this selected model will receive. Available
-   * during before_prompt_build only. Exact token counts and conservative UTF-8
-   * upper bounds are distinct contracts and must not share a receipt label.
-   */
-  personalPrompt?: Readonly<{
-    legacySegments: readonly Readonly<{
-      name: "USER.md" | "MEMORY.md";
-      path: string;
-      text: string;
-      sha256: string;
-      mandatory: true;
-    }>[];
-    countInputTokens?: (input: { instructions: string; prompt: string }) => Promise<number>;
-    countInputUtf8UpperBound?: (input: { instructions: string; prompt: string }) => number;
-    /**
-     * Declare only reviewed, artifact-owned static policy appended by this hook.
-     * Never register source data, owner preferences or mandatory personal files.
-     * The native final gate verifies its exact presence separately from personal data.
-     */
-    registerStaticPolicy?: (policy: { id: string; text: string }) => void;
-    /** Register the exact packet text for a provider-bound combined budget gate. */
-    registerPreparedPacket?: (packet: {
-      text: string;
-      budgetTokens: number;
-      /** The preparation could not retain its mandatory personal sources. */
-      needsExpansion?: boolean;
-      expansionReason?: "complex_source_read";
-      sourceRefs?: readonly { kind: string; sha256: string }[];
-    }) => void;
-  }>;
   messageProvider?: string;
   /** Channel/plugin id for channel-originated runs, e.g. `discord`. */
   channel?: string;

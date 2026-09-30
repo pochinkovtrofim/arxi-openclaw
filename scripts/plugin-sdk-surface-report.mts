@@ -380,7 +380,8 @@ export function readPluginSdkSurfaceBudgets(env: NodeJS.ProcessEnv = process.env
       // +1: approved shared native-command argument-menu applicability predicate.
       // +13: Arxi approval authority and canonical media replay contracts.
       // +3: preserved Office format constant, resolver, and extraction error contract.
-      4498,
+      // +2: exact-source Workshop metadata and dependent-example deletion for native consumers.
+      4500,
       env,
     ),
     publicFunctionExports: readPluginSdkSurfaceBudgetEnv(

@@ -5,6 +5,7 @@ import { resolveEffectiveAgentSkillsLimits } from "../discovery/agent-filter.js"
 import { filterPromptVisibleSkillEntries } from "../discovery/skill-index.js";
 import type { SkillEligibilityContext, SkillEntry, SkillSnapshot } from "../types.js";
 import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";
+import { listWorkshopUnavailableSkillKeys } from "../workshop/store.js";
 import { hasUnavailableSkillSecretOwners, isSkillSecretOwnerUnavailable } from "./config.js";
 import { resolveSkillKey } from "./frontmatter.js";
 import { compactSkillsPromptForContext, escapeSkillXml, type Skill } from "./skill-contract.js";
@@ -138,6 +139,10 @@ async function rebuildAfterUnsafeSnapshot(
 }
 
 async function resolveSkillsPromptCatalog(params: ResolveSkillsPromptParams): Promise<string> {
+  const unavailableWorkshop = await listWorkshopUnavailableSkillKeys({
+    workspaceDir: params.workspaceDir,
+    agentId: params.agentId,
+  });
   const snapshotPrompt = params.skillsSnapshot?.prompt?.trim();
   if (params.skillsSnapshot && !snapshotPrompt) {
     return "";
@@ -147,23 +152,32 @@ async function resolveSkillsPromptCatalog(params: ResolveSkillsPromptParams): Pr
   );
   if (snapshotPrompt) {
     const snapshotHasUnavailableSkill =
-      params.skillsSnapshot?.skills.some((skill) =>
-        isSkillSecretOwnerUnavailable(skill.skillKey ?? skill.name),
+      params.skillsSnapshot?.skills.some(
+        (skill) =>
+          isSkillSecretOwnerUnavailable(skill.skillKey ?? skill.name) ||
+          unavailableWorkshop.has(skill.skillKey ?? skill.name),
       ) ||
-      (snapshotHasLegacySkillIdentity && hasUnavailableSkillSecretOwners());
+      (snapshotHasLegacySkillIdentity &&
+        (hasUnavailableSkillSecretOwners() || unavailableWorkshop.size > 0));
     if (
       snapshotHasUnavailableSkill &&
       params.skillsSnapshot?.promptFormatVersion !== WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION
     ) {
       return rebuildAfterUnsafeSnapshot(params, "unsupported-prompt-format");
     }
-    if (snapshotHasLegacySkillIdentity && hasUnavailableSkillSecretOwners()) {
+    if (
+      snapshotHasLegacySkillIdentity &&
+      (hasUnavailableSkillSecretOwners() || unavailableWorkshop.size > 0)
+    ) {
       return rebuildAfterUnsafeSnapshot(params, "legacy-skill-identity");
     }
     const unavailableNames = new Set(
       params.skillsSnapshot?.skills
         .filter(
-          (skill) => skill.skillKey !== undefined && isSkillSecretOwnerUnavailable(skill.skillKey),
+          (skill) =>
+            skill.skillKey !== undefined &&
+            (isSkillSecretOwnerUnavailable(skill.skillKey) ||
+              unavailableWorkshop.has(skill.skillKey)),
         )
         .map((skill) => escapeSkillXml(skill.name)),
     );

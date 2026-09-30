@@ -27,6 +27,7 @@ import { hashSkillProposalContent } from "./proposal-hash.js";
 import { reconcileInterruptedSkillProposalApply } from "./reconcile-transition.js";
 import { hashSkillProposalRevision } from "./revision-hash.js";
 import { resolveWorkshopSkillsDir } from "./skills-root.js";
+import { assertWorkshopSourcesCurrent } from "./source-provenance.js";
 import {
   assertProposalId,
   MAX_PROPOSAL_SUPPORT_FILES,
@@ -191,6 +192,7 @@ export async function readSkillProposal(
   if (!stored || !isStoredProposalVisible(stored.row, scope)) {
     return null;
   }
+  await assertWorkshopSourcesCurrent(stored.record.origin, undefined, options);
   const scopedOptions = {
     ...options,
     config: readOptions.config,
@@ -231,6 +233,7 @@ export async function readSkillProposalRecord(
   if (!stored || !isStoredProposalVisible(stored.row, scope)) {
     return null;
   }
+  await assertWorkshopSourcesCurrent(stored.record.origin, undefined, options);
   const scopedOptions = {
     ...options,
     config: readOptions.config,
@@ -262,6 +265,7 @@ export async function writeSkillProposal(params: {
   await stageSkillProposalGeneration(params);
 
   try {
+    await assertWorkshopSourcesCurrent(params.record.origin, undefined, params.store);
     return runOpenClawStateWriteTransaction(
       ({ db }) => {
         const kysely = getNodeSqliteKysely<SkillWorkshopDatabase>(db);
@@ -332,6 +336,7 @@ export async function replaceSkillProposalDraft(params: {
 
   let commit;
   try {
+    await assertWorkshopSourcesCurrent(params.record.origin, undefined, params.store);
     commit = commitPendingSkillProposalTransition({
       expected: params.expected,
       record: params.record,
@@ -448,9 +453,14 @@ export async function readSkillProposalManifest(
   scope: SkillProposalLookupScope = {},
 ): Promise<SkillProposalManifest> {
   const before = listStoredProposals(options, scope);
+  for (const { record } of before) {
+    if (!record.origin?.sourceDeleted) {
+      await assertWorkshopSourcesCurrent(record.origin, undefined, options);
+    }
+  }
   await Promise.all(
     before
-      .filter(({ record }) => record.status === "pending")
+      .filter(({ record }) => record.status === "pending" && !record.origin?.sourceDeleted)
       .map(({ record, row }) =>
         reconcileInterruptedApply(record.id, {
           ...options,
@@ -480,6 +490,7 @@ async function reconcileInterruptedApply(
   if (!stored || stored.record.status !== "pending" || !options.agentId) {
     return false;
   }
+  await assertWorkshopSourcesCurrent(stored.record.origin, undefined, options);
   // Avoid acquiring the target lock on ordinary reads. Apply and revise reread
   // proposals while already holding that lock.
   if (!(await readSkillProposalRollback(proposalId, options))) {
@@ -548,6 +559,7 @@ export async function readSkillProposalBundle(
   record: SkillProposalRecord,
   options: SkillWorkshopStoreOptions,
 ): Promise<SkillProposalReadResult> {
+  await assertWorkshopSourcesCurrent(record.origin, undefined, options);
   const content = await readSkillProposalDraft(record, options);
   const supportFiles = await readProposalSupportFiles(
     record,
@@ -635,3 +647,11 @@ function manifestEntryFromRecord(record: SkillProposalRecord): SkillProposalMani
     revisionHash: hashSkillProposalRevision(record),
   };
 }
+
+export {
+  forgetWorkshopSourceExamples,
+  listWorkshopSourceMetadata,
+  listWorkshopUnavailableSkillKeys,
+  readWorkshopAppliedTargetOrigin,
+  type WorkshopSourceMetadata,
+} from "./store-source-provenance.js";
