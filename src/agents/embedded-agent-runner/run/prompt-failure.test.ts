@@ -71,6 +71,19 @@ function makeParams(
 }
 
 describe("handleEmbeddedPromptFailure", () => {
+  it("surfaces local needs_expansion without retrying or rotating credentials", async () => {
+    const promptError = Object.assign(new Error("needs_expansion"), {
+      code: "needs_expansion",
+      status: 413,
+    });
+    const params = makeParams({ promptError });
+
+    await expect(handleEmbeddedPromptFailure(params)).rejects.toBe(promptError);
+    expect(params.maybeRefreshRuntimeAuthForAuthError).not.toHaveBeenCalled();
+    expect(params.failover.advanceAuthProfile).not.toHaveBeenCalled();
+    expect(params.failover.advanceRateLimitAuthProfile).not.toHaveBeenCalled();
+  });
+
   it.each([false, true])(
     "keeps account-restricted model errors on the model-failure path with fallback=%s",
     async (fallbackConfigured) => {

@@ -1,0 +1,9 @@
+{
+  "name": "@openclaw/pati-holdout-read-fixture",
+  "version": "0.0.0",
+  "type": "module",
+  "private": true,
+  "openclaw": {
+    "extensions": ["./index.js"]
+  }
+}

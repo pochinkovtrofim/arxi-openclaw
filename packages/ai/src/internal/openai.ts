@@ -20,5 +20,8 @@ export {
   reasoningTagTextPolicy,
   type CodeModeToolSurfaceObservation,
 } from "../provider-options.js";
-export { responsesPromptObserver } from "../transports/openai-responses-contracts.js";
+export {
+  responsesPromptObserver,
+  responsesProviderRequestGate,
+} from "../transports/openai-responses-contracts.js";
 export type { ResponsesPromptObservation } from "../transports/openai-responses-contracts.js";

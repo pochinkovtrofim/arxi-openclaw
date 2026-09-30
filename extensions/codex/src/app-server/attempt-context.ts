@@ -16,10 +16,6 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { resolveAgentWorkspaceDir } from "openclaw/plugin-sdk/agent-runtime";
 import { resolveBootstrapFilesForPreparation } from "openclaw/plugin-sdk/codex-mcp-projection";
-import {
-  buildMemorySystemPromptAddition,
-  prepareMemorySystemPromptAddition,
-} from "openclaw/plugin-sdk/core";
 import { root as fileRoot } from "openclaw/plugin-sdk/file-access-runtime";
 import { MESSAGE_TOOL_DELIVERY_HINTS } from "openclaw/plugin-sdk/message-tool-delivery-hints";
 import type {
@@ -27,6 +23,7 @@ import type {
   TranscriptTurnAdmission,
 } from "openclaw/plugin-sdk/session-transcript-runtime";
 import { readNonBlankString as readNonEmptyString } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { renderCodexWorkspaceMemoryCollaborationInstructions } from "./attempt-memory-routing.js";
 import type { EmbeddedRunAttemptResult } from "./attempt-terminal.js";
 import { isMessageOnlyCodexSourceReply } from "./dynamic-tool-profile.js";
 import type { CodexDynamicToolFunctionSpec, CodexDynamicToolSpec, JsonValue } from "./protocol.js";
@@ -40,7 +37,15 @@ import {
   type CodexContextEngineThreadBootstrapProjection,
 } from "./thread-lifecycle.js";
 
+export { getCodexWorkspaceMemoryToolNames } from "./attempt-memory-routing.js";
+
 const CODEX_NATIVE_PROJECT_DOC_BASENAMES = new Set(["agents.md"]);
+const CODEX_MANDATORY_WORKSPACE_INSTRUCTION_BASENAMES = new Set([
+  "agents.md",
+  "soul.md",
+  "identity.md",
+  "user.md",
+]);
 const CODEX_TURN_SCOPED_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES = new Set([
   "identity.md",
   "soul.md",
@@ -50,7 +55,6 @@ const CODEX_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES = new Set(
   CODEX_TURN_SCOPED_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES,
 );
 const CODEX_MEMORY_CONTEXT_BASENAME = "memory.md";
-const CODEX_MEMORY_TOOL_NAMES = new Set(["memory_search", "memory_get"]);
 const CODEX_BOOTSTRAP_CONTEXT_ORDER = new Map<string, number>([
   ["soul.md", 10],
   ["identity.md", 20],
@@ -449,8 +453,8 @@ export function buildCodexSystemPromptReport(params: {
       injectedFiles: params.workspaceBootstrapContext.promptContextFiles ?? [],
       omitReferenceFiles: params.omitWorkspaceReferences,
       developerInstructionFiles: [
-        ...(params.workspaceBootstrapContext.threadDeveloperInstructionFiles ?? []),
         ...(params.workspaceBootstrapContext.turnScopedDeveloperInstructionFiles ?? []),
+        ...(params.workspaceBootstrapContext.threadDeveloperInstructionFiles ?? []),
       ],
       memoryToolRoutedBootstrapFiles:
         params.workspaceBootstrapContext.memoryToolRoutedBootstrapFiles ?? [],
@@ -903,6 +907,52 @@ function selectCodexWorkspaceDeveloperInstructionFiles(
     .toSorted(compareCodexContextFiles);
 }
 
+/** Owner packets preserve full effective instructions at their scoped producer. */
+export function restoreCodexMandatoryPersonalBootstrap(context: CodexWorkspaceBootstrapContext): {
+  status: "complete" | "omitted";
+} {
+  const carriers = context.turnScopedDeveloperInstructionFiles;
+  for (const file of context.bootstrapFiles) {
+    const name = file.name.toLowerCase();
+    if (
+      file.readFailed &&
+      (CODEX_MANDATORY_WORKSPACE_INSTRUCTION_BASENAMES.has(name) || name === "memory.md")
+    ) {
+      return { status: "omitted" };
+    }
+    if (
+      !CODEX_MANDATORY_WORKSPACE_INSTRUCTION_BASENAMES.has(name) ||
+      file.missing ||
+      !file.content?.trimEnd()
+    ) {
+      continue;
+    }
+    if (!carriers) {
+      return { status: "omitted" };
+    }
+    const projected = carriers.find((entry) => path.basename(entry.path).toLowerCase() === name);
+    if (projected) {
+      projected.content = file.content.trimEnd();
+    } else if (name === "agents.md") {
+      const scoped = context.contextFiles.find(
+        (entry) => path.basename(entry.path).toLowerCase() === name,
+      );
+      if (!scoped) {
+        return { status: "omitted" };
+      }
+      // The native thread snapshot is frozen. This current effective copy
+      // supersedes it for this turn without changing other project-local docs.
+      carriers.push({ ...scoped, content: file.content.trimEnd() });
+    } else {
+      return { status: "omitted" };
+    }
+  }
+  context.turnScopedDeveloperInstructions = renderCodexWorkspaceCollaborationDeveloperInstructions(
+    carriers ?? [],
+  );
+  return { status: "complete" };
+}
+
 function renderCodexWorkspaceCollaborationDeveloperInstructions(
   files: EmbeddedContextFile[],
 ): string | undefined {
@@ -954,101 +1004,6 @@ function selectCodexWorkspaceMemoryReferenceFiles(params: {
       );
     })
     .toSorted(compareCodexBootstrapFiles);
-}
-
-/**
- * Renders a memory-file reference that points Codex at memory tools instead of
- * embedding MEMORY.md contents.
- */
-function renderCodexWorkspaceMemoryReference(params: {
-  files: EmbeddedContextFile[];
-  toolNames?: readonly string[];
-}): string | undefined {
-  if (params.files.length === 0) {
-    return undefined;
-  }
-  const toolNames = params.toolNames?.length
-    ? params.toolNames
-    : Array.from(CODEX_MEMORY_TOOL_NAMES);
-  const lines = [
-    "## OpenClaw Workspace Memory",
-    "",
-    `MEMORY.md exists in the active agent workspace as a memory file, not an instruction file. OpenClaw does not paste its contents into native Codex turns; use ${toolNames.join(" or ")} when durable memory is relevant and the tools are available.`,
-    "",
-  ];
-  for (const file of params.files) {
-    lines.push(`- ${file.path}`);
-  }
-  return lines.join("\n").trim();
-}
-
-async function renderCodexWorkspaceMemoryCollaborationInstructions(params: {
-  files: EmbeddedContextFile[];
-  toolNames: readonly string[];
-  memoryToolRouted: boolean;
-  citationsMode?: Parameters<typeof buildMemorySystemPromptAddition>[0]["citationsMode"];
-  agentId?: string;
-  agentSessionKey?: string;
-  sandboxed?: boolean;
-}): Promise<string | undefined> {
-  const memoryRecallInstructions = params.memoryToolRouted
-    ? await renderCodexMemoryRecallInstructions({
-        toolNames: params.toolNames,
-        citationsMode: params.citationsMode,
-        agentId: params.agentId,
-        agentSessionKey: params.agentSessionKey,
-        sandboxed: params.sandboxed,
-      })
-    : undefined;
-  const memoryReferenceInstructions = renderCodexWorkspaceMemoryReference({
-    files: params.files,
-    toolNames: params.toolNames,
-  });
-  const sections = [memoryRecallInstructions, memoryReferenceInstructions].filter(isNonEmptyString);
-  return sections.length > 0 ? sections.join("\n\n") : undefined;
-}
-
-async function renderCodexMemoryRecallInstructions(params: {
-  toolNames: readonly string[];
-  citationsMode?: Parameters<typeof buildMemorySystemPromptAddition>[0]["citationsMode"];
-  agentId?: string;
-  agentSessionKey?: string;
-  sandboxed?: boolean;
-}): Promise<string | undefined> {
-  const availableTools = new Set(params.toolNames);
-  const memoryPrompt = await prepareMemorySystemPromptAddition({
-    availableTools,
-    citationsMode: params.citationsMode,
-    agentId: params.agentId,
-    agentSessionKey: params.agentSessionKey,
-    sandboxed: params.sandboxed,
-  });
-  if (!memoryPrompt) {
-    // Memory recall policy belongs to the active memory plugin.
-    // Codex-side fallback text can mask plugin lifecycle bugs or misdescribe third-party memory tools.
-    return undefined;
-  }
-  const toolSearchBridge = renderCodexMemoryToolSearchBridge(params.toolNames);
-  return [memoryPrompt, toolSearchBridge].filter(isNonEmptyString).join("\n").trim();
-}
-
-function renderCodexMemoryToolSearchBridge(toolNames: readonly string[]): string | undefined {
-  const memoryToolNames = toolNames
-    .map((name) => normalizeCodexDynamicToolName(name))
-    .filter((name) => CODEX_MEMORY_TOOL_NAMES.has(name))
-    .toSorted();
-  if (memoryToolNames.length === 0) {
-    return undefined;
-  }
-  return `Codex may expose ${memoryToolNames.join(" and ")} as deferred tools. When the memory guidance above calls for memory recall, use an already-loaded memory tool directly. If the needed memory tool is deferred and not currently callable, use \`tool_search\` to load it, then call that memory tool.`;
-}
-
-/** Lists available memory tool names understood by Codex workspace memory routing. */
-export function getCodexWorkspaceMemoryToolNames(tools: readonly CodexDynamicToolSpec[]): string[] {
-  const availableToolNames = new Set(
-    flattenCodexDynamicToolFunctions(tools).map((tool) => normalizeCodexDynamicToolName(tool.name)),
-  );
-  return Array.from(CODEX_MEMORY_TOOL_NAMES).filter((name) => availableToolNames.has(name));
 }
 
 function canRouteCodexWorkspaceMemoryThroughTools(params: {

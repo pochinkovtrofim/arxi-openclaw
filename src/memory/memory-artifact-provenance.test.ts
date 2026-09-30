@@ -208,7 +208,12 @@ describe("memory artifact provenance", () => {
       "memory/2026-08-20.md",
     );
     expect(normalizeMemoryArtifactRelativePath("MEMORY.md")).toBe("MEMORY.md");
-    expect(normalizeMemoryArtifactRelativePath("memory/dreaming/state.md")).toBeUndefined();
+    // Reports now retain source lineage; their search/index classification stays separate.
+    expect(normalizeMemoryArtifactRelativePath("memory/dreaming/state.md")).toBe(
+      "memory/dreaming/state.md",
+    );
+    expect(normalizeMemoryArtifactRelativePath("DREAMS.md")).toBe("DREAMS.md");
+    expect(normalizeMemoryArtifactRelativePath("memory/dreaming/state.sqlite")).toBeUndefined();
     expect(normalizeMemoryArtifactRelativePath("../memory/escape.md")).toBeUndefined();
   });
 });

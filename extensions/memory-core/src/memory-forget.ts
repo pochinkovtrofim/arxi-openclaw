@@ -1,10 +1,7 @@
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  resolveAgentWorkspaceDir,
-  type OpenClawConfig,
-} from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
+import { resolveAgentWorkspaceDir } from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
 import {
   buildSessionEntry,
   listSessionTranscriptCorpusEntriesForAgent,
@@ -43,6 +40,10 @@ import {
 import { collectTranscriptWrites } from "./memory-forget-curated-writes.js";
 import { deleteMemoryIndexSources } from "./memory-forget-index-sources.js";
 import { summarizeParticipantMatches, type MemoryForgetReport } from "./memory-forget-report.js";
+import {
+  forgetMemorySourceEntries,
+  type MemoryForgetParams,
+} from "./memory-forget-source-request.js";
 import { withMemoryWorkspaceLock } from "./memory-workspace-lock.js";
 import { isMemorySessionIndexable } from "./memory/manager-session-sync-state.js";
 import {
@@ -322,17 +323,10 @@ async function planMemoryIndex(params: {
   return { ...result.value, vectorRows };
 }
 
-type MemoryForgetParams = {
-  cfg: OpenClawConfig;
-  agentId: string;
-  sessionIds?: string[];
-  hookSources?: string[];
-  participants?: string[];
-  since?: string;
-  dryRun?: boolean;
-};
-
 export async function forgetMemoryEntries(params: MemoryForgetParams): Promise<MemoryForgetReport> {
+  if (params.sourceKeys?.length) {
+    return forgetMemorySourceEntries(params);
+  }
   if (!params.sessionIds?.length && !params.hookSources?.length && !params.participants?.length) {
     throw new Error("memory forget requires a session, hook source, or participant selector");
   }

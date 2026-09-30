@@ -6,6 +6,7 @@ export function resolveSkillWorkshopAttemptParams(
     | "skillWorkshopAutonomousCapture"
     | "skillWorkshopUpdateProposals"
     | "skillWorkshopOrigin"
+    | "skillWorkshopReviewContext"
     | "skillWorkshopProposalEnv"
     | "skillWorkshopProposalMutationBudget"
     | "skillWorkshopProposalOnly"
@@ -19,6 +20,7 @@ export function resolveSkillWorkshopAttemptParams(
     skillWorkshopProposalOnly: params.skillWorkshopProposalOnly,
     skillWorkshopProposalEnv: params.skillWorkshopProposalEnv,
     skillWorkshopOrigin: params.skillWorkshopOrigin,
+    skillWorkshopReviewContext: params.skillWorkshopReviewContext,
     skillWorkshopProposalMutationBudget: params.skillWorkshopProposalMutationBudget,
     skillWorkshopProposalRevision: params.skillWorkshopProposalRevision,
     skillLibraryAuthoring: params.skillLibraryAuthoring,

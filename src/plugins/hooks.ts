@@ -78,6 +78,11 @@ import type {
   PluginHookSkillProposalEvaluateResult,
   PluginHookSkillProposalEvaluationOutcome,
 } from "./hook-types.js";
+import {
+  withAgentRunId,
+  withMemoryArtifactSourceContext,
+  withMemoryArtifactSourceScopeCleanup,
+} from "./hooks-memory-source-context.js";
 import { runPluginCleanup } from "./plugin-instance-scope.js";
 import {
   type PluginSubagentRequesterContext,
@@ -990,16 +995,6 @@ export function createHookRunner(
   // Agent Hooks
   // =========================================================================
 
-  function withAgentRunId<TEvent extends { runId?: string }>(
-    event: TEvent,
-    ctx: PluginHookAgentContext,
-  ): TEvent {
-    if (event.runId || !ctx.runId) {
-      return event;
-    }
-    return { ...event, runId: ctx.runId };
-  }
-
   /**
    * Run before_prompt_build hook.
    * Allows plugins to inject context and system prompt before prompt submission.
@@ -1073,7 +1068,7 @@ export function createHookRunner(
       >(
         "before_prompt_build",
         event,
-        { ...ctx, toolAuthority: authority },
+        withMemoryArtifactSourceContext(ctx, authority, params.assertHostActive),
         {
           mergeResults: mergeBeforePromptBuild,
           includeRegistration: (registration) => registration.requiresToolAuthority === true,
@@ -1102,7 +1097,9 @@ export function createHookRunner(
     ctx: PluginHookAgentContext,
     optionsLocal?: VoidHookRunOptions,
   ): Promise<void> {
-    return runVoidHook("agent_end", withAgentRunId(event, ctx), ctx, optionsLocal);
+    return withMemoryArtifactSourceScopeCleanup(ctx.runId, () =>
+      runVoidHook("agent_end", withAgentRunId(event, ctx), ctx, optionsLocal),
+    );
   }
 
   /**

@@ -108,6 +108,7 @@ export async function evaluateSkillProposal(
               ? { targetCurrentSha256: read.record.target.currentContentHash }
               : {}),
           },
+          ...(read.record.reviewContext ? { reviewContext: read.record.reviewContext } : {}),
           skill: {
             name: read.record.target.skillName,
             skillKey: read.record.target.skillKey,

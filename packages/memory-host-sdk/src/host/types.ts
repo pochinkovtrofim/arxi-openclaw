@@ -397,7 +397,12 @@ export interface MemorySearchManager {
     activeProjectKeys: string[];
     limit?: number;
   }): Promise<MemorySearchResult[]>;
-  readFile(params: { relPath: string; from?: number; lines?: number }): Promise<MemoryReadResult>;
+  readFile(params: {
+    relPath: string;
+    from?: number;
+    lines?: number;
+    signal?: AbortSignal;
+  }): Promise<MemoryReadResult>;
   status(): MemoryProviderStatus;
   sync?(params?: MemorySyncParams): Promise<void>;
   getCachedEmbeddingAvailability?(): MemoryEmbeddingProbeResult | null;

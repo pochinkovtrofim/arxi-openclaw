@@ -7,6 +7,7 @@ import {
   type AgentRunAttemptFailureSource,
 } from "../../agent-run-terminal-outcome.js";
 import { resolvePendingRuntimeContextReplay } from "../../internal-runtime-context.js";
+import { wrapStreamFnWithPersonalPromptProviderGate } from "../../personal-prompt-provider-stream.js";
 import {
   createCompactionRequestBudget,
   type CompactionRequestBudget,
@@ -163,6 +164,7 @@ export async function runEmbeddedAttemptPromptPhase(
       sessionAgentId,
       runtimeModel: runtimeInfo.model,
       systemPromptText,
+      personalPrompt: prepared.systemPrompt.personalPrompt,
       setActiveSessionSystemPrompt,
       applyPromptBuildToolsAllow: (toolsAllow) => {
         return promptToolPolicy.apply(toolsAllow).activeToolNames;
@@ -397,49 +399,87 @@ export async function runEmbeddedAttemptPromptPhase(
     publishDispatchState(state);
 
     if (!state.skipPromptSubmission) {
-      await submitEmbeddedAttemptPrompt({
-        ...(promptBuildAppendContext ? { appendContext: promptBuildAppendContext } : {}),
-        attempt,
-        activeSession,
-        contextTokenBudget: promptContext.contextTokenBudget,
-        compactionRequestBudget,
-        images: imageResult.images,
-        ...(leasedSteering ? { leasedSteering } : {}),
-        modelPrompt: promptContext.promptForModel,
-        onFinalPromptText: (prompt) => {
-          promptState.finalPromptText = prompt;
-        },
-        onSteeringAcknowledged: () => {
-          leasedSteering = undefined;
-        },
-        persistToolResultProjections: async () => {
-          if (!isRawModelRun && toolResultPromptProjectionState.frozen.size > 0) {
-            await withOwnedTranscriptWrite(() =>
-              withSessionManagerWrite(sessionManager, () => {
-                runAbortController.signal.throwIfAborted();
-                persistToolResultProjections(toolResultPromptProjectionState, (customType, data) =>
-                  sessionManager.appendCustomEntry(customType, data),
+      const personalPrompt = prepared.systemPrompt.personalPrompt;
+      const previousStreamFn = activeSession.agent.streamFn;
+      const gatedStreamFn = personalPrompt?.readPreparedPacket()
+        ? wrapStreamFnWithPersonalPromptProviderGate({
+            streamFn: previousStreamFn,
+            personalPrompt: {
+              ...personalPrompt,
+              recordProviderReceipt: (receipt) => {
+                personalPrompt.recordProviderReceipt(receipt);
+                log.info(
+                  `personal_context_provider_pre_dispatch ${JSON.stringify({
+                    runId: attempt.runId,
+                    model: receipt.model,
+                    requestSha256: receipt.requestSha256,
+                    sourceSha256: receipt.sourceSha256,
+                    fullTokens: receipt.fullTokens,
+                    baselineTokens: receipt.baselineTokens,
+                    personalTokens: receipt.personalTokens,
+                    budgetTokens: receipt.budgetTokens,
+                    status: receipt.status,
+                  })}`,
                 );
-              }),
-            );
-          }
-        },
-        ...(promptBuildPrependContext ? { prependContext: promptBuildPrependContext } : {}),
-        ...(promptContext.runtimeContextMessageForCurrentTurn
-          ? { runtimeContextMessage: promptContext.runtimeContextMessageForCurrentTurn }
-          : {}),
-        runtimeOnly: promptContext.promptSubmission.runtimeOnly === true,
-        systemPrompt: promptContext.systemPromptForHook,
-        toolResultAggregateMaxChars: promptContext.promptToolResultAggregateMaxChars,
-        toolResultMaxChars: promptContext.promptToolResultMaxChars,
-        transcriptLeafId,
-        transcriptPrompt: promptContext.promptForSession,
-        appendOnlyRuntimeContext,
-        promptActiveSession,
-        sessionPromptState,
-        toolResultPromptProjectionState,
-        trajectoryRecorder,
-      });
+              },
+            },
+            isCompacting: () => activeSession.isCompacting === true,
+            nativePreEgress: streamStrategy === "boundary-aware:openai-responses",
+          })
+        : undefined;
+      if (gatedStreamFn) {
+        activeSession.agent.streamFn = gatedStreamFn;
+      }
+      try {
+        await submitEmbeddedAttemptPrompt({
+          ...(promptBuildAppendContext ? { appendContext: promptBuildAppendContext } : {}),
+          attempt,
+          activeSession,
+          contextTokenBudget: promptContext.contextTokenBudget,
+          compactionRequestBudget,
+          images: imageResult.images,
+          ...(leasedSteering ? { leasedSteering } : {}),
+          modelPrompt: promptContext.promptForModel,
+          onFinalPromptText: (prompt) => {
+            promptState.finalPromptText = prompt;
+          },
+          onSteeringAcknowledged: () => {
+            leasedSteering = undefined;
+          },
+          persistToolResultProjections: async () => {
+            if (!isRawModelRun && toolResultPromptProjectionState.frozen.size > 0) {
+              await withOwnedTranscriptWrite(() =>
+                withSessionManagerWrite(sessionManager, () => {
+                  runAbortController.signal.throwIfAborted();
+                  persistToolResultProjections(
+                    toolResultPromptProjectionState,
+                    (customType, data) => sessionManager.appendCustomEntry(customType, data),
+                  );
+                }),
+              );
+            }
+          },
+          ...(promptBuildPrependContext ? { prependContext: promptBuildPrependContext } : {}),
+          ...(promptContext.runtimeContextMessageForCurrentTurn
+            ? { runtimeContextMessage: promptContext.runtimeContextMessageForCurrentTurn }
+            : {}),
+          runtimeOnly: promptContext.promptSubmission.runtimeOnly === true,
+          systemPrompt: promptContext.systemPromptForHook,
+          toolResultAggregateMaxChars: promptContext.promptToolResultAggregateMaxChars,
+          toolResultMaxChars: promptContext.promptToolResultMaxChars,
+          transcriptLeafId,
+          transcriptPrompt: promptContext.promptForSession,
+          appendOnlyRuntimeContext,
+          promptActiveSession,
+          sessionPromptState,
+          toolResultPromptProjectionState,
+          trajectoryRecorder,
+        });
+      } finally {
+        if (gatedStreamFn && activeSession.agent.streamFn === gatedStreamFn) {
+          activeSession.agent.streamFn = previousStreamFn;
+        }
+      }
     } else {
       releaseLeasedSteering(state.promptError ?? "prompt submission skipped");
     }

@@ -24,3 +24,16 @@ const defaultScheduler = createSkillExperienceReviewScheduler({
 export function scheduleSkillExperienceReview(params: SkillExperienceReviewParams): void {
   defaultScheduler.schedule(params);
 }
+
+/** The existing bounded scheduler owns these original native snapshots, including its in-flight review. */
+export function listPendingSkillExperienceSourceMetadata(workspaceDir: string) {
+  return defaultScheduler.capturedSourceMetadata(workspaceDir);
+}
+
+/** Retire only exact captured pending reviews after the durable deletion barrier commits. */
+export function forgetPendingSkillExperienceSources(
+  workspaceDir: string,
+  sourceKeys: readonly string[],
+) {
+  defaultScheduler.forgetCapturedSources(workspaceDir, sourceKeys);
+}

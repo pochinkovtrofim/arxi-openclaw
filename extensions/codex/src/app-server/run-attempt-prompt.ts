@@ -166,6 +166,7 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
     assertProjectionCurrent();
     contextImageGroups = projection.imageGroups ?? [];
     promptState.promptText = projection.promptText;
+    promptState.ordinarySessionSegments = projection.ordinarySessionSegments;
     promptState.promptContextRange = projection.promptContextRange;
     promptState.prePromptMessageCount = projection.prePromptMessageCount;
     promptState.noEngineContinuityProjectionApplied = true;
@@ -253,6 +254,9 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
     // Projection metadata and rendered prompt must advance together or retries can skip context.
     promptState.contextEngineProjection = contextEngineProjection;
     promptState.promptText = projectionDecision.project ? projection.promptText : params.prompt;
+    promptState.ordinarySessionSegments = projectionDecision.project
+      ? projection.ordinarySessionSegments
+      : [];
     promptState.promptContextRange = projectionDecision.project
       ? projection.promptContextRange
       : undefined;
@@ -639,6 +643,7 @@ export async function prepareCodexAttemptPrompt(context: CodexAttemptContext) {
   let workspaceReferencesIncluded = true;
   return {
     context,
+    currentUserMessage,
     get contextImageGroups() {
       return turnContextImageGroups;
     },

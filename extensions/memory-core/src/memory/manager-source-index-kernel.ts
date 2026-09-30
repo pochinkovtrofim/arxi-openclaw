@@ -40,7 +40,13 @@ type SourceIndexDatabase = {
     mtime: number;
     size: number;
   };
-  memory_index_chunks: { id: string; path: string; source: MemorySource };
+  memory_index_chunks: {
+    id: string;
+    path: string;
+    source: MemorySource;
+    start_line: number;
+    end_line: number;
+  };
 };
 
 type SourceIndexState = {
@@ -142,9 +148,14 @@ export class MemorySourceIndexKernel {
     path: string;
     source: MemorySource;
     expectedHash: string | undefined;
+    lineRanges?: Array<{ from: number; to: number }>;
   }): boolean {
     if (readMemorySourceHash(this.database, params.source, params.path) !== params.expectedHash) {
       return false;
+    }
+    if (params.lineRanges) {
+      this.clearRegions(params.path, params.source, params.lineRanges);
+      return true;
     }
     this.clear(params.path, params.source);
     executeSqliteQuerySync(
@@ -155,6 +166,62 @@ export class MemorySourceIndexKernel {
         .where("source", "=", params.source),
     );
     return true;
+  }
+
+  private clearRegions(
+    pathname: string,
+    source: MemorySource,
+    ranges: Array<{ from: number; to: number }>,
+  ): void {
+    if (
+      source !== "memory" ||
+      !ranges.length ||
+      ranges.length > 256 ||
+      ranges.some(
+        (range) =>
+          !Number.isSafeInteger(range.from) ||
+          !Number.isSafeInteger(range.to) ||
+          range.from < 1 ||
+          range.to < range.from,
+      )
+    ) {
+      throw new Error("Memory source region deletion refused");
+    }
+    const chunks = this.database
+      .prepare(
+        "SELECT id,hash,start_line,end_line FROM memory_index_chunks WHERE path=? AND source=?",
+      )
+      // SAFETY: The owning chunk schema defines text IDs/hashes and integer start/end line columns.
+      .all(pathname, source) as Array<{
+      id: string;
+      hash: string;
+      start_line: number;
+      end_line: number;
+    }>;
+    const selected = chunks.filter((chunk) =>
+      ranges.some((range) => range.from <= chunk.end_line && range.to >= chunk.start_line),
+    );
+    // This runs in the existing owning publication transaction. A vector with
+    // mixed content cannot remain eligible after one dependency was revoked.
+    for (const chunk of selected) {
+      if (memoryTableExists(this.database, MEMORY_INDEX_VECTOR_TABLE)) {
+        if (!this.state.vector.enabled || this.state.vector.available !== true) {
+          throw new Error("Memory source vector removal unavailable; keep purge pending");
+        }
+        this.database.prepare(`DELETE FROM ${MEMORY_INDEX_VECTOR_TABLE} WHERE id=?`).run(chunk.id);
+      }
+      if (memoryTableExists(this.database, MEMORY_INDEX_FTS_TABLE)) {
+        this.database.prepare(`DELETE FROM ${MEMORY_INDEX_FTS_TABLE} WHERE id=?`).run(chunk.id);
+      }
+      this.database.prepare("DELETE FROM memory_index_chunks WHERE id=?").run(chunk.id);
+      if (memoryTableExists(this.database, "memory_embedding_cache")) {
+        this.database
+          .prepare(
+            "DELETE FROM memory_embedding_cache WHERE hash=? AND NOT EXISTS (SELECT 1 FROM memory_index_chunks WHERE hash=?)",
+          )
+          .run(chunk.hash, chunk.hash);
+      }
+    }
   }
 
   private clear(pathname: string, source: MemorySource): void {

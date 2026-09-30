@@ -30,6 +30,7 @@ import { SKILL_WORKSHOP_MAINTENANCE_TOOLS } from "./maintenance-prompt.js";
 import { assertSkillReviewRunSucceeded } from "./review-outcome.js";
 import { runSkillWorkshopReview } from "./review-run.js";
 import { resolveWorkshopSkillsDir } from "./skills-root.js";
+import { assertWorkshopSourcesCurrent, workshopSourceOrigin } from "./source-provenance.js";
 import type { SkillWorkshopProposalMutationBudget } from "./types.js";
 
 export async function prepareSkillExperienceReviewCandidate(
@@ -118,6 +119,8 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
   // across model execution and outcome publication.
   const abortSignal = getGatewayRestartDrainSignal();
   const { foregroundPromptContext, workspaceDir } = candidate.ctx;
+  const sourceOrigin = workshopSourceOrigin(workspaceDir, candidate.sourceRefs ?? []);
+  await assertWorkshopSourcesCurrent(sourceOrigin, workspaceDir);
   const { sessionKey } = candidate.source;
   const config = candidate.config;
   const mode = resolveSkillWorkshopConfig(config).autonomous.mode;
@@ -212,8 +215,9 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
       },
       assertSourceCurrent,
     });
-    const run = () =>
-      runSkillWorkshopReview({
+    const run = async () => {
+      await assertWorkshopSourcesCurrent(sourceOrigin, workspaceDir);
+      return runSkillWorkshopReview({
         ...foregroundPromptContext,
         preparedRunAdmission,
         sessionId: reviewSession.sessionId,
@@ -228,7 +232,14 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
         ...(executionRoot ? { skillsSnapshot: { prompt: "", skills: [] } } : {}),
         config,
         abortSignal,
-        prompt: buildSkillExperienceReviewPrompt({ ...candidate, existingSkills }, mode),
+        prompt: buildSkillExperienceReviewPrompt(
+          {
+            ...candidate,
+            existingSkills,
+            privateConversation: foregroundPromptContext.chatType === "direct",
+          },
+          mode,
+        ),
         provider: candidate.ctx.modelProviderId,
         model: candidate.ctx.modelId,
         ...(candidate.ctx.authProfileId
@@ -246,16 +257,35 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
         skillWorkshopAutonomousCapture: mode === "propose",
         skillWorkshopProposalMutationBudget: proposalMutationBudget,
         skillWorkshopOrigin: {
+          ...sourceOrigin,
           agentId: foregroundPromptContext.agentId,
           sessionKey,
           ...(candidate.ctx.runId ? { runId: candidate.ctx.runId } : {}),
         },
+        // This category comes from the retained foreground run, not the proposal
+        // text or mutable origin. Evaluators can keep private-channel policy bound
+        // across later draft revisions and apply attempts.
+        skillWorkshopReviewContext: {
+          agentId: foregroundPromptContext.agentId,
+          ...(foregroundPromptContext.messageChannel
+            ? { messageChannel: foregroundPromptContext.messageChannel }
+            : {}),
+          ...(foregroundPromptContext.chatType
+            ? { chatType: foregroundPromptContext.chatType }
+            : {}),
+          ...(foregroundPromptContext.trigger ? { trigger: foregroundPromptContext.trigger } : {}),
+          ...(foregroundPromptContext.senderIsOwner !== undefined
+            ? { senderIsOwner: foregroundPromptContext.senderIsOwner }
+            : {}),
+        },
         ...(capability ? { cronCreatorAuthorityCapability: capability } : {}),
       });
+    };
     const embeddedResult = capability
       ? await runWithCronCreatorAuthorityCapability(capability, run)
       : await run();
     preparedRunAdmission.assertSourceCurrent();
+    await assertWorkshopSourcesCurrent(sourceOrigin, workspaceDir);
 
     // Direct edits have normal file-tool semantics; drafts remain pending even
     // if the operator enables automatic maintenance while this review runs.

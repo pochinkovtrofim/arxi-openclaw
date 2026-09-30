@@ -4,6 +4,10 @@ import { getCanonicalSkillWorkspace } from "../../agents/skill-workshop-workspac
 import type { TranscriptEntryAnchor } from "../../config/sessions/transcript-entry-anchor.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import {
+  memoryArtifactSourceKey,
+  type MemoryArtifactSourceRef,
+} from "../../memory/memory-artifact-source-authority.js";
 import type { RunSkillUsage } from "../runtime/run-usage.js";
 import { resolveSkillWorkshopConfig } from "./config.js";
 import {
@@ -53,6 +57,7 @@ export type SkillExperienceReviewParams = {
   usedSkills?: readonly RunSkillUsage[];
   config: OpenClawConfig;
   source?: TranscriptEntryAnchor;
+  sourceRefs?: readonly MemoryArtifactSourceRef[];
 };
 
 export type ExperienceReviewCandidate = {
@@ -63,6 +68,7 @@ export type ExperienceReviewCandidate = {
   };
   config: OpenClawConfig;
   source: TranscriptEntryAnchor;
+  sourceRefs?: readonly MemoryArtifactSourceRef[];
   usedSkills?: readonly RunSkillUsage[];
   turnAborted?: boolean;
 };
@@ -108,7 +114,7 @@ function isEligibleContext(ctx: ExperienceReviewAgentContext): boolean {
 
 export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSchedulerDeps) {
   const pendingBySession = new Map<string, PendingExperienceReview>();
-  let reviewInFlight = false;
+  let reviewInFlight: ExperienceReviewCandidate | undefined;
   const setTimer = deps.setTimer ?? ((callback, delayMs) => setTimeout(callback, delayMs));
   const clearTimer = deps.clearTimer ?? clearTimeout;
 
@@ -131,12 +137,12 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
             arm(key, pending, EXPERIENCE_REVIEW_RETRY_IDLE_MS);
             return;
           }
-          reviewInFlight = true;
+          reviewInFlight = pending.candidate;
           try {
             pendingBySession.delete(key);
             await deps.runReview(pending.candidate);
           } finally {
-            reviewInFlight = false;
+            reviewInFlight = undefined;
           }
         })
         .catch((error: unknown) => {
@@ -245,6 +251,7 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
         },
         config: params.config,
         source: { ...source },
+        sourceRefs: params.sourceRefs?.map((ref) => ({ ...ref })),
         usedSkills: params.usedSkills ? [...params.usedSkills] : undefined,
         turnAborted: !params.event.success,
       };
@@ -255,6 +262,35 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
       log.debug(
         `experience review scheduled: session=${sessionKey} iterations=${modelIterations} aborted=${!params.event.success}`,
       );
+    },
+    capturedSourceMetadata(workspaceDir: string) {
+      const candidates = [...pendingBySession.values()].map((row) => row.candidate);
+      if (reviewInFlight) {
+        candidates.push(reviewInFlight);
+      }
+      return candidates
+        .filter(
+          (candidate) =>
+            candidate.ctx.workspaceDir === workspaceDir && candidate.sourceRefs?.length,
+        )
+        .map((candidate) => ({
+          agentId: candidate.ctx.foregroundPromptContext.agentId,
+          sourceRefs: structuredClone(candidate.sourceRefs!),
+        }));
+    },
+    forgetCapturedSources(workspaceDir: string, sourceKeys: readonly string[]) {
+      const selected = new Set(sourceKeys);
+      for (const [key, pending] of pendingBySession) {
+        if (
+          pending.candidate.ctx.workspaceDir === workspaceDir &&
+          pending.candidate.sourceRefs?.some((ref) => selected.has(memoryArtifactSourceKey(ref)))
+        ) {
+          if (pending.timer) {
+            clearTimer(pending.timer);
+          }
+          pendingBySession.delete(key);
+        }
+      }
     },
     clear(): void {
       for (const pending of pendingBySession.values()) {

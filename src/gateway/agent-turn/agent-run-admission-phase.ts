@@ -1,4 +1,8 @@
-import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
+import {
+  ErrorCodes,
+  GatewayErrorDetailCodes,
+  errorShape,
+} from "../../../packages/gateway-protocol/src/index.js";
 import {
   createOperationalRunInstanceRef,
   type OperationalRunInstanceRef,
@@ -28,6 +32,7 @@ import {
 import { resolveEffectiveAgentRuntime } from "../../agents/thinking-runtime.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import type { SessionEntry } from "../../config/sessions.js";
+import { SessionInputProcessingUncertainError } from "../../config/sessions/session-accessor.pending-inputs.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
 import { claimAgentRunContext } from "../../infra/agent-run-registry.js";
@@ -58,6 +63,7 @@ import {
 } from "./agent-dedupe.js";
 import type { AgentDeliveryPhaseResult } from "./agent-delivery-phase.js";
 import type { RestoredCronContinuation } from "./agent-handler-helpers.js";
+import { releaseFailedAgentRunAdmission } from "./agent-run-admission-cleanup.js";
 import { createAgentRunAdmissionRevalidator } from "./agent-run-admission-revalidation.js";
 import { prepareAgentRunTaskTracking } from "./agent-run-task-tracking.js";
 import {
@@ -592,7 +598,13 @@ export async function prepareAgentRunDispatch(params: {
       params.onUserTurnMediaPersisted();
     }
   } catch (err) {
-    return rejectPreaccept(errorShapeFromError(ErrorCodes.UNAVAILABLE, err));
+    return rejectPreaccept(
+      err instanceof SessionInputProcessingUncertainError
+        ? errorShape(ErrorCodes.UNAVAILABLE, err.message, {
+            details: { code: GatewayErrorDetailCodes.INPUT_PROCESSING_UNCERTAIN },
+          })
+        : errorShapeFromError(ErrorCodes.UNAVAILABLE, err),
+    );
   }
   const inputAdmission = revalidateAdmission();
   if (inputAdmission !== true) {
@@ -697,16 +709,6 @@ export async function prepareAgentRunDispatch(params: {
       restoreAdmittedRestartRecoveryInterrupted,
     };
   } catch (error) {
-    const failure = releasePreparedAgentRunUserTurnAfterFailure(userTurn, error, "interrupted");
-    try {
-      await cleanupPreaccept();
-    } catch (cleanupError) {
-      throw new AggregateError(
-        [failure, cleanupError],
-        `${formatForLog(failure)}; agent admission cleanup failed: ${formatForLog(cleanupError)}`,
-        { cause: cleanupError },
-      );
-    }
-    throw failure;
+    throw await releaseFailedAgentRunAdmission(userTurn, error, cleanupPreaccept);
   }
 }

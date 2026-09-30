@@ -89,6 +89,8 @@ export async function readMemoryFile(params: {
   lines?: number;
   defaultLines?: number;
   maxChars?: number;
+  /** Runtime-owned source projection runs on the complete validated file before slicing. */
+  projectContent?: (params: { relativePath: string; content: string }) => Promise<string>;
 }): Promise<MemoryReadResult> {
   const rawPath = params.relPath.trim();
   if (!rawPath) {
@@ -180,6 +182,9 @@ export async function readMemoryFile(params: {
       return { status: "not_found", text: "", path: relPath };
     }
     throw err;
+  }
+  if (params.projectContent) {
+    content = await params.projectContent({ relativePath: relPath, content });
   }
   return buildMemoryReadResult({
     content,

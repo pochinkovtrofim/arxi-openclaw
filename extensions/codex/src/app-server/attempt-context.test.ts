@@ -21,6 +21,7 @@ import {
   readContextEngineThreadBootstrapProjection,
   readMirroredSessionHistoryMessages,
   resolveContextEngineBootstrapProjectionDecision,
+  restoreCodexMandatoryPersonalBootstrap,
 } from "./attempt-context.js";
 import type { CodexDynamicToolSpec } from "./protocol.js";
 import type { CodexAppServerContextEngineBinding } from "./session-binding.js";
@@ -32,6 +33,139 @@ afterEach(() => {
 });
 
 describe("Codex app-server attempt context", () => {
+  it.each(["SOUL.md", "IDENTITY.md", "AGENTS.md"])(
+    "preserves a middle mandatory %s rule for a packet while leaving the native thread snapshot frozen",
+    async (name) => {
+      await withTempDir("pc41-instruction-", async (workspaceDir) => {
+        const rule = "Never disclose the Owner's medical appointment to another person.";
+        const prefix = Array.from(
+          { length: 700 },
+          (_, i) => `Never violate synthetic procedure rule ${i}; ${"detail ".repeat(15)}\n`,
+        ).join("");
+        const source = prefix + rule + "\n" + "Synthetic procedure detail.\n".repeat(1500);
+        await fs.writeFile(path.join(workspaceDir, name), source);
+        const context = await buildCodexWorkspaceBootstrapContext({
+          params: {
+            sessionId: "packet-scope",
+            sessionKey: "agent:main:packet-scope",
+            pluginHarnessToolPolicyRestricted: true,
+            config: { agents: { defaults: { workspace: workspaceDir } } },
+          } as EmbeddedRunAttemptParams,
+          resolvedWorkspace: workspaceDir,
+          executionWorkspace: workspaceDir,
+          effectiveWorkspace: workspaceDir,
+          sessionKey: "agent:main:packet-scope",
+          sessionAgentId: "main",
+          memoryToolNames: [],
+          ringZeroActive: false,
+        });
+        const threadSnapshot = context.threadDeveloperInstructions;
+        const before =
+          name === "AGENTS.md" ? threadSnapshot : context.turnScopedDeveloperInstructions;
+        expect(before).toContain("[...truncated,");
+        expect(before).not.toContain(rule);
+        expect(restoreCodexMandatoryPersonalBootstrap(context)).toEqual({ status: "complete" });
+        expect(context.turnScopedDeveloperInstructions).toContain(source.trimEnd());
+        expect(context.turnScopedDeveloperInstructions).not.toContain("[...truncated,");
+        expect(context.threadDeveloperInstructions).toBe(threadSnapshot);
+        expect(
+          context.turnScopedDeveloperInstructionFiles?.find(
+            (file) => path.basename(file.path) === name,
+          )?.path,
+        ).toBe(path.join(workspaceDir, name));
+      });
+    },
+  );
+
+  it("refuses an omitted scoped instruction carrier instead of claiming complete owner constraints", () => {
+    expect(
+      restoreCodexMandatoryPersonalBootstrap({
+        bootstrapFiles: [
+          {
+            name: "SOUL.md",
+            path: "/synthetic-owner/SOUL.md",
+            content: "Never disclose a private appointment.",
+            missing: false,
+          },
+        ],
+        contextFiles: [],
+        inheritsAgentWorkspace: false,
+        turnScopedDeveloperInstructionFiles: [],
+      }),
+    ).toEqual({ status: "omitted" });
+  });
+
+  it("refuses actual bootstrap read failure without treating literal UNREADABLE content as one", async () => {
+    await withTempDir("codex-bootstrap-read-failure-", async (workspaceDir) => {
+      await withTempDir("codex-bootstrap-outside-", async (outsideDir) => {
+        const build = () =>
+          buildCodexWorkspaceBootstrapContext({
+            params: {
+              sessionId: "read-failure",
+              sessionKey: "agent:main:read-failure",
+              config: { agents: { defaults: { workspace: workspaceDir } } },
+            } as EmbeddedRunAttemptParams,
+            resolvedWorkspace: workspaceDir,
+            effectiveWorkspace: workspaceDir,
+            sessionKey: "agent:main:read-failure",
+            sessionAgentId: "main",
+            memoryToolNames: ["memory_search", "memory_get"],
+            ringZeroActive: false,
+          });
+        for (const name of ["USER.md", "MEMORY.md"] as const) {
+          const outside = path.join(outsideDir, name);
+          const target = path.join(workspaceDir, name);
+          await fs.writeFile(outside, "Private file outside the trusted workspace.");
+          await fs.symlink(outside, target);
+          const failed = await build();
+          expect(failed.bootstrapFiles.find((file) => file.name === name)?.readFailed).toBe(true);
+          expect(restoreCodexMandatoryPersonalBootstrap(failed)).toEqual({ status: "omitted" });
+          await fs.unlink(target);
+          const literal = "[UNREADABLE: literal owner text, not a native reader failure.]";
+          await fs.writeFile(target, literal);
+          const readable = await build();
+          expect(readable.bootstrapFiles.find((file) => file.name === name)?.readFailed).not.toBe(
+            true,
+          );
+          expect(restoreCodexMandatoryPersonalBootstrap(readable)).toEqual({ status: "complete" });
+          expect(readable.bootstrapFiles.find((file) => file.name === name)?.content).toBe(literal);
+          await fs.unlink(target);
+        }
+      });
+    });
+  });
+
+  it("restores complete USER constraints for a personal packet after generic bootstrap trimming", async () => {
+    const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-owner-constraints-"));
+    const source = `${"profile detail\n".repeat(700)}Never send a message without owner approval.\n${"other detail\n".repeat(700)}`;
+    await fs.writeFile(path.join(workspaceDir, "USER.md"), source);
+    try {
+      const context = await buildCodexWorkspaceBootstrapContext({
+        params: {
+          sessionId: "session-1",
+          sessionKey: "agent:main:session-1",
+          config: { agents: { defaults: { workspace: workspaceDir } } },
+        } as EmbeddedRunAttemptParams,
+        resolvedWorkspace: workspaceDir,
+        executionWorkspace: workspaceDir,
+        effectiveWorkspace: workspaceDir,
+        sessionKey: "agent:main:session-1",
+        sessionAgentId: "main",
+        memoryToolNames: ["memory_search", "memory_get"],
+        ringZeroActive: false,
+      });
+      expect(context.turnScopedDeveloperInstructions).not.toContain("Never send a message");
+      expect(restoreCodexMandatoryPersonalBootstrap(context)).toEqual({ status: "complete" });
+      expect(context.turnScopedDeveloperInstructions).toContain(source.trimEnd());
+      expect(context.turnScopedDeveloperInstructions).not.toContain("[...truncated,");
+      expect(
+        context.contextFiles.find((file) => path.basename(file.path) === "USER.md")?.content,
+      ).toBe(source.trimEnd());
+    } finally {
+      await fs.rm(workspaceDir, { recursive: true, force: true });
+    }
+  });
+
   it("treats missing mirrored session history as empty without hook warning", async () => {
     const warn = vi.spyOn(embeddedAgentLog, "warn").mockImplementation(() => undefined);
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-attempt-context-history-"));

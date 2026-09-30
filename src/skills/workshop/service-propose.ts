@@ -10,11 +10,13 @@ import { createSkillProposalEvent, dispatchSkillProposalChanged } from "./plugin
 import { prepareSkillProposalDraft, resolveUpdateProposalDescription } from "./proposal-draft.js";
 import { createSkillProposalGenerationDraftFile } from "./proposal-generation.js";
 import { hashSkillProposalRevision } from "./revision-hash.js";
+import { assertWorkshopSourcesCurrent, mergeWorkshopSourceOrigins } from "./source-provenance.js";
 import {
   createSkillProposalId,
   hashSkillProposalContent,
   resolveSkillProposalTarget,
   writeSkillProposal,
+  readWorkshopAppliedTargetOrigin,
 } from "./store.js";
 import {
   MAX_SKILL_PROPOSAL_ORIGIN_RUN_IDS,
@@ -38,10 +40,11 @@ export function normalizeProposalOrigin(
   const sessionKey = normalizeOptionalString(origin?.sessionKey);
   const runId = normalizeOptionalString(origin?.runId);
   const messageId = normalizeOptionalString(origin?.messageId);
-  if (!agentId && !sessionKey && !runId && !messageId) {
+  if (!agentId && !sessionKey && !runId && !messageId && !origin?.sourceKeys?.length) {
     return undefined;
   }
   return {
+    ...mergeWorkshopSourceOrigins(undefined, origin),
     ...(agentId ? { agentId } : {}),
     ...(sessionKey ? { sessionKey } : {}),
     ...(runId ? { runId } : {}),
@@ -161,6 +164,17 @@ export async function proposeUpdateSkill(
     env: input.env,
   });
   const currentContent = target.content;
+  const sourceOrigin = mergeWorkshopSourceOrigins(
+    await readWorkshopAppliedTargetOrigin({
+      workspaceDir: input.workspaceDir,
+      skillFile: target.skillFile,
+      contentHash: sha256Hex(currentContent),
+      agentId: input.agentId,
+      env: input.env,
+    }),
+    input.origin,
+  );
+  const sourcedInput = { ...input, ...(sourceOrigin ? { origin: sourceOrigin } : {}) };
   if (
     input.expectedCurrentContentHash !== undefined &&
     sha256Hex(currentContent) !== input.expectedCurrentContentHash
@@ -180,7 +194,7 @@ export async function proposeUpdateSkill(
   }
   const description = resolveUpdateProposalDescription(input.description, target.description);
 
-  return await createPendingSkillProposal(input, {
+  return await createPendingSkillProposal(sourcedInput, {
     config,
     agentId,
     kind: "update",
@@ -243,6 +257,10 @@ async function createPendingSkillProposal(
     ...input.origin,
     agentId: input.origin?.agentId ?? input.agentId,
   });
+  await assertWorkshopSourcesCurrent(origin, input.workspaceDir, {
+    env: input.env,
+    agentId: input.agentId,
+  });
   const originRunProvenance = mergeProposalOriginRunProvenance(undefined, origin);
   const record: SkillProposalRecord = {
     schema: SKILL_WORKSHOP_SCHEMA,
@@ -255,6 +273,7 @@ async function createPendingSkillProposal(
     updatedAt: now,
     createdBy: input.createdBy ?? "skill-workshop",
     ...(input.autonomousCapture ? { autonomousCapture: true as const } : {}),
+    ...(input.reviewContext ? { reviewContext: input.reviewContext } : {}),
     ...(origin ? { origin } : {}),
     ...originRunProvenance,
     proposedVersion: "v1",

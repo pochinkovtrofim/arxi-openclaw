@@ -31,6 +31,7 @@ import {
 } from "./service-propose.js";
 import { readRequiredProposal } from "./service-query.js";
 import { resolveWorkshopSkillsDir } from "./skills-root.js";
+import { assertWorkshopSourcesCurrent, mergeWorkshopSourceOrigins } from "./source-provenance.js";
 import {
   hashSkillProposalContent,
   readSkillProposalRecord,
@@ -185,7 +186,11 @@ export async function reviseSkillProposal(
             record.kind === "update" ? record.target.skillDir : undefined,
           )
         : [];
-    const origin = normalizeProposalOrigin(input.origin);
+    const origin = mergeWorkshopSourceOrigins(record.origin, normalizeProposalOrigin(input.origin));
+    await assertWorkshopSourcesCurrent(origin, input.workspaceDir, {
+      env: input.env,
+      agentId: input.agentId,
+    });
     const originRunProvenance = mergeProposalOriginRunProvenance(record, origin);
     const revised: SkillProposalRecord = {
       ...record,

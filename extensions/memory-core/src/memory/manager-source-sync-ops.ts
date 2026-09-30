@@ -90,6 +90,38 @@ export abstract class MemoryManagerSourceSyncOps extends MemoryManagerSessionSyn
     });
   }
 
+  protected async deleteIndexedSourceRegions(
+    pathname: string,
+    expectedHash: string,
+    lineRanges: Array<{ from: number; to: number }>,
+  ): Promise<void> {
+    if (!lineRanges.length) {
+      return;
+    }
+    await withMemoryWorkspaceLock(this.workspaceDir, async () => {
+      const database = this.database;
+      // Status readers still project revoked regions out of every result. The
+      // writable sync/forget owner cleans the index; a read-only index cannot.
+      if (database.readOnly) {
+        return;
+      }
+      await database.deleteSource(
+        { path: pathname, source: "memory", expectedHash, lineRanges },
+        () => {
+          if (
+            this.closed ||
+            database.closed ||
+            database.readOnly ||
+            !database.db.isOpen ||
+            this.database !== database
+          ) {
+            throw new Error("Memory source owner changed before region deletion");
+          }
+        },
+      );
+    });
+  }
+
   private async deleteStaleSourceFiles(
     source: MemorySource,
     rows: MemorySourceFileStateRow[],

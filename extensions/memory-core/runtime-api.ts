@@ -27,3 +27,6 @@ export type {
   ShortTermDreamingStatsEntry,
   ShortTermAuditSummary,
 } from "./src/short-term-promotion.js";
+
+// Native source deletion uses the existing scoped forget implementation.
+export { forgetMemoryEntries } from "./src/memory-forget.js";

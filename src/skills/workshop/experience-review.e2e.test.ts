@@ -305,6 +305,14 @@ describe("Workshop draft-only review through the real provider and tool owners",
             apiKey: "test-token-placeholder",
             turnAborted: scenario === "interrupted",
           });
+          if (scenario === "proposed") {
+            Object.assign(candidate.ctx.foregroundPromptContext, {
+              messageChannel: "arxi",
+              chatType: "direct",
+              trigger: "user",
+              senderIsOwner: true,
+            });
+          }
           // Load the real provider plugin before entering the review lane, as the live proof does.
           loadAgentRuntimePluginRegistryHandle({ config: candidate.config, workspaceDir });
           const outcomesBefore = new Set(Object.keys(readSkillReviewOutcomes().experienceReviews));
@@ -390,8 +398,19 @@ describe("Workshop draft-only review through the real provider and tool owners",
               config: candidate.config,
               agentId: "main",
             });
-            expect(stored?.record).toMatchObject({ autonomousCapture: true, origin: { runId } });
+            expect(stored?.record).toMatchObject({
+              autonomousCapture: true,
+              origin: { runId },
+              reviewContext: {
+                agentId: "main",
+                messageChannel: "arxi",
+                chatType: "direct",
+                trigger: "user",
+                senderIsOwner: true,
+              },
+            });
             expect(stored?.content).toContain(proposalBody);
+            expect(stored?.content).not.toContain("project=app region=us service=api health=/ready");
             await expect(fs.stat(stored!.record.target.skillFile)).rejects.toMatchObject({
               code: "ENOENT",
             });

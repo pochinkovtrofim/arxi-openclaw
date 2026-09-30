@@ -79,6 +79,16 @@ export function ensureSessionInputCompletionsSchema(db: DatabaseSync): void {
   }
 }
 
+/** Receipt inspection must not install a feature table or admit a new run. */
+export function hasSessionInputCompletionsSchema(db: DatabaseSync): boolean {
+  return Boolean(
+    // sqlite-allow-raw -- Feature-local schema discovery, never application data.
+    db
+      .prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?")
+      .get(SESSION_INPUT_COMPLETIONS_TABLE),
+  );
+}
+
 /** Existing same-version stores converge through Doctor/open; absent tables stay feature-local. */
 export function hasPendingInputConsumptionColumnMigration(db: DatabaseSync): boolean {
   return (

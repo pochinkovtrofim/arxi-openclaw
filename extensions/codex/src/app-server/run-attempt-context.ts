@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import path from "node:path";
 import {
   bootstrapHarnessContextEngine,
   buildAgentHookContextChannelFields,
@@ -16,6 +18,7 @@ import {
   getCodexWorkspaceMemoryToolNames,
   readMirroredSessionHistoryMessages,
   renderCodexSkillsCollaborationInstructions,
+  restoreCodexMandatoryPersonalBootstrap,
 } from "./attempt-context.js";
 import {
   resolveCodexContextEngineProjectionMaxChars,
@@ -102,6 +105,90 @@ export async function prepareCodexAttemptContext(
       ? { contextWindowReferenceTokens: effectiveContextWindowInfo.referenceTokens }
       : {}),
   };
+  const personalPromptState: {
+    packet?: {
+      text: string;
+      budgetTokens: number;
+      needsExpansion?: boolean;
+      expansionReason?: "complex_source_read";
+      sourceRefs?: readonly { kind: string; sha256: string }[];
+    };
+    mandatorySourcesComplete: boolean;
+    instructionSegments: Array<{ name: string; text: string }>;
+    staticPolicies: Array<{ id: string; text: string }>;
+  } = { mandatorySourcesComplete: true, instructionSegments: [], staticPolicies: [] };
+  const legacySegments: Array<{
+    name: "USER.md" | "MEMORY.md";
+    path: string;
+    text: string;
+    sha256: string;
+    mandatory: true;
+  }> = [];
+  const personalPrompt = {
+    legacySegments,
+    registerStaticPolicy: (policy: { id: string; text: string }) => {
+      if (!/^[a-z0-9_.-]{1,80}$/.test(policy.id) || !policy.text) {
+        throw new Error("Codex static policy registration is invalid");
+      }
+      const previous = personalPromptState.staticPolicies.find((entry) => entry.id === policy.id);
+      if (previous && previous.text !== policy.text) {
+        throw new Error("Codex static policy changed during prompt rebuild");
+      }
+      if (!previous) personalPromptState.staticPolicies.push({ ...policy });
+    },
+    countInputUtf8UpperBound: (input: { instructions: string; prompt: string }) =>
+      Buffer.byteLength([input.instructions, input.prompt].join("\n\n"), "utf8"),
+    registerPreparedPacket: (packet: {
+      text: string;
+      budgetTokens: number;
+      needsExpansion?: boolean;
+      expansionReason?: "complex_source_read";
+      sourceRefs?: readonly { kind: string; sha256: string }[];
+    }) => {
+      if (!packet.text || (packet.budgetTokens !== 8_000 && packet.budgetTokens !== 16_000)) {
+        throw new Error("Codex personal packet registration is invalid");
+      }
+      if (personalPromptState.packet) {
+        if (
+          personalPromptState.packet.text !== packet.text ||
+          personalPromptState.packet.budgetTokens !== packet.budgetTokens ||
+          personalPromptState.packet.needsExpansion !== packet.needsExpansion ||
+          personalPromptState.packet.expansionReason !== packet.expansionReason
+        ) {
+          throw new Error("Codex personal packet changed during prompt rebuild");
+        }
+        return;
+      }
+      // A trusted packet requires complete effective owner instructions. Keep
+      // system instruction carriers separate from the personal memory budget.
+      personalPromptState.mandatorySourcesComplete =
+        restoreCodexMandatoryPersonalBootstrap(workspaceBootstrapContext).status === "complete";
+      personalPromptState.instructionSegments = (
+        workspaceBootstrapContext.turnScopedDeveloperInstructionFiles ?? []
+      )
+        .filter((file) =>
+          ["agents.md", "soul.md", "identity.md"].includes(path.basename(file.path).toLowerCase()),
+        )
+        .map((file) => ({
+          name: path.basename(file.path),
+          text: `### ${file.path}\n\n${file.content}\n\n`,
+        }));
+      const userSegment = legacySegments.find((segment) => segment.name === "USER.md");
+      if (userSegment && workspaceBootstrapContext.turnScopedDeveloperInstructions) {
+        const file = workspaceBootstrapContext.turnScopedDeveloperInstructionFiles?.find(
+          (entry) => path.basename(entry.path).toLowerCase() === "user.md",
+        );
+        if (file) {
+          userSegment.text = `### ${file.path}\n\n${file.content}\n\n`;
+        }
+        userSegment.sha256 = createHash("sha256").update(userSegment.text).digest("hex");
+      }
+      personalPromptState.packet = {
+        ...packet,
+        ...(packet.sourceRefs ? { sourceRefs: packet.sourceRefs.map((ref) => ({ ...ref })) } : {}),
+      };
+    },
+  };
   const hookContext = {
     runId: params.runId,
     agentId: sessionAgentId,
@@ -126,6 +213,7 @@ export async function prepareCodexAttemptContext(
       agentAccountId: params.agentAccountId,
     }),
     channelContext: params.channelContext,
+    personalPrompt,
     ...hookContextWindowFields,
   };
   const hookRunner = getAgentHarnessHookRunner();
@@ -177,6 +265,30 @@ export async function prepareCodexAttemptContext(
       isSystemAgentOnlyCodexDynamicToolAllowlist(runtimeParams.toolsAllow),
     sandboxed: sandbox?.enabled === true,
   });
+  const userFile = workspaceBootstrapContext.contextFiles.find(
+    (file) => path.basename(file.path).toLowerCase() === "user.md",
+  );
+  const memoryFile = workspaceBootstrapContext.promptContextFiles?.find(
+    (file) => path.basename(file.path).toLowerCase() === "memory.md",
+  );
+  for (const [name, file, text] of [
+    ["USER.md", userFile, workspaceBootstrapContext.turnScopedDeveloperInstructions],
+    ["MEMORY.md", memoryFile, workspaceBootstrapContext.promptContext],
+  ] as const) {
+    if (file && text) {
+      const block = `${name === "USER.md" ? "###" : "##"} ${file.path}\n\n${file.content}`;
+      // Attribute the personal file's exact rendered block, not sibling SOUL,
+      // IDENTITY or TOOLS documents in the same native instruction leaf.
+      const renderedBlock = text.includes(block + "\n\n") ? block + "\n\n" : block;
+      legacySegments.push({
+        name,
+        path: file.path,
+        text: renderedBlock,
+        sha256: createHash("sha256").update(renderedBlock).digest("hex"),
+        mandatory: true,
+      });
+    }
+  }
   // A thread keeps the bounded agent-workspace snapshot captured at creation.
   // Workspace edits take effect only in the next session.
   const agentWorkspaceDeveloperInstructions = workspaceBootstrapContext.threadDeveloperInstructions
@@ -209,9 +321,13 @@ export async function prepareCodexAttemptContext(
   });
   const promptState = {
     promptText: params.prompt,
+    // SAFETY: this initially empty collection is populated only with rendered session strings.
+    ordinarySessionSegments: [] as string[],
+    // SAFETY: absence is allowed until the native prompt projection records its range.
     promptContextRange: undefined as CodexProjectedContextRange | undefined,
     developerInstructions: baseDeveloperInstructions,
     prePromptMessageCount: historyState.messages.length,
+    // SAFETY: the context-engine bootstrap projection is optional and starts absent.
     contextEngineProjection: undefined as CodexContextEngineThreadBootstrapProjection | undefined,
     precomputedStaleBindingContinuityProjectionApplied: false,
     staleBindingContinuityForcedFreshStart: false,
@@ -244,6 +360,7 @@ export async function prepareCodexAttemptContext(
     activeTranscriptTarget,
     historyState,
     hookContext,
+    personalPromptState,
     hookContextWindowFields,
     hookRunner,
     buildActiveContextEngineRuntimeContext,

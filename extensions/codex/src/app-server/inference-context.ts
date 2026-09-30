@@ -11,7 +11,18 @@ type Registration = {
   controller: AbortController;
   assertCurrent: () => void;
   release: () => void;
+  preEgressGate?: (body: JsonObject) => void;
 };
+
+/** A generation-scoped guard can reject before either native transport sends. */
+export class CodexInferenceNeedsExpansionError extends Error {
+  readonly code = "needs_expansion";
+  readonly status = 413;
+
+  constructor() {
+    super("needs_expansion");
+  }
+}
 
 /** One physical inference transport owns these confidential, nonpersistent snapshots. */
 export function createCodexInferenceContext(assertClientCurrent: () => void) {
@@ -29,11 +40,13 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       text: string;
       signal: AbortSignal;
       assertCurrent: () => void;
+      preEgressGate?: (body: JsonObject) => void;
     }) {
       assertOpen();
       params.signal.throwIfAborted();
       params.assertCurrent();
       if (Buffer.byteLength(params.text) > MAX_CONTEXT_BYTES) {
+        if (params.preEgressGate) throw new CodexInferenceNeedsExpansionError();
         throw new Error("Codex parent-local context exceeds the 256 KiB inference limit");
       }
       if (!roots.has(params.threadId) && roots.size >= MAX_ACTIVE_ROOTS) {
@@ -44,6 +57,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       const registration: Registration = {
         generation: randomUUID(),
         text: params.text,
+        preEgressGate: params.preEgressGate,
         controller,
         assertCurrent: () => {
           assertOpen();
@@ -113,16 +127,18 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       if (instructions !== undefined && typeof instructions !== "string") {
         throw new Error("Codex inference request has invalid top-level instructions");
       }
+      const preparedBody = registration.text
+        ? {
+            ...body,
+            instructions:
+              instructions === undefined
+                ? registration.text
+                : instructions + "\n\n" + registration.text,
+          }
+        : body;
+      registration.preEgressGate?.(preparedBody);
       return {
-        body: registration.text
-          ? {
-              ...body,
-              instructions:
-                instructions === undefined
-                  ? registration.text
-                  : instructions + "\n\n" + registration.text,
-            }
-          : body,
+        body: preparedBody,
         assertCurrent: registration.assertCurrent,
         signal: registration.controller.signal,
       };

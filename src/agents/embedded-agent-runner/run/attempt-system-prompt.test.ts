@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 // Coverage for assembling provider-transformed embedded attempt system prompts.
 import {
   prependSystemPromptAdditionAfterCacheBoundary,
@@ -10,6 +11,7 @@ import { useAutoCleanupTempDirTracker } from "../../../../test/helpers/temp-dir.
 import { addSession, deleteSession } from "../../bash-process-registry.js";
 import { createProcessSessionFixture } from "../../bash-process-registry.test-helpers.js";
 import { buildBootstrapBudgetState } from "../../bootstrap-budget.js";
+import { createPersonalPromptTokenCounter } from "../../personal-prompt-token-count.js";
 import type { AgentTool } from "../../runtime/index.js";
 import { makeProviderModelFixture } from "../../test-helpers/provider-model-fixture.js";
 import { createAttemptSetupFixture } from "./attempt-setup.test-support.js";
@@ -64,6 +66,10 @@ async function preparePermissionPrompt(
   thinkLevel?: EmbeddedRunAttemptParams["thinkLevel"],
   requireExplicitMessageTarget?: boolean,
   session?: Pick<EmbeddedRunAttemptParams, "sessionKey" | "sandboxSessionKey">,
+  personal?: {
+    contextFiles: Array<{ path: string; content: string }>;
+    resolvedApiKey?: string;
+  },
 ) {
   const tool = (name: string): AgentTool => ({
     name,
@@ -97,6 +103,7 @@ async function preparePermissionPrompt(
     sessionKey: "agent:main:permission-prompt",
     ...session,
     workspaceDir: "/tmp/openclaw",
+    resolvedApiKey: personal?.resolvedApiKey,
     config: {},
     thinkLevel,
     sourceReplyDeliveryMode:
@@ -109,7 +116,7 @@ async function preparePermissionPrompt(
     bootstrap: {
       ...buildBootstrapBudgetState({ files: [] }),
       bootstrapMode: "full",
-      contextFiles: [],
+      contextFiles: personal?.contextFiles ?? [],
       bootstrapInjectionStats: [],
       shouldRecordCompletedBootstrapTurn: false,
       workspaceNotes: [],
@@ -148,6 +155,105 @@ async function preparePermissionPrompt(
 }
 
 describe("buildAttemptSystemPrompt", () => {
+  it("leaves Codex OAuth token accounting explicitly unavailable", () => {
+    expect(
+      createPersonalPromptTokenCounter({
+        provider: "openai",
+        api: "openai-chatgpt-responses",
+        baseUrl: "https://chatgpt.com/backend-api/codex",
+        modelId: "gpt-6-sol",
+        apiKey: "opaque-codex-oauth-token",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("exposes oversized mandatory USER/MEMORY with an exact selected-model count", async () => {
+    // The provider's exact tokenizer count, rather than character length,
+    // decides whether a mandatory segment exceeds the packet budget.
+    const content = "Owner memory with unusual tokenization. ".repeat(20);
+    const fetchCount = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ object: "response.input_tokens", input_tokens: 9_201 }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", fetchCount);
+    try {
+      const { prepared } = await preparePermissionPrompt(false, undefined, undefined, undefined, {
+        contextFiles: [{ path: "/tmp/openclaw/MEMORY.md", content }],
+        resolvedApiKey: "sk-test-personal-context",
+      });
+      const segment = prepared.personalPrompt?.legacySegments[0];
+      expect(segment).toMatchObject({ name: "MEMORY.md", mandatory: true });
+      expect(prepared.systemPromptText).toContain(segment?.text);
+      expect(segment?.text.endsWith("tokenization.")).toBe(true);
+      const count = await prepared.personalPrompt?.countInputTokens?.({
+        instructions: segment?.text ?? "",
+        prompt: "Personal packet",
+      });
+      expect(count).toBe(9_201);
+      expect(count).toBeGreaterThan(8_000);
+      expect(fetchCount).toHaveBeenCalledOnce();
+      const request = fetchCount.mock.calls[0]?.[1] as RequestInit;
+      expect(JSON.parse(String(request.body))).toEqual({
+        model: "gpt-5.6-luna",
+        instructions: segment?.text,
+        input: "Personal packet",
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("rejects duplicate effective USER/MEMORY before model submission", async () => {
+    await expect(
+      preparePermissionPrompt(false, undefined, undefined, undefined, {
+        contextFiles: [
+          { path: "/tmp/openclaw/USER.md", content: "Same owner profile" },
+          { path: "/tmp/openclaw/MEMORY.md", content: "Same owner profile" },
+        ],
+      }),
+    ).rejects.toThrow("duplicate USER/MEMORY content");
+  });
+
+  it("binds a normal combined count to native segment source digest and selected model", async () => {
+    const fetchCount = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ object: "response.input_tokens", input_tokens: 73 }), {
+          status: 200,
+        }),
+    );
+    vi.stubGlobal("fetch", fetchCount);
+    try {
+      const { prepared } = await preparePermissionPrompt(false, undefined, undefined, undefined, {
+        contextFiles: [
+          { path: "/tmp/openclaw/USER.md", content: "Prefer concise replies." },
+          { path: "/tmp/openclaw/MEMORY.md", content: "Water the plant on Tuesday." },
+        ],
+        resolvedApiKey: "sk-test-personal-context",
+      });
+      const segments = prepared.personalPrompt?.legacySegments ?? [];
+      expect(segments.map(({ name }) => name)).toEqual(["USER.md", "MEMORY.md"]);
+      for (const segment of segments) {
+        expect(segment.sha256).toBe(createHash("sha256").update(segment.text).digest("hex"));
+        expect(prepared.systemPromptText.split(segment.text)).toHaveLength(2);
+      }
+      const packet = 'Personal context: {"source":"telegram_business","status":"ready"}';
+      const count = await prepared.personalPrompt?.countInputTokens?.({
+        instructions: segments.map(({ text }) => text).join("\n"),
+        prompt: packet,
+      });
+      expect(count).toBe(73);
+      expect(JSON.parse(String((fetchCount.mock.calls[0]?.[1] as RequestInit).body))).toEqual({
+        model: "gpt-5.6-luna",
+        instructions: segments.map(({ text }) => text).join("\n"),
+        input: packet,
+      });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it.each([undefined, "agent:main:execution"])(
     "keeps the system prompt identical when execution-owned processes change: %s",
     async (sessionKey) => {

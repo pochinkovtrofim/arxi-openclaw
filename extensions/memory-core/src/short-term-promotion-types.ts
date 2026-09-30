@@ -1,3 +1,4 @@
+import type { MemoryArtifactSourceRef } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import type { MemoryEntryProvenance } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
 import {
   DEFAULT_MEMORY_DEEP_DREAMING_MIN_RECALL_COUNT,
@@ -48,6 +49,8 @@ export type ShortTermRecallEntry = {
   projectKey?: string;
   promotedAt?: string;
   provenance?: MemoryEntryProvenance;
+  /** Transient exact dependencies from a current native source read, never recall frequency. */
+  sourceRefs?: MemoryArtifactSourceRef[];
 };
 
 export type ShortTermRecallStore = {
@@ -115,6 +118,7 @@ export type PromotionCandidate = {
   conceptTags: string[];
   components: PromotionComponents;
   provenance?: MemoryEntryProvenance;
+  sourceRefs?: MemoryArtifactSourceRef[];
 };
 
 export type ShortTermAuditSummary = MemoryShortTermAuditSummary<ConceptTagScriptCoverage>;

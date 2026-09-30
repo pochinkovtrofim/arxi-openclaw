@@ -13,6 +13,7 @@ import type * as UsersSchema from "./schema/users.js";
 
 /** Schema-derived payload ownership for statically validated core Gateway methods. */
 export type GatewayCoreRequestParams = {
+  "agent.inputReceipt": AgentSchema.AgentInputReceiptParams;
   "canvas.document.preview": CanvasDocumentPreviewParams;
   "canvas.document.view": CanvasDocumentViewParams;
   "board.action": BoardSchema.BoardActionParams;

@@ -23,6 +23,7 @@ import {
   copyAgentToolMetadata,
 } from "./agent-tool-metadata.js";
 import { finalizeAgentTools } from "./agent-tools.finalize.js";
+import { createToolMemoryWriteProvenance } from "./agent-tools.memory-provenance.js";
 import {
   filterToolsByMessageProvider,
   messageProviderExcludesTool,
@@ -53,12 +54,10 @@ import { prepareGitHubToolEnvironment } from "./github-tool-identity.js";
 import { resolveImageSanitizationLimits } from "./image-sanitization.js";
 import { resolveExecToolConfig } from "./lazy-exec-tool.js";
 import { resolveLocalModelLeanPreserveToolNames } from "./local-model-lean.js";
-import { createMemoryWriteProvenanceObserver } from "./memory-write-provenance.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
 import { createOpenClawTools, filterToolsByClientCaps } from "./openclaw-tools.js";
 import { filterRequesterYieldTools } from "./openclaw-tools.requester-yield.js";
 import { applySwarmCollectorToolContract } from "./openclaw-tools.swarm.js";
-import { resolveSandboxFileIdentity } from "./sandbox/file-mutation-identity.js";
 import { createEmbeddedMessageInvocationPolicy } from "./scheduled-message-invocation.js";
 import { resolveScheduledToolCallerContext } from "./scheduled-tool-policy.js";
 import {
@@ -252,24 +251,11 @@ export function createOpenClawCodingToolsInternal(
   const codingRoot = sandboxRoot ?? runtimeRoot;
   const containmentRoot = sandboxRoot ?? sessionPermissionPolicy?.root ?? codingRoot;
   const memoryFlushWriteRoot = sandboxRoot ?? workspaceRoot;
-  const memoryWriteProvenance = createMemoryWriteProvenanceObserver({
-    mutationRoot: sandboxRoot ?? workspaceRoot,
-    workspaceDir: sandboxRoot ?? workspaceRoot,
-    resolvePath: sandboxFsBridge
-      ? (filePath) =>
-          resolveSandboxFileIdentity({
-            bridge: sandboxFsBridge,
-            filePath,
-            cwd: sandboxRoot,
-            signal: options?.abortSignal,
-          })
-      : undefined,
-    resolveOriginClass: () =>
-      options?.senderIsOwner === false || options?.isTurnTainted?.() === true
-        ? "untrusted"
-        : "agent",
-    sessionId: options?.sessionId,
-    sessionKey: options?.runSessionKey ?? options?.sessionKey,
+  const memoryWriteProvenance = createToolMemoryWriteProvenance({
+    options,
+    sandboxRoot,
+    workspaceRoot,
+    sandboxFsBridge,
   });
   const includeCoreTools = options?.includeCoreTools !== false;
   const toolConstructionPlan = options?.toolConstructionPlan ?? {

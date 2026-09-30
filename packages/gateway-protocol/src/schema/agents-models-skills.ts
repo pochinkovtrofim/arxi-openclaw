@@ -12,6 +12,11 @@ import {
 import { NonEmptyString } from "./primitives.js";
 import { GitHubSetupHandleSchema } from "./secrets.js";
 import { SessionPermissionModeSchema } from "./sessions-row.js";
+import {
+  SkillProposalOriginSchema,
+  SkillProposalReviewContextSchema,
+  SkillProposalTargetSchema,
+} from "./skill-proposal-origin.js";
 
 /**
  * Agent, model, skill, and effective tool schemas.
@@ -730,24 +735,6 @@ const SkillProposalScanSchema = closedObject({
   findings: Type.Array(SkillProposalFindingSchema),
 });
 
-/** Skill file target that a proposal creates or updates. */
-const SkillProposalTargetSchema = closedObject({
-  skillName: NonEmptyString,
-  skillKey: NonEmptyString,
-  skillDir: NonEmptyString,
-  skillFile: NonEmptyString,
-  source: Type.Optional(NonEmptyString),
-  currentContentHash: Type.Optional(NonEmptyString),
-});
-
-/** Optional runtime origin tying a proposal back to an agent turn. */
-const SkillProposalOriginSchema = closedObject({
-  agentId: Type.Optional(NonEmptyString),
-  sessionKey: Type.Optional(NonEmptyString),
-  runId: Type.Optional(NonEmptyString),
-  messageId: Type.Optional(NonEmptyString),
-});
-
 const SkillProposalEvaluationFindingSchema = closedObject({
   ruleId: Type.String({ minLength: 1, maxLength: 256 }),
   severity: Type.Union([Type.Literal("info"), Type.Literal("warn"), Type.Literal("critical")]),
@@ -825,6 +812,7 @@ const SkillProposalRecordSchema = closedObject({
   updatedAt: NonEmptyString,
   createdBy: SkillProposalSourceSchema,
   origin: Type.Optional(SkillProposalOriginSchema),
+  reviewContext: Type.Optional(SkillProposalReviewContextSchema),
   proposedVersion: NonEmptyString,
   draftFile: Type.Literal("PROPOSAL.md"),
   draftHash: NonEmptyString,
@@ -833,6 +821,11 @@ const SkillProposalRecordSchema = closedObject({
   scan: SkillProposalScanSchema,
   goal: Type.Optional(Type.String()),
   evidence: Type.Optional(Type.String()),
+  sourceAppliedFiles: Type.Optional(
+    Type.Array(closedObject({ relativePath: NonEmptyString, sha256: Sha256String }), {
+      maxItems: 65,
+    }),
+  ),
   appliedAt: Type.Optional(NonEmptyString),
   rejectedAt: Type.Optional(NonEmptyString),
   quarantinedAt: Type.Optional(NonEmptyString),

@@ -1,5 +1,6 @@
-import fs from "node:fs/promises";
+import type { MemoryArtifactSourceRef } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import { sliceUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
+import { readDreamingSource } from "./dreaming-source-lineage.js";
 import { resolveShortTermSourcePathCandidates } from "./short-term-promotion-record.js";
 import type { PromotionCandidate } from "./short-term-promotion-types.js";
 import { normalizeSnippet, SHORT_TERM_BASENAME_RE } from "./short-term-promotion-utils.js";
@@ -147,7 +148,7 @@ function compareCandidateWindow(
 
 function relocateCandidateRange(
   lines: string[],
-  candidate: PromotionCandidate,
+  candidate: Pick<PromotionCandidate, "startLine" | "endLine" | "snippet">,
 ): { startLine: number; endLine: number; snippet: string } | null {
   const targetSnippet = normalizeSnippet(candidate.snippet);
   const preferredSpan = Math.max(1, candidate.endLine - candidate.startLine + 1);
@@ -301,23 +302,16 @@ function lineRangeOverlapsDreamingFence(
   return false;
 }
 
-export async function rehydratePromotionCandidate(
+export async function rehydratePromotionCandidate<
+  T extends Pick<PromotionCandidate, "path" | "startLine" | "endLine" | "snippet">,
+>(
   workspaceDir: string,
-  candidate: PromotionCandidate,
-): Promise<PromotionCandidate | null> {
+  candidate: T,
+): Promise<(T & { sourceRefs: MemoryArtifactSourceRef[] }) | null> {
   const sourcePaths = resolveShortTermSourcePathCandidates(workspaceDir, candidate.path);
   for (const sourcePath of sourcePaths) {
-    let rawSource: string;
-    try {
-      rawSource = await fs.readFile(sourcePath, "utf-8");
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
-        continue;
-      }
-      throw err;
-    }
-
-    const lines = rawSource.split(/\r?\n/);
+    const current = await readDreamingSource(workspaceDir, sourcePath);
+    const lines = current.content.split(/\r?\n/);
     const relocated = relocateCandidateRange(lines, candidate);
     if (!relocated) {
       continue;
@@ -329,11 +323,30 @@ export async function rehydratePromotionCandidate(
     if (lineRangeOverlapsDreamingFence(lines, relocated.startLine, relocated.endLine)) {
       continue;
     }
+    const sourceRefs = current.refsForRange(relocated.startLine, relocated.endLine);
+    const heading = buildRelocatedDailyHeadingLookup(lines)[relocated.startLine];
+    if (heading && relocated.snippet.startsWith(`${heading}: `)) {
+      // Relocation may add the preceding heading to the model fragment. That
+      // quoted heading keeps its own exact dependency, not every file sibling.
+      for (let index = relocated.startLine - 2; index >= 0; index--) {
+        if (/^#{1,6}\s+/.test((lines[index] ?? "").trim())) {
+          if (normalizeDailyHeadingForPromotion(lines[index]!) === heading) {
+            sourceRefs.push(...current.refsForRange(index + 1, index + 1));
+          }
+          break;
+        }
+      }
+    }
     return {
       ...candidate,
       startLine: relocated.startLine,
       endLine: relocated.endLine,
       snippet: relocated.snippet,
+      sourceRefs: [
+        ...new Map(
+          sourceRefs.map((ref) => [JSON.stringify([ref.ownerId, ref.value]), ref]),
+        ).values(),
+      ],
     };
   }
   return null;

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
@@ -23,6 +24,7 @@ import { hashSkillProposalContent } from "./proposal-hash.js";
 import { scanProposalBundle } from "./proposal-scan.js";
 import { hashSkillProposalRevision } from "./revision-hash.js";
 import { resolveWorkshopSkillsDir } from "./skills-root.js";
+import { assertWorkshopSourcesCurrent } from "./source-provenance.js";
 import type { NewSkillProposalEvent } from "./store-sqlite-event.js";
 import { readStoredProposal } from "./store-sqlite-record.js";
 import { clearSkillProposalRollback, writeSkillProposalRollback } from "./store-sqlite-rollback.js";
@@ -258,6 +260,10 @@ export async function applySkillProposalTransition(
       });
 
       try {
+        await assertWorkshopSourcesCurrent(record.origin, input.workspaceDir, {
+          env: input.env,
+          agentId: input.agentId,
+        });
         await applyWorkspaceSkillMutation(mutation);
       } catch (error) {
         // A rejected filesystem write may have partially changed its target
@@ -287,6 +293,14 @@ export async function applySkillProposalTransition(
         status: requiredApplyStatus("apply_succeeded"),
         updatedAt: now,
         appliedAt: now,
+        ...(record.origin?.sourceKeys?.length
+          ? {
+              sourceAppliedFiles: [mutation.skillFile, ...mutation.supportFiles].map((file) => ({
+                relativePath: path.relative(record.target.skillDir, file.filePath),
+                sha256: file.proposedContentHash,
+              })),
+            }
+          : {}),
         statusReason: normalizeOptionalString(input.reason),
         scan,
       };

@@ -6,8 +6,13 @@ import {
   readErrorName,
   SUBAGENT_RUNTIME_REQUEST_SCOPE_ERROR_CODE,
 } from "openclaw/plugin-sdk/error-runtime";
+import type { MemoryArtifactSourceRef } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import type { PluginRuntime } from "openclaw/plugin-sdk/runtime-store";
-import { appendNarrativeEntry, clampDreamDiaryContextEntry } from "./dreaming-dreams-file.js";
+import {
+  appendNarrativeEntry,
+  clampDreamDiaryContextEntry,
+  readDreamNarrativeSources,
+} from "./dreaming-dreams-file.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -25,6 +30,8 @@ export type NarrativePhaseData = {
   recentDiaryEntries?: string[];
   /** Tracked inputs that must still exist when generated text is published. */
   sourceEntryKeys?: readonly string[];
+  /** Exact current dependencies captured by the owning phase, not generated text. */
+  sourceRefs?: readonly MemoryArtifactSourceRef[];
 };
 
 type Logger = {
@@ -232,8 +239,21 @@ async function generateAndAppendDreamNarrative(
 ): Promise<DreamNarrativeOutcome> {
   const nowMs =
     typeof params.nowMs === "number" && Number.isFinite(params.nowMs) ? params.nowMs : Date.now();
-  const message = buildNarrativePrompt(params.data);
   try {
+    const sources = await readDreamNarrativeSources({
+      workspaceDir: params.workspaceDir,
+      sourceEntryKeys: params.data.sourceEntryKeys,
+      recentDiaryEntries: params.data.recentDiaryEntries,
+      entrySourceRefs: params.data.sourceRefs,
+      snippets: [...params.data.snippets, ...(params.data.promotions ?? [])],
+    });
+    if (!sources.current) {
+      params.logger.info(
+        `memory-core: narrative source changed or unavailable; ${params.data.phase} phase held.`,
+      );
+      return { status: "skipped" };
+    }
+    const message = buildNarrativePrompt(params.data);
     const attemptModels = params.model ? [params.model, undefined] : [undefined];
     let narrative = "";
     for (const model of attemptModels) {
@@ -285,6 +305,8 @@ async function generateAndAppendDreamNarrative(
       timezone: params.timezone,
       sourceEntryKeys: params.data.sourceEntryKeys,
       recentDiaryEntries: params.data.recentDiaryEntries,
+      sourceRefs: sources.sourceRefs,
+      sourceSnippets: [...params.data.snippets, ...(params.data.promotions ?? [])],
     });
     if (dreamsPath === undefined) {
       params.logger.info(

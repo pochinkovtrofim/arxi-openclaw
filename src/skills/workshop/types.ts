@@ -26,6 +26,7 @@ export type SkillProposalEvaluation = ProtocolSkillProposalEvaluation;
 export type SkillProposalEventActor = SkillProposalLifecycleEvent["actor"];
 export type SkillProposalEvent = SkillProposalLifecycleEvent;
 export type SkillProposalOrigin = NonNullable<ProtocolSkillProposalRecord["origin"]>;
+export type SkillProposalReviewContext = NonNullable<ProtocolSkillProposalRecord["reviewContext"]>;
 
 export type SkillWorkshopPreparedPatch = {
   skillFile: string;
@@ -59,6 +60,7 @@ export type SkillWorkshopRunOptions = {
   updateProposals?: boolean;
   autonomousCapture?: boolean;
   origin?: SkillProposalOrigin;
+  reviewContext?: SkillProposalReviewContext;
   proposalMutationBudget?: SkillWorkshopProposalMutationBudget;
   proposalRevision?: SkillWorkshopProposalRevisionConstraint;
 };
@@ -79,6 +81,7 @@ export type SkillProposalRecord = Omit<
   /** True only for proposals created by autonomous correction or experience capture. */
   autonomousCapture?: true;
   origin?: SkillProposalOrigin;
+  reviewContext?: SkillProposalReviewContext;
   /** Immutable run attribution used to recover interrupted proposal-only reviews. */
   originRunIds?: string[];
   /** Durable mutation counts keyed by run id for bounded interrupted-run recovery. */
@@ -133,6 +136,7 @@ export type SkillProposalCreateInput = {
   createdBy?: SkillProposalSource;
   autonomousCapture?: boolean;
   origin?: SkillProposalOrigin;
+  reviewContext?: SkillProposalReviewContext;
   goal?: string;
   evidence?: string;
 };
@@ -158,6 +162,7 @@ export type SkillProposalUpdateInput = {
   createdBy?: SkillProposalSource;
   autonomousCapture?: boolean;
   origin?: SkillProposalOrigin;
+  reviewContext?: SkillProposalReviewContext;
   goal?: string;
   evidence?: string;
 };

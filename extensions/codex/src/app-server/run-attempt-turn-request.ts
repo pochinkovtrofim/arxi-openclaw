@@ -11,8 +11,12 @@ import { assertCodexSessionRuntimeOwnership } from "./binding-connection.js";
 import { prepareCodexWorkspaceReferences } from "./client-runtime.js";
 import { isCodexAppServerIndeterminateRequestCancellationError } from "./client.js";
 import { resolveCodexExplicitSkillInputs } from "./explicit-skill-input.js";
-import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
+import {
+  CODEX_INFERENCE_GENERATION_KEY,
+  CodexInferenceNeedsExpansionError,
+} from "./inference-context.js";
 import { getCodexInferenceThread } from "./inference-routing.js";
+import { createCodexPersonalPreEgressGate } from "./personal-context-gate.js";
 import { assertCodexTurnStartResponse } from "./protocol-validators.js";
 import type { CodexTurnStartResponse } from "./protocol.js";
 import { readCodexRateLimitsRevision } from "./rate-limit-cache.js";
@@ -41,7 +45,14 @@ export async function prepareCodexAttemptTurnRequest(
     buildRenderedCodexDeveloperInstructions,
     nativeHistoryProvenancePrefix,
   } = prompt;
-  const { runtime, attemptTools, hookContextWindowFields, workspaceBootstrapContext } = context;
+  const {
+    runtime,
+    attemptTools,
+    hookContextWindowFields,
+    workspaceBootstrapContext,
+    personalPromptState,
+    hookContext,
+  } = context;
   const { connection, runtimeParams, effectiveRuntimeProviderId, effectiveRuntimeModelId } =
     runtime;
   const { tools, toolBridge } = attemptTools;
@@ -185,6 +196,58 @@ export async function prepareCodexAttemptTurnRequest(
               workspaceBootstrapContext.memoryCollaborationInstructions,
           }) ?? "",
         signal: runAbortController.signal,
+        ...(personalPromptState.packet
+          ? {
+              preEgressGate: createCodexPersonalPreEgressGate({
+                promptText: turnState.codexTurnPromptText,
+                currentUserMessage: prompt.currentUserMessage,
+                ordinarySessionSegments: context.promptState.ordinarySessionSegments,
+                developerInstructions: turnState.promptBuild.developerInstructions,
+                // Context-engine additions can contain retrieved personal memory;
+                // only the original generic native developer policy is exempt.
+                developerBaseInstructions: context.baseDeveloperInstructions,
+                staticPolicies: personalPromptState.staticPolicies,
+                legacySegments: hookContext.personalPrompt?.legacySegments ?? [],
+                packetText: personalPromptState.packet?.text,
+                expectedModel: resourceState.thread.model ?? effectiveRuntimeModelId,
+                mandatorySourcesComplete: personalPromptState.mandatorySourcesComplete,
+                mandatoryInstructionSegments: personalPromptState.instructionSegments,
+                preparedPacketNeedsExpansion: personalPromptState.packet?.needsExpansion,
+                budgetTokens: personalPromptState.packet?.budgetTokens ?? 8_000,
+                expansionReason: personalPromptState.packet?.expansionReason,
+                totalContextTokenBudget: runtime.effectiveContextTokenBudget,
+                sourceRefs: personalPromptState.packet?.sourceRefs,
+                // These are host-committed results from this logical turn, not
+                // ambient chat history. A fresh native generation must not reset
+                // their read budget after a plugin runtime refresh.
+                replayedToolReads: (params.pluginRuntimeRefreshMessages ?? []).flatMap((message) =>
+                  message.role === "toolResult"
+                    ? [
+                        {
+                          callId: message.toolCallId,
+                          upperBoundUtf8Bytes: Buffer.byteLength(JSON.stringify(message), "utf8"),
+                        },
+                      ]
+                    : [],
+                ),
+                onReceipt: (receipt) => {
+                  // Reuse the native, rotated metadata log so hidden Owner turns
+                  // retain provider-bound evidence without persisting any prompt.
+                  embeddedAgentLog.info("codex personal context pre-egress", {
+                    runId: params.runId,
+                    ...receipt,
+                  });
+                  void emitCodexAppServerEvent(params, {
+                    stream: "codex_app_server.lifecycle",
+                    data: {
+                      phase: "personal_context_pre_egress",
+                      ...receipt,
+                    },
+                  });
+                },
+              }),
+            }
+          : {}),
         assertCurrent: () => {
           params.hostCapabilities.assertActive();
           connection.assertCurrent();
@@ -199,10 +262,24 @@ export async function prepareCodexAttemptTurnRequest(
         },
       });
       resourceState.releaseInferenceContext = registration.release;
+      if (personalPromptState.packet) {
+        void emitCodexAppServerEvent(params, {
+          stream: "codex_app_server.lifecycle",
+          data: {
+            phase: "personal_context_route_bound",
+            accounting: "conservative_utf8_upper_bound",
+            budgetTokens: personalPromptState.packet?.budgetTokens ?? 8_000,
+          },
+        });
+      }
       turnStartParams.responsesapiClientMetadata = {
         ...turnStartParams.responsesapiClientMetadata,
         [CODEX_INFERENCE_GENERATION_KEY]: registration.generation,
       };
+    } else if (personalPromptState.packet) {
+      // A registered owner packet must never leave through an unobserved native
+      // transport, even if the selected OAuth profile changed after hook work.
+      throw new CodexInferenceNeedsExpansionError();
     } else if (!usesSupervisionConnection) {
       embeddedAgentLog.warn(
         "Codex parent-local egress workaround is unavailable for this connection or native network profile; legacy collaboration delivery is not guaranteed.",

@@ -39,6 +39,10 @@ import type {
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
 } from "./hook-message.types.js";
+import type {
+  PluginHookPersonalContext,
+  PluginHookToolAuthority,
+} from "./hook-personal-context.js";
 import type { PluginHookToolRequesterContext } from "./hook-requester-context.types.js";
 import type {
   PluginHookSkillChangedEvent,
@@ -297,16 +301,9 @@ export type PluginHookRegistrationOptions<K extends PluginHookName> = {
       }
     : { requiresToolAuthority?: never });
 
-export type PluginHookToolAuthority = {
-  /** Opaque host fingerprint for the exact turn, route, policy, and active tool surface. */
-  readonly fingerprint: string;
-  /** Checks whether the finalized turn surface contains this exact tool. */
-  allows(toolName: string): boolean;
-  /** Rejects retained or timed-out capabilities after the host dispatch closes. */
-  assertActive(): void;
-};
+export type { PluginHookToolAuthority } from "./hook-personal-context.js";
 
-export type PluginHookAgentContext = {
+export type PluginHookAgentContext = PluginHookPersonalContext & {
   runId?: string;
   jobId?: string;
   trace?: DiagnosticTraceContext;

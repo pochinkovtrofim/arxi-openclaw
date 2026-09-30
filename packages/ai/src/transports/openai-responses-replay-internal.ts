@@ -174,6 +174,7 @@ export async function createResponsesStreamWithEncryptedContentRetry(params: {
   requestOptions: { signal?: AbortSignal } | undefined;
   model: Model;
   observePrompt?: NonNullable<ReturnType<typeof createResponsesPromptEgressObserver>>;
+  gateProviderRequest?: (request: OpenAIResponsesRequestParams) => Promise<void>;
   initialAttemptKind?: ResponsesEncryptedContentAttemptKind;
   initialRejectedCompaction?: OpenAIResponsesCompactionRejection;
   onCompactionRejected?: (checkpoint: OpenAIResponsesCompactionRejection) => void;
@@ -199,6 +200,9 @@ export async function createResponsesStreamWithEncryptedContentRetry(params: {
         egress: "responses-sdk",
         payloadVariant: attempt.kind,
       });
+      // Every replay variant must pass the guard on the final SDK request.
+      // Keep failures outside the provider rejection recovery path.
+      await params.gateProviderRequest?.(attempt.request);
       try {
         const { data, response } = await params.client.responses
           .create(attempt.request as never, params.requestOptions as never)

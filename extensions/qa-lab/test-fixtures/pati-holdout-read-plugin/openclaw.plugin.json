@@ -1,0 +1,14 @@
+{
+  "id": "pati-holdout-read-fixture",
+  "activation": { "onStartup": true },
+  "name": "Pati Holdout Read Fixture",
+  "description": "Read-only synthetic source tools for isolated QA",
+  "contracts": {
+    "tools": ["arxi_google_observation", "arxi_business_context"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}

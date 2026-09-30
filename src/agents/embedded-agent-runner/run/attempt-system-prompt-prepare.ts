@@ -12,6 +12,14 @@ import {
 import { resolveOpenClawReferencePaths } from "../../docs-path.js";
 import { prepareAgentMemoryPrompt } from "../../memory-prompt-prepare.js";
 import { buildModelToolsUnavailablePrompt } from "../../model-tool-support.js";
+import type {
+  PreparedPersonalPacket,
+  ProviderPersonalContextReceipt,
+} from "../../personal-prompt-provider-gate.js";
+import {
+  createPersonalPromptProviderRequestCounter,
+  createPersonalPromptTokenCounter,
+} from "../../personal-prompt-token-count.js";
 import {
   buildProjectMemoryWriteInstruction,
   prepareProjectMemoryBootstrap,
@@ -20,6 +28,7 @@ import { resolveAgentPromptSurfaceForSessionKey } from "../../prompt-surface.js"
 import { resolveAgentRuntimePrompt } from "../../runtime-prompt.js";
 import { resolveSandboxRuntimeStatus } from "../../sandbox/runtime-status.js";
 import { buildSystemPromptReport } from "../../system-prompt-report.js";
+import { selectEffectivePersonalPromptSegments } from "../../system-prompt.js";
 import { toolPolicyRestrictsTools } from "../../tool-policy.js";
 import type { ToolSearchCatalogRef } from "../../tool-search.js";
 import { buildToolSchemaDirectoryPrompt } from "../../tool-search.js";
@@ -61,6 +70,7 @@ export async function prepareEmbeddedAttemptSystemPrompt(params: {
       runtimeInfo: { model: `${attempt.provider}/${attempt.modelId}` },
       systemPromptReport: undefined,
       systemPromptText: "",
+      personalPrompt: undefined,
     };
   }
   const resolveSandboxInfo = () => {
@@ -294,6 +304,37 @@ export async function prepareEmbeddedAttemptSystemPrompt(params: {
     },
   };
   const attemptSystemPrompt = buildAttemptSystemPrompt(promptInputs);
+  const personalPromptSegments =
+    params.isRawModelRun || effectivePromptMode === "none"
+      ? []
+      : selectEffectivePersonalPromptSegments({
+          contextFiles: promptInputs.embeddedSystemPrompt.contextFiles,
+          activeProjectKeys,
+          renderedPrompt: attemptSystemPrompt.systemPrompt,
+        });
+  for (const segment of personalPromptSegments) {
+    if (attemptSystemPrompt.systemPrompt.split(segment.text).length !== 2) {
+      throw new Error("Effective USER/MEMORY segment missing or duplicated in model prompt");
+    }
+  }
+  const countInputTokens = createPersonalPromptTokenCounter({
+    provider: attempt.provider,
+    api: attempt.model.api,
+    baseUrl: attempt.model.baseUrl,
+    modelId: attempt.modelId,
+    apiKey: attempt.resolvedApiKey,
+    signal: attempt.abortSignal,
+  });
+  const countResponseInputTokens = createPersonalPromptProviderRequestCounter({
+    provider: attempt.provider,
+    api: attempt.model.api,
+    baseUrl: attempt.model.baseUrl,
+    modelId: attempt.modelId,
+    apiKey: attempt.resolvedApiKey,
+    signal: attempt.abortSignal,
+  });
+  let registeredPacket: PreparedPersonalPacket | undefined;
+  let providerReceipt: ProviderPersonalContextReceipt | undefined;
   const reportInputs: Parameters<typeof buildSystemPromptReport>[0] = {
     source: "run",
     generatedAt: Date.now(),
@@ -343,6 +384,22 @@ export async function prepareEmbeddedAttemptSystemPrompt(params: {
     runtimeInfo,
     systemPromptReport,
     systemPromptText: attemptSystemPrompt.systemPrompt,
+    personalPrompt: {
+      legacySegments: personalPromptSegments,
+      ...(countInputTokens ? { countInputTokens } : {}),
+      countResponseInputTokens,
+      registerPreparedPacket: (packet: PreparedPersonalPacket) => {
+        if (registeredPacket) {
+          throw new Error("Personal context packet already registered for this run");
+        }
+        registeredPacket = Object.freeze({ ...packet });
+      },
+      readPreparedPacket: () => registeredPacket,
+      recordProviderReceipt: (receipt: ProviderPersonalContextReceipt) => {
+        providerReceipt = receipt;
+      },
+      readProviderReceipt: () => providerReceipt,
+    },
     preparePermissionPrompt: (effectiveTools: PromptTools = params.effectiveTools) => {
       const mode = attempt.permissionMode;
       const capabilities = [...params.capabilityToolNames].toSorted();

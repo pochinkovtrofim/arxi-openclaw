@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { readMemoryArtifactProvenance } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
 import type {
   MemoryEntryProvenance,
   MemorySearchResult,
@@ -15,6 +16,7 @@ import {
 } from "./memory-entry-origins.js";
 import { withMemoryWorkspaceLock } from "./memory-workspace-lock.js";
 import type { SessionEntryOrigin } from "./session-ingestion.js";
+import { rehydratePromotionCandidate } from "./short-term-promotion-rehydrate.js";
 import { readStore, writeStore } from "./short-term-promotion-store.js";
 import type { ShortTermRecallEntry } from "./short-term-promotion-types.js";
 import {
@@ -76,6 +78,8 @@ async function shortTermRecallSourceIsFile(sourcePath: string): Promise<boolean>
 export async function filterLiveShortTermRecallEntries(params: {
   workspaceDir: string;
   entries: ShortTermRecallEntry[];
+  /** Consumer-only quarantine; repair still distinguishes missing files from held evidence. */
+  requireCurrentSource?: boolean;
 }): Promise<ShortTermRecallEntry[]> {
   const workspaceDir = params.workspaceDir.trim();
   if (!workspaceDir) {
@@ -98,6 +102,18 @@ export async function filterLiveShortTermRecallEntries(params: {
       for (const sourcePath of resolveShortTermSourcePathCandidates(workspaceDir, entry.path)) {
         if (await checkSourceFile(sourcePath)) {
           exists = true;
+          const recorded = params.requireCurrentSource
+            ? await readMemoryArtifactProvenance({
+                workspaceDir,
+                relativePath: path.relative(workspaceDir, sourcePath).replaceAll("\\", "/"),
+              })
+            : undefined;
+          if (params.requireCurrentSource && recorded?.sourceLineage) {
+            // File existence cannot admit an old cached Owner-derived quote.
+            // Rehydrate against the same current projection used by promotion.
+            const current = await rehydratePromotionCandidate(workspaceDir, entry);
+            return { entry: current ?? entry, exists: current !== null };
+          }
           break;
         }
       }

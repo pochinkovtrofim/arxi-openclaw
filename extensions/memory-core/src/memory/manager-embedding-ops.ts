@@ -12,6 +12,7 @@ import { createSubsystemLogger } from "openclaw/plugin-sdk/memory-core-host-engi
 import {
   buildFileEntry,
   buildMultimodalChunkForIndexing,
+  hashText,
   isFileMissingError,
   MEMORY_EMBEDDING_CACHE_TABLE,
   MEMORY_SEARCH_DEADLINE_CONTROL,
@@ -36,7 +37,6 @@ import {
 import { readSessionResetRecallCutoffMetadata } from "../session-reset-recall-metadata.js";
 import type { EmbeddingProvider } from "./embeddings.js";
 import type { IndexedMemoryChunk } from "./manager-chunk-writer.js";
-import { prepareMemoryIndexInWorker } from "./manager-cpu-worker-runtime.js";
 import { readMemoryDatabaseRevision } from "./manager-db-kernel.js";
 import {
   clearMemoryEmbeddingCacheIdentities,
@@ -59,6 +59,7 @@ import {
   type MemoryIndexProviderIdentity,
 } from "./manager-reindex-state.js";
 import type { MemorySourceIndexReplacement } from "./manager-source-index-kernel.js";
+import { prepareCurrentMemoryIndexInWorker } from "./manager-source-preparation.js";
 import {
   MemoryManagerSyncOps,
   type MemoryIndexWorkItem,
@@ -1081,7 +1082,8 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
         return null;
       }
       const cutoff = readSessionResetRecallCutoffMetadata(entry);
-      const prepared = await prepareMemoryIndexInWorker({
+      const prepared = await prepareCurrentMemoryIndexInWorker({
+        workspaceDir: this.workspaceDir,
         entry: {
           path: entry.path,
           mtimeMs: entry.mtimeMs,
@@ -1099,9 +1101,12 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerSyncOps {
             : undefined,
         hardMaxInputTokens: EMBEDDING_BATCH_MAX_TOKENS,
       });
+      if (!prepared) {
+        this.dirty = true;
+        return null;
+      }
       return {
-        entry:
-          prepared.contentHash !== undefined ? { ...entry, hash: prepared.contentHash } : entry,
+        entry: prepared.contentHash !== undefined ? { ...entry, hash: hashText(content) } : entry,
         source,
         chunks: prepared.chunks,
       };

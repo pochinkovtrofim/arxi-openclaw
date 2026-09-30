@@ -184,6 +184,7 @@ export type CreateUserTurnTranscriptRecorderParams = {
   /** Authenticated input identity independent of prepared media paths. */
   pendingInputRequestFingerprint?: string;
   trackInputCompletion?: boolean;
+  rejectCommittedWithoutCompletion?: boolean;
   /** Exact admitted source recorders consumed by this collected transcript message. */
   pendingInputSources?: readonly UserTurnTranscriptRecorder[];
   sessionTurnMutation?: SessionTranscriptTurnMutation;

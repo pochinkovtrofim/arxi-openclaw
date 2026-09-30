@@ -43,6 +43,20 @@ function summaryMessages(type: "compaction" | "branch_summary", summary: string)
 }
 
 describe("projectContextEngineAssemblyForCodex", () => {
+  it("attributes only unchanged ordinary transcript rows outside added personal context", async () => {
+    const historical = textMessage("user", "Ordinary previous conversation");
+    const custom = textMessage("custom", "Private durable owner memory");
+    const added = textMessage("user", "Engine retrieved old private source corpus");
+    const result = await projectContextEngineAssemblyForCodex({
+      assembledMessages: [structuredClone(historical), custom, added],
+      originalHistoryMessages: [historical, custom],
+      prompt: "Actual current request",
+    });
+    expect(result.ordinarySessionSegments.join("")).toContain("Ordinary previous conversation");
+    expect(result.ordinarySessionSegments.join("")).not.toContain("Private durable");
+    expect(result.ordinarySessionSegments.join("")).not.toContain("Engine retrieved");
+    expect(result.ordinarySessionSegments.join("")).not.toContain("Actual current request");
+  });
   it("charges restored file content to the selected window before reading older attachments", async () => {
     const older = textMessage("user", "older attachment");
     const recent = textMessage("user", "recent attachment");

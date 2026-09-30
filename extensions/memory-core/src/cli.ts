@@ -193,6 +193,12 @@ export function registerMemoryCli(program: Command, hostOptions?: MemoryCoreRunt
     .description("Delete memories and derived artifacts from selected sessions")
     .option("--agent <id>", "Agent id (default: default agent)")
     .option(
+      "--source-key <sha256>",
+      "Exact native source lineage key (repeatable)",
+      collectMemoryCliValues,
+      [],
+    )
+    .option(
       "--session <id-or-key>",
       "Source session ID or key (repeatable)",
       collectMemoryCliValues,
@@ -214,9 +220,14 @@ export function registerMemoryCli(program: Command, hostOptions?: MemoryCoreRunt
     .option("--dry-run", "Report everything that would be deleted without writing", false)
     .option("--json", "Print the complete machine-readable deletion report")
     .action(async (opts: MemoryForgetCommandOptions) => {
-      if (!opts.session?.length && !opts.hookSource?.length && !opts.participant?.length) {
+      if (
+        !opts.sourceKey?.length &&
+        !opts.session?.length &&
+        !opts.hookSource?.length &&
+        !opts.participant?.length
+      ) {
         throw new Error(
-          "Memory forget requires --session <id-or-key>, --hook-source <source>, or --participant <actor-id>.",
+          "Memory forget requires --source-key <sha256>, --session <id-or-key>, --hook-source <source>, or --participant <actor-id>.",
         );
       }
       const runtime = await loadMemoryCliRuntime();

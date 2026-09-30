@@ -35,6 +35,7 @@ import {
   OpenAIResponsesWebSocketPostDispatchError,
   OpenAIResponsesWebSocketSafeRetryError,
   type OpenAIResponsesOptions,
+  responsesProviderRequestGate,
 } from "./openai-responses-contracts.js";
 import {
   logResponsesFailedNoDetails,
@@ -410,6 +411,7 @@ function createResponsesTransportExecutor(config: ResponsesTransportExecutorOpti
             requestOptions,
             model,
             observePrompt,
+            gateProviderRequest: responsesProviderRequestGate.get(responsesOptions),
             initialAttemptKind,
             initialRejectedCompaction,
             buildFullHistoryRequest: () => buildRequest("full-history"),

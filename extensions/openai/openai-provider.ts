@@ -47,6 +47,7 @@ import {
   OPENAI_GPT_56_SOL_MODEL_ID,
   OPENAI_GPT_56_TERRA_MODEL_ID,
   OPENAI_GPT_6_ASTRA_MODEL_ID,
+  OPENAI_GPT_61_SOL_MODEL_ID,
   OPENAI_PROVIDER_MODERN_MODEL_IDS,
   isOpenAIPlatformOnlyRouteModelId,
   isOpenAISubscriptionOnlyRouteModelId,
@@ -57,6 +58,7 @@ import {
   buildOpenAIChatGPTAuthMethodRuns,
   buildOpenAICodexProviderHooks,
 } from "./openai-chatgpt-provider.js";
+import { buildOpenAIModernCatalogEntries } from "./openai-modern-model-catalog.js";
 import manifest from "./openclaw.plugin.json" with { type: "json" };
 import { createOpenAIProvider } from "./provider-contract-api.js";
 import { resolveAuthoredOpenAIProviderConfig } from "./provider-policy-api.js";
@@ -560,6 +562,7 @@ function buildOpenAICodexStaticProviderConfig(): ModelProviderConfig {
       // rollout and other GPT-5.6 tiers require successful account discovery.
       if (
         modelId === OPENAI_GPT_6_ASTRA_MODEL_ID ||
+        modelId === OPENAI_GPT_61_SOL_MODEL_ID ||
         (modelId.startsWith("gpt-5.6") && modelId !== OPENAI_GPT_56_SOL_MODEL_ID)
       ) {
         return [];
@@ -817,7 +820,7 @@ function buildOpenAIUnknownModelHint(modelId: string): string | undefined {
 
 const OPENAI_GPT_FORWARD_COMPAT_CASES = [
   {
-    match: [OPENAI_GPT_6_ASTRA_MODEL_ID],
+    match: [OPENAI_GPT_6_ASTRA_MODEL_ID, OPENAI_GPT_61_SOL_MODEL_ID],
     templateIds: [OPENAI_GPT_56_SOL_MODEL_ID, OPENAI_GPT_55_MODEL_ID],
   },
   {
@@ -1151,11 +1154,6 @@ export function buildOpenAIProvider(): ProviderPlugin {
     isModernModelRef: ({ modelId }) =>
       matchesExactOrPrefix(modelId, OPENAI_PROVIDER_MODERN_MODEL_IDS),
     augmentModelCatalog: (ctx) => {
-      const openAiGpt55ProTemplate = findCatalogTemplate({
-        entries: ctx.entries,
-        providerId: PROVIDER_ID,
-        templateIds: OPENAI_GPT_55_PRO_TEMPLATE_MODEL_IDS,
-      });
       const openAiGpt54Template = findCatalogTemplate({
         entries: ctx.entries,
         providerId: PROVIDER_ID,
@@ -1177,12 +1175,10 @@ export function buildOpenAIProvider(): ProviderPlugin {
         templateIds: OPENAI_GPT_54_NANO_TEMPLATE_MODEL_IDS,
       });
       return [
-        buildOpenAISyntheticCatalogEntry(openAiGpt55ProTemplate, {
-          id: OPENAI_GPT_55_PRO_MODEL_ID,
-          reasoning: true,
-          input: ["text", "image"],
-          contextWindow: OPENAI_GPT_55_PRO_CONTEXT_WINDOW,
-          contextTokens: OPENAI_DEFAULT_RUNTIME_CONTEXT_TOKENS,
+        ...buildOpenAIModernCatalogEntries(ctx.entries, {
+          gpt55ProTemplateIds: OPENAI_GPT_55_PRO_TEMPLATE_MODEL_IDS,
+          gpt55ProContextWindow: OPENAI_GPT_55_PRO_CONTEXT_WINDOW,
+          runtimeContextTokens: OPENAI_DEFAULT_RUNTIME_CONTEXT_TOKENS,
         }),
         buildOpenAISyntheticCatalogEntry(openAiGpt54Template, {
           id: OPENAI_GPT_54_MODEL_ID,

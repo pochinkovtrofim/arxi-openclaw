@@ -1,4 +1,5 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { validWorkshopSourceOrigin } from "./source-provenance.js";
 import { MAX_SKILL_PROPOSAL_ORIGIN_RUN_IDS } from "./types.js";
 
 function isValidOrigin(value: unknown): boolean {
@@ -8,10 +9,13 @@ function isValidOrigin(value: unknown): boolean {
   if (!isRecord(value)) {
     return false;
   }
-  return ["agentId", "sessionKey", "runId", "messageId"].every((key) => {
-    const item = value[key];
-    return item === undefined || typeof item === "string";
-  });
+  return (
+    validWorkshopSourceOrigin(value) &&
+    ["agentId", "sessionKey", "runId", "messageId"].every((key) => {
+      const item = value[key];
+      return item === undefined || typeof item === "string";
+    })
+  );
 }
 
 function isValidRunIds(value: unknown): value is string[] | undefined {

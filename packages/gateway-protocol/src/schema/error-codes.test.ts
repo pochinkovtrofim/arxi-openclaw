@@ -6,6 +6,7 @@ import {
   CronJobNotFoundErrorDetailsSchema,
   GatewayErrorDetailCodes,
   GatewayErrorDetailsSchema,
+  InputProcessingUncertainErrorDetailsSchema,
   GitHubPublicationSelectionRejectedErrorDetailsSchema,
   isMcpAppViewExpiredError,
   McpAppViewExpiredErrorDetailsSchema,
@@ -25,6 +26,19 @@ import {
 import { ErrorShapeSchema } from "./frames.js";
 
 describe("gateway error details", () => {
+  it("keeps consumed external input replay uncertainty machine readable", () => {
+    const details = { code: GatewayErrorDetailCodes.INPUT_PROCESSING_UNCERTAIN };
+    expect(Value.Check(InputProcessingUncertainErrorDetailsSchema, details)).toBe(true);
+    expect(Value.Check(GatewayErrorDetailsSchema, details)).toBe(true);
+    expect(
+      Value.Check(ErrorShapeSchema, {
+        code: ErrorCodes.UNAVAILABLE,
+        message: "Reconcile original run",
+        details,
+      }),
+    ).toBe(true);
+  });
+
   it("validates and reads exact pending workspace recovery routes", () => {
     const details = {
       code: GatewayErrorDetailCodes.SESSION_WORKSPACE_RECOVERY_REQUIRED,

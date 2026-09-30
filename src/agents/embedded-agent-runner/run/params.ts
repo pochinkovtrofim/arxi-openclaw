@@ -213,6 +213,8 @@ export type RunEmbeddedAgentParams = {
   skillWorkshopUpdateProposals?: boolean;
   /** Preserve the foreground run as proposal provenance for an internal review run. */
   skillWorkshopOrigin?: SkillProposalOrigin;
+  /** Host-captured foreground category persisted with native experience proposals. */
+  skillWorkshopReviewContext?: SkillWorkshopRunOptions["reviewContext"];
   /** Run-scoped mutation budget shared across internal runner attempts. */
   skillWorkshopProposalMutationBudget?: SkillWorkshopProposalMutationBudget;
   /** Optional state environment for isolated Skill Workshop proposal persistence. */
