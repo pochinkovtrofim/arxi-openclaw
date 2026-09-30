@@ -236,15 +236,39 @@ export function createCodexPersonalPreEgressGate(params: {
       refuse("mandatory_source_omitted");
     }
     const bodyInput = Array.isArray(body.input) ? body.input : refuse("invalid_request");
+    const currentInstructionRanges = new Map<
+      string,
+      { leaf: string; start: number; end: number }
+    >();
     if (instructionSegments.length > 0) {
       const leaves = stringLeaves([body.instructions, bodyInput]);
+      // The immutable native thread may retain an identical older AGENTS
+      // snapshot. Only the complete, exact producer-owned base can identify
+      // that copy; it never substitutes for this turn's current carrier.
+      if (base && leaves.reduce((sum, leaf) => sum + occurrences(leaf, base), 0) > 1)
+        refuse("source_attribution_changed");
       for (const source of instructionSegments) {
-        if (
-          !source.text ||
-          leaves.reduce((sum, leaf) => sum + occurrences(leaf, source.text), 0) !== 1
-        ) {
-          refuse("mandatory_source_omitted");
+        if (!source.text) refuse("mandatory_source_omitted");
+        const current = [] as Array<{ leaf: string; start: number; end: number }>;
+        for (const leaf of leaves) {
+          const baseStart = base ? leaf.indexOf(base) : -1;
+          for (
+            let start = 0;
+            (start = leaf.indexOf(source.text, start)) >= 0;
+            start += source.text.length
+          ) {
+            // The frozen renderer trims its final section separator. All
+            // instruction bytes must still lie inside the exact base; only
+            // trailing whitespace delimiters may follow it.
+            const frozenCopy =
+              baseStart >= 0 &&
+              start >= baseStart &&
+              start + source.text.trimEnd().length <= baseStart + base.length;
+            if (!frozenCopy) current.push({ leaf, start, end: start + source.text.length });
+          }
         }
+        if (current.length !== 1) refuse("mandatory_source_omitted");
+        currentInstructionRanges.set(source.text, current[0]);
       }
       if (
         params.totalContextTokenBudget !== undefined &&
@@ -295,12 +319,9 @@ export function createCodexPersonalPreEgressGate(params: {
       }
       const exemptionRanges = new Map<string, Array<{ start: number; end: number }>>();
       for (const source of instructionSegments) {
-        const leaf =
-          leaves.find((value) => value.includes(source.text)) ?? refuse("mandatory_source_omitted");
-        const range = {
-          start: leaf.indexOf(source.text),
-          end: leaf.indexOf(source.text) + source.text.length,
-        };
+        const current =
+          currentInstructionRanges.get(source.text) ?? refuse("mandatory_source_omitted");
+        const { leaf, ...range } = current;
         const ranges = exemptionRanges.get(leaf) ?? [];
         const intersects = (other: { start: number; end: number }) =>
           range.start < other.end && other.start < range.end;
