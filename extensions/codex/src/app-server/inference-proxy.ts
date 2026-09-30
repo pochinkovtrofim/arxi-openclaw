@@ -282,18 +282,43 @@ export async function createCodexInferenceProxy(params: {
               accepted.once("error", close);
               accepted.once("close", close);
               let releaseFrame = () => {};
+              let responseGuard: ReturnType<typeof prepare> | undefined;
+              let responseId: string | undefined;
               accepted.on("message", (data, binary) => {
                 try {
                   if (binary) {
                     throw new Error(FAILURE);
                   }
-                  const prepared = prepare(rawBytes(data), true);
+                  const bytes = rawBytes(data);
+                  const value: unknown = JSON.parse(bytes.toString("utf8"));
+                  const interrupt = isJsonObject(value) && value.type === "response.interrupt";
+                  let prepared: ReturnType<typeof prepare>;
+                  if (interrupt) {
+                    // Codex 0.159.1 sends this control without turn metadata. It
+                    // can only stop the response observed on this connection;
+                    // no sampling fields or alternate control modes may pass.
+                    if (
+                      Object.keys(value).length !== 3 ||
+                      value.mode !== "discard_partial_items" ||
+                      !responseGuard ||
+                      !responseId ||
+                      value.response_id !== responseId
+                    ) {
+                      throw new Error(FAILURE);
+                    }
+                    prepared = { ...responseGuard, bytes: Buffer.from(bytes) };
+                  } else {
+                    prepared = prepare(bytes, true);
+                    responseGuard = prepared;
+                    responseId = undefined;
+                    // A WS may serve later turns. Replace the old generation's abort listener.
+                    releaseFrame();
+                    const onAbort = () => close();
+                    prepared.signal?.addEventListener("abort", onAbort, { once: true });
+                    releaseFrame = () => prepared.signal?.removeEventListener("abort", onAbort);
+                  }
                   prepared.assertCurrent();
-                  // A WS may serve later turns. Replace the old generation's abort listener.
-                  releaseFrame();
-                  const onAbort = () => close();
-                  prepared.signal?.addEventListener("abort", onAbort, { once: true });
-                  releaseFrame = () => prepared.signal?.removeEventListener("abort", onAbort);
+                  prepared.signal?.throwIfAborted();
                   if (
                     !remote ||
                     remote.readyState !== WebSocket.OPEN ||
@@ -318,6 +343,31 @@ export async function createCodexInferenceProxy(params: {
               });
               accepted.once("close", () => releaseFrame());
               remote!.on("message", (data: RawData, binary: boolean) => {
+                if (!binary && responseGuard) {
+                  try {
+                    const event: unknown = JSON.parse(rawBytes(data).toString("utf8"));
+                    if (isJsonObject(event) && isJsonObject(event.response)) {
+                      const id = event.response.id;
+                      if (
+                        event.type === "response.created" &&
+                        typeof id === "string" &&
+                        id.length > 0 &&
+                        id.length <= 512
+                      ) {
+                        responseId = id;
+                      } else if (
+                        ["response.completed", "response.failed", "response.incomplete"].includes(
+                          String(event.type),
+                        ) &&
+                        id === responseId
+                      ) {
+                        responseId = undefined;
+                      }
+                    }
+                  } catch {
+                    // Preserve opaque upstream events without logging their content.
+                  }
+                }
                 if (
                   accepted.readyState !== WebSocket.OPEN ||
                   accepted.bufferedAmount + rawBytes(data).length > MAX_BODY_BYTES

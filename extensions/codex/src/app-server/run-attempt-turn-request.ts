@@ -230,6 +230,12 @@ export async function prepareCodexAttemptTurnRequest(
                     : [],
                 ),
                 onReceipt: (receipt) => {
+                  // Reuse the native, rotated metadata log so hidden Owner turns
+                  // retain provider-bound evidence without persisting any prompt.
+                  embeddedAgentLog.info("codex personal context pre-egress", {
+                    runId: params.runId,
+                    ...receipt,
+                  });
                   void emitCodexAppServerEvent(params, {
                     stream: "codex_app_server.lifecycle",
                     data: {

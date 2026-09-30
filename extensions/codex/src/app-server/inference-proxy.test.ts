@@ -556,3 +556,83 @@ it("preserves WebSocket connection error headers and body for native auth recove
     });
   }
 });
+
+describe("Codex 0.159.1 response.interrupt control", () => {
+  it.each([
+    "valid",
+    "extra-input",
+    "wrong-response",
+    "wrong-mode",
+    "before-create",
+    "after-completion",
+  ])("handles %s without a sampling bypass", async (scenario) => {
+    const server = createServer();
+    const wss = new WebSocketServer({ server });
+    const received: Record<string, unknown>[] = [];
+    let upstreamPeer: WebSocket | undefined;
+    wss.on("connection", (peer) => {
+      upstreamPeer = peer;
+      peer.on("message", (data) => {
+        const value = JSON.parse(data.toString());
+        received.push(value);
+        peer.send(
+          JSON.stringify(
+            value.type === "response.interrupt"
+              ? { type: "response.completed", response: { id: "response-159" } }
+              : { type: "response.created", response: { id: "response-159" } },
+          ),
+        );
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("fixture did not listen");
+    transport.upstream = `ws://127.0.0.1:${address.port}`;
+    const gate = vi.fn();
+    const { proxy, body, registration } = await fixture(true, { oauth: true, preEgressGate: gate });
+    const socket = new WebSocket(proxy.baseUrl.replace("http:", "ws:") + "/responses");
+    try {
+      await once(socket, "open");
+      if (scenario !== "before-create") {
+        const created = once(socket, "message");
+        socket.send(JSON.stringify({ ...body, model: "gpt-6.1-sol", type: "response.create" }));
+        await created;
+        expect(gate).toHaveBeenCalledOnce();
+        if (scenario === "after-completion") {
+          const completed = once(socket, "message");
+          upstreamPeer!.send('{"type":"response.completed","response":{"id":"response-159"}}');
+          await completed;
+        }
+      }
+      const control = {
+        type: "response.interrupt",
+        response_id: scenario === "wrong-response" ? "other" : "response-159",
+        mode: scenario === "wrong-mode" ? "keep_partial_items" : "discard_partial_items",
+        ...(scenario === "extra-input"
+          ? { input: [{ role: "user", content: "personal bypass" }] }
+          : {}),
+      };
+      const result = once(socket, scenario === "valid" ? "message" : "close");
+      socket.send(JSON.stringify(control));
+      await result;
+      expect(gate).toHaveBeenCalledTimes(scenario === "before-create" ? 0 : 1);
+      expect(received).toHaveLength(
+        scenario === "valid" ? 2 : scenario === "before-create" ? 0 : 1,
+      );
+      if (scenario === "valid") {
+        expect(received[1]).toEqual(control);
+        // The control retains the admitted generation's abort fence.
+        const closed = once(socket, "close");
+        registration.release();
+        await closed;
+      }
+      expect(transport.dials).toEqual(["wss://chatgpt.com/backend-api/codex/responses"]);
+    } finally {
+      socket.terminate();
+      proxy.close();
+      for (const peer of wss.clients) peer.terminate();
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+});
