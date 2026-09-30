@@ -211,6 +211,7 @@ export async function prepareCodexAttemptTurnRequest(
                 packetText: personalPromptState.packet?.text,
                 expectedModel: resourceState.thread.model ?? effectiveRuntimeModelId,
                 mandatorySourcesComplete: personalPromptState.mandatorySourcesComplete,
+                mandatoryInstructionSegments: personalPromptState.instructionSegments,
                 preparedPacketNeedsExpansion: personalPromptState.packet?.needsExpansion,
                 budgetTokens: personalPromptState.packet?.budgetTokens ?? 8_000,
                 expansionReason: personalPromptState.packet?.expansionReason,

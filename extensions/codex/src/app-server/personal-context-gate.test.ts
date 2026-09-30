@@ -25,6 +25,128 @@ function initial(): JsonObject {
 }
 
 describe("Codex OAuth personal pre-egress gate", () => {
+  it("keeps full system instruction carriers separate from personal memory and rechecks incremental and full-history requests", () => {
+    const systemRule =
+      "### /owner/SOUL.md\n\n" +
+      "Generic system instruction. ".repeat(900) +
+      "Never disclose the Owner's appointment.\n\n";
+    const instructionBody = `${legacy}\n\n${systemRule}`;
+    const receipts: CodexPersonalContextReceipt[] = [];
+    const gate = createCodexPersonalPreEgressGate({
+      promptText: prompt,
+      developerInstructions: developer,
+      legacySegments: [{ name: "USER.md", text: legacy }],
+      packetText: packet,
+      mandatoryInstructionSegments: [{ name: "SOUL.md", text: systemRule }],
+      totalContextTokenBudget: 80_000,
+      onReceipt: (receipt) => {
+        receipts.push(receipt);
+      },
+    });
+    const body = { ...initial(), instructions: instructionBody };
+    gate(body);
+    expect(receipts[0]?.status).toBe("within_bound");
+    expect(receipts[0]?.upperBoundUtf8Bytes).toBeLessThan(8000);
+    expect(receipts[0]?.nativeRequestUpperBoundUtf8Bytes).toBeGreaterThan(20_000);
+    expect(receipts[0]?.instructionSources).toEqual([
+      { name: "SOUL.md", sha256: createHash("sha256").update(systemRule).digest("hex") },
+    ]);
+    for (let i = 0; i < 4; i++) {
+      gate({
+        previous_response_id: "native-previous",
+        instructions: instructionBody,
+        input: [
+          { type: "function_call_output", call_id: `read-${i}`, output: "small synthetic result" },
+        ],
+      });
+    }
+    expect(receipts.at(-1)?.status).toBe("within_bound");
+    expect(receipts.at(-1)?.nativeRequestScope).toBe(
+      "current_serialized_request_excludes_prior_provider_cache",
+    );
+    gate(body); // A real full-history request revalidates exact current sources.
+    expect(() => gate({ ...body, instructions: legacy })).toThrow(
+      CodexInferenceNeedsExpansionError,
+    );
+    expect(receipts.at(-1)?.reason).toBe("mandatory_source_omitted");
+  });
+
+  it.each(["missing", "tampered", "duplicate"])(
+    "refuses a %s mandatory instruction carrier on an incremental request",
+    (kind) => {
+      const rule = "### /owner/AGENTS.md\n\nNever publish without approval.\n\n";
+      let receipt: CodexPersonalContextReceipt | undefined;
+      const gate = createCodexPersonalPreEgressGate({
+        promptText: prompt,
+        developerInstructions: developer,
+        legacySegments: [{ name: "USER.md", text: legacy }],
+        packetText: packet,
+        mandatoryInstructionSegments: [{ name: "AGENTS.md", text: rule }],
+        totalContextTokenBudget: 80_000,
+        onReceipt: (value) => {
+          receipt = value;
+        },
+      });
+      gate({ ...initial(), instructions: `${legacy}\n\n${rule}` });
+      const instructions =
+        kind === "missing"
+          ? ""
+          : kind === "tampered"
+            ? rule.replace("Never", "Always")
+            : rule + rule;
+      expect(() =>
+        gate({ previous_response_id: "native-previous", instructions, input: [] }),
+      ).toThrow(CodexInferenceNeedsExpansionError);
+      expect(receipt?.reason).toBe("mandatory_source_omitted");
+    },
+  );
+
+  it("leaves unknown native-model context authority native while preserving exact mandatory carriers", () => {
+    const rule = "### /owner/SOUL.md\n\n" + "Whole mandatory system rule. ".repeat(1000) + "\n\n";
+    let receipt: CodexPersonalContextReceipt | undefined;
+    const gate = createCodexPersonalPreEgressGate({
+      promptText: prompt,
+      developerInstructions: developer,
+      legacySegments: [{ name: "USER.md", text: legacy }],
+      packetText: packet,
+      mandatoryInstructionSegments: [{ name: "SOUL.md", text: rule }],
+      onReceipt: (value) => {
+        receipt = value;
+      },
+    });
+    gate({ ...initial(), instructions: `${legacy}\n\n${rule}` });
+    expect(receipt?.status).toBe("within_bound");
+    expect(receipt?.nativeContextBudgetAuthority).toBe("native_owned_unavailable");
+    expect(receipt?.totalContextTokenBudget).toBeUndefined();
+    expect(receipt?.upperBoundUtf8Bytes).toBeLessThan(8000);
+    expect(() => gate({ ...initial(), instructions: legacy })).toThrow(
+      CodexInferenceNeedsExpansionError,
+    );
+    expect(receipt?.reason).toBe("mandatory_source_omitted");
+  });
+
+  it("refuses exceeded host-native request bound while preserving the separate personal cap", () => {
+    const rule = "### /owner/SOUL.md\n\n" + "Whole mandatory system rule. ".repeat(1000) + "\n\n";
+    let receipt: CodexPersonalContextReceipt | undefined;
+    const gate = createCodexPersonalPreEgressGate({
+      promptText: prompt,
+      developerInstructions: developer,
+      legacySegments: [{ name: "USER.md", text: legacy }],
+      packetText: packet,
+      mandatoryInstructionSegments: [{ name: "SOUL.md", text: rule }],
+      totalContextTokenBudget: 24_000,
+      onReceipt: (value) => {
+        receipt = value;
+      },
+    });
+    expect(() => gate({ ...initial(), instructions: `${legacy}\n\n${rule}` })).toThrow(
+      CodexInferenceNeedsExpansionError,
+    );
+    expect(receipt?.reason).toBe("native_request_over_bound");
+    expect(receipt?.nativeContextBudgetAuthority).toBe("host_bound");
+    expect(receipt?.upperBoundUtf8Bytes).toBeLessThan(8000);
+  });
+
   it("separates proven ordinary history while charging an old personal hook archive", () => {
     const user = "Current real admitted request";
     const history = `[user]\n${"ordinary earlier conversation ".repeat(800)}\n\n`;

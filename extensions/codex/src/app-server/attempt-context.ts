@@ -41,6 +41,12 @@ import {
 } from "./thread-lifecycle.js";
 
 const CODEX_NATIVE_PROJECT_DOC_BASENAMES = new Set(["agents.md"]);
+const CODEX_MANDATORY_WORKSPACE_INSTRUCTION_BASENAMES = new Set([
+  "agents.md",
+  "soul.md",
+  "identity.md",
+  "user.md",
+]);
 const CODEX_TURN_SCOPED_WORKSPACE_DEVELOPER_CONTEXT_BASENAMES = new Set([
   "identity.md",
   "soul.md",
@@ -449,8 +455,8 @@ export function buildCodexSystemPromptReport(params: {
       injectedFiles: params.workspaceBootstrapContext.promptContextFiles ?? [],
       omitReferenceFiles: params.omitWorkspaceReferences,
       developerInstructionFiles: [
-        ...(params.workspaceBootstrapContext.threadDeveloperInstructionFiles ?? []),
         ...(params.workspaceBootstrapContext.turnScopedDeveloperInstructionFiles ?? []),
+        ...(params.workspaceBootstrapContext.threadDeveloperInstructionFiles ?? []),
       ],
       memoryToolRoutedBootstrapFiles:
         params.workspaceBootstrapContext.memoryToolRoutedBootstrapFiles ?? [],
@@ -903,29 +909,38 @@ function selectCodexWorkspaceDeveloperInstructionFiles(
     .toSorted(compareCodexContextFiles);
 }
 
-/** Owner packets preserve mandatory USER at its native projection producer. */
+/** Owner packets preserve full effective instructions at their scoped producer. */
 export function restoreCodexMandatoryPersonalBootstrap(context: CodexWorkspaceBootstrapContext): {
   status: "complete" | "omitted";
 } {
-  const rawUser = context.bootstrapFiles.find(
-    (file) => file.name.toLowerCase() === "user.md" && !file.missing,
-  );
-  if (!rawUser?.content?.trimEnd()) {
-    return { status: "complete" };
-  }
-  const projectedUser = context.turnScopedDeveloperInstructionFiles?.find(
-    (file) => path.basename(file.path).toLowerCase() === "user.md",
-  );
-  if (!projectedUser) {
-    return { status: "omitted" };
-  }
-  if (projectedUser.content !== rawUser.content.trimEnd()) {
-    projectedUser.content = rawUser.content.trimEnd();
-    context.turnScopedDeveloperInstructions =
-      renderCodexWorkspaceCollaborationDeveloperInstructions(
-        context.turnScopedDeveloperInstructionFiles ?? [],
+  const carriers = context.turnScopedDeveloperInstructionFiles;
+  for (const file of context.bootstrapFiles) {
+    const name = file.name.toLowerCase();
+    if (
+      !CODEX_MANDATORY_WORKSPACE_INSTRUCTION_BASENAMES.has(name) ||
+      file.missing ||
+      !file.content?.trimEnd()
+    )
+      continue;
+    if (!carriers) return { status: "omitted" };
+    const projected = carriers.find((entry) => path.basename(entry.path).toLowerCase() === name);
+    if (projected) {
+      projected.content = file.content.trimEnd();
+    } else if (name === "agents.md") {
+      const scoped = context.contextFiles.find(
+        (entry) => path.basename(entry.path).toLowerCase() === name,
       );
+      if (!scoped) return { status: "omitted" };
+      // The native thread snapshot is frozen. This current effective copy
+      // supersedes it for this turn without changing other project-local docs.
+      carriers.push({ ...scoped, content: file.content.trimEnd() });
+    } else {
+      return { status: "omitted" };
+    }
   }
+  context.turnScopedDeveloperInstructions = renderCodexWorkspaceCollaborationDeveloperInstructions(
+    carriers ?? [],
+  );
   return { status: "complete" };
 }
 

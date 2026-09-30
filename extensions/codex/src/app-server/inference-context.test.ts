@@ -23,6 +23,21 @@ function request(threadId: string, generation?: string, extra: JsonObject = {}):
 }
 
 describe("parent-local inference context", () => {
+  it("refuses guarded instruction overflow with typed needs_expansion and preserves unguarded behavior", () => {
+    const context = createCodexInferenceContext(() => {});
+    const params = {
+      threadId: "root",
+      text: "x".repeat(256 * 1024 + 1),
+      signal: new AbortController().signal,
+      assertCurrent: () => {},
+    };
+    expect(() => context.register({ ...params, preEgressGate: () => {} })).toThrow(
+      CodexInferenceNeedsExpansionError,
+    );
+    expect(() => context.register(params)).toThrow("256 KiB inference limit");
+    context.close();
+  });
+
   it("shows the final native prompt and continuation tool output to one generation gate", () => {
     const seen: JsonObject[] = [];
     const context = createCodexInferenceContext(() => {});

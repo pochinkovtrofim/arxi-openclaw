@@ -33,6 +33,68 @@ afterEach(() => {
 });
 
 describe("Codex app-server attempt context", () => {
+  it.each(["SOUL.md", "IDENTITY.md", "AGENTS.md"])(
+    "preserves a middle mandatory %s rule for a packet while leaving the native thread snapshot frozen",
+    async (name) => {
+      await withTempDir("pc41-instruction-", async (workspaceDir) => {
+        const rule = "Never disclose the Owner's medical appointment to another person.";
+        const prefix = Array.from(
+          { length: 700 },
+          (_, i) => `Never violate synthetic procedure rule ${i}; ${"detail ".repeat(15)}\n`,
+        ).join("");
+        const source = prefix + rule + "\n" + "Synthetic procedure detail.\n".repeat(1500);
+        await fs.writeFile(path.join(workspaceDir, name), source);
+        const context = await buildCodexWorkspaceBootstrapContext({
+          params: {
+            sessionId: "packet-scope",
+            sessionKey: "agent:main:packet-scope",
+            pluginHarnessToolPolicyRestricted: true,
+            config: { agents: { defaults: { workspace: workspaceDir } } },
+          } as EmbeddedRunAttemptParams,
+          resolvedWorkspace: workspaceDir,
+          executionWorkspace: workspaceDir,
+          effectiveWorkspace: workspaceDir,
+          sessionKey: "agent:main:packet-scope",
+          sessionAgentId: "main",
+          memoryToolNames: [],
+          ringZeroActive: false,
+        });
+        const threadSnapshot = context.threadDeveloperInstructions;
+        const before =
+          name === "AGENTS.md" ? threadSnapshot : context.turnScopedDeveloperInstructions;
+        expect(before).toContain("[...truncated,");
+        expect(before).not.toContain(rule);
+        expect(restoreCodexMandatoryPersonalBootstrap(context)).toEqual({ status: "complete" });
+        expect(context.turnScopedDeveloperInstructions).toContain(source.trimEnd());
+        expect(context.turnScopedDeveloperInstructions).not.toContain("[...truncated,");
+        expect(context.threadDeveloperInstructions).toBe(threadSnapshot);
+        expect(
+          context.turnScopedDeveloperInstructionFiles?.find(
+            (file) => path.basename(file.path) === name,
+          )?.path,
+        ).toBe(path.join(workspaceDir, name));
+      });
+    },
+  );
+
+  it("refuses an omitted scoped instruction carrier instead of claiming complete owner constraints", () => {
+    expect(
+      restoreCodexMandatoryPersonalBootstrap({
+        bootstrapFiles: [
+          {
+            name: "SOUL.md",
+            path: "/synthetic-owner/SOUL.md",
+            content: "Never disclose a private appointment.",
+            missing: false,
+          },
+        ],
+        contextFiles: [],
+        inheritsAgentWorkspace: false,
+        turnScopedDeveloperInstructionFiles: [],
+      }),
+    ).toEqual({ status: "omitted" });
+  });
+
   it("restores complete USER constraints for a personal packet after generic bootstrap trimming", async () => {
     const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "codex-owner-constraints-"));
     const source = `${"profile detail\n".repeat(700)}Never send a message without owner approval.\n${"other detail\n".repeat(700)}`;

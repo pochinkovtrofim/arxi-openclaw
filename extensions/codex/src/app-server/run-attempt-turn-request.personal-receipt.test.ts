@@ -42,7 +42,7 @@ const privatePacket = "Private packet: Simona's unpublished owner source facts";
 const privateRules = "Private USER rule: never disclose the passport";
 const sha = (value: string) => createHash("sha256").update(value).digest("hex");
 
-async function productionCallback(needsExpansion = false) {
+async function productionCallback(needsExpansion = false, instruction?: string) {
   const params = {
     runId: "external:receipt-proof",
     sessionKey: "private-session-key",
@@ -74,6 +74,7 @@ async function productionCallback(needsExpansion = false) {
         personalPromptState: {
           packet: { text: privatePacket, budgetTokens: 8_000, needsExpansion },
           mandatorySourcesComplete: true,
+          instructionSegments: instruction ? [{ name: "SOUL.md", text: instruction }] : [],
           staticPolicies: [],
         },
         hookContext: {},
@@ -112,6 +113,35 @@ async function productionCallback(needsExpansion = false) {
   }
   return registration.preEgressGate as (value: Record<string, unknown>) => void;
 }
+
+it("production callback verifies full mandatory instruction carriers independently of personal memory", async () => {
+  const instruction =
+    "### /fixture/SOUL.md\n\n" +
+    "Generic system instruction. ".repeat(900) +
+    "Never disclose a private appointment.\n\n";
+  const gate = await productionCallback(false, instruction);
+  gate({
+    model: "gpt-6.1-sol",
+    instructions: privateRules + "\n\n" + instruction,
+    input: [{ role: "user", content: privatePacket }],
+  });
+  expect(observed.info).toHaveBeenLastCalledWith(
+    "codex personal context pre-egress",
+    expect.objectContaining({
+      status: "within_bound",
+      upperBoundUtf8Bytes: Buffer.byteLength(privateRules + "\n\n" + privatePacket),
+      instructionSources: [{ name: "SOUL.md", sha256: sha(instruction) }],
+      nativeRequestUpperBoundUtf8Bytes: expect.any(Number),
+    }),
+  );
+  expect(() => gate({ model: "gpt-6.1-sol", previous_response_id: "previous", input: [] })).toThrow(
+    "needs_expansion",
+  );
+  expect(observed.info).toHaveBeenLastCalledWith(
+    "codex personal context pre-egress",
+    expect.objectContaining({ status: "needs_expansion", reason: "mandatory_source_omitted" }),
+  );
+});
 
 it("production pre-egress callback durably logs only receipt metadata for model-bound allowance and refusal", async () => {
   const gate = await productionCallback();

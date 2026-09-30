@@ -114,8 +114,9 @@ export async function prepareCodexAttemptContext(
       sourceRefs?: readonly { kind: string; sha256: string }[];
     };
     mandatorySourcesComplete: boolean;
+    instructionSegments: Array<{ name: string; text: string }>;
     staticPolicies: Array<{ id: string; text: string }>;
-  } = { mandatorySourcesComplete: true, staticPolicies: [] };
+  } = { mandatorySourcesComplete: true, instructionSegments: [], staticPolicies: [] };
   const legacySegments: Array<{
     name: "USER.md" | "MEMORY.md";
     path: string;
@@ -158,11 +159,20 @@ export async function prepareCodexAttemptContext(
         }
         return;
       }
-      // The generic bootstrap may trim USER for ordinary Codex sessions. An
-      // owner packet requires the complete constraints: restore them at their
-      // projection producer, then let the final gate accept or needs_expansion.
+      // A trusted packet requires complete effective owner instructions. Keep
+      // system instruction carriers separate from the personal memory budget.
       personalPromptState.mandatorySourcesComplete =
         restoreCodexMandatoryPersonalBootstrap(workspaceBootstrapContext).status === "complete";
+      personalPromptState.instructionSegments = (
+        workspaceBootstrapContext.turnScopedDeveloperInstructionFiles ?? []
+      )
+        .filter((file) =>
+          ["agents.md", "soul.md", "identity.md"].includes(path.basename(file.path).toLowerCase()),
+        )
+        .map((file) => ({
+          name: path.basename(file.path),
+          text: `### ${file.path}\n\n${file.content}\n\n`,
+        }));
       const userSegment = legacySegments.find((segment) => segment.name === "USER.md");
       if (userSegment && workspaceBootstrapContext.turnScopedDeveloperInstructions) {
         const file = workspaceBootstrapContext.turnScopedDeveloperInstructionFiles?.find(

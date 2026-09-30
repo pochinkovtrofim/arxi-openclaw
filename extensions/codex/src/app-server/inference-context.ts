@@ -46,6 +46,7 @@ export function createCodexInferenceContext(assertClientCurrent: () => void) {
       params.signal.throwIfAborted();
       params.assertCurrent();
       if (Buffer.byteLength(params.text) > MAX_CONTEXT_BYTES) {
+        if (params.preEgressGate) throw new CodexInferenceNeedsExpansionError();
         throw new Error("Codex parent-local context exceeds the 256 KiB inference limit");
       }
       if (!roots.has(params.threadId) && roots.size >= MAX_ACTIVE_ROOTS) {

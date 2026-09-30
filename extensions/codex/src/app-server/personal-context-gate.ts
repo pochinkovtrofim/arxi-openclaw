@@ -16,6 +16,11 @@ export type CodexPersonalContextReceipt = {
   totalContextTokenBudget?: number;
   sourceRefs?: readonly { kind: string; sha256: string }[];
   sources: readonly { name: string; sha256: string }[];
+  instructionSources: readonly { name: string; sha256: string }[];
+  nativeRequestAccounting: "serialized_native_request_utf8_upper_bound";
+  nativeRequestUpperBoundUtf8Bytes: number;
+  nativeRequestScope: "current_serialized_request_excludes_prior_provider_cache";
+  nativeContextBudgetAuthority: "host_bound" | "native_owned_unavailable";
   staticPolicies: readonly { id: string; sha256: string; upperBoundUtf8Bytes: number }[];
   staticPolicyUpperBoundUtf8Bytes: number;
   ordinarySessionUpperBoundUtf8Bytes: number;
@@ -29,6 +34,7 @@ export type CodexPersonalContextReceipt = {
     | "selected_model_changed"
     | "source_attribution_changed"
     | "personal_context_over_bound"
+    | "native_request_over_bound"
     | "mandatory_source_omitted";
 };
 
@@ -90,6 +96,7 @@ export function createCodexPersonalPreEgressGate(params: {
   packetText?: string;
   expectedModel?: string;
   mandatorySourcesComplete?: boolean;
+  mandatoryInstructionSegments?: readonly PersonalSource[];
   preparedPacketNeedsExpansion?: boolean;
   budgetTokens?: number;
   expansionReason?: "complex_source_read";
@@ -111,6 +118,13 @@ export function createCodexPersonalPreEgressGate(params: {
     throw new CodexInferenceNeedsExpansionError();
   }
   const base = params.developerBaseInstructions ?? "";
+  const instructionSegments = (params.mandatoryInstructionSegments ?? []).map((source) => ({
+    ...source,
+  }));
+  const instructionSources = instructionSegments.map((source) => ({
+    name: source.name,
+    sha256: createHash("sha256").update(source.text).digest("hex"),
+  }));
   // These finite declarations are made by reviewed plugin code, never inferred
   // from arbitrary hook output. Retain snapshots for this physical request gate.
   const staticPolicies = (params.staticPolicies ?? []).map((policy) => ({ ...policy }));
@@ -167,6 +181,10 @@ export function createCodexPersonalPreEgressGate(params: {
   return (body) => {
     requestSequence++;
     let newToolOutputs = 0;
+    // Native compaction owns cached history and generated outputs. This is a
+    // conservative bound on this physical request, never cached occupancy or
+    // a sum of repeated instruction overrides across incremental requests.
+    const nativeRequestUpperBoundUtf8Bytes = Buffer.byteLength(JSON.stringify(body), "utf8");
     const emitReceipt = (
       status: CodexPersonalContextReceipt["status"],
       reason?: CodexPersonalContextReceipt["reason"],
@@ -180,6 +198,12 @@ export function createCodexPersonalPreEgressGate(params: {
         upperBoundUtf8Bytes: sourceUpperBound + toolOutputUpperBound,
         budgetTokens,
         sources: sourceReceipt,
+        instructionSources,
+        nativeRequestAccounting: "serialized_native_request_utf8_upper_bound",
+        nativeRequestUpperBoundUtf8Bytes,
+        nativeRequestScope: "current_serialized_request_excludes_prior_provider_cache",
+        nativeContextBudgetAuthority:
+          params.totalContextTokenBudget === undefined ? "native_owned_unavailable" : "host_bound",
         staticPolicies: staticPolicyReceipt,
         staticPolicyUpperBoundUtf8Bytes: staticPolicyReceipt.reduce(
           (total, policy) => total + policy.upperBoundUtf8Bytes,
@@ -212,6 +236,24 @@ export function createCodexPersonalPreEgressGate(params: {
       refuse("mandatory_source_omitted");
     }
     const bodyInput = Array.isArray(body.input) ? body.input : refuse("invalid_request");
+    if (instructionSegments.length > 0) {
+      const leaves = stringLeaves([body.instructions, bodyInput]);
+      for (const source of instructionSegments) {
+        if (
+          !source.text ||
+          leaves.reduce((sum, leaf) => sum + occurrences(leaf, source.text), 0) !== 1
+        ) {
+          refuse("mandatory_source_omitted");
+        }
+      }
+      if (
+        params.totalContextTokenBudget !== undefined &&
+        (!Number.isSafeInteger(params.totalContextTokenBudget) ||
+          params.totalContextTokenBudget <= 0 ||
+          nativeRequestUpperBoundUtf8Bytes > params.totalContextTokenBudget)
+      )
+        refuse("native_request_over_bound");
+    }
     if (
       params.expectedModel &&
       ((!checkedInitial && body.model !== params.expectedModel) ||
@@ -252,6 +294,37 @@ export function createCodexPersonalPreEgressGate(params: {
         }
       }
       const exemptionRanges = new Map<string, Array<{ start: number; end: number }>>();
+      for (const source of instructionSegments) {
+        const leaf =
+          leaves.find((value) => value.includes(source.text)) ?? refuse("mandatory_source_omitted");
+        const range = {
+          start: leaf.indexOf(source.text),
+          end: leaf.indexOf(source.text) + source.text.length,
+        };
+        const ranges = exemptionRanges.get(leaf) ?? [];
+        const intersects = (other: { start: number; end: number }) =>
+          range.start < other.end && other.start < range.end;
+        if (ranges.some(intersects)) refuse("source_attribution_changed");
+        for (const protectedText of [
+          ...params.legacySegments.map((value) => value.text),
+          params.promptText,
+          base,
+        ]) {
+          if (!protectedText) continue;
+          for (
+            let offset = 0;
+            (offset = leaf.indexOf(protectedText, offset)) >= 0;
+            offset += protectedText.length
+          ) {
+            if (intersects({ start: offset, end: offset + protectedText.length }))
+              refuse("source_attribution_changed");
+          }
+        }
+        // Exact producer-owned system carriers retain their native budget even
+        // when the provider serializes them beside a personal hook in one leaf.
+        ranges.push(range);
+        exemptionRanges.set(leaf, ranges);
+      }
       const policyIds = new Set<string>();
       for (const policy of staticPolicies) {
         if (!policy.text || policyIds.has(policy.id)) refuse("source_attribution_changed");
