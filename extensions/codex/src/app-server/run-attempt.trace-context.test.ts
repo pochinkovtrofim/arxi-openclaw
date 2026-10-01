@@ -47,8 +47,9 @@ describe("Codex app-server diagnostic trace context", () => {
         context.trigger !== "cron" ||
         !("runId" in context) ||
         typeof context.runId !== "string"
-      )
-        return;
+      ) {
+        return undefined;
+      }
       return { appendContext: `Claimed Business refs for ${context.runId}` };
     });
     initializeGlobalHookRunner(
