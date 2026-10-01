@@ -26,6 +26,7 @@ import {
 import {
   ensureSessionPendingInputsSchema,
   ensureSessionInputCompletionsSchema,
+  hasSessionInputCompletionsSchema,
   hasPendingInputConsumptionColumn,
   hasSessionPendingInputsSchema,
 } from "../../state/openclaw-agent-pending-inputs-schema.js";
@@ -81,6 +82,73 @@ export type SessionPendingInputReceipt = {
   completion?: AgentRunTerminalOutcome;
   complete?: (outcome: AgentRunTerminalOutcome) => AgentRunTerminalOutcome;
 };
+
+/** The input reached the transcript, so a fresh run could repeat visible effects. */
+export class SessionInputProcessingUncertainError extends Error {
+  constructor() {
+    super("Input processing is uncertain; reconcile the original run before retrying");
+  }
+}
+export type SessionExternalInputReceipt =
+  | { status: "completed"; runId: string; completedAt: number }
+  | { status: "uncertain"; runId?: string }
+  | { status: "absent" };
+
+/** Read an external input's terminal evidence without extending custody or dispatching it. */
+export function readSessionExternalInputReceipt(
+  scope: PendingInputScope,
+  idempotencyKey: string,
+  expectedRunId: string,
+): SessionExternalInputReceipt {
+  const resolved = resolveSqliteTranscriptScope(scope);
+  const result = withOpenClawAgentDatabaseReadOnly(
+    (database) =>
+      runSqliteDeferredTransactionSync(database.db, () => {
+        if (
+          readSessionEntryRow(database, resolved.sessionKey)?.entry.sessionId !== scope.sessionId
+        ) {
+          return { status: "uncertain" } as const;
+        }
+        if (hasSessionInputCompletionsSchema(database.db)) {
+          const completion = readSessionInputCompletion(database, {
+            sessionKey: resolved.sessionKey,
+            sessionId: scope.sessionId,
+            idempotencyKey,
+          });
+          if (completion) {
+            return completion.run_id === expectedRunId &&
+              completion.outcome.reason === "completed" &&
+              completion.outcome.status === "ok"
+              ? {
+                  status: "completed" as const,
+                  runId: completion.run_id,
+                  completedAt: completion.completed_at,
+                }
+              : { status: "uncertain" as const, runId: completion.run_id };
+          }
+        }
+        if (hasSessionPendingInputsSchema(database.db)) {
+          const pending = readSessionPendingInputByKey(database, resolved, idempotencyKey);
+          if (pending) {
+            return { status: "uncertain" as const, runId: pending.run_id };
+          }
+        }
+        if (sessionTranscriptIndexNeedsReconcile(database.db, resolved.sessionId)) {
+          return { status: "uncertain" } as const;
+        }
+        const committed = readTranscriptMessageByScopedIdempotencyKey(
+          database,
+          resolved,
+          idempotencyKey,
+          "scan",
+        );
+        return committed ? ({ status: "uncertain" } as const) : ({ status: "absent" } as const);
+      }),
+    toDatabaseOptions(resolved),
+  );
+  // Missing storage cannot prove an earlier admitted run never wrote effects.
+  return result.found ? result.value : { status: "uncertain" };
+}
 const receiptOwners = new WeakMap<SessionPendingInputReceipt, SessionPendingInputOwner>();
 
 function ownerReceipt(owner: SessionPendingInputOwner): SessionPendingInputReceipt {
@@ -188,6 +256,8 @@ export async function stageSessionPendingInput(
     requestFingerprint?: string;
     /** Records processing completion separately from canonical transcript consumption. */
     trackCompletion?: boolean;
+    /** External ingress may resume only before transcript consumption or after a final receipt. */
+    rejectCommittedWithoutCompletion?: boolean;
     message: PersistedUserTurnMessage;
     prepareMessageAfterIdempotencyCheck?: (
       message: PersistedUserTurnMessage,
@@ -275,6 +345,9 @@ export async function stageSessionPendingInput(
           throw new Error("Pending input idempotency key conflicts with the accepted input");
         }
         if (existing.consumed_event_id != null) {
+          if (options.rejectCommittedWithoutCompletion) {
+            throw new SessionInputProcessingUncertainError();
+          }
           return {
             state: "consumed",
             inputId: existing.input_id,
@@ -317,6 +390,9 @@ export async function stageSessionPendingInput(
           if (stableStringify(stablePrepared) !== stableStringify(stableCommitted)) {
             throw new Error("Input completion retry conflicts with the committed input");
           }
+        }
+        if (options.rejectCommittedWithoutCompletion) {
+          throw new SessionInputProcessingUncertainError();
         }
         // Committed transcript replay keeps its existing contract and never creates new custody.
         return {

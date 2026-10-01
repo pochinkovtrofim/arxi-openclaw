@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { trackSqliteStatementExecutions } from "../../../test/helpers/sqlite-statement-execution-counter.js";
+import { buildAgentRunTerminalOutcome } from "../../agents/agent-run-terminal-outcome.js";
 import { MAX_PAYLOAD_BYTES } from "../../gateway/server-constants.js";
 import { rotateAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
@@ -29,6 +30,8 @@ import {
   listSessionPendingInputReceipts,
   listSessionPendingInputs,
   readSessionPendingInput,
+  readSessionExternalInputReceipt,
+  SessionInputProcessingUncertainError,
   stageSessionPendingInput,
   withSessionPendingInputPersistence,
   type SessionPendingInputReceipt,
@@ -151,6 +154,76 @@ describe("accepted input custody", () => {
     expect(prepare).toHaveBeenCalledOnce();
     receipt.finish("interrupted");
     expect(() => receipt.run(() => {})).toThrow("ownership ended");
+  });
+
+  it("does not reexecute a consumed external input whose terminal receipt was lost", async () => {
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:ambiguous:user", "external:ambiguous"),
+    ).toEqual({ status: "absent" });
+    const receipt = await stage("external:ambiguous", {
+      trackCompletion: true,
+      rejectCommittedWithoutCompletion: true,
+    });
+    await promote(receipt);
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:ambiguous:user", "external:ambiguous"),
+    ).toEqual({ status: "uncertain" });
+    receipt.finish("interrupted");
+    rotateAgentEventLifecycleGeneration();
+    closeOpenClawAgentDatabasesForTest();
+
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:ambiguous:user", "external:ambiguous"),
+    ).toEqual({ status: "uncertain" });
+
+    await expect(
+      stage("external:ambiguous", {
+        trackCompletion: true,
+        rejectCommittedWithoutCompletion: true,
+      }),
+    ).rejects.toBeInstanceOf(SessionInputProcessingUncertainError);
+    expect(
+      (await loadTranscriptEvents(scope())).filter(
+        (event) =>
+          event && typeof event === "object" && "type" in event && event.type === "message",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("replays the same completed external run after lifecycle recovery", async () => {
+    const receipt = await stage("external:completed", {
+      trackCompletion: true,
+      rejectCommittedWithoutCompletion: true,
+    });
+    await promote(receipt);
+    receipt.complete!(buildAgentRunTerminalOutcome({ status: "ok" }));
+    receipt.finish("interrupted");
+    rotateAgentEventLifecycleGeneration();
+    closeOpenClawAgentDatabasesForTest();
+
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:completed:user", "external:completed"),
+    ).toMatchObject({ status: "completed", runId: "external:completed" });
+
+    const replay = await stage("external:completed", {
+      trackCompletion: true,
+      rejectCommittedWithoutCompletion: true,
+    });
+    expect(replay.state).toBe("consumed");
+    expect(replay.completion).toMatchObject({ status: "ok", reason: "completed" });
+    expect(() => replay.run(() => {})).toThrow("already completed");
+  });
+
+  it("does not certify a failed external outcome as processed", async () => {
+    const receipt = await stage("external:failed", {
+      trackCompletion: true,
+      rejectCommittedWithoutCompletion: true,
+    });
+    await promote(receipt);
+    receipt.complete!(buildAgentRunTerminalOutcome({ status: "error" }));
+    expect(
+      readSessionExternalInputReceipt(scope(), "external:failed:user", "external:failed"),
+    ).toEqual({ status: "uncertain", runId: "external:failed" });
   });
 
   it("mirrors a correlated input to another session without borrowing or consuming source custody", async () => {
@@ -944,6 +1017,13 @@ describe("accepted input custody", () => {
   it("does not create missing storage for a submitted-input lookup", () => {
     const storePath = path.join(fixture.sessionsDir(), "missing-agent.sqlite");
     expect(readSessionSubmittedInput({ ...scope(), storePath }, "missing:user")).toBeUndefined();
+    expect(
+      readSessionExternalInputReceipt(
+        { ...scope(), storePath },
+        "external:missing:user",
+        "external:missing",
+      ),
+    ).toEqual({ status: "uncertain" });
     expect(fs.existsSync(storePath)).toBe(false);
   });
 

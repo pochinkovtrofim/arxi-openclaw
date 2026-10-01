@@ -135,6 +135,7 @@ export {
   SendParamsSchema,
   PollParamsSchema,
   AgentParamsSchema,
+  AgentInputReceiptParamsSchema,
   AgentIdentityParamsSchema,
   AgentIdentityResultSchema,
   WakeParamsSchema,

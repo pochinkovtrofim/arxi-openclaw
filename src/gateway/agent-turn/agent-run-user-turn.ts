@@ -229,6 +229,15 @@ export async function prepareAgentRunUserTurn(params: {
           inputProvenance: params.inputProvenance,
           internalEvents: params.request.internalEvents,
         }));
+    // The host reuses this digest across Telegram wake/replay. A consumed input
+    // without a completed receipt must never start a second model run.
+    const durableExternalInput =
+      params.canUseInternalRuntimeHandoff &&
+      params.activeSessionAgentId === "main" &&
+      params.request.channel === "arxi" &&
+      params.request.to === "owner" &&
+      Boolean(params.request.admittedConversationId) &&
+      /^external:[0-9a-f]{64}$/.test(params.runId);
     let recorder: UserTurnTranscriptRecorder | undefined;
     if (
       params.resolvedSessionKey &&
@@ -267,7 +276,8 @@ export async function prepareAgentRunUserTurn(params: {
         ...(slots.length > 0 ? { mediaImageLayout: { slots } } : {}),
       };
       recorder = createUserTurnTranscriptRecorder({
-        trackInputCompletion: params.privateCompletion,
+        trackInputCompletion: params.privateCompletion || durableExternalInput,
+        rejectCommittedWithoutCompletion: durableExternalInput,
         input,
         target: () => {
           const loaded = loadSessionEntry(params.resolvedSessionKey!, {
