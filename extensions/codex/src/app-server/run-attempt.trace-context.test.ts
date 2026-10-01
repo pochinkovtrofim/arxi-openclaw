@@ -1,8 +1,8 @@
 // Codex tests cover diagnostic trace propagation into native app-server requests.
 import path from "node:path";
-import { initializeGlobalHookRunner } from "openclaw/plugin-sdk/hook-runtime";
 import {
   createMockPluginRegistry,
+  initializeGlobalHookRunner,
   runWithDiagnosticTraceContext,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it, vi } from "vitest";
@@ -37,15 +37,20 @@ describe("Codex app-server diagnostic trace context", () => {
     { supplied: true, label: "enriches" },
     { supplied: false, label: "withholds" },
   ])("$label source context using only the admitted run trace", async ({ supplied }) => {
-    const beforePromptBuild = vi.fn(
-      (
-        _event: unknown,
-        context: { trace?: typeof diagnosticTrace; runId?: string; trigger?: string },
-      ) => {
-        if (!context.trace || context.trigger !== "cron") return;
-        return { appendContext: `Claimed Business refs for ${context.runId}` };
-      },
-    );
+    const beforePromptBuild = vi.fn((_event: unknown, context: unknown) => {
+      if (
+        !context ||
+        typeof context !== "object" ||
+        !("trace" in context) ||
+        !context.trace ||
+        !("trigger" in context) ||
+        context.trigger !== "cron" ||
+        !("runId" in context) ||
+        typeof context.runId !== "string"
+      )
+        return;
+      return { appendContext: `Claimed Business refs for ${context.runId}` };
+    });
     initializeGlobalHookRunner(
       createMockPluginRegistry([{ hookName: "before_prompt_build", handler: beforePromptBuild }]),
     );
@@ -70,7 +75,7 @@ describe("Codex app-server diagnostic trace context", () => {
     const hookContext = beforePromptBuild.mock.calls[0]?.[1];
     const turnStart = harness.request.mock.calls.find(([method]) => method === "turn/start")?.[1];
     if (supplied) {
-      expect(hookContext?.trace).toEqual(diagnosticTrace);
+      expect(hookContext).toHaveProperty("trace", diagnosticTrace);
       expect(JSON.stringify(turnStart)).toContain(`Claimed Business refs for ${params.runId}`);
     } else {
       expect(hookContext).not.toHaveProperty("trace");
