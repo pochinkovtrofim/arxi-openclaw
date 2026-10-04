@@ -78,8 +78,9 @@ describe("memory_search real manager", () => {
         const search = createMemorySearchTool(options)!;
         const get = createMemoryGetTool(options)!;
         const found = await search.execute("workspace-search", { query: marker, corpus: "memory" });
-        const { results } = found.details as {
+        const { results, sourceReads } = found.details as {
           results: Array<{ path: string; startLine: number; endLine: number; snippet: string }>;
+          sourceReads: Array<{ path: string; status: string; text: string }>;
         };
         expect(results).toHaveLength(1);
         expect(results[0]).toMatchObject({
@@ -88,6 +89,9 @@ describe("memory_search real manager", () => {
           endLine: 1,
           snippet: marker,
         });
+        expect(sourceReads).toEqual([
+          expect.objectContaining({ status: "ok", path: "USER.md", text: marker }),
+        ]);
         const hit = results[0]!;
         const excerpt = await get.execute("workspace-get", {
           path: hit.path,

@@ -90,7 +90,7 @@ export const MEMORY_SEARCH_TOOL_CONTRACT = {
   name: "memory_search",
   parameters: MemorySearchSchema,
   describe: ({ search }: MemorySourceContract) =>
-    `Mandatory recall step: semantically search ${search} before answering questions about prior work, decisions, dates, people, preferences, or todos. Session results are transcript search references, not readable memory-file paths. Optional \`corpus=wiki\` or \`corpus=all\` also searches registered compiled-wiki supplements. \`corpus=memory\` restricts hits to indexed memory files (excludes session transcript chunks from ranking). \`corpus=sessions\` searches indexed session transcripts under the same visibility rules as session history tools and returns unavailable when semantic session indexing is disabled. ${SEARCH_CORPUS_OUTCOME_GUIDANCE} If response has disabled=true or stale=true, retain the warning/action guidance for diagnosis and qualify your reasoning.`,
+    `Semantically search ${search} before answering questions about prior work, decisions, dates, people, preferences, or todos when the relevant evidence is missing from the current conversation or supplied source context. Top memory-file hits include bounded current sourceReads: use status=ok excerpts directly when sufficient; no separate read is required. Indexed snippets do not override a newer source read or a current correction. Failed or missing source reads are not verified facts. Session results are transcript search references, not readable memory-file paths. Optional \`corpus=wiki\` or \`corpus=all\` also searches registered compiled-wiki supplements. \`corpus=memory\` restricts hits to indexed memory files (excludes session transcript chunks from ranking). \`corpus=sessions\` searches indexed session transcripts under the same visibility rules as session history tools and returns unavailable when semantic session indexing is disabled. ${SEARCH_CORPUS_OUTCOME_GUIDANCE} If response has disabled=true or stale=true, retain the warning/action guidance for diagnosis and qualify your reasoning.`,
 } as const;
 
 export const MEMORY_GET_TOOL_CONTRACT = {
@@ -117,9 +117,11 @@ export function buildMemoryPromptSection({
 
   // Code mode may defer tool descriptions; recall and disclosure policy must stay here.
   const guidance = hasMemorySearch
-    ? `Before answering anything about prior work, decisions, dates, people, preferences, or todos: run memory_search${
-        hasMemoryGet ? "; for memory-file hits, use memory_get to pull only the needed lines" : ""
-      }. If low confidence after search, say you checked.`
+    ? `Use relevant evidence already present in the current conversation or current source excerpts directly. For prior work, decisions, dates, people, preferences, or todos missing that evidence, run memory_search. Its status=ok sourceReads are current excerpts; answer from them when sufficient${
+        hasMemoryGet
+          ? "; use memory_get only for missing context, truncation, conflicting evidence, or an explicit request for a broader exact source"
+          : ""
+      }. Do not repeat search or read solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If low confidence after search, say you checked.`
     : "Before answering anything about prior work, decisions, dates, people, preferences, or todos that point to a specific memory file: run memory_get to pull only the needed lines. If low confidence after reading, say you checked.";
   const sessionGuidance = !hasMemorySearch
     ? []

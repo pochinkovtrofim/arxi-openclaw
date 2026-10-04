@@ -26,7 +26,11 @@ import {
   type MemoryCorpusAttempt,
   type MemoryCorpusFailure,
 } from "./memory-corpus.js";
-import { executeMemoryReadResult, executeWikiMemoryReadResult } from "./memory-read-tool.js";
+import {
+  executeMemoryReadResult,
+  executeWikiMemoryReadResult,
+  readMemorySearchSources,
+} from "./memory-read-tool.js";
 import {
   buildPausedMemoryIndexUnavailableResult,
   executeMemorySearchToolQuery,
@@ -482,6 +486,28 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
               const recalled = (memoryValue?.results ?? []).filter((result) =>
                 surfaced.has(result),
               );
+              // Source expansion is optional and must not discard a useful
+              // keyword result when the semantic-search deadline has expired.
+              const sourceAttempt =
+                !signal.aborted && recalled.some((hit) => hit.source === "memory")
+                  ? await attemptMemoryCorpus({
+                      corpus: "memory",
+                      signal: AbortSignal.any([signal, AbortSignal.timeout(500)]),
+                      unavailableValue: [],
+                      run: async () => {
+                        const { readAgentMemoryFile } = await loadMemoryToolRuntime();
+                        return readMemorySearchSources({
+                          results: recalled,
+                          read: (request) => readAgentMemoryFile({ cfg, agentId, ...request }),
+                        });
+                      },
+                    })
+                  : null;
+              const sourceReads =
+                sourceAttempt && sourceAttempt.outcome !== "not-registered"
+                  ? sourceAttempt.value
+                  : [];
+              callerSignal?.throwIfAborted();
               const citationsMode = resolveMemoryCitationsMode(cfg);
               const decorated = decorateCitations(
                 recalled.map((result) => ({
@@ -545,6 +571,7 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                 : undefined;
               return jsonResult({
                 results: results.map((result) => presentation.get(result) ?? result),
+                ...(sourceReads.length > 0 ? { sourceReads } : {}),
                 provider: memoryValue?.provider,
                 model: memoryValue?.model,
                 fallback: memoryValue?.fallback,

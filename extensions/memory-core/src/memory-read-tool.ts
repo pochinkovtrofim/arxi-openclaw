@@ -1,6 +1,7 @@
 import { extractErrorCode, formatErrorMessage } from "openclaw/plugin-sdk/error-runtime";
 import type { MemoryReadResult } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import { jsonResult } from "openclaw/plugin-sdk/memory-core-host-runtime-core";
+import type { MemorySearchResult } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
 import {
   attemptMemoryCorpus,
   composeMemoryCorpusMetadata,
@@ -8,6 +9,54 @@ import {
   runMemoryCorpusDeadline,
   type MemoryCorpusAttempt,
 } from "./memory-corpus.js";
+
+// Search and the first source reads form one operation. Only returned memory
+// hits are expanded; session/wiki references keep their own visibility path.
+export async function readMemorySearchSources(params: {
+  results: readonly MemorySearchResult[];
+  read: (request: { relPath: string; from: number; lines: number }) => Promise<MemoryReadResult>;
+  signal?: AbortSignal;
+}) {
+  params.signal?.throwIfAborted();
+  const seen = new Set<string>();
+  const hits = params.results
+    .filter((hit) => {
+      if (hit.source !== "memory" || seen.has(hit.path)) {
+        return false;
+      }
+      seen.add(hit.path);
+      return true;
+    })
+    .slice(0, 3);
+  const reads = await Promise.all(
+    hits.map(async (hit) => {
+      const from = Math.max(1, hit.startLine - 2);
+      const lines = Math.min(24, Math.max(1, hit.endLine - from + 3));
+      try {
+        const result = await params.read({ relPath: hit.path, from, lines });
+        if (result.status !== "ok" || result.text.length <= 2_000) {
+          return result;
+        }
+        const text = result.text.slice(0, 2_000);
+        const count = text.split("\n").length;
+        result.text = text;
+        result.lines = count;
+        result.truncated = true;
+        result.nextFrom = (result.from ?? from) + count - 1;
+        return result;
+      } catch (error) {
+        return {
+          path: hit.path,
+          status: "error" as const,
+          text: "",
+          code: extractErrorCode(error) ?? "MEMORY_READ_FAILED",
+        };
+      }
+    }),
+  );
+  params.signal?.throwIfAborted();
+  return reads;
+}
 
 type MemoryReadRequest = {
   requestedCorpus?: "memory" | "wiki" | "all";
