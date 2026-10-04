@@ -11,6 +11,15 @@ read_when:
 wording differs from the original text. It chunks memory into small pieces and
 searches them with embeddings, keywords, or both.
 
+Search also returns `sourceReads` for up to three unique memory-file hits. These
+are current, bounded excerpts read with the same agent and path permissions as
+`memory_get`, alongside the ranked index results. Use sufficient `status: "ok"`
+excerpts directly. A missing or failed read does not verify an old indexed snippet.
+Use `memory_get` when more context is needed, an excerpt is truncated, or evidence
+conflicts. Session and wiki results retain their separate reading contracts.
+Relevant evidence already in the current conversation or supplied source context
+does not require another search merely to answer a memory question.
+
 ## Quick start
 
 OpenClaw uses OpenAI embeddings by default. To use another provider, set it

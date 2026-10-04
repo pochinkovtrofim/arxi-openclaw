@@ -137,13 +137,15 @@ describe("buildPromptSection", () => {
     expect(buildMemoryPromptSection({ availableTools: new Set() })).toStrictEqual([]);
   });
 
-  it("describes the two-step flow when both memory tools are available", () => {
+  it("answers from available evidence and expands search sources only when needed", () => {
     const result = buildMemoryPromptSection({
       availableTools: new Set(["memory_search", "memory_get"]),
     });
     expect(result[0]).toBe("## Memory Recall");
     expect(result[1]).toContain("run memory_search");
-    expect(result[1]).toContain("for memory-file hits, use memory_get");
+    expect(result[1]).toContain("current conversation or current source excerpts directly");
+    expect(result[1]).toContain("use memory_get only for missing context");
+    expect(result[1]).toContain("status=ok sourceReads");
     expect(result).toContain(
       "Citations: include Source: <path#line> when it helps the user verify memory snippets.",
     );

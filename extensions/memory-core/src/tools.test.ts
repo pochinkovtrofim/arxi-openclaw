@@ -1,3 +1,4 @@
+import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import type { MemorySearchRuntimeDebug } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
 // Memory Core tests cover tools plugin behavior.
 import { clearMemoryPluginState } from "openclaw/plugin-sdk/memory-host-core";
@@ -13,6 +14,7 @@ import {
   setMemoryCloseImpl,
   setMemoryCustomStatus,
   setMemoryLastSyncError,
+  setMemoryReadFileImpl,
   setMemorySearchImpl,
   setMemorySearchManagerImpl,
   setMemorySourceCounts,
@@ -72,6 +74,38 @@ describe("memory_search unavailable payloads", () => {
     clearMemoryPluginState();
     resetMemoryToolMockState({ searchImpl: async () => [] });
     memoryToolsTesting.resetMemorySearchToolCooldowns();
+  });
+
+  it("keeps search results when optional source expansion stalls", async () => {
+    const entered = createDeferred<void>();
+    const pending = createDeferred<never>();
+    setMemorySearchImpl(async () => [
+      {
+        path: "memory/note.md",
+        source: "memory",
+        startLine: 1,
+        endLine: 2,
+        score: 1,
+        snippet: "indexed evidence",
+      },
+    ]);
+    setMemoryReadFileImpl(() => {
+      entered.resolve();
+      return pending.promise;
+    });
+    const tool = createMemorySearchToolOrThrow();
+    try {
+      const execution = tool.execute("slow-source", { query: "note", corpus: "memory" });
+      await entered.promise;
+      const result = await execution;
+      expect(result.details).toMatchObject({
+        results: [expect.objectContaining({ path: "memory/note.md" })],
+      });
+      expect(result.details).not.toHaveProperty("sourceReads");
+      expect(result.details).not.toHaveProperty("unavailable");
+    } finally {
+      pending.reject(new Error("read released"));
+    }
   });
 
   it("rejects fractional maxResults before searching", async () => {
