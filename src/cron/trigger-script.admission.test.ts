@@ -49,6 +49,53 @@ function probe(execute: AnyAgentTool["execute"]): AnyAgentTool {
 
 describe("cron script admission", () => {
   it.each(["trigger", "payload"] as const)(
+    "preserves scheduled provenance through %s tool preparation and finalization",
+    async (mode) => {
+      const config: OpenClawConfig = {};
+      const prepared = vi.fn((args: unknown, execution: unknown) => {
+        expect(execution).toMatchObject({
+          hookContext: {
+            trigger: "cron",
+            jobId: "provenance-job",
+            sessionKey: "agent:main:cron:probe",
+            runId: expect.any(String),
+          },
+        });
+        return args;
+      });
+      const finalized = vi.fn((args: unknown, _prepared: unknown, execution: unknown) => {
+        expect(execution).toMatchObject({
+          hookContext: { trigger: "cron", jobId: "provenance-job", runId: expect.any(String) },
+        });
+        return args;
+      });
+      const execute = vi.fn(async () => jsonResult({ allowed: true }));
+      const runtime = createCronScriptRuntime({
+        config,
+        prepareRuntime: prepareRuntime(config, {
+          ...probe(execute),
+          prepareBeforeToolCallParams: prepared,
+          finalizeBeforeToolCallParams: finalized,
+        }),
+        runHeadless: async ({ ctx }) => {
+          const value = await toolRuntime(ctx).callValue("probe", {});
+          return completed({ fire: false, state: value });
+        },
+      });
+      const params = { jobId: "provenance-job", script: "return result", state: null };
+      await expect(
+        mode === "trigger" ? runtime.evaluateTrigger(params) : runtime.executePayload(params),
+      ).resolves.toMatchObject({
+        kind: mode === "trigger" ? "evaluated" : "completed",
+        state: { allowed: true },
+      });
+      expect(prepared).toHaveBeenCalled();
+      expect(finalized).toHaveBeenCalled();
+      expect(execute).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["trigger", "payload"] as const)(
     "gives each warm %s invocation fresh authority and releases it after completion",
     async (mode) => {
       const config: OpenClawConfig = {};

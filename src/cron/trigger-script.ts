@@ -469,10 +469,13 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
           // Retry setup once with the same admission and deadline, never script execution.
         }
       }
+      // Catalog rewrapping replaces construction-time hook context. Carry the
+      // scheduler's provenance through both preparation and source execution.
+      const invocation = { runId, trigger: "cron" as const, jobId: params.job.id };
       const ctx: ToolSearchToolContext = {
         ...runtime.context,
         runtimeConfig: runtime.context.config,
-        runId,
+        ...invocation,
         catalogRef,
         abortSignal: evaluationScope.signal,
         executeTool: (call) =>
@@ -486,7 +489,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
                 bindAgentToolSourceExecutionGuard(call.tool as AnyAgentTool, assertActive),
                 {
                   ...(toolContext ?? runtime.context),
-                  runId,
+                  ...invocation,
                   trace: getActiveDiagnosticTraceContext(),
                 },
               ),
@@ -509,7 +512,7 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
         registerHeadlessToolSearchCatalog({
           catalogRef,
           tools,
-          hookContext: { ...selectedRuntime.context, runId },
+          hookContext: { ...selectedRuntime.context, ...invocation },
         });
         const remainingWallClockMs = Math.ceil(evaluationScope.deadline - performance.now());
         if (remainingWallClockMs <= 0) {
