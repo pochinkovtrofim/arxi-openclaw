@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { browserNavigationPolicyForProfile } from "./agent.shared.js";
 import { createBrowserRouteApp, createBrowserRouteResponse } from "./test-helpers.js";
 import type { BrowserRequest } from "./types.js";
 
@@ -242,6 +243,22 @@ describe("local-managed browser snapshot routes", () => {
     expect(response.body).toMatchObject({ snapshot: expect.stringContaining("Playwright") });
     expect(pw.snapshotRoleViaPlaywright).toHaveBeenCalledTimes(1);
     expect(cdpMocks.snapshotRoleViaCdp).not.toHaveBeenCalled();
+  });
+
+  it("passes the managed browser's proxy policy to Playwright AI snapshots", async () => {
+    navigationGuardMocks.assertBrowserNavigationResultAllowed.mockResolvedValue(undefined);
+    const policy = {
+      ssrfPolicy: { dangerouslyAllowPrivateNetwork: true },
+      browserProxyMode: "explicit-browser-proxy",
+    } as const;
+    vi.mocked(browserNavigationPolicyForProfile).mockReturnValueOnce(policy);
+    const pw = createPwModule();
+    pwState.module = pw;
+
+    const response = await snapshot({ format: "ai", refs: "aria" });
+
+    expect(response.statusCode).toBe(200);
+    expect(pw.snapshotRoleViaPlaywright).toHaveBeenCalledWith(expect.objectContaining(policy));
   });
 
   it("stores raw ARIA refs through Playwright when it is available", async () => {
