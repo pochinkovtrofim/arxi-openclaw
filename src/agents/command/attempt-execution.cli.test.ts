@@ -3644,6 +3644,56 @@ describe("CLI attempt execution", () => {
     },
   );
 
+  it.each([
+    { name: "allowed group", chatType: "group", policy: "allow", expected: "optional" },
+    { name: "group session key", chatType: undefined, policy: "allow", expected: "optional" },
+    { name: "disallowed group", chatType: "group", policy: "disallow", expected: "required" },
+    { name: "direct chat", chatType: "direct", policy: "allow", expected: "required" },
+    {
+      name: "subagent group",
+      chatType: "group",
+      policy: "allow",
+      lane: "subagent",
+      expected: "required",
+    },
+  ] as const)(
+    "honors configured silence for an external user in $name across runtimes",
+    async (testCase) => {
+      const { chatType, policy, expected, name } = testCase;
+      const cfg: OpenClawConfig = { agents: { defaults: { silentReply: { group: policy } } } };
+      const opts = {
+        inputProvenance: { kind: "external_user" as const, sourceChannel: "telegram" },
+        ...("lane" in testCase ? { lane: testCase.lane } : {}),
+      };
+      const sessionKey = `agent:main:arxi:${chatType ?? "group"}:policy-test`;
+      const sessionEntry = { ...makeSessionEntry(`session-${name}`), chatType };
+      const embedded = await runOpenClawEmbeddedAttemptForTest({
+        config: cfg,
+        opts,
+        sessionKey,
+        sessionEntry,
+        runId: name,
+      });
+      expect(resolveReplyExpectation(embedded)).toBe(expected);
+      const sessionStore = { [sessionKey]: sessionEntry };
+      await writeSessionStoreSeed(sessionStore);
+      runCliAgentMock.mockResolvedValueOnce(makeCliResult("cli completion"));
+      await runStoredAttempt({
+        cfg,
+        providerOverride: "claude-cli",
+        modelOverride: "opus",
+        sessionEntry,
+        sessionKey,
+        messageChannel: "telegram",
+        body: "notify only if seats are available",
+        runId: `run-${name}-cli`,
+        opts,
+        sessionStore,
+      });
+      expect(resolveReplyExpectation(firstRunCliAgentArg())).toBe(expected);
+    },
+  );
+
   it("forwards exact cron creator authority into embedded execution", async () => {
     const runId = "embedded-cron-creator-authority";
     const capability = createCronCreatorAuthorityCapability(runId);
