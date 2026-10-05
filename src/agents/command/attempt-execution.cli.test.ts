@@ -387,6 +387,7 @@ describe("CLI attempt execution", () => {
 
   async function runOpenClawEmbeddedAttemptForTest(overrides?: {
     opts?: Partial<RunAgentAttemptParams["opts"]>;
+    runContext?: Partial<RunAgentAttemptParams["runContext"]>;
     config?: OpenClawConfig;
     subagentAnnounceEnvelope?: Pick<
       SubagentAnnounceDeliveryCase,
@@ -458,6 +459,7 @@ describe("CLI attempt execution", () => {
         ...overrides?.opts,
       },
       messageChannel: "telegram",
+      runContext: overrides?.runContext,
       agentDir,
       authProfileProvider: providerOverride,
       sessionStore,
@@ -3645,6 +3647,27 @@ describe("CLI attempt execution", () => {
   );
 
   it.each([
+    {
+      name: "current group with stale direct metadata",
+      chatType: "direct",
+      currentChatType: "group",
+      policy: "allow",
+      expected: "optional",
+    },
+    {
+      name: "current direct with stale group metadata",
+      chatType: "group",
+      currentChatType: "direct",
+      policy: "allow",
+      expected: "required",
+    },
+    {
+      name: "current channel with stale direct metadata",
+      chatType: "direct",
+      currentChatType: "channel",
+      policy: "allow",
+      expected: "optional",
+    },
     { name: "allowed group", chatType: "group", policy: "allow", expected: "optional" },
     { name: "group session key", chatType: undefined, policy: "allow", expected: "optional" },
     { name: "disallowed group", chatType: "group", policy: "disallow", expected: "required" },
@@ -3660,6 +3683,8 @@ describe("CLI attempt execution", () => {
     "honors configured silence for an external user in $name across runtimes",
     async (testCase) => {
       const { chatType, policy, expected, name } = testCase;
+      const runContext =
+        "currentChatType" in testCase ? { chatType: testCase.currentChatType } : {};
       const cfg: OpenClawConfig = { agents: { defaults: { silentReply: { group: policy } } } };
       const opts = {
         inputProvenance: { kind: "external_user" as const, sourceChannel: "telegram" },
@@ -3669,12 +3694,14 @@ describe("CLI attempt execution", () => {
       const sessionEntry = { ...makeSessionEntry(`session-${name}`), chatType };
       const embedded = await runOpenClawEmbeddedAttemptForTest({
         config: cfg,
+        runContext,
         opts,
         sessionKey,
         sessionEntry,
         runId: name,
       });
       expect(resolveReplyExpectation(embedded)).toBe(expected);
+      expect(embedded.chatType).toBe(runContext.chatType ?? chatType);
       const sessionStore = { [sessionKey]: sessionEntry };
       await writeSessionStoreSeed(sessionStore);
       runCliAgentMock.mockResolvedValueOnce(makeCliResult("cli completion"));
@@ -3685,6 +3712,7 @@ describe("CLI attempt execution", () => {
         sessionEntry,
         sessionKey,
         messageChannel: "telegram",
+        runContext,
         body: "notify only if seats are available",
         runId: `run-${name}-cli`,
         opts,

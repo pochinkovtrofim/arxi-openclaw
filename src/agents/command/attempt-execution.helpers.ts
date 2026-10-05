@@ -45,6 +45,7 @@ export function resolveCommandReplyExpectation(params: {
   cfg: OpenClawConfig;
   sessionKey?: string;
   sessionEntry?: Pick<SessionEntry, "chatType">;
+  runContext?: Pick<SessionEntry, "chatType">;
   messageChannel?: string;
   opts: { lane?: string; privateCompletion?: true; inputProvenance?: InputProvenance };
 }): ReplyExpectation | undefined {
@@ -56,7 +57,9 @@ export function resolveCommandReplyExpectation(params: {
   ) {
     return "required";
   }
-  const chatType = normalizeChatType(params.sessionEntry?.chatType);
+  // Fresh channel routing owns the classification; stored session metadata can
+  // still describe a group as direct after an earlier command-only admission.
+  const chatType = normalizeChatType(params.runContext?.chatType ?? params.sessionEntry?.chatType);
   const policy = resolveSilentReplySettings({
     cfg: params.cfg,
     sessionKey: params.sessionKey,
