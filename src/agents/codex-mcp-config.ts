@@ -4,6 +4,7 @@
  * compatible with Codex's MCP config shape.
  */
 import crypto from "node:crypto";
+import { clampPositiveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { normalizeTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
 import { normalizeConfiguredMcpServers } from "../config/mcp-config-normalize.js";
@@ -96,6 +97,17 @@ export function normalizeCodexMcpServerConfig(
   const next = normalizeBundleMcpServerConfig(server);
   if (typeof next.url === "string" && typeof next.command !== "string") {
     delete next.cwd;
+  }
+  const connectionTimeoutMs = clampPositiveTimerTimeoutMs(server.connectionTimeoutMs);
+  const requestTimeoutMs = clampPositiveTimerTimeoutMs(server.requestTimeoutMs);
+  if (connectionTimeoutMs !== undefined) {
+    next.startup_timeout_sec = connectionTimeoutMs / 1_000;
+  }
+  if (requestTimeoutMs !== undefined) {
+    next.tool_timeout_sec = requestTimeoutMs / 1_000;
+  }
+  if (typeof server.supportsParallelToolCalls === "boolean") {
+    next.supports_parallel_tool_calls = server.supportsParallelToolCalls;
   }
   applyCodexToolFilter(next, name, server);
   const defaultToolsApprovalMode = resolveProjectedMcpCodexToolApprovalMode(name, server);

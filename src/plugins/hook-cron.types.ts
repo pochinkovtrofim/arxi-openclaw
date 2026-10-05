@@ -114,6 +114,7 @@ type PluginHookGatewayCronRemoveResult = {
 };
 
 export type PluginHookGatewayCronService = {
+  isEnabled?: () => Promise<boolean>;
   list: (opts?: { includeDisabled?: boolean }) => Promise<PluginHookGatewayCronJob[]>;
   getJob: (id: string) => PluginHookGatewayCronJob | undefined;
   run: (

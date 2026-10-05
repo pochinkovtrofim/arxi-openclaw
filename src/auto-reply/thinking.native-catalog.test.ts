@@ -9,7 +9,8 @@ vi.mock("../plugins/provider-thinking.js", () => ({
   resolveEffectiveThinkingProfile: providerRuntimeMocks.resolveProviderThinkingProfile,
 }));
 
-const { isThinkingLevelSupported, listThinkingLevels } = await import("./thinking.js");
+const { isThinkingLevelSupported, listThinkingLevels, resolveProviderThinkingLevel } =
+  await import("./thinking.js");
 
 beforeEach(() => {
   providerRuntimeMocks.resolveProviderThinkingProfile.mockReset();
@@ -58,7 +59,7 @@ describe("native catalog thinking ownership", () => {
     expect(listThinkingLevels("openai", "native-model", catalog, "codex")).toEqual(["off"]);
   });
   it.each([["low", "medium", "high", "xhigh", "max", "ultra"], ["medium"], ["none", "high"]])(
-    "uses the observed native efforts instead of the host provider profile: %j",
+    "uses observed native efforts plus the upstream Ultra harness mode: %j",
     (...efforts) => {
       providerRuntimeMocks.resolveProviderThinkingProfile.mockReturnValue({
         levels: [{ id: "off" }, { id: "minimal" }, { id: "high" }],
@@ -72,14 +73,24 @@ describe("native catalog thinking ownership", () => {
           compat: { supportedReasoningEfforts: efforts },
         },
       ];
-      expect(listThinkingLevels("openai", "native-model", catalog, "codex")).toEqual(
-        efforts.map((level) => (level === "none" ? "off" : level)),
-      );
+      expect(listThinkingLevels("openai", "native-model", catalog, "codex")).toEqual([
+        ...new Set([...efforts.map((level) => (level === "none" ? "off" : level)), "ultra"]),
+      ]);
       expect(listThinkingLevels("openai", "native-model", catalog, "openclaw")).toEqual([
         "off",
         "minimal",
         "high",
+        "ultra",
       ]);
+      expect(
+        resolveProviderThinkingLevel({
+          provider: "openai",
+          model: "native-model",
+          catalog,
+          agentRuntime: "codex",
+          level: "ultra",
+        }),
+      ).toBe(efforts.findLast((level) => level !== "ultra"));
     },
   );
 });

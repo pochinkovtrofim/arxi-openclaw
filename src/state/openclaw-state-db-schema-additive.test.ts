@@ -29,7 +29,7 @@ it("keeps secret-store first use from installing later additive schema", () => {
     const names = database
       .prepare("SELECT name FROM sqlite_schema WHERE name IN (?, ?, ?) ORDER BY name")
       .all("secret_store_entries", "secret_store_entries_live_idx", trailingSchema.tableName)
-      .map((row) => row.name);
+      .map((row) => String(row.name));
 
     expect(names).toEqual(["secret_store_entries", "secret_store_entries_live_idx"]);
   } finally {
@@ -104,7 +104,7 @@ it("installs task-flow history as same-version additive schema for candidate reo
           "SELECT name FROM sqlite_schema WHERE type = 'table' AND name LIKE 'task_flow_history_%'",
         )
         .all()
-        .map((row) => row.name)
+        .map((row) => String(row.name))
         .toSorted(),
     ).toEqual([
       "task_flow_history_archives",

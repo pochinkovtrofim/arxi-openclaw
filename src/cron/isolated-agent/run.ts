@@ -14,7 +14,6 @@ import {
 import {
   claimAgentRunContext,
   consumeCronNextCheckProposal,
-  getAgentRunContext,
   releaseAgentRunContext,
 } from "../../infra/agent-run-registry.js";
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
@@ -28,8 +27,8 @@ import { withPluginRuntimeGenerationScope } from "../../plugins/runtime/generati
 import { isCommandLaneTaskTimeoutError } from "../../process/command-queue.js";
 import { CommandLane } from "../../process/lanes.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import { removeCronRunContinuationSessionIfIdle } from "../../tasks/cron-run-continuation-cleanup.js";
 import { CronExecutionRootRuntimeError } from "../execution-root-runtime.js";
+import { removeCronRunContinuationSessionIfIdle } from "../run-continuation-cleanup.js";
 import { createCronRunDiagnosticsFromError, mergeCronRunDiagnostics } from "../run-diagnostics.js";
 import { resolveCronRunErrorReason } from "../run-error-reason.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
@@ -40,28 +39,27 @@ import {
 import { resolveCronJobsStorePathFromConfig } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
 import type { CronAgentExecutionPhaseUpdate } from "../types.js";
-import type { CronCompletedPromptRun } from "./run-executor.js";
 import { finalizeCronRun } from "./run-finalize.js";
 import type { RunCronAgentTurnParams } from "./run-prepare-runtime.js";
 import { prepareCronRunContext } from "./run-prepare.js";
 import { CronSessionLifecycleClaimError, type MutableCronSession } from "./run-session-state.js";
 import { applyCronRunUsage, recordCronRunUsage } from "./run-usage.js";
 import { logWarn } from "./run.runtime.js";
-import type { RunCronAgentTurnResult } from "./run.types.js";
+import type { CronCompletedPromptRun, RunCronAgentTurnResult } from "./run.types.js";
 import { cleanupCronRunSessionAfterRun } from "./session-cleanup.js";
 
 const cronExecutorRuntimeLoader = createLazyImportLoader(() => import("./run-executor.runtime.js"));
 
 // Release the full session snapshot after persistence and delivery to avoid retaining skill prompts.
 async function disposeCronRunContext(params: {
-  sessionId: string;
   runId: string;
+  sessionId: string;
   cronSession: MutableCronSession;
-  ownsRunContext: boolean;
+  ownsSessionRuntime: boolean;
   runContextOwnerToken?: string;
 }): Promise<void> {
   releaseAgentRunContext(params.runId, params.runContextOwnerToken);
-  if (params.ownsRunContext) {
+  if (params.ownsSessionRuntime) {
     await retireSessionMcpRuntime({
       sessionId: params.sessionId,
       reason: "isolated-cron-dispose",
@@ -112,6 +110,11 @@ async function runCronIsolatedAgentTurnInTrace(
   if (!prepared.ok) {
     return { ...prepared.result, admissionDisposition: "rejected" };
   }
+  await using _ = {
+    [Symbol.asyncDispose]: async () => {
+      await prepared.context.workspaceLease?.release();
+    },
+  };
   await using preparedRuntimeLease = prepared.context.preparedModelRuntimeLease;
   let leaseActive = true;
   // Accounting, delivery, and teardown use the same metadata as inference. Keep
@@ -121,10 +124,9 @@ async function runCronIsolatedAgentTurnInTrace(
       preparedRuntimeLease.pluginGeneration,
       () =>
         withPluginRuntimeGenerationScope(preparedRuntimeLease.snapshot, async () => {
-          // Session continuity and this occurrence's work identity are independent.
-          const initialSessionId = prepared.context.cronSession.sessionEntry.sessionId;
           const runId = prepared.context.runId;
-          const ownsRunContext = params.job.sessionTarget === "isolated";
+          const initialSessionId = prepared.context.cronSession.sessionEntry.sessionId;
+          const ownsSessionRuntime = params.job.sessionTarget === "isolated";
           let runContextOwnerToken: string | undefined;
           let runLifecycleGeneration = admittedLifecycleGeneration;
           let executionStarted = false;
@@ -171,6 +173,7 @@ async function runCronIsolatedAgentTurnInTrace(
                 enabled: isDiagnosticsEnabled(params.cfg),
                 sessionId: prepared.context.runSessionId,
                 sessionKey: prepared.context.runSessionKey,
+                agentId: prepared.context.agentId,
                 channel: "cron",
                 source: "cron-isolated",
                 startedAtMs: turnStartedAtMs,
@@ -216,14 +219,10 @@ async function runCronIsolatedAgentTurnInTrace(
           });
           try {
             assertAgentRunLifecycleGenerationCurrent(runLifecycleGeneration);
-            const existingRunContext = getAgentRunContext(runId);
             runContextOwnerToken = claimAgentRunContext(
               runId,
               {
-                sessionKey:
-                  ownsRunContext || !existingRunContext?.sessionKey
-                    ? prepared.context.runSessionKey
-                    : existingRunContext.sessionKey,
+                sessionKey: prepared.context.runSessionKey,
                 sessionId: initialSessionId,
                 lifecycleGeneration: runLifecycleGeneration,
                 cronRunsByJobId: new Map([
@@ -240,44 +239,17 @@ async function runCronIsolatedAgentTurnInTrace(
               },
               {
                 trackOwner: true,
-                ownsContext: ownsRunContext,
+                ownsContext: true,
               },
             );
             const { executeCronRun } = await cronExecutorRuntimeLoader.load();
             const executionParams: Parameters<typeof executeCronRun>[0] = {
+              ...prepared.context,
               runId,
               cfg: params.cfg,
-              cfgWithAgentDefaults: prepared.context.cfgWithAgentDefaults,
               job: params.job,
-              agentId: prepared.context.agentId,
-              agentDir: prepared.context.agentDir,
-              agentSessionKey: prepared.context.agentSessionKey,
-              runSessionKey: prepared.context.runSessionKey,
-              usesDetachedRunSession: prepared.context.usesDetachedRunSession,
-              workspaceDir: prepared.context.workspaceDir,
-              executionRoot: prepared.context.executionRoot,
               lane: params.lane,
-              resolvedDelivery: {
-                channel: prepared.context.resolvedDelivery.channel,
-                to: prepared.context.resolvedDelivery.to,
-                accountId: prepared.context.resolvedDelivery.accountId,
-                threadId: prepared.context.resolvedDelivery.threadId,
-              },
-              resolvedDeliveryOk: prepared.context.resolvedDelivery.ok,
-              deliveryRequested: prepared.context.deliveryRequested,
-              sourceDelivery: prepared.context.sourceDelivery,
-              skillsSnapshot: prepared.context.skillsSnapshot,
-              agentPayload: prepared.context.agentPayload,
-              useSubagentFallbacks: prepared.context.useSubagentFallbacks,
-              inheritDefaultFallbacksForAgentStringModel:
-                prepared.context.inheritDefaultFallbacksForAgentStringModel,
-              modelFallbacksOverride: prepared.context.modelFallbacksOverride,
               agentVerboseDefault: prepared.context.agentCfg?.verboseDefault,
-              liveSelection: prepared.context.liveSelection,
-              cronSession: prepared.context.cronSession,
-              commandBody: prepared.context.commandBody,
-              inputProvenance: prepared.context.inputProvenance,
-              persistSessionEntry: prepared.context.persistSessionEntry,
               persistRunContinuationSession: prepared.context.runContinuationSession?.sync,
               setRunContinuationCliExecutionProvider:
                 prepared.context.runContinuationSession?.setCliExecutionProvider,
@@ -294,10 +266,8 @@ async function runCronIsolatedAgentTurnInTrace(
               immutableThinkLevel: prepared.context.thinkingSelection.immutableThinkLevel,
               thinkingCatalog: prepared.context.thinkingSelection.catalog,
               loadThinkingCatalog: prepared.context.thinkingSelection.loadThinkingCatalog,
-              timeoutMs: prepared.context.timeoutMs,
-              runTimeoutOverrideMs: prepared.context.runTimeoutOverrideMs,
-              suppressExecNotifyOnExit: prepared.context.suppressExecNotifyOnExit,
               executionIdentity: params.executionIdentity,
+              admissionSource: params.admissionSource,
             };
             const execution = await prepared.context.sessionWorkAdmission.run(() =>
               withAgentRunLifecycleGeneration(runLifecycleGeneration, () =>
@@ -421,7 +391,7 @@ async function runCronIsolatedAgentTurnInTrace(
                       sessionId: initialSessionId,
                       runId,
                       cronSession: prepared.context.cronSession,
-                      ownsRunContext,
+                      ownsSessionRuntime,
                       runContextOwnerToken,
                     });
                   } finally {

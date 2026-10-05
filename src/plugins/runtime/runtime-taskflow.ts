@@ -10,11 +10,6 @@ import {
 } from "../../infra/agent-run-registry.js";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import {
-  cancelFlowByIdForOwner,
-  getFlowTaskSummary,
-  runTaskInFlowForOwner,
-} from "../../tasks/task-executor.js";
-import {
   listTaskFlowAutomationObligationsForCronJobFromSqlite,
   removeTaskFlowAutomationObligationForTerminalFlowInStateTransaction,
   upsertTaskFlowAutomationObligationInStateTransaction,
@@ -40,11 +35,7 @@ import {
 } from "../../tasks/task-flow-runtime-internal.js";
 import type { TaskDeliveryState } from "../../tasks/task-registry.types.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
-import {
-  asManagedTaskFlowRecord,
-  mapFlowTaskRunResult,
-  mapFlowUpdateResult,
-} from "./runtime-managed-flow-result.js";
+import { asManagedTaskFlowRecord, mapFlowUpdateResult } from "./runtime-managed-flow-result.js";
 import type {
   BoundTaskFlowRuntime,
   BoundTaskFlowHistoryController,
@@ -168,7 +159,7 @@ function readBoundAutomationJob(params: {
   const job = row ? loadedCronStoreFromRows([row]).store.jobs[0] : undefined;
   if (
     !job ||
-    job.enabled !== true ||
+    !job.enabled ||
     job.pacing === undefined ||
     job.sessionKey !== params.ownerKey ||
     tryCronScheduleIdentity(job) !== binding.cronScheduleIdentity
@@ -471,13 +462,6 @@ function createBoundTaskFlowRuntime(params: {
         token,
         callerOwnerKey: ownerKey,
       }),
-    getTaskSummary: (flowId) => {
-      const flow = getTaskFlowByIdForOwner({
-        flowId,
-        callerOwnerKey: ownerKey,
-      });
-      return flow ? getFlowTaskSummary(flow.flowId) : undefined;
-    },
     setWaiting: (input) =>
       applyManagedFlowMutationForOwner({
         flowId: input.flowId,
@@ -577,34 +561,6 @@ function createBoundTaskFlowRuntime(params: {
             cancelRequestedAt: input.cancelRequestedAt,
           }),
       }),
-    cancel: ({ flowId, cfg }) =>
-      cancelFlowByIdForOwner({
-        cfg,
-        flowId,
-        callerOwnerKey: ownerKey,
-      }),
-    runTask: (input) => {
-      const created = runTaskInFlowForOwner({
-        flowId: input.flowId,
-        callerOwnerKey: ownerKey,
-        runtime: input.runtime,
-        sourceId: input.sourceId,
-        childSessionKey: input.childSessionKey,
-        parentTaskId: input.parentTaskId,
-        agentId: input.agentId,
-        runId: input.runId,
-        label: input.label,
-        task: input.task,
-        preferMetadata: input.preferMetadata,
-        notifyPolicy: input.notifyPolicy,
-        deliveryStatus: input.deliveryStatus,
-        status: input.status,
-        startedAt: input.startedAt,
-        lastEventAt: input.lastEventAt,
-        progressSummary: input.progressSummary,
-      });
-      return mapFlowTaskRunResult(created);
-    },
   };
 }
 

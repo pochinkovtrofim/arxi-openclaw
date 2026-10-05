@@ -62,9 +62,9 @@ export {
   resolveAbsolutePathForRead,
   resolveAbsolutePathForWrite,
 } from "../infra/fs-safe.js";
-export { sanitizeUntrustedFileName } from "../infra/fs-safe-advanced.js";
+export { sanitizeUntrustedFileName } from "@openclaw/fs-safe/advanced";
 export { privateFileStoreSync } from "../infra/private-file-store.js";
-export { movePathWithCopyFallback, replaceFileAtomic } from "../infra/replace-file.js";
+export { movePathWithCopyFallback, replaceFileAtomic } from "@openclaw/fs-safe/atomic";
 
 export { ensurePortAvailable } from "../infra/ports.js";
 
@@ -72,7 +72,7 @@ export {
   resolveExistingPathsWithinRoot,
   pathScope,
   resolveStrictExistingPathsWithinRoot,
-} from "../infra/root-paths.js";
+} from "@openclaw/fs-safe/advanced";
 
 export { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
 /**

@@ -327,7 +327,6 @@ async function checkMaintainedProtocolTypes(sourceRoot: string): Promise<void> {
 import type {
   CodexAppServerRequestParams,
   CodexAppServerRequestResult,
-  CodexConfigEdit,
   CodexDynamicToolSpec,
   CodexDynamicToolCallParams,
   CodexErrorNotification,
@@ -340,6 +339,7 @@ import type {
   CodexTurnEnvironmentParams,
   v2,
 } from ${JSON.stringify(protocolImport)};
+type CodexConfigEdit = CodexAppServerRequestParams<"config/batchWrite">["edits"][number];
 import type { AppSummary } from ${JSON.stringify(generatedImport("v2/AppSummary.ts"))};
 import type { AppsInstalledParams } from ${JSON.stringify(generatedImport("v2/AppsInstalledParams.ts"))};
 import type { AppsInstalledResponse } from ${JSON.stringify(generatedImport("v2/AppsInstalledResponse.ts"))};

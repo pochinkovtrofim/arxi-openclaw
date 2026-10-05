@@ -184,7 +184,7 @@ export function createSessionMcpRuntimeManagerInstall(
       store.connectionMetaByRuntimeKey.set(params.runtimeKey, {
         connectionHash,
         resolutionContextKey: params.resolutionContextKey ?? "",
-        resolvedAt: store.now(),
+        resolvedAt: store.scheduler.now(),
       });
     }
     return runtime;
@@ -228,7 +228,7 @@ export function createSessionMcpRuntimeManagerInstall(
     const withinRevalidateWindow =
       meta !== undefined &&
       meta.resolutionContextKey === resolutionContextKey &&
-      store.now() - meta.resolvedAt < resolveMcpConnectionRevalidateMs();
+      store.scheduler.now() - meta.resolvedAt < resolveMcpConnectionRevalidateMs();
     if (withinRevalidateWindow && existing && matchesRuntime(existing, params, scopedFingerprint)) {
       reconcileReusableRetirement(params, existing);
       existing.markUsed();

@@ -37,7 +37,7 @@ describe("classifySilentReplyConversationType", () => {
 describe("silent reply default policy resolution", () => {
   it("uses defaults when no overrides exist", () => {
     expect(resolveSilentReplyPolicyFromPolicies({ conversationType: "direct" })).toBe("disallow");
-    expect(resolveSilentReplyPolicyFromPolicies({ conversationType: "group" })).toBe("allow");
+    expect(resolveSilentReplyPolicyFromPolicies({ conversationType: "group" })).toBe("disallow");
   });
 });
 
@@ -52,13 +52,16 @@ describe("resolveSilentReplyPolicyFromPolicies", () => {
     ).toBe("disallow");
   });
 
-  it("always disallows direct silent replies", () => {
-    expect(
-      resolveSilentReplyPolicyFromPolicies({
-        conversationType: "direct",
-        defaultPolicy: { group: "allow" },
-        surfacePolicy: { group: "allow" },
-      }),
-    ).toBe("disallow");
-  });
+  it.each(["direct", "internal"] as const)(
+    "always disallows %s silent replies",
+    (conversationType) => {
+      expect(
+        resolveSilentReplyPolicyFromPolicies({
+          conversationType,
+          defaultPolicy: { group: "allow" },
+          surfacePolicy: { group: "allow" },
+        }),
+      ).toBe("disallow");
+    },
+  );
 });

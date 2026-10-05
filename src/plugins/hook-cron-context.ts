@@ -1,6 +1,9 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { PluginHookGatewayCronService } from "./hook-cron.types.js";
-import type { PluginHookCronReconciledContext, PluginHookGatewayContext } from "./hook-types.js";
+import type {
+  PluginHookCronReconciledContext,
+  PluginHookGatewayContext,
+} from "./hook-gateway.types.js";
 import { createPluginHookCronGetter, type PluginServiceCronHost } from "./service-cron.js";
 
 type HookCronGetter = () => PluginHookGatewayCronService | PluginServiceCronHost | undefined;

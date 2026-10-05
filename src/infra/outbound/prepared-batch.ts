@@ -5,7 +5,7 @@ import type {
   OutboundPayloadDeliveryOutcome,
   OutboundPayloadDeliverySuppressionReason,
 } from "./deliver-types.js";
-import { summarizeOutboundPayloadForTransport } from "./payloads.js";
+import { resolveSendableOutboundReplyParts } from "./reply-payload-parts.js";
 
 export const PREPARED_OUTBOUND_BATCH_SCHEMA_VERSION = 1 as const;
 
@@ -62,7 +62,7 @@ export function createUnmodifiedPreparedOutboundBatch(
       payload,
       replyHookChanged: false,
       messageHookChanged: false,
-      preparedMediaCount: summarizeOutboundPayloadForTransport(payload).mediaUrls.length,
+      preparedMediaCount: resolveSendableOutboundReplyParts(payload).mediaCount,
     })),
   };
 }
@@ -92,8 +92,7 @@ export function usefulSourceRunId(
   payload: ReplyPayload,
 ): string | undefined {
   const isUsefulResult =
-    batch.replyKind === "final" ||
-    summarizeOutboundPayloadForTransport(payload).mediaUrls.length > 0;
+    batch.replyKind === "final" || resolveSendableOutboundReplyParts(payload).mediaCount > 0;
   if (
     !isUsefulResult ||
     !batch.runId ||

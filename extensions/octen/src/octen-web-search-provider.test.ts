@@ -44,7 +44,7 @@ describe("octen web search provider", () => {
     }
     try {
       await created.execute({ query: "loopback octen" });
-      expect(String(fetchMock.mock.calls[0]?.[0])).toBe("http://127.0.0.1:18080/octen/search");
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:18080/octen/search");
       const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
       expect(headers.get("x-api-key")).toBe("arxi-host-octen-v1");
     } finally {
@@ -80,7 +80,10 @@ describe("octen web search provider", () => {
       expect(result).toMatchObject({ provider: "octen", count: 1 });
       expect(JSON.stringify(result)).toContain("Relevant passage");
       const init = fetchMock.mock.calls[0]?.[1];
-      expect(JSON.parse(String(init?.body))).toEqual({
+      if (typeof init?.body !== "string") {
+        throw new Error("expected a JSON request body");
+      }
+      expect(JSON.parse(init.body)).toEqual({
         query: "official docs",
         count: 3,
         time_basis: "published",

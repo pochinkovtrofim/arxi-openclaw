@@ -1,9 +1,16 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeCronJobCreate, normalizeCronJobPatch } from "../cron/normalize.js";
+import { createScheduledGatewayRunner } from "../gateway/scheduled-run-gateway-context.js";
 import type { GatewayCronServiceContract } from "../gateway/server-cron-contract.js";
+import type { GatewayContextResolver } from "../gateway/server-methods/types.js";
 import type { PluginRuntimeCapabilityLease } from "./capability-lease.js";
-import type { PluginHookGatewayCronService } from "./hook-types.js";
+import type { PluginHookGatewayCronService } from "./hook-gateway.types.js";
 import { isPluginJsonValue } from "./host-hook-json.js";
+import type { OpenClawPluginServiceContext } from "./plugin-registration.types.js";
+
+type PluginServiceCron = NonNullable<
+  ReturnType<NonNullable<OpenClawPluginServiceContext["getCron"]>>
+>;
 
 export type PluginServiceCronHost = Pick<
   GatewayCronServiceContract,
@@ -15,6 +22,8 @@ export type PluginServiceCronHost = Pick<
   | "updateWithPrecondition"
   | "remove"
   | "removeStaleJobFamily"
+  | "status"
+  | "enqueueRun"
 >;
 
 const TRIGGER_STATE_NAMESPACE_KEY = /^[A-Za-z][A-Za-z0-9]{0,127}$/;
@@ -41,8 +50,10 @@ function validateTriggerStateMutation(mutation: {
 function createBoundPluginCronGetter(params: {
   getCron: () => PluginServiceCronHost | null | undefined;
   pluginId: string;
+  resolveGatewayContext?: GatewayContextResolver;
   assertActive: () => void;
 }): () => PluginHookGatewayCronService | undefined {
+  const runScheduled = createScheduledGatewayRunner(params.resolveGatewayContext);
   let cached: { cron: PluginServiceCronHost; service: PluginHookGatewayCronService } | undefined;
   return () => {
     params.assertActive();
@@ -61,7 +72,17 @@ function createBoundPluginCronGetter(params: {
     };
     // A retained handle owns one scheduler. Recheck at the store lock, not only
     // before awaiting it, so replacement cannot admit an old queued write.
-    const service: PluginHookGatewayCronService = {
+    const service: PluginServiceCron = {
+      enqueueRun: async (id, mode) => {
+        commitGuard();
+        return await runScheduled(() => cron.enqueueRun(id, mode, { commitGuard }));
+      },
+      isEnabled: async () => {
+        commitGuard();
+        const { enabled } = await cron.status();
+        commitGuard();
+        return enabled;
+      },
       list: async (opts) => {
         commitGuard();
         const jobs = await cron.list(opts);
@@ -85,7 +106,9 @@ function createBoundPluginCronGetter(params: {
         assertOwned();
         // The source job can change while admission waits for the store lock.
         // Recheck plugin ownership at commit so a stale wake cannot run another job.
-        return await cron.run(id, mode, { evaluateTrigger: true, commitGuard: assertOwned });
+        return await runScheduled(() =>
+          cron.run(id, mode, { evaluateTrigger: true, commitGuard: assertOwned }),
+        );
       },
       add: async (input) => {
         commitGuard();
@@ -175,10 +198,12 @@ export function createPluginServiceCronGetter(params: {
   lease: PluginRuntimeCapabilityLease;
   pluginId: string;
   isStopping: () => boolean;
+  resolveGatewayContext?: GatewayContextResolver;
 }): () => PluginHookGatewayCronService | undefined {
   return createBoundPluginCronGetter({
     getCron: params.getCron,
     pluginId: params.pluginId,
+    resolveGatewayContext: params.resolveGatewayContext,
     assertActive: () => {
       params.lease.assertActive("cron scheduler");
       if (params.isStopping()) {

@@ -189,6 +189,7 @@ function createPreparedModelRuntime(config: Record<string, unknown>) {
     workspaceDir: "/tmp/openclaw-model-resolution",
     pluginRegistry: {},
     configuredRuntimeModels: [],
+    findConfiguredRuntimeModel: () => undefined,
     inlineProviderModels: [],
     createStores: () => ({ authStorage, modelRegistry: emptyModelRegistry }),
   };
@@ -296,6 +297,7 @@ describe("embedded model resolution consistency", () => {
   it("carries an unlocked native harness into model resolution", async () => {
     vi.mocked(selectAgentHarness).mockReturnValueOnce({ id: "codex" } as never);
     const result = await resolveEmbeddedRunModelSetup({
+      assertCurrent: () => {},
       runParams: { prompt: "hello", sessionId: "runtime-session", agentId: "main" } as never,
       provider: "openai",
       modelId: "runtime-only-test-model",
@@ -328,6 +330,7 @@ describe("embedded model resolution consistency", () => {
     const preparedModelRuntime = createPreparedModelRuntime(config);
 
     const chat = await resolveEmbeddedRunModelSetup({
+      assertCurrent: () => {},
       runParams: {
         config,
         prompt: "hello",

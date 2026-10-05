@@ -3192,7 +3192,7 @@ describe("before_tool_call requireApproval handling", () => {
   });
 
   it("awaits approved execution before unblocking an allowed tool call", async () => {
-    const gate = createDeferredCore<void>();
+    const gate = createDeferredCore();
     const beforeApprovedExecution = vi.fn(async () => await gate.promise);
     hookRunner.runBeforeToolCall.mockResolvedValue({
       requireApproval: {

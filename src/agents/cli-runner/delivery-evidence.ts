@@ -1,9 +1,32 @@
+import { isSilentReplyPayloadText } from "../../auto-reply/tokens.js";
+import { hasCompletionMessageSessionSpawn } from "../accepted-session-spawn.js";
 /**
  * Carries confirmed CLI messaging delivery across failed execution/finalization paths.
  */
 import type { CliOutput } from "../cli-output-contracts.js";
+import { resolveSourceReplyDelivery } from "../embedded-agent-runner/delivery-evidence.js";
+import { resolveReplyExpectation } from "../reply-completion.js";
+import type { RunCliAgentParams } from "./types.js";
 
 const CLI_MESSAGING_DELIVERY_EVIDENCE_KEY = "cliMessagingDeliveryEvidence";
+
+export function isMissingRequiredCliReply(params: {
+  output: CliOutput;
+  runParams: RunCliAgentParams;
+  isolatedCompletion: boolean;
+}): boolean {
+  const { output, runParams, isolatedCompletion } = params;
+  return (
+    (!output.text.trim() || isSilentReplyPayloadText(output.text)) &&
+    resolveSourceReplyDelivery(output) === "missing" &&
+    !output.toolMediaUrls?.length &&
+    !output.yielded &&
+    !hasCompletionMessageSessionSpawn(output.acceptedSessionSpawns) &&
+    !output.terminalInterruption &&
+    resolveReplyExpectation(runParams) === "required" &&
+    !(isolatedCompletion && runParams.outputTextPolicy === "strict-visible")
+  );
+}
 
 type CliMessagingDeliveryEvidence = Pick<
   CliOutput,
@@ -16,31 +39,40 @@ type CliMessagingDeliveryEvidence = Pick<
   | "messagingToolSourceReplyPayloads"
 >;
 
+export function projectCliMessagingDeliveryEvidence(
+  output: CliMessagingDeliveryEvidence,
+  snapshot = false,
+): CliMessagingDeliveryEvidence {
+  const evidence: CliMessagingDeliveryEvidence = {};
+  for (const key of [
+    "didSendViaMessagingTool",
+    "didDeliverSourceReplyViaMessageTool",
+    "sourceReplyDelivered",
+  ] as const) {
+    if (output[key]) {
+      evidence[key] = true;
+    }
+  }
+  for (const key of [
+    "messagingToolSentTexts",
+    "messagingToolSentMediaUrls",
+    "messagingToolSentTargets",
+    "messagingToolSourceReplyPayloads",
+  ] as const) {
+    const values = output[key];
+    if (values?.length) {
+      Object.assign(evidence, { [key]: snapshot ? values.slice() : values });
+    }
+  }
+  return evidence;
+}
+
 function snapshotCliMessagingDeliveryEvidence(
   output: CliMessagingDeliveryEvidence,
 ): CliMessagingDeliveryEvidence | undefined {
-  if (output.didSendViaMessagingTool !== true) {
-    return undefined;
-  }
-  return {
-    didSendViaMessagingTool: true,
-    ...(output.didDeliverSourceReplyViaMessageTool
-      ? { didDeliverSourceReplyViaMessageTool: true }
-      : {}),
-    ...(output.sourceReplyDelivered ? { sourceReplyDelivered: true } : {}),
-    ...(output.messagingToolSentTexts?.length
-      ? { messagingToolSentTexts: output.messagingToolSentTexts.slice() }
-      : {}),
-    ...(output.messagingToolSentMediaUrls?.length
-      ? { messagingToolSentMediaUrls: output.messagingToolSentMediaUrls.slice() }
-      : {}),
-    ...(output.messagingToolSentTargets?.length
-      ? { messagingToolSentTargets: output.messagingToolSentTargets.slice() }
-      : {}),
-    ...(output.messagingToolSourceReplyPayloads?.length
-      ? { messagingToolSourceReplyPayloads: output.messagingToolSourceReplyPayloads.slice() }
-      : {}),
-  };
+  return output.didSendViaMessagingTool === true
+    ? projectCliMessagingDeliveryEvidence(output, true)
+    : undefined;
 }
 
 /** Attaches confirmed delivery evidence so caller retries cannot duplicate a visible send. */

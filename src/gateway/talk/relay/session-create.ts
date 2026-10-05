@@ -9,8 +9,12 @@ import {
   type RealtimeVoiceCloseReason,
 } from "../../../talk/provider-types.js";
 import { createRealtimeVoiceSessionHarness } from "../../../talk/realtime-session-harness.js";
+import { resolveRealtimeVoiceInterruptResponseOnInputAudio } from "../../../talk/realtime-session-policy.js";
 import type { TalkEventInput } from "../../../talk/talk-session-controller.js";
-import { VOICE_TRANSCRIPT_QUEUE_POLICY } from "../../../talk/voice-transcript.js";
+import {
+  VOICE_TRANSCRIPT_QUEUE_POLICY,
+  voiceTranscriptEventId,
+} from "../../../talk/voice-transcript.js";
 import { createTalkClientAgentConsultRunner } from "../client-agent-consult.js";
 import { createTalkRealtimeRunControlOwner } from "../realtime-run-control.js";
 import { closeExpiredTalkRelaySessions } from "../relay-session-lifecycle.js";
@@ -19,7 +23,6 @@ import { bindTalkRealtimeRelayAgentConsult } from "./agent-consult.js";
 import {
   buildAlreadyDeliveredToolResult,
   scheduleForcedAgentConsult,
-  submitForcedConsultProviderResult,
   submitRealtimeAgentConsultWorkingResponse,
 } from "./forced-consults.js";
 import {
@@ -36,7 +39,7 @@ import {
   resetTalkRealtimeRelayContinuity,
   prepareTalkRealtimeRelayAgentControl,
 } from "./operations.js";
-import { suppressedToolResultOptions } from "./provider-results.js";
+import { submitFinalProviderToolResult, suppressedToolResultOptions } from "./provider-results.js";
 import {
   RELAY_SESSION_TTL_MS,
   RELAY_TRANSCRIPT_ECHO_LOOKBACK_MS,
@@ -56,12 +59,8 @@ import {
   MAX_RELAY_TOOL_CALL_IDENTITY_BYTES,
   RelayToolCallLedger,
 } from "./tool-call-ledger.js";
-import { enqueueRelayVoiceTranscript } from "./voice.js";
+import { enqueueRelayVoiceTranscript, forEachRelayOutputAudioFrame } from "./voice.js";
 
-// The relay contract is 20 ms of 24 kHz mono PCM16 per browser event.
-const RELAY_OUTPUT_AUDIO_FRAME_BYTES = 960;
-
-/** Creates a realtime voice relay session and returns the browser audio contract. */
 export function createTalkRealtimeRelaySession(
   params: CreateTalkRealtimeRelaySessionParams,
 ): TalkRealtimeRelaySessionResult {
@@ -118,8 +117,7 @@ export function createTalkRealtimeRelaySession(
     return relay && relaySessions.get(relay.id) === relay ? relay : undefined;
   };
   const clearPlayback = (reason?: RealtimeVoiceAudioClearReason) => {
-    // Released clients match clear to the audio sent, which can outlive response completion
-    // and remain queued after a newer response starts without sending audio.
+    // Released clients match clear to queued audio, which can outlive response completion.
     const turnId = playbackTurnId;
     playbackTurnId = undefined;
     emit(
@@ -220,7 +218,11 @@ export function createTalkRealtimeRelaySession(
     instructions: params.instructions,
     language: params.language,
     autoRespondToAudio: params.forceAgentConsultOnFinalTranscript !== true,
-    interruptResponseOnInputAudio: params.forceAgentConsultOnFinalTranscript !== true,
+    // Forced consults suppress automatic audio turns, but barge-in stays provider-owned:
+    // consult replies are long, so interruption matters more here, not less.
+    interruptResponseOnInputAudio: resolveRealtimeVoiceInterruptResponseOnInputAudio(
+      params.providerConfig.interruptResponseOnInputAudio,
+    ),
     tools: params.tools,
     ...(runControl.handleDelegationInput
       ? {
@@ -241,18 +243,14 @@ export function createTalkRealtimeRelaySession(
     audioSink: {
       isOpen: () => Boolean(getActiveRelay()),
       sendAudio: (audio) => {
-        if (!getActiveRelay() || outputOwnership.phase === "cancelling") {
+        if (!getActiveRelay() || outputOwnership.suppressingOutput) {
           return;
         }
         const outputTurnId = outputOwnership.resolve(true);
         if (!outputTurnId) {
           return;
         }
-        for (let offset = 0; offset < audio.byteLength; offset += RELAY_OUTPUT_AUDIO_FRAME_BYTES) {
-          const frame = audio.subarray(
-            offset,
-            Math.min(offset + RELAY_OUTPUT_AUDIO_FRAME_BYTES, audio.byteLength),
-          );
+        forEachRelayOutputAudioFrame(audio, (frame) => {
           playbackTurnId = outputTurnId;
           emit(
             {
@@ -268,7 +266,7 @@ export function createTalkRealtimeRelaySession(
               payload: { byteLength: frame.byteLength },
             },
           );
-        }
+        });
       },
       clearAudio: clearPlayback,
       sendMark: (markName) => {
@@ -283,15 +281,8 @@ export function createTalkRealtimeRelaySession(
           }
           return;
         }
-        emit(
-          { relaySessionId, type: "mark", markName },
-          {
-            type: "output.audio.done",
-            turnId: outputTurnId,
-            payload: { markName },
-            final: true,
-          },
-        );
+        // A playback checkpoint is not the end of the provider's response.
+        emit({ relaySessionId, type: "mark", markName });
       },
     },
     onEvent: (event) => {
@@ -306,10 +297,7 @@ export function createTalkRealtimeRelaySession(
         continuityResetActive = true;
         ready = false;
         currentOutputItemId = undefined;
-        outputOwnership.outputGeneration += 1;
-        outputOwnership.drain?.resolve();
-        outputOwnership.phase = "unowned";
-        outputOwnership.turnId = outputOwnership.responseId = undefined;
+        outputOwnership.resetContinuity();
         const activeTurnId = relay.harness.talk.activeTurnId;
         // Queued audio A and active turn B need distinct clears. Emit A before cancelling B
         // so the Talk event sequence and client cancellation fence retain their ordering.
@@ -414,22 +402,38 @@ export function createTalkRealtimeRelaySession(
         });
       }
     },
-    onTranscript: (role, text, final) => {
+    onTranscript: (role, text, final, metadata) => {
       const relay = getActiveRelay() ?? (relayRef.current?.closing ? relayRef.current : undefined);
       if (!relay || relay.voiceSessionClose) {
         return;
       }
-      if (!relay.closing && role === "assistant" && outputOwnership.phase === "cancelling") {
+      if (role === "assistant" && outputOwnership.suppressingOutput) {
         return;
       }
       if (!relay.closing && role === "user" && !final) {
         confirmationReadiness.observeUserTranscript(text, false);
       }
+      const previousTranscriptSeq = relay.voiceTranscriptSeq;
       if (final && !enqueueRelayVoiceTranscript(relay, role, text)) {
         return;
       }
+      const transcriptIdentity =
+        relay.voiceTranscriptSeq > previousTranscriptSeq
+          ? {
+              transcriptId: voiceTranscriptEventId(relay.id, String(relay.voiceTranscriptSeq)),
+            }
+          : {};
+      const transcriptEvent = {
+        relaySessionId,
+        type: "transcript" as const,
+        role,
+        text,
+        final,
+        ...metadata,
+        ...transcriptIdentity,
+      };
       if (relay.closing) {
-        emit({ relaySessionId, type: "transcript", role, text, final });
+        emit(transcriptEvent);
         return;
       }
       const outputTurnId = role === "assistant" ? outputOwnership.resolve(true) : undefined;
@@ -446,15 +450,7 @@ export function createTalkRealtimeRelaySession(
             ? "transcript.done"
             : "transcript.delta";
       const payload = role === "assistant" ? { text } : { role, text };
-      emit(
-        { relaySessionId, type: "transcript", role, text, final },
-        {
-          type: eventType,
-          turnId,
-          payload,
-          final,
-        },
-      );
+      emit(transcriptEvent, { type: eventType, turnId, payload, final });
       if (params.controlSource === "transcript" && role === "user" && final && text.trim()) {
         const question = text.trim();
         if (relay.harness.isLikelyAssistantEchoTranscript(question)) {
@@ -470,7 +466,7 @@ export function createTalkRealtimeRelaySession(
     },
     onToolCall: (toolCall) => {
       const relay = getActiveRelay();
-      if (!relay || outputOwnership.phase === "cancelling") {
+      if (!relay || outputOwnership.suppressingOutput) {
         return;
       }
       const outputTurnId = outputOwnership.resolve(true);
@@ -495,12 +491,12 @@ export function createTalkRealtimeRelaySession(
                   "OpenClaw cancelled this consult before completion. Do not restart it.",
                 )
               : buildAlreadyDeliveredToolResult();
-            return submitForcedConsultProviderResult(
-              relay,
-              providerCallId,
+            return submitFinalProviderToolResult({
+              session: relay,
+              callId: providerCallId,
               result,
-              suppressedToolResultOptions(relay),
-            );
+              options: suppressedToolResultOptions(relay),
+            });
           }
           if (relay.forcedTerminalProviderResults.has(forcedConsult.handle.id)) {
             return relay.pendingFinalToolResults.get(forcedConsult.handle.id);

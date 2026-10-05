@@ -11,6 +11,7 @@ import {
   readCodexEffectiveConfig,
 } from "./config-layer-policy.js";
 import type { CodexAppServerRuntimeOptions } from "./config.js";
+import { joinPresentSections } from "./developer-instruction-sections.js";
 import {
   isMessageOnlyCodexSourceReply,
   isSystemAgentOnlyCodexDynamicToolAllowlist,
@@ -31,6 +32,8 @@ import {
   type JsonObject,
   type JsonValue,
 } from "./protocol.js";
+import { isCodexResponsesOAuthRun } from "./responses-oauth.js";
+import type { CodexThreadConfigurationOptions } from "./thread-configuration-options.js";
 import { fingerprintJsonObject } from "./thread-fingerprints.js";
 import {
   CODEX_NATIVE_PERSONALITY_NONE,
@@ -168,25 +171,6 @@ export type CodexThreadConfigurationContext = CodexThreadPromptContext &
     | "scheduledRuntimeAuthority"
   >;
 
-type CodexThreadConfigurationOptions = {
-  cwd?: string;
-  dynamicTools?: CodexDynamicToolSpec[];
-  appServer: CodexAppServerRuntimeOptions;
-  developerInstructions?: string;
-  config?: JsonObject;
-  nativeCodeModeEnabled?: boolean;
-  nativeProviderWebSearchSupport?: CodexNativeWebSearchSupport;
-  nativeCodeModeOnlyEnabled?: boolean;
-  webSearchAllowed?: boolean;
-  environmentSelection?: CodexTurnEnvironmentParams[];
-  model?: string | null;
-  modelProvider?: string | null;
-  hostSystemAgentActive?: boolean;
-  restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
-  shellEnvironment?: Readonly<Record<string, string>>;
-  disableLoginShell?: boolean;
-};
-
 /** Common deterministic start/resume/fork fields; no run resources or unsupported setters. */
 export function buildCodexThreadConfiguration(
   params: CodexThreadConfigurationContext,
@@ -204,22 +188,17 @@ export function buildCodexThreadConfiguration(
       ? { serviceTier: options.appServer.serviceTier }
       : {}),
     config: buildCodexRuntimeThreadConfigForRun(params, options.config, {
-      nativeCodeModeEnabled: options.nativeCodeModeEnabled,
-      nativeProviderWebSearchSupport: options.nativeProviderWebSearchSupport,
-      nativeCodeModeOnlyEnabled: options.nativeCodeModeOnlyEnabled,
-      dynamicTools: options.dynamicTools,
+      ...options,
       directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
-      webSearchAllowed: options.webSearchAllowed,
-      appServer: options.appServer,
-      hostSystemAgentActive: options.hostSystemAgentActive,
-      restrictedToolSurfaceInheritedMcpServerNames:
-        options.restrictedToolSurfaceInheritedMcpServerNames,
-      shellEnvironment: options.shellEnvironment,
-      disableLoginShell: options.disableLoginShell,
     }),
-    developerInstructions:
+    // Catalog-owned collaboration messages replace caller collaboration instructions
+    // (codex-rs/core/src/context/world_state/collaboration_mode.rs), so the skill
+    // catalog rides the thread developer carrier after the immutable generic policy.
+    developerInstructions: joinPresentSections(
       options.developerInstructions ??
-      buildDeveloperInstructions(params, { dynamicTools: options.dynamicTools }),
+        buildDeveloperInstructions(params, { dynamicTools: options.dynamicTools }),
+      options.skillsInstructions,
+    ),
   };
 }
 
@@ -228,19 +207,14 @@ export function buildThreadStartParams(
   options: CodexThreadConfigurationOptions & { cwd: string; dynamicTools: CodexDynamicToolSpec[] },
 ): CodexThreadStartParams {
   const resolvedModelProvider = resolveCodexAppServerModelProvider({
-    provider: params.provider,
-    authProfileId: params.authProfileId,
-    authProfileStore: params.authProfileStore,
-    agentDir: params.agentDir,
-    config: params.config,
+    ...params,
+    homeScope: options.appServer.start.homeScope,
   });
   const modelSelection = resolveCodexAppServerRequestModelSelection({
+    ...params,
+    homeScope: options.appServer.start.homeScope,
     model: options.model ?? params.modelId,
     modelProvider: options.modelProvider ?? resolvedModelProvider,
-    authProfileId: params.authProfileId,
-    authProfileStore: params.authProfileStore,
-    agentDir: params.agentDir,
-    config: params.config,
   });
   return {
     model: modelSelection.model,
@@ -275,20 +249,17 @@ export function buildThreadResumeParams(
   const modelSelection = options.preserveNativeModel
     ? undefined
     : resolveCodexAppServerRequestModelSelection({
+        ...params,
+        homeScope: options.appServer.start.homeScope,
         model: options.model ?? params.modelId,
         modelProvider:
           options.modelProvider ??
           resolveCodexAppServerModelProvider({
-            provider: params.provider,
+            ...params,
+            homeScope: options.appServer.start.homeScope,
             authProfileId: options.authProfileId ?? params.authProfileId,
-            authProfileStore: params.authProfileStore,
-            agentDir: params.agentDir,
-            config: params.config,
           }),
         authProfileId: options.authProfileId ?? params.authProfileId,
-        authProfileStore: params.authProfileStore,
-        agentDir: params.agentDir,
-        config: params.config,
       });
   return {
     threadId: options.threadId,
@@ -354,7 +325,9 @@ export function buildCodexRuntimeThreadConfig(
       CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG,
       options.nativeCodeModeOnlyEnabled === true ? { "features.code_mode_only": true } : undefined,
     ),
-    "Codex code mode config",
+    options.nativeCodeModeOnlyEnabled === true
+      ? "Codex code mode only config"
+      : "Codex code mode config",
   );
   return ensureDirectOnlyToolNamespaces(merged, options.directOnlyToolNamespaces);
 }
@@ -408,6 +381,7 @@ export function buildCodexRuntimeThreadConfigForRun(
     hostSystemAgentActive?: boolean;
     restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
     shellEnvironment?: Readonly<Record<string, string>>;
+    shellPathPrepend?: readonly string[];
     disableLoginShell?: boolean;
   } = {},
 ): JsonObject {
@@ -434,7 +408,7 @@ export function buildCodexRuntimeThreadConfigForRun(
   const webSearchConfig = resolveCodexWebSearchPlan({
     config: params.config,
     disableTools: params.disableTools,
-    nativeToolSurfaceEnabled: options.nativeCodeModeEnabled,
+    nativeToolSurfaceEnabled: isCodexResponsesOAuthRun(params) || options.nativeCodeModeEnabled,
     nativeProviderWebSearchSupport: options.nativeProviderWebSearchSupport,
     webSearchAllowed: options.webSearchAllowed,
   }).threadConfig;
@@ -451,6 +425,19 @@ export function buildCodexRuntimeThreadConfigForRun(
     mergeCodexThreadConfigs(
       baseConfig,
       options.appServer?.networkProxy?.configPatch,
+      isCodexResponsesOAuthRun(params)
+        ? {
+            ...CODEX_DELEGATION_DISABLED_THREAD_CONFIG,
+            "features.apps": false,
+            "features.plugins": false,
+            "features.image_generation": false,
+            "features.memories": false,
+            "features.skill_search": false,
+            "orchestrator.skills.enabled": false,
+            "orchestrator.mcp.enabled": false,
+            "skills.bundled.enabled": false,
+          }
+        : undefined,
       params.pluginHarnessToolPolicySafeDeniedTools?.includes("image_generate")
         ? { "features.image_generation": false }
         : undefined,
@@ -463,7 +450,7 @@ export function buildCodexRuntimeThreadConfigForRun(
       messageOnlySourceReply || params.pluginHarnessToolPolicyRestricted === true
         ? buildRestrictedToolConfigPatch(
             restrictedToolSurfaceMcpServerNames,
-            Boolean(params.scheduledRuntimeAuthority),
+            Boolean(params.scheduledRuntimeAuthority) && !isCodexResponsesOAuthRun(params),
           )
         : buildCodexRingZeroThreadConfigPatch(
             params,
@@ -488,6 +475,7 @@ export function buildCodexRuntimeThreadConfigForRun(
     ),
     options.shellEnvironment,
     options.disableLoginShell,
+    options.shellPathPrepend,
   );
 }
 
@@ -577,9 +565,10 @@ export async function assertCodexManagedRequirementsDoNotOverrideToolPolicy(
     additionalDeniedFeatures?: readonly string[];
     allowedManagedRequirementsFingerprint?: string;
     allowConfiguredManagedHooks?: boolean;
+    privateManagedHooksPresent?: boolean;
   },
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<{ enableManagedHooks: boolean }> {
   const requirements = await readCodexManagedRequirements(client, signal);
   const managedRequirementsFingerprint = buildCodexManagedRequirementsFingerprint(requirements);
   const managedRequirementsMatch =
@@ -593,8 +582,12 @@ export async function assertCodexManagedRequirementsDoNotOverrideToolPolicy(
     );
   }
   if (requirements === null) {
-    return;
+    return {
+      enableManagedHooks: managedHooksAllowed && options.privateManagedHooksPresent === true,
+    };
   }
+  let hasManagedHooks = false;
+  let requiredHooksEnabled: boolean | undefined;
   if (options.restrictedToolSurface) {
     for (const key of ["hooks", "managedHooks", "managed_hooks"] as const) {
       const hooks = requirements[key];
@@ -604,7 +597,8 @@ export async function assertCodexManagedRequirementsDoNotOverrideToolPolicy(
       if (!isJsonObject(hooks)) {
         throw new Error("Codex configRequirements/read returned invalid managed hooks");
       }
-      if (hasNonEmptyJsonValue(hooks) && !managedHooksAllowed) {
+      hasManagedHooks ||= hasNonEmptyJsonValue(hooks);
+      if (hasManagedHooks && !managedHooksAllowed) {
         throw new Error("Codex restricted tool surface cannot override managed hooks");
       }
     }
@@ -633,6 +627,7 @@ export async function assertCodexManagedRequirementsDoNotOverrideToolPolicy(
           CODEX_RING_ZERO_RESTRICTED_FEATURES.has(canonicalFeature)) ||
         additionalDeniedFeatures.has(canonicalFeature);
       if (canonicalFeature === "hooks" && managedHooksAllowed) {
+        requiredHooksEnabled = enabled;
         continue;
       }
       if (enabled && deniedByToolPolicy) {
@@ -640,6 +635,14 @@ export async function assertCodexManagedRequirementsDoNotOverrideToolPolicy(
       }
     }
   }
+  return {
+    enableManagedHooks:
+      managedHooksAllowed &&
+      requiredHooksEnabled !== false &&
+      (hasManagedHooks ||
+        options.privateManagedHooksPresent === true ||
+        requiredHooksEnabled === true),
+  };
 }
 
 /** Hashes the exact managed requirements without retaining their hook commands or policy details. */

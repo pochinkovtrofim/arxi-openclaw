@@ -22,6 +22,7 @@ import {
   type FileAttachmentOutcome,
   isSkippedFileOutcome,
   renderFileAttachmentOutcome,
+  resolveFileExtractionOutcome,
   sanitizeMimeType,
 } from "./file-attachment-outcomes.js";
 import {
@@ -225,15 +226,15 @@ async function classifyFileAttachment(params: {
     };
   }
   params.assertCurrent?.();
-  const text = extracted?.text?.trim() ?? "";
-  const extractedImages = extracted?.images ?? [];
-  if (text) {
-    return { outcome: { kind: "extracted", text, images: extractedImages }, filename, mimeType };
-  }
-  if (extractedImages.length > 0) {
-    return { outcome: { kind: "rendered-to-images", images: extractedImages }, filename, mimeType };
-  }
-  return { outcome: { kind: "no-extractable-text" }, filename, mimeType };
+  return {
+    outcome: resolveFileExtractionOutcome({
+      text: extracted?.text?.trim(),
+      images: extracted?.images,
+      metadata: extracted?.metadata,
+    }),
+    filename,
+    mimeType,
+  };
 }
 
 export async function extractFileContext(params: {

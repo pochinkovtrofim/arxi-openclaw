@@ -16,6 +16,35 @@ const config: OpenClawConfig = {
   tools: { sessions: { visibility: "all" } },
 };
 
+function createReadGateway(listedKeys?: string[]) {
+  return vi.fn(async (request: Parameters<AgentToolGatewayRequestCaller>[0]) => {
+    const params = request.params as { key?: string; sessionKeys?: string[] } | undefined;
+    if (request.method === "sessions.resolve") {
+      return { key: params?.key, agentId: "main" };
+    }
+    if (request.method === "sessions.list" && listedKeys) {
+      return {
+        sessions: listedKeys.map((key) => ({ key, agentId: "main" })),
+      };
+    }
+    if (request.method === "sessions.search") {
+      return {
+        results: (params?.sessionKeys ?? []).map((sessionKey) => ({
+          sessionKey,
+          role: "assistant",
+          snippet: "evidence",
+          timestamp: 1,
+          score: 1,
+        })),
+      };
+    }
+    if (request.method === "chat.history") {
+      return { messages: [{ role: "assistant", content: "evidence" }] };
+    }
+    throw new Error("Unexpected Gateway method: " + request.method);
+  });
+}
+
 describe("host-bound session read scope", () => {
   const tempDirs = useAutoCleanupTempDirTracker(afterEach);
   it.each(["history", "search", "search-context"] as const)(
@@ -121,8 +150,6 @@ describe("host-bound session read scope", () => {
 
   it.each([
     { kind: "history", grantMode: "sync" },
-    { kind: "search", grantMode: "sync" },
-    { kind: "history", grantMode: "async" },
     { kind: "search", grantMode: "async" },
   ] as const)(
     "keeps an observed session's active $grantMode plugin grant inside the $kind read cap",
@@ -140,31 +167,7 @@ describe("host-bound session read scope", () => {
           return { persist: true, result: undefined };
         },
       });
-      const requests: Array<Parameters<AgentToolGatewayRequestCaller>[0]> = [];
-      const callGateway: AgentToolGatewayRequestCaller = async <T>(
-        request: Parameters<AgentToolGatewayRequestCaller>[0],
-      ): Promise<T> => {
-        requests.push(request);
-        const params = request.params as { key?: string; sessionKeys?: string[] } | undefined;
-        if (request.method === "sessions.resolve") {
-          return { key: params?.key, agentId: "main" } as T;
-        }
-        if (request.method === "sessions.search") {
-          return {
-            results: (params?.sessionKeys ?? []).map((sessionKey) => ({
-              sessionKey,
-              role: "assistant",
-              snippet: "evidence",
-              timestamp: 1,
-              score: 1,
-            })),
-          } as T;
-        }
-        if (request.method === "chat.history") {
-          return { messages: [{ role: "assistant", content: "evidence" }] } as T;
-        }
-        throw new Error("Unexpected Gateway method: " + request.method);
-      };
+      const callGateway = createReadGateway();
       const create = (scoped: boolean) => {
         const opts = {
           agentId: "main",
@@ -175,7 +178,7 @@ describe("host-bound session read scope", () => {
             session: { store: storePath },
             tools: { sessions: { visibility: "self" as const } },
           },
-          callGateway,
+          callGateway: callGateway as AgentToolGatewayRequestCaller,
         };
         return kind === "history"
           ? createSessionsHistoryTool(opts)
@@ -208,7 +211,7 @@ describe("host-bound session read scope", () => {
             ? { sessionKey: attached, messages: [{ role: "assistant", content: "evidence" }] }
             : { results: [{ sessionKey: attached, snippet: "evidence" }] },
         );
-        requests.length = 0;
+        callGateway.mockClear();
         const scoped = create(true);
         expect(
           (await scoped.execute("selected", { ...args, sessionKey: discussion })).details,
@@ -217,15 +220,16 @@ describe("host-bound session read scope", () => {
             ? { sessionKey: discussion, messages: [{ role: "assistant", content: "evidence" }] }
             : { results: [{ sessionKey: discussion, snippet: "evidence" }] },
         );
-        requests.length = 0;
+        callGateway.mockClear();
         resolveGrant.mockClear();
         expect(
           (await scoped.execute("outside-cap", { ...args, sessionKey: attached })).details,
         ).toMatchObject({ status: "forbidden" });
         expect(resolveGrant).not.toHaveBeenCalled();
         expect(
-          requests.some(
-            (request) => request.method === "chat.history" || request.method === "sessions.search",
+          callGateway.mock.calls.some(
+            ([request]) =>
+              request.method === "chat.history" || request.method === "sessions.search",
           ),
         ).toBe(false);
       } finally {

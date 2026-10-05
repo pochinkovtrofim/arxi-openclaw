@@ -132,7 +132,9 @@ describe("cron script admission", () => {
               boundary: "cron.isolated-agent",
               state: "present" as const,
             },
-            onPostAdmission: (context: AdmittedRunContext) => admitted.push(context),
+            onPostAdmission: (context: AdmittedRunContext) => {
+              admitted.push(context);
+            },
             onExecutionStarted: started,
           },
         };
@@ -244,7 +246,9 @@ describe("cron script admission", () => {
         state: null,
         executionIdentity: {
           ingress: { kind: "schedule", boundary: "cron.isolated-agent", state: "present" },
-          onPostAdmission: (context) => admitted.push(context),
+          onPostAdmission: (context) => {
+            admitted.push(context);
+          },
         },
       });
     const first = run();
@@ -286,7 +290,7 @@ describe("cron script admission", () => {
         ingress: { kind: "schedule" as const, boundary: "cron.script", state: "present" as const },
         onPostAdmission: (context: AdmittedRunContext) => {
           admitted.push(context);
-          owner.onPostAdmission(context);
+          return owner.onPostAdmission(context);
         },
         onExecutionStarted: owner.onExecutionStarted,
       },

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type {
@@ -17,6 +18,7 @@ import {
   loadPendingDeliveries,
   createRecoveryLog,
   installDeliveryQueueTmpDirHooks,
+  setQueuedEntryState,
 } from "./delivery-queue.test-helpers.js";
 import { acceptedPreparedOutboundEntries } from "./prepared-batch.js";
 
@@ -182,10 +184,9 @@ describe("delivery-queue MEDIA-directive durability (end-to-end)", () => {
   });
 
   it("retains deferred media through restart and sends the same spool after its deadline", async () => {
-    vi.useFakeTimers();
-    const startedAt = new Date("2026-09-22T01:00:00.000Z");
-    vi.setSystemTime(startedAt);
-    const retryAtMs = startedAt.getTime() + 60_000;
+    // Producer leases run in a SQLite worker with real time. Move persisted
+    // deadlines across that clock instead of faking time in only this realm.
+    const retryAtMs = Date.now() + 60_000;
     const source = path.join(sourceDir, "quiet-window.txt");
     await fs.writeFile(source, bytes);
     installMatrixAdapter({
@@ -238,12 +239,15 @@ describe("delivery-queue MEDIA-directive durability (end-to-end)", () => {
         selectEntry: () => ({ match: true, bypassBackoff: false }),
       });
 
-    vi.setSystemTime(retryAtMs - 1);
     await drain();
     expect(recovered).toEqual([]);
     expect(await fs.readFile(spoolPath ?? "")).toEqual(bytes);
 
-    vi.setSystemTime(retryAtMs);
+    setQueuedEntryState(tmpDir, expectDefined(deferred, "deferred delivery").id, {
+      retryCount: 0,
+      availableAt: Date.now() - 1,
+      deferredUntilMs: Date.now() - 1,
+    });
     await drain();
     expect(recovered).toHaveLength(1);
     expect(recovered[0]).toMatchObject({ fromSpool: true, bytes: bytes.toString("hex") });
@@ -252,10 +256,12 @@ describe("delivery-queue MEDIA-directive durability (end-to-end)", () => {
     expect(failedAfterDue).not.toHaveProperty("availableAt");
     expect(await fs.readFile(spoolPath ?? "")).toEqual(bytes);
 
-    vi.setSystemTime(retryAtMs + 4_999);
     await drain();
     expect(recovered).toHaveLength(1);
-    vi.setSystemTime(retryAtMs + 5_000);
+    setQueuedEntryState(tmpDir, expectDefined(failedAfterDue, "retryable delivery").id, {
+      retryCount: 1,
+      lastAttemptAt: Date.now() - 5_001,
+    });
     await drain();
     expect(recovered).toHaveLength(2);
     expect(recovered[1]).toMatchObject({ fromSpool: true, bytes: bytes.toString("hex") });

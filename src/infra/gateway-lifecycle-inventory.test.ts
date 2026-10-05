@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createGatewayActiveWorkSnapshot } from "./gateway-active-work.js";
 
-const ARXI_LIFECYCLE_REVIEWED_UPSTREAM_COMMIT = "0965053fe6b9341776df147a6934b7485c60b5ca";
+const ARXI_LIFECYCLE_REVIEWED_UPSTREAM_COMMIT = "fc23bc864e4553c2d215e479eeec47b67a0bf943";
 
 const GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS = [
   { id: "command-queue", countKey: "queueSize" },
@@ -10,7 +10,9 @@ const GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS = [
   { id: "embedded-agent-run", countKey: "embeddedRuns" },
   { id: "background-exec", countKey: "backgroundExecSessions" },
   { id: "cron-run-and-watchers", countKey: "cronRuns" },
-  { id: "task-registry", countKey: "activeTasks" },
+  { id: "agent-run-context", countKey: "agentRuns" },
+  { id: "acp-turn", countKey: "acpRuns" },
+  { id: "media-generation", countKey: "mediaRuns" },
   { id: "gateway-root-request", countKey: "rootRequests" },
   { id: "session-work-admission", countKey: "sessionAdmissions" },
   { id: "session-lifecycle-mutation", countKey: "sessionMutations" },
@@ -18,6 +20,7 @@ const GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS = [
   { id: "queued-chat-turn", countKey: "queuedTurns" },
   { id: "terminal-persistence", countKey: "terminalPersistence" },
   { id: "terminal-session", countKey: "terminalSessions" },
+  { id: "migration-and-backup-custody", countKey: "lifecycleWrites" },
 ] as const;
 
 describe("Arxi lifecycle upgrade inventory", () => {

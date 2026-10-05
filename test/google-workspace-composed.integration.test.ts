@@ -1,17 +1,18 @@
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { Message } from "grammy/types";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 import { normalizeAllowFrom } from "../extensions/telegram/src/bot-access.js";
 import { isTelegramDmAccessAllowed } from "../extensions/telegram/src/dm-access.js";
 import {
   evaluateTelegramGroupBaseAccess,
   evaluateTelegramGroupPolicyAccess,
 } from "../extensions/telegram/src/group-access.js";
+import { bindSessionMcpRuntimeTestScheduler } from "../src/agents/agent-bundle-mcp-manager.test-support.js";
 import { materializeBundleMcpToolsForRun } from "../src/agents/agent-bundle-mcp-materialize.js";
 import {
   disposeAllSessionMcpRuntimes,
-  getOrCreateSessionMcpRuntime,
+  acquireSessionMcpRuntime,
 } from "../src/agents/agent-bundle-mcp-tools.js";
 import type { SessionMcpRuntime } from "../src/agents/agent-bundle-mcp-types.js";
 import { resolveConversationCapabilityProfile } from "../src/agents/conversation-capability-profile.js";
@@ -204,6 +205,7 @@ describe("authenticated Telegram to Arxi Google Workspace composition", () => {
   liveComposedTest(
     "uses the production resolver, real MCP runtime, Arxi policy, and real facade boundary",
     async () => {
+      await bindSessionMcpRuntimeTestScheduler();
       const identityId = requiredEnvironment("ARXI_GOOGLE_COMPOSED_IDENTITY_ID");
       const groupAgentId = requiredEnvironment("ARXI_GOOGLE_COMPOSED_GROUP_AGENT_ID");
       const groupAllow = parseGroupAllow();
@@ -215,7 +217,7 @@ describe("authenticated Telegram to Arxi Google Workspace composition", () => {
       resolverTesting.setMcpServerConnectionResolversForTest([resolver]);
 
       const privateSessionKey = `agent:${identityId}:telegram:private:42`;
-      const privateRuntime = await getOrCreateSessionMcpRuntime({
+      const privateLease = await acquireSessionMcpRuntime({
         sessionId: "google-composed-private",
         sessionKey: privateSessionKey,
         workspaceDir: process.cwd(),
@@ -229,8 +231,9 @@ describe("authenticated Telegram to Arxi Google Workspace composition", () => {
         runtimeGeneration: "12",
         traceId: "11111111111111111111111111111111",
       });
+      onTestFinished(() => privateLease.releaseLease());
       const privateTools = await visibleTools({
-        runtime: privateRuntime,
+        runtime: privateLease.runtime,
         config,
         agentId: identityId,
         sessionKey: privateSessionKey,
@@ -244,7 +247,7 @@ describe("authenticated Telegram to Arxi Google Workspace composition", () => {
       expect(resultContainsText(privateResult, "owner@gmail.test")).toBe(true);
 
       const groupSessionKey = `agent:${groupAgentId}:dashboard:incognito-0123456789abcdef0123456789abcdef`;
-      const groupRuntime = await getOrCreateSessionMcpRuntime({
+      const groupLease = await acquireSessionMcpRuntime({
         sessionId: "google-composed-group",
         sessionKey: groupSessionKey,
         workspaceDir: process.cwd(),
@@ -258,8 +261,9 @@ describe("authenticated Telegram to Arxi Google Workspace composition", () => {
         runtimeGeneration: "12",
         traceId: "22222222222222222222222222222222",
       });
+      onTestFinished(() => groupLease.releaseLease());
       const groupTools = await visibleTools({
-        runtime: groupRuntime,
+        runtime: groupLease.runtime,
         config,
         agentId: groupAgentId,
         sessionKey: groupSessionKey,

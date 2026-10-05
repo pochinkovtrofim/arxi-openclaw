@@ -202,6 +202,7 @@ function resolvePermittedPluginApprovalResolution(
 function buildPluginApprovalFailureReason(params: {
   fallbackReason: string;
   ctx?: HookContext;
+  noRoute?: boolean;
 }): string {
   const turnSourceChannel = params.ctx?.turnSourceChannel;
   if (!turnSourceChannel?.trim()) {
@@ -220,6 +221,9 @@ function buildPluginApprovalFailureReason(params: {
   });
   if (!setupText) {
     return params.fallbackReason;
+  }
+  if (params.noRoute) {
+    return `${params.fallbackReason}\n\n${setupText}`;
   }
   const nativeDeliverySurface =
     nativePluginSurface.kind === "disabled"
@@ -275,9 +279,42 @@ async function requestPluginToolApproval(params: {
 }): Promise<HookOutcome> {
   const approval = params.approval;
   const pluginData = normalizePluginApprovalData(approval.pluginData);
+  const policySubject = params.ctx?.toolOwnerPluginId
+    ? { pluginKey: params.ctx.toolOwnerPluginId, tool: params.toolName }
+    : undefined;
   const timeoutMs = resolvePluginToolApprovalTimeoutMs(approval);
   const gatewayTimeoutMs = resolvePluginToolApprovalGatewayTimeoutMs(timeoutMs);
   const allowedDecisions = resolveCanonicalPluginApprovalRequestAllowedDecisions(approval);
+  const resolveDecision = (decision: unknown, approvalId: string): HookOutcome | undefined => {
+    const resolution = resolvePermittedPluginApprovalResolution(decision, allowedDecisions);
+    notifyPluginApprovalResolution(approval, resolution);
+    if (
+      resolution === PluginApprovalResolutions.ALLOW_ONCE ||
+      resolution === PluginApprovalResolutions.ALLOW_ALWAYS
+    ) {
+      const approvedParams = mergeParamsWithApprovalOverrides(
+        params.baseParams,
+        params.overrideParams,
+      );
+      const pending = pendingApprovedExecution({
+        approval,
+        approvalId,
+        decision: resolution,
+        toolName: params.toolName,
+        ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+        params: approvedParams,
+      });
+      return {
+        blocked: false,
+        params: approvedParams,
+        approvalResolution: resolution,
+        ...(pending ? { pendingApprovedExecution: pending } : {}),
+      };
+    }
+    return resolution === PluginApprovalResolutions.DENY
+      ? pluginApprovalDeniedOutcome(params.baseParams)
+      : undefined;
+  };
   let gatewayApprovalPhase: "none" | "request" | "wait" = "none";
   try {
     const embeddedApprovalBroker = isEmbeddedMode() ? getEmbeddedPluginApprovalBroker() : null;
@@ -293,6 +330,7 @@ async function requestPluginToolApproval(params: {
           allowedDecisions: approval.allowedDecisions,
           toolName: params.toolName,
           toolCallId: params.toolCallId,
+          ...(policySubject ? { policySubject } : {}),
           agentId: params.ctx?.agentId,
           sessionKey: params.ctx?.sessionKey,
           turnSourceChannel: params.ctx?.turnSourceChannel,
@@ -303,34 +341,9 @@ async function requestPluginToolApproval(params: {
         timeoutMs,
         signal: params.signal,
       });
-      const decision = result.decision;
-      const resolution = resolvePermittedPluginApprovalResolution(decision, allowedDecisions);
-      notifyPluginApprovalResolution(approval, resolution);
-      if (
-        resolution === PluginApprovalResolutions.ALLOW_ONCE ||
-        resolution === PluginApprovalResolutions.ALLOW_ALWAYS
-      ) {
-        const approvedParams = mergeParamsWithApprovalOverrides(
-          params.baseParams,
-          params.overrideParams,
-        );
-        const pending = pendingApprovedExecution({
-          approval,
-          approvalId: result.id,
-          decision: resolution,
-          toolName: params.toolName,
-          ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
-          params: approvedParams,
-        });
-        return {
-          blocked: false,
-          params: approvedParams,
-          approvalResolution: resolution,
-          ...(pending ? { pendingApprovedExecution: pending } : {}),
-        };
-      }
-      if (resolution === PluginApprovalResolutions.DENY) {
-        return pluginApprovalDeniedOutcome(params.baseParams);
+      const outcome = resolveDecision(result.decision, result.id);
+      if (outcome) {
+        return outcome;
       }
       // Veto carries the plugin-supplied reason; plain timeouts record a
       // timed_out failure disposition for the audit ledger.
@@ -388,6 +401,7 @@ async function requestPluginToolApproval(params: {
             allowedDecisions: approval.allowedDecisions,
             toolName: params.toolName,
             toolCallId: params.toolCallId,
+            ...(policySubject ? { policySubject } : {}),
             agentId: params.ctx?.agentId,
             sessionKey: params.ctx?.sessionKey,
             ...(params.ctx?.approvalReviewerDeviceId
@@ -430,6 +444,7 @@ async function requestPluginToolApproval(params: {
           reason: buildPluginApprovalFailureReason({
             fallbackReason: "Plugin approval unavailable (no approval route)",
             ctx: params.ctx,
+            noRoute: true,
           }),
           params: params.baseParams,
         };
@@ -453,33 +468,9 @@ async function requestPluginToolApproval(params: {
       // misrouted reply must never release a different tool gate.
       decision = waitResult?.id === id ? waitResult.decision : undefined;
     }
-    const resolution = resolvePermittedPluginApprovalResolution(decision, allowedDecisions);
-    notifyPluginApprovalResolution(approval, resolution);
-    if (
-      resolution === PluginApprovalResolutions.ALLOW_ONCE ||
-      resolution === PluginApprovalResolutions.ALLOW_ALWAYS
-    ) {
-      const approvedParams = mergeParamsWithApprovalOverrides(
-        params.baseParams,
-        params.overrideParams,
-      );
-      const pending = pendingApprovedExecution({
-        approval,
-        approvalId: id,
-        decision: resolution,
-        toolName: params.toolName,
-        ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
-        params: approvedParams,
-      });
-      return {
-        blocked: false,
-        params: approvedParams,
-        approvalResolution: resolution,
-        ...(pending ? { pendingApprovedExecution: pending } : {}),
-      };
-    }
-    if (resolution === PluginApprovalResolutions.DENY) {
-      return pluginApprovalDeniedOutcome(params.baseParams);
+    const outcome = resolveDecision(decision, id);
+    if (outcome) {
+      return outcome;
     }
     const fallbackTimeoutReason = approval.timeoutReason ?? "Approval timed out";
     const timeoutReason =

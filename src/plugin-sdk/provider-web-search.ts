@@ -1,6 +1,6 @@
 // Public web-search registration helpers for provider plugins.
 
-import type {
+export type {
   WebSearchCredentialResolutionSource,
   WebSearchProviderSetupContext,
   WebSearchProviderPlugin,
@@ -75,10 +75,3 @@ export {
 export { enablePluginInConfig } from "../plugins/enable.js";
 export { formatCliCommand } from "../cli/command-format.js";
 export { wrapWebContent } from "../security/external-content.js";
-export type {
-  WebSearchCredentialResolutionSource,
-  WebSearchProviderSetupContext,
-  WebSearchProviderPlugin,
-  WebSearchProviderToolDefinition,
-  WebSearchProviderToolExecutionContext,
-};

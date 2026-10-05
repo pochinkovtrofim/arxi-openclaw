@@ -1,16 +1,5 @@
-import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
-import {
-  type DeliveryQueueStateContext,
-  resolveDeliveryQueueStateEnv,
-} from "../delivery-queue-sqlite.js";
-import { OUTBOUND_DELIVERY_QUEUE_NAME } from "./delivery-queue-media-staging.js";
-import { deferDeliveryAttemptBeforeDispatchInDatabase } from "./delivery-queue-storage.kernel.js";
-import type { QueuedDelivery } from "./delivery-queue-types.js";
-
-/** Clear a one-time provider deferral once an actual delivery attempt starts or settles. */
-export function clearDeliveryDeferral(entry: QueuedDelivery): QueuedDelivery {
-  return { ...entry, availableAt: undefined, deferredUntilMs: undefined };
-}
+import type { DeliveryQueueStateContext } from "../delivery-queue-sqlite.js";
+import { executeDeliveryQueueOperation } from "../delivery-queue-worker-store.js";
 
 /** Keep an unsent prepared batch and its media under queue custody until a future retry. */
 export function deferDeliveryBeforePlatformSend(
@@ -20,16 +9,14 @@ export function deferDeliveryBeforePlatformSend(
   claimedAttemptId: string,
   context?: DeliveryQueueStateContext,
   restoreAttemptCount?: number,
-): void {
-  runOpenClawStateWriteTransaction(
-    (database) =>
-      deferDeliveryAttemptBeforeDispatchInDatabase(database, {
-        id,
-        retryAtMs,
-        claimedAttemptId,
-        ...(restoreAttemptCount !== undefined ? { restoreAttemptCount } : {}),
-      }),
-    { env: resolveDeliveryQueueStateEnv(stateDir, context) },
-    { operationLabel: `defer owned ${OUTBOUND_DELIVERY_QUEUE_NAME} delivery` },
-  );
+): Promise<void> {
+  return executeDeliveryQueueOperation(context, stateDir, {
+    type: "deliveryQueue.deferOutbound",
+    input: {
+      id,
+      retryAtMs,
+      claimedAttemptId,
+      ...(restoreAttemptCount !== undefined ? { restoreAttemptCount } : {}),
+    },
+  });
 }

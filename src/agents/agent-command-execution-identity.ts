@@ -54,6 +54,7 @@ function prepareAgentCommandRunAdmission(
     runId: string;
     onAdmitted?: Parameters<typeof prepareAgentRunAdmission>[0]["onAdmitted"];
     assertSourceCurrent?: () => void;
+    operatorAuthority?: AgentCommandOpts["operatorAuthority"];
   },
   spawnFacts?: AgentCommandExecutionIdentitySpawnFacts,
 ) {
@@ -82,6 +83,7 @@ function prepareAgentCommandRunAdmission(
     ...(params.admission ? { recovery: params.admission } : {}),
     ...(params.onAdmitted ? { onAdmitted: params.onAdmitted } : {}),
     assertSourceCurrent: params.assertSourceCurrent,
+    operatorAuthority: params.operatorAuthority,
   });
 }
 
@@ -166,6 +168,7 @@ export function prepareAgentCommandExecutionIdentity(params: {
     operationalRunInstance,
     runId: prepared.runId,
     assertSourceCurrent: opts.assertSourceCurrent,
+    operatorAuthority: opts.operatorAuthority,
     onAdmitted: async (admittedRunContext) => {
       await opts.onAdmittedRunContext?.(admittedRunContext);
       admittedContext = admittedRunContext;
@@ -225,6 +228,10 @@ export function sanitizePublicAgentCommandIngressOpts(
     opts as AgentCommandIngressOpts & { nativeDeliveryPurpose?: unknown };
   return withoutAgentCommandExecutionIdentitySpawnFacts({
     ...publicOpts,
+    clientCaps: undefined,
+    gatewayUiCommandTarget: undefined,
+    toolBindings: undefined,
+    taskSuggestionDeliveryMode: undefined,
     runtimeContextFragments: undefined,
     senderIsOwner: false,
     mainRestartRecoveryOwnerLease: undefined,
@@ -234,9 +241,12 @@ export function sanitizePublicAgentCommandIngressOpts(
     executionIdentityAdmission: undefined,
     operationalRunInstance: undefined,
     assertSourceCurrent: undefined,
+    operatorAuthority: undefined,
+    skillLibraryAuthoring: undefined,
     cronCreatorAuthorityCapability: undefined,
     onAdmittedRunContext: undefined,
     onPostAdmittedRunContext: undefined,
+    beforeTerminalDelivery: undefined,
   });
 }
 

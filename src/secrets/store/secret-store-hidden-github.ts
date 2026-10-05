@@ -1,6 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { Selectable } from "kysely";
-import { hasErrnoCode } from "../../infra/errno.js";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
@@ -16,6 +15,7 @@ import {
   type OpenClawStateDatabaseOptions,
 } from "../../state/openclaw-state-db.js";
 import { resolveSecretStoreDatabase } from "./secret-store-database.js";
+import { isMissingSecretStoreTableError } from "./secret-store-sqlite.js";
 import {
   SECRET_STORE_VALUE_MAX_BYTES,
   SecretStoreValidationError,
@@ -57,14 +57,6 @@ function hiddenGitHubStoreKindFromPrefix(prefix: HiddenGitHubStorePrefix): Hidde
   throw new SecretStoreValidationError(
     "SECRET_STORE_INVALID_NAME",
     'Hidden GitHub secret record prefix must be "github-device" or "github-oauth".',
-  );
-}
-
-function isMissingSecretStoreTableError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    hasErrnoCode(error, "ERR_SQLITE_ERROR") &&
-    error.message === "no such table: secret_store_entries"
   );
 }
 
