@@ -282,45 +282,48 @@ describe("agent runtime plugin registries", () => {
     },
   );
 
-  it.each([false, true])("adopts full-only runtime capabilities with gateway binding=%s", (allowGatewaySubagentBinding) => {
-    const activeRegistry = createEmptyPluginRegistry();
-    const primaryRegistry = createEmptyPluginRegistry();
-    const contextEnginesAdopted = { handle: "context-engines" };
-    const presentersAdopted = { handle: "presenters" };
-    const onPrimaryRegistry = vi.fn();
-    hoisted.loadPluginRegistryHandle.mockReturnValue(primaryRegistry);
-    hoisted.getActivePluginRegistry.mockReturnValue(activeRegistry);
-    hoisted.adoptRuntimeContextEngineRegistrations.mockReturnValue(contextEnginesAdopted);
-    hoisted.adoptRuntimeWidgetPresenterRegistrations.mockReturnValue(presentersAdopted);
+  it.each([false, true])(
+    "adopts full-only runtime capabilities with gateway binding=%s",
+    (allowGatewaySubagentBinding) => {
+      const activeRegistry = createEmptyPluginRegistry();
+      const primaryRegistry = createEmptyPluginRegistry();
+      const contextEnginesAdopted = { handle: "context-engines" };
+      const presentersAdopted = { handle: "presenters" };
+      const onPrimaryRegistry = vi.fn();
+      hoisted.loadPluginRegistryHandle.mockReturnValue(primaryRegistry);
+      hoisted.getActivePluginRegistry.mockReturnValue(activeRegistry);
+      hoisted.adoptRuntimeContextEngineRegistrations.mockReturnValue(contextEnginesAdopted);
+      hoisted.adoptRuntimeWidgetPresenterRegistrations.mockReturnValue(presentersAdopted);
 
-    expect(
-      loadAgentRuntimePluginRegistryHandle(
-        { config: {}, workspaceDir: "/tmp/workspace", allowGatewaySubagentBinding },
-        onPrimaryRegistry,
-      ),
-    ).toBe(presentersAdopted);
-    if (allowGatewaySubagentBinding) {
-      expect(hoisted.adoptRuntimeToolPolicyRegistrations).toHaveBeenCalledWith(
+      expect(
+        loadAgentRuntimePluginRegistryHandle(
+          { config: {}, workspaceDir: "/tmp/workspace", allowGatewaySubagentBinding },
+          onPrimaryRegistry,
+        ),
+      ).toBe(presentersAdopted);
+      if (allowGatewaySubagentBinding) {
+        expect(hoisted.adoptRuntimeToolPolicyRegistrations).toHaveBeenCalledWith(
+          primaryRegistry,
+          activeRegistry,
+          {},
+        );
+      } else {
+        expect(hoisted.adoptRuntimeToolPolicyRegistrations).not.toHaveBeenCalled();
+      }
+      expect(onPrimaryRegistry).toHaveBeenCalledExactlyOnceWith(primaryRegistry);
+      expect(hoisted.adoptRuntimeContextEngineRegistrations).toHaveBeenCalledWith(
         primaryRegistry,
         activeRegistry,
-        {},
       );
-    } else {
-      expect(hoisted.adoptRuntimeToolPolicyRegistrations).not.toHaveBeenCalled();
-    }
-    expect(onPrimaryRegistry).toHaveBeenCalledExactlyOnceWith(primaryRegistry);
-    expect(hoisted.adoptRuntimeContextEngineRegistrations).toHaveBeenCalledWith(
-      primaryRegistry,
-      activeRegistry,
-    );
-    expect(hoisted.adoptRuntimeWidgetPresenterRegistrations).toHaveBeenCalledWith(
-      contextEnginesAdopted,
-      activeRegistry,
-    );
-    expect(hoisted.loadPluginRegistryHandle).toHaveBeenCalledWith(
-      expect.not.objectContaining({ onlyPluginIds: expect.anything() }),
-    );
-  });
+      expect(hoisted.adoptRuntimeWidgetPresenterRegistrations).toHaveBeenCalledWith(
+        contextEnginesAdopted,
+        activeRegistry,
+      );
+      expect(hoisted.loadPluginRegistryHandle).toHaveBeenCalledWith(
+        expect.not.objectContaining({ onlyPluginIds: expect.anything() }),
+      );
+    },
+  );
 
   it.each([false, true])(
     "keeps catalog registries exact with broader reusable scope=%s",

@@ -14,7 +14,9 @@ describe("archived Arxi fork gate", () => {
     expect(existsSync(".github/workflows")).toBe(false);
   });
   it("checks the upstream pin with bounded candidate ancestry", () => {
-    const workflow = parse(readFileSync(".github/workflows-disabled/arxi-ci.yml", "utf8")) as Workflow;
+    const workflow = parse(
+      readFileSync(".github/workflows-disabled/arxi-ci.yml", "utf8"),
+    ) as Workflow;
     const steps = workflow.jobs?.["runtime-contract"]?.steps ?? [];
     const checkout = steps.find((step) => step.name === "Checkout exact candidate");
     const resolve = steps.find(
@@ -34,7 +36,9 @@ describe("archived Arxi fork gate", () => {
   });
 
   it("classifies requester-scoped MCP and repository instruction changes", () => {
-    const workflow = parse(readFileSync(".github/workflows-disabled/arxi-ci.yml", "utf8")) as Workflow;
+    const workflow = parse(
+      readFileSync(".github/workflows-disabled/arxi-ci.yml", "utf8"),
+    ) as Workflow;
     const steps = workflow.jobs?.["runtime-contract"]?.steps ?? [];
     const reject = steps.find((step) => step.name === "Reject unclassified production changes");
 

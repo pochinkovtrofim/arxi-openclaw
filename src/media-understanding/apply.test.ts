@@ -2127,7 +2127,7 @@ describe("applyMediaUnderstanding", () => {
         content: Buffer.alloc(256, 0x81),
       });
 
-      const { ctx, result } = await applyWithDisabledMedia({
+      const { ctx } = await applyWithDisabledMedia({
         body: "<media:document>",
         mediaPath: filePath,
         mediaType,

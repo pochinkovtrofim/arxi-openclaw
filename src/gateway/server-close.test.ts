@@ -866,7 +866,8 @@ describe("createGatewayCloseHandler", () => {
     expect(deps.stopMediaCleanup).toHaveBeenCalledTimes(1);
     expect(deps.chatRunState.clear).toHaveBeenCalledTimes(1);
     expect(mocks.closeOpenClawAgentDatabasesAsync).toHaveBeenCalledTimes(1);
-    expect(closeOrder).toStrictEqual(["runtime-owner", "agent-databases"]);
+    // Releasing agent database leases still writes through the shared runtime owner.
+    expect(closeOrder).toStrictEqual(["agent-databases", "runtime-owner"]);
   });
 
   it.each(["media", "stopPeriodicTasks", "skillUsageCleanup"] as const)(
@@ -987,7 +988,7 @@ describe("createGatewayCloseHandler", () => {
     expect(clearSecretsRuntimeSnapshot).toHaveBeenCalledOnce();
   });
 
-  it("rejects close but still clears secrets when an agent database cannot close", async () => {
+  it("retains shared state and secrets when an agent database cannot close", async () => {
     const closeError = new Error("agent database close failed");
     mocks.closeOpenClawAgentDatabasesAsync.mockImplementationOnce(() => {
       throw closeError;
@@ -998,7 +999,8 @@ describe("createGatewayCloseHandler", () => {
     );
 
     await expect(close({ reason: "test" })).rejects.toThrow(closeError);
-    expect(clearSecretsRuntimeSnapshot).toHaveBeenCalledOnce();
+    expect(mocks.closePluginStateDatabaseAsync).not.toHaveBeenCalled();
+    expect(clearSecretsRuntimeSnapshot).not.toHaveBeenCalled();
   });
 
   it.skipIf(process.platform === "win32").each([

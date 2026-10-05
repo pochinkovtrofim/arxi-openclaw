@@ -276,9 +276,7 @@ it("prunes missing and archived registry entries before migration", async () => 
 it.each(["foreign-owner", "session-state"])(
   "refuses an imported credential database with %s",
   async (reason) => {
-    stateDir = fs.realpathSync.native(
-      makeTempDir(tempDirs, "arxi-credential-refusal-state-"),
-    );
+    stateDir = fs.realpathSync.native(makeTempDir(tempDirs, "arxi-credential-refusal-state-"));
     const authDir = fs.realpathSync.native(makeTempDir(tempDirs, "arxi-credential-refusal-auth-"));
     env = {
       OPENCLAW_STATE_DIR: stateDir,
@@ -308,59 +306,62 @@ it.each(["foreign-owner", "session-state"])(
   },
 );
 
-it("upgrades the exact Arxi credential-only schema without importing it as session state", async () => {
-  stateDir = fs.realpathSync.native(
-    makeTempDir(tempDirs, "media-persistence-arxi-owner-state-"),
-  );
-  const authDir = fs.realpathSync.native(
-    makeTempDir(tempDirs, "media-persistence-arxi-runtime-auth-"),
-  );
-  env = {
-    OPENCLAW_STATE_DIR: stateDir,
-    ARXI_AUTH_AGENT_DIR: authDir,
-    ARXI_AUTH_SCHEMA_MIGRATION_DIR: authDir,
-  };
-  const databasePath = path.join(authDir, "openclaw-agent.sqlite");
-  createLegacyAgentDatabase({ env, path: databasePath, schemaVersion: 19 });
-  const ignored = await migrateLegacyMediaPersistence({
-    env: { ...env, ARXI_AUTH_SCHEMA_MIGRATION_DIR: undefined },
-  });
-  expect(ignored.warnings).toEqual([]);
-  expect(readUserVersion(databasePath)).toBe(19);
-  const { DatabaseSync } = requireNodeSqlite();
-  const before = new DatabaseSync(databasePath);
-  const profile = JSON.stringify({
-    version: 1,
-    profiles: { fixture: { type: "token", token: "fixture-secret" } },
-  });
-  const state = JSON.stringify({ version: 1, usageStats: { fixture: { lastUsed: 123 } } });
-  before
-    .prepare(
-      "INSERT INTO auth_profile_store(store_key,store_json,updated_at) VALUES('primary',?,123)",
-    )
-    .run(profile);
-  before
-    .prepare(
-      "INSERT INTO auth_profile_state(state_key,state_json,updated_at) VALUES('primary',?,123)",
-    )
-    .run(state);
-  before.close();
+it.each([19, 21])(
+  "upgrades Arxi credential-only schema %s without importing it as session state",
+  async (schemaVersion) => {
+    stateDir = fs.realpathSync.native(makeTempDir(tempDirs, "media-persistence-arxi-owner-state-"));
+    const authDir = fs.realpathSync.native(
+      makeTempDir(tempDirs, "media-persistence-arxi-runtime-auth-"),
+    );
+    env = {
+      OPENCLAW_STATE_DIR: stateDir,
+      ARXI_AUTH_AGENT_DIR: authDir,
+      ARXI_AUTH_SCHEMA_MIGRATION_DIR: authDir,
+    };
+    const databasePath = path.join(authDir, "openclaw-agent.sqlite");
+    createLegacyAgentDatabase({ env, path: databasePath, schemaVersion });
+    const ignored = await migrateLegacyMediaPersistence({
+      env: { ...env, ARXI_AUTH_SCHEMA_MIGRATION_DIR: undefined },
+    });
+    expect(ignored.warnings).toEqual([]);
+    expect(readUserVersion(databasePath)).toBe(schemaVersion);
+    const { DatabaseSync } = requireNodeSqlite();
+    const before = new DatabaseSync(databasePath);
+    const profile = JSON.stringify({
+      version: 1,
+      profiles: { fixture: { type: "token", token: "fixture-secret" } },
+    });
+    const state = JSON.stringify({ version: 1, usageStats: { fixture: { lastUsed: 123 } } });
+    before
+      .prepare(
+        "INSERT INTO auth_profile_store(store_key,store_json,updated_at) VALUES('primary',?,123)",
+      )
+      .run(profile);
+    before
+      .prepare(
+        "INSERT INTO auth_profile_state(state_key,state_json,updated_at) VALUES('primary',?,123)",
+      )
+      .run(state);
+    before.close();
 
-  const result = await migrateLegacyMediaPersistence({ env });
+    const result = await migrateLegacyMediaPersistence({ env });
 
-  expect(result.warnings).toEqual([]);
-  expect(readUserVersion(databasePath)).toBe(OPENCLAW_AGENT_SCHEMA_VERSION);
-  const after = new DatabaseSync(databasePath, { readOnly: true });
-  expect(after.prepare("SELECT store_json FROM auth_profile_store").get()?.store_json).toBe(
-    profile,
-  );
-  expect(after.prepare("SELECT state_json FROM auth_profile_state").get()?.state_json).toBe(state);
-  expect(after.prepare("SELECT count(*) AS count FROM session_nodes").get()?.count).toBe(0);
-  after.close();
-  expect(
-    listOpenClawRegisteredAgentDatabases({
-      env,
-      includeIncompatibleSchemaVersions: true,
-    }),
-  ).toEqual([expect.objectContaining({ agentId: "main", path: databasePath })]);
-});
+    expect(result.warnings).toEqual([]);
+    expect(readUserVersion(databasePath)).toBe(OPENCLAW_AGENT_SCHEMA_VERSION);
+    const after = new DatabaseSync(databasePath, { readOnly: true });
+    expect(after.prepare("SELECT store_json FROM auth_profile_store").get()?.store_json).toBe(
+      profile,
+    );
+    expect(after.prepare("SELECT state_json FROM auth_profile_state").get()?.state_json).toBe(
+      state,
+    );
+    expect(after.prepare("SELECT count(*) AS count FROM session_nodes").get()?.count).toBe(0);
+    after.close();
+    expect(
+      listOpenClawRegisteredAgentDatabases({
+        env,
+        includeIncompatibleSchemaVersions: true,
+      }),
+    ).toEqual([expect.objectContaining({ agentId: "main", path: databasePath })]);
+  },
+);

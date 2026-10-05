@@ -1,5 +1,5 @@
-import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import type { WorkboardExecution } from "@openclaw/workboard-contract";
+import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import {
   createHookRunner,
   createMockPluginRegistry,

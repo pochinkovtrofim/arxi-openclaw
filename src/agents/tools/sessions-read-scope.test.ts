@@ -99,7 +99,7 @@ describe("host-bound session read scope", () => {
       expect(result.details).toMatchObject(
         kind === "history"
           ? { sessionKey: observed, messages: [{ role: "assistant" }] }
-          : { results: [{ sessionKey: observed, snippet: "evidence" }] },
+          : { results: [{ sessionKey: observed, snippet: "observed evidence" }] },
       );
       if (kind === "search-context") {
         expect(result.details).toMatchObject({ context: { messages: [{ role: "assistant" }] } });

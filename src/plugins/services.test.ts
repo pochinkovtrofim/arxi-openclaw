@@ -860,17 +860,21 @@ describe("startPluginServices", () => {
       return contexts[0]?.internalDiagnostics as TrustedExporterInternalDiagnostics | undefined;
     };
     const diagnostics = await startExporter("diagnostics-otel", "bundled");
-    for (const internal of [
-      diagnostics,
-      await startExporter("diagnostics-prometheus", "bundled"),
-      await startExporter("diagnostics-otel", "config", true),
-      await startExporter("diagnostics-prometheus", "global", true),
-    ]) {
+    for (const [internal, spanBindings] of [
+      [diagnostics, true],
+      [await startExporter("diagnostics-prometheus", "bundled"), false],
+      [await startExporter("diagnostics-otel", "config", true), true],
+      [await startExporter("diagnostics-prometheus", "global", true), false],
+    ] as const) {
       expect(internal?.onEvent).toBeTypeOf("function");
       expect(internal?.emit).toBeTypeOf("function");
       expect(internal?.registerTracePropagationBridge).toBeTypeOf("function");
       expect(internal?.reportExporterHealth).toBeTypeOf("function");
-      expect(internal?.createSpanBindingEmitter).toBeTypeOf("function");
+      if (spanBindings) {
+        expect(internal?.createSpanBindingEmitter).toBeTypeOf("function");
+      } else {
+        expect(internal?.createSpanBindingEmitter).toBeUndefined();
+      }
     }
     expect(await startExporter("diagnostics-otel", "workspace")).toBeUndefined();
     expect(

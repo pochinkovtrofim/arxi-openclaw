@@ -8,12 +8,12 @@ import {
   evaluateTelegramGroupBaseAccess,
   evaluateTelegramGroupPolicyAccess,
 } from "../extensions/telegram/src/group-access.js";
+import { bindSessionMcpRuntimeTestScheduler } from "../src/agents/agent-bundle-mcp-manager.test-support.js";
 import { materializeBundleMcpToolsForRun } from "../src/agents/agent-bundle-mcp-materialize.js";
 import {
   disposeAllSessionMcpRuntimes,
   acquireSessionMcpRuntime,
 } from "../src/agents/agent-bundle-mcp-tools.js";
-import { bindSessionMcpRuntimeTestScheduler } from "../src/agents/agent-bundle-mcp-manager.test-support.js";
 import type { SessionMcpRuntime } from "../src/agents/agent-bundle-mcp-types.js";
 import { resolveConversationCapabilityProfile } from "../src/agents/conversation-capability-profile.js";
 import { applyFinalEffectiveToolPolicy } from "../src/agents/embedded-agent-runner/effective-tool-policy.js";
