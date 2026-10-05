@@ -173,12 +173,14 @@ export async function snapshotAriaViaPlaywright(opts: {
   timeoutMs?: number;
   signal?: AbortSignal;
   ssrfPolicy?: SsrFPolicy;
+  browserProxyMode?: BrowserNavigationPolicyOptions["browserProxyMode"];
 }): Promise<{ nodes: AriaSnapshotNode[] }> {
   const limit = resolveIntegerOption(opts.limit, 500, { min: 1, max: 2000 });
   const page = await prepareSnapshotPageViaPlaywright({
     cdpUrl: opts.cdpUrl,
     targetId: opts.targetId,
     ssrfPolicy: opts.ssrfPolicy,
+    browserProxyMode: opts.browserProxyMode,
   });
   const ariaTimeoutMs = resolveSnapshotTimeoutMs(opts.timeoutMs);
   return await withSnapshotFrameGuard({

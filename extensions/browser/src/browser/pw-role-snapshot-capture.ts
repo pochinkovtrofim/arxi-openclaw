@@ -3,6 +3,7 @@ import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runti
 import { withTimeout } from "openclaw/plugin-sdk/text-utility-runtime";
 import type { Frame, Page } from "playwright-core";
 import { snapshotRoleViaCdpSession } from "./cdp-role-snapshot.js";
+import type { BrowserNavigationPolicyOptions } from "./navigation-guard.js";
 import {
   buildRoleSnapshotFromAiSnapshot,
   finalizeRoleSnapshot,
@@ -76,12 +77,14 @@ export async function snapshotRoleViaPlaywright(opts: {
   timeoutMs?: number;
   signal?: AbortSignal;
   ssrfPolicy?: SsrFPolicy;
+  browserProxyMode?: BrowserNavigationPolicyOptions["browserProxyMode"];
   delta?: { mode: RoleSnapshotIdentityMode; previousKeys?: ReadonlySet<string> };
 }): Promise<RoleSnapshotResult> {
   const page = await prepareSnapshotPageViaPlaywright({
     cdpUrl: opts.cdpUrl,
     targetId: opts.targetId,
     ssrfPolicy: opts.ssrfPolicy,
+    browserProxyMode: opts.browserProxyMode,
   });
 
   const ariaSnapshotTimeout = resolveSnapshotTimeoutMs(opts.timeoutMs);

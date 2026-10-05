@@ -611,7 +611,7 @@ export function registerBrowserAgentSnapshotRoutes(
               selector: plan.selectorValue,
               frameSelector: plan.frameSelectorValue,
               refsMode: plan.refsMode,
-              ssrfPolicy: ctx.state().resolved.ssrfPolicy,
+              ...ssrfPolicyOpts,
               urls: plan.urls,
               timeoutMs: plan.timeoutMs,
               maxChars: plan.resolvedMaxChars,
@@ -669,7 +669,7 @@ export function registerBrowserAgentSnapshotRoutes(
                     cdpUrl: profileCtx.profile.cdpUrl,
                     targetId: tab.targetId,
                     refsMode: "aria",
-                    ssrfPolicy: ctx.state().resolved.ssrfPolicy,
+                    ...ssrfPolicyOpts,
                     urls: plan.urls,
                     timeoutMs: plan.timeoutMs,
                     signal,
@@ -736,7 +736,7 @@ export function registerBrowserAgentSnapshotRoutes(
               targetId: tab.targetId,
               limit: plan.limit,
               timeoutMs: plan.timeoutMs,
-              ssrfPolicy: ctx.state().resolved.ssrfPolicy,
+              ...ssrfPolicyOpts,
               signal,
             });
           } else {

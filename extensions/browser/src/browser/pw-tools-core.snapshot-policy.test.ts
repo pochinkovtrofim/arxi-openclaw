@@ -57,6 +57,33 @@ describe("browser snapshot navigation policy", () => {
     pageState.page = null;
   });
 
+  it("preserves proxy routing when rechecking an AI snapshot's current URL", async () => {
+    const ariaSnapshot = vi.fn(async () => 'button "Tickets"');
+    pageState.page = createSnapshotPage({
+      url: vi.fn(() => "https://example.com/tickets"),
+      ariaSnapshot,
+    });
+    const options = {
+      cdpUrl: "http://127.0.0.1:18792",
+      targetId: "tab-1",
+      refsMode: "aria",
+      ssrfPolicy: { dangerouslyAllowPrivateNetwork: true },
+      browserProxyMode: "explicit-browser-proxy",
+    } as const;
+
+    await snapshots.snapshotRoleViaPlaywright(options);
+
+    expect(sessionMocks.assertPageNavigationCompletedSafely).toHaveBeenCalledWith({
+      cdpUrl: options.cdpUrl,
+      targetId: options.targetId,
+      page: pageState.page,
+      response: null,
+      ssrfPolicy: options.ssrfPolicy,
+      browserProxyMode: options.browserProxyMode,
+    });
+    expect(sessionMocks.assertPageNavigationCompletedSafely).toHaveBeenCalledBefore(ariaSnapshot);
+  });
+
   it.each([
     {
       name: "snapshotting AI content",

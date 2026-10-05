@@ -2,6 +2,7 @@ import { parseFiniteNumber } from "openclaw/plugin-sdk/number-runtime";
 import type { SsrFPolicy } from "openclaw/plugin-sdk/security-runtime";
 import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
 import type { Frame, Page } from "playwright-core";
+import type { BrowserNavigationPolicyOptions } from "./navigation-guard.js";
 import { getPageForTargetId, assertPageNavigationCompletedSafely } from "./pw-session.js";
 import type { SnapshotUrlEntry } from "./snapshot-urls.js";
 
@@ -45,6 +46,7 @@ export async function prepareSnapshotPageViaPlaywright(opts: {
   cdpUrl: string;
   targetId?: string;
   ssrfPolicy?: SsrFPolicy;
+  browserProxyMode?: BrowserNavigationPolicyOptions["browserProxyMode"];
 }): Promise<Page> {
   const page = await getPageForTargetId({
     cdpUrl: opts.cdpUrl,
@@ -56,6 +58,7 @@ export async function prepareSnapshotPageViaPlaywright(opts: {
       page,
       response: null,
       ssrfPolicy: opts.ssrfPolicy,
+      browserProxyMode: opts.browserProxyMode,
       targetId: opts.targetId,
     });
   }
