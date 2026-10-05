@@ -412,6 +412,7 @@ export async function startAgentRunExecution(params: StartAgentRunExecutionParam
         });
         const restartRecoveryChannelContext = restartRecoveryContext?.channel;
         const runContext = {
+          chatType: params.delivery.resolvedChatType,
           messageChannel:
             restartRecoveryContext?.messageChannel ?? params.delivery.originMessageChannel,
           accountId:

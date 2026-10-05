@@ -559,6 +559,9 @@ describe("startAgentRunExecution Gateway ownership", () => {
     expect(dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.nativeDeliveryPurpose).toBe(
       testCase.expectedPurpose,
     );
+    expect(dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.runContext?.chatType).toBe(
+      testCase.deliveryChatType,
+    );
   });
 
   it("keeps the gateway message lifecycle open until the agent run settles", async () => {

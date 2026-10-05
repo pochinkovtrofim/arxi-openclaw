@@ -6,6 +6,7 @@ import type {
   SourceReplyDeliveryMode,
   TaskSuggestionDeliveryMode,
 } from "../../auto-reply/get-reply-options.types.js";
+import type { ChatType } from "../../channels/chat-type.js";
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.public.js";
 import type { GatewayUiCommandTarget } from "../../gateway/ui-command-target.types.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
@@ -37,6 +38,8 @@ export type ImageContent = Pick<LlmImageContent, "type" | "data" | "mimeType">;
 /** Channel/account/thread context carried into an agent run. */
 export type AgentRunContext = {
   messageChannel?: string;
+  /** Current chat classification resolved by the admitted channel route. */
+  chatType?: ChatType;
   accountId?: string;
   groupId?: string | null;
   groupChannel?: string | null;

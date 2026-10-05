@@ -461,7 +461,7 @@ export function runAgentAttempt(params: {
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
       sessionTarget: params.sessionTarget,
-      chatType: params.sessionEntry?.chatType,
+      chatType: params.runContext.chatType ?? params.sessionEntry?.chatType,
       contextWindow: params.sessionEntry?.contextWindow,
       agentId: params.sessionAgentId,
       trigger: "user",
