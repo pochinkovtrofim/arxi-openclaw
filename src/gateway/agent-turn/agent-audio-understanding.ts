@@ -45,5 +45,5 @@ export async function applyAgentAudioUnderstanding(params: {
     selfServeLocalPaths: false,
   });
   const message = normalizeOptionalString(ctx.BodyForAgent ?? ctx.Body) ?? params.message;
-  return { applied: result.appliedAudio, message };
+  return { applied: result.appliedAudio === true, message };
 }

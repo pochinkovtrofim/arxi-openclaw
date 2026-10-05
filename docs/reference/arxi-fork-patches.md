@@ -11,14 +11,15 @@ title: "Arxi fork patch ledger"
 
 ## Selected upstream
 
-Arxi is pinned to the stable OpenClaw `v2026.8.2` release at exact upstream
-commit `0965053fe6b9341776df147a6934b7485c60b5ca`. The release contains the broad
-upstream bug-fix set selected for this update. Subsequent narrow backports are
-recorded below without changing that base release pin.
+The selected stable base is OpenClaw `v2026.9.8`, exact upstream commit
+`fc23bc864e4553c2d215e479eeec47b67a0bf943`. This integration starts from Arxi
+`ce509fd14a3dc54bee4216fcdfaeb1ae4ab9e7f8`; its previous stable base was
+`v2026.9.5` (`ec9c1a13db8938e5a3eaa51fca2e981cde2395a9`).
 
-The bundled Codex app-server client is independently pinned to
-`@openai/codex@0.152.1`. Its harness protocol was checked against the exact
-`rust-v0.152.1` source at commit `5adb68a49933ae446bf11935662c83dba55a0804`.
+The managed Codex app-server remains pinned to `@openai/codex@0.159.3`.
+The release's older `0.158.0` pin does not replace the already deployed managed
+runtime. Deployment is established by Ops artifact/golden and activation receipts,
+not by this source ledger.
 
 Each update is reviewed as a tree delta against the selected tag, not as a
 mechanical replay of old commits. `Retain` means an Arxi-only production contract
@@ -28,7 +29,7 @@ old integration no longer exists.
 
 ## Removed because upstream now owns the behavior
 
-| Original contract                                                                                 | Disposition at `v2026.8.2`                                                                               |
+| Original contract                                                                                 | Disposition at `v2026.9.8`                                                                               |
 | ------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | Large tracked-file enumeration (`3e5bf4e0dc0`)                                                    | Remove: upstream file enumeration is bounded.                                                            |
 | Generated Control UI locale handoff (`146ac143199`)                                               | Remove: upstream owns the generated catalog transition.                                                  |
@@ -45,10 +46,10 @@ or runtime layers merely because they existed in the previous history.
 
 ## Retained narrow Arxi contracts
 
-| Contract                                       | Disposition at `v2026.8.2`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Removal condition                                                                                                                                                                                                       |
+| Contract                                       | Disposition at `v2026.9.8`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Removal condition                                                                                                                                                                                                       |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Credential custody and state separation        | Retain `ARXI_AUTH_AGENT_DIR`, the separate secret-store database override, and migration exclusions.                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Upstream exposes equivalent credential custody outside owner state and migration roots.                                                                                                                                 |
-| Atomic suspend/wake lifecycle                  | Retain the drain-fenced next-wake snapshot, generated protocol fields, and lifecycle inventory guard.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Upstream suspend returns the same complete, atomic wake policy under admitted-work fencing.                                                                                                                             |
+| Atomic suspend/wake lifecycle                  | Retain the drain-fenced next-wake snapshot, generated protocol fields, and lifecycle boundary coverage.                                                                                                                                                                                                                                                                                                                                                                                                                                                | Upstream suspend returns the same complete, atomic wake policy under admitted-work fencing.                                                                                                                             |
 | Structured device login                        | Retain authenticated lifecycle events consumed by the host.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | Upstream exposes an equivalent structured contract.                                                                                                                                                                     |
 | Agent RPC media and audio understanding        | Retain bounded media input and transcription at the authenticated agent boundary.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Upstream agent RPC ships the same bounded media contract.                                                                                                                                                               |
 | Exact loopback Exa transport                   | Retain only `http://127.0.0.1:18080/search`, without ambient proxy trust.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Upstream provides an equivalent pinned local provider transport.                                                                                                                                                        |
@@ -76,56 +77,45 @@ or runtime layers merely because they existed in the previous history.
 - Generated SDK surface budgets and protocol consumers were rebased to the
   released upstream surface; they do not introduce a parallel API layer.
 
-## Native catalog generation ownership
+## Contracts rebuilt on v2026.9.8
 
-Backport the catalog ownership contract from upstream
-[`6c446343` / #134524](https://github.com/openclaw/openclaw/pull/134524).
-Native discovery and readiness use the registry and observation config owned by
-the prepared generation. Worker publication establishes native observations in
-that parent registry, keeping the catalog paired with its exact auth generation.
-Retirement or supersession fails closed instead of consulting an unrelated
-global registry. These private ownership fields are not exposed by the public
-catalog API. Regression coverage includes an empty catalog after ambient registry
-retirement and rejection of a generation superseded during discovery.
+| Contract                                               | Current owner and disposition                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Managed Flow state, history and Automation obligations | Retain `runtime.tasks.managedFlows` used by the Arxi channel. Restore only managed records, revision checks, bounded history, atomic obligation writes, owner checks and terminal retention. Remove the upstream-deleted task executor and its `runTask`, `getTaskSummary` and `cancel` API.        |
+| Background MCP capability grants                       | Rebuild on the current prepared harness and tool setup. Require admitted scheduled authority and canonical server/operation/tool bindings; handle disappeared resolvers and name collisions without transferring grants. Keep requesterless account resolution and credential renewal.              |
+| Native tool surface                                    | Retain host context, trace propagation, explicit searchable remote tools and disabled native apps. Upstream now disables native `view_image` and uses the sole OpenClaw dynamic media loader; remove the obsolete vision filter test in favor of dynamic-tool-build and thread-lifecycle contracts. |
+| Delivery custody and wake                              | Rebuild pre-dispatch deferral as a SQLite worker command. Release custody only after persistence, restore reserved attempt counts, and include all three executable outbound namespaces in the synchronous suspend snapshot. Keep useful-final provenance and direct-owner/native delivery purpose. |
+| Cron occurrence and obligations                        | Retain occurrence IDs distinct from persistent session IDs, trusted CLI/background provenance, explicit Automation admission, obligation recovery and paced checks before distant Flow wakes. Use upstream invocation ownership and scheduler APIs.                                                 |
+| Gateway suspension                                     | Keep complete atomic wake requirements and fail closed on incomplete inventory. Compose with upstream draining, write custody, handoff and rescan contracts.                                                                                                                                        |
+| Credential separation                                  | Keep `ARXI_AUTH_AGENT_DIR` and exact credential-only schema recognition outside owner migration discovery. Port exclusions to current leased asynchronous discovery.                                                                                                                                |
+| Model capabilities                                     | Keep GPT-6 Sol/Luna and GPT-6.1 Sol, cached vision repair, selected native harness auth and bounded account catalog reread. Retain managed reasoning effort for isolated completions.                                                                                                               |
+| Prompt and memory                                      | Keep effective per-turn workspace instructions, bounded in-root AGENTS comparison, separate USER authority, current-source recall guidance and SQLite transcript projection that omits unused tool payloads before materialization.                                                                 |
+| Telegram and files                                     | Keep durable transport planning, reply/forward context, original filenames, authenticated agent RPC attachments/audio and bounded Office extraction. Rebuild live browser history against the new browser client target.                                                                            |
+| Approvals and hooks                                    | Keep opaque plugin payloads only in live requests, actor/target proof before canonical resolution, scoped cron hook/service access, expiry fences and asynchronous authorized result transforms.                                                                                                    |
+| Diagnostics                                            | Keep ingress/model/tool/headless trace correlation, failed native command exits, monotonic elapsed time, intentional silence and final delivery disposition.                                                                                                                                        |
+| Tooling and process lifecycle                          | Retain server-only verification, disabled GitHub workflows, managed Codex pin, llama assets and prior-Linux-boot process retirement. Workflow test fixtures are compiled from `workflows-disabled`.                                                                                                 |
 
-## Proactivity ownership
+Upstream owns the transferred transient retry controller, prepared catalog
+generation ownership, OAuth proxy routing, stale session recovery, independent
+Code Mode return-value/serialization/config-read probes (including the upstream
+replacement of checked-cell-cache with JavaScript discovery), cron invocation
+cleanup, incremental memory maintenance and the new SQLite
+worker lifecycle. Older backport implementations are not reinstated alongside
+these successors.
 
-OpenClaw owns the composition
-`Standing Order → Automation → Task Flow Initiative → Background Task → verified Achievement → response`.
-Arxi owns no timer, candidate selector, prompt engine, portfolio, or proactive
-memory layer. Fork seams remain limited to runtime custody, authenticated
-execution, wake reporting, durable delivery, and the hosted Codex integration.
+Existing managed Flow records remain readable. State and agent schema upgrades
+are forward-only. Ops must use its forward-only candidate acceptance procedure,
+keep the accepted candidate selected, and qualify a schema-compatible fallback
+before release closeout. The preceding runtime is not a compatible rollback.
+No source pin or test result by itself establishes production activation.
 
-## Stable update integration notes (candidate, not deployed)
+The lifecycle inventory at `fc23bc864e4553c2d215e479eeec47b67a0bf943`
+uses agent-run contexts, ACP turns, media generation, and migration/backup write
+custody in place of the retired task registry. All are included in suspension
+activity; write custody also accompanies the ready response.
 
-The pending integration targets `v2026.9.5` at
-`ec9c1a13db8938e5a3eaa51fca2e981cde2395a9`. It is not qualified or activated.
-The previous selected-upstream section describes the currently released fork.
-
-Upstream now owns the transferred transient retry controller (#134281),
-prepared native catalog generation ownership (#134524), stale session dispatch
-recovery, OAuth proxy routing (#131161), and incremental memory maintenance
-handoff (#136064). Preserve their released successors rather than replaying
-older backports. Codex is upgraded with the release to `0.154.0`.
-
-The following narrow fork contracts must remain during the integration:
-
-- The ready suspend result includes the atomic wake requirement.
-- Authenticated `agent` RPC accepts bounded attachments with the same decoded
-  size ceilings as other chat entrypoints.
-- `openclaw/extensions/telegram/transport-plan-api` exposes
-  `planTelegramTextDeliveryPages`, `planTelegramPhotoDocumentDelivery`, and
-  `projectTelegramExternalMessageContext` to the authenticated external
-  Telegram transport.
-- MCP resolvers retain host-authorized run identity, generation fencing, and
-  finite canonical tool bindings for account Automations. Senderless runs never
-  inherit the creator's sender identity or per-requester OAuth.
-- `automations` accepts `failureAlert: { enabled: false }` and canonicalizes it
-  to the existing stored `false` sentinel.
-- Harness diagnostics preserve intentional silence and measured monotonic
-  duration separately from producer wall-clock timestamps.
-- The bounded Office document extractor and additive Task Flow history and
-  Automation obligation tables retain their previous fork contracts.
-
-Existing focused tests for these contracts must pass on the production build
-host before this candidate can be qualified or released.
+GitHub Actions remain archived under `.github/workflows-disabled`. The former
+fork-only ancestry assertion in upstream workflow self-tests is retired with
+the inactive workflow; the archived Arxi gate and disabled-actions boundary
+retain their focused checks. Upstream workflow self-tests are not hosted-runtime
+acceptance.

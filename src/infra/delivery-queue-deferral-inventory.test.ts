@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db.js";
 import {
-  inspectPendingDeliveryQueueDeferrals,
-  upsertDeliveryQueueEntry,
-} from "./delivery-queue-sqlite.js";
+  openOpenClawStateDatabase,
+  closeOpenClawStateDatabaseAsync,
+} from "../state/openclaw-state-db.js";
+import { inspectPendingDeliveryQueueDeferrals } from "./delivery-queue-sqlite.js";
+import { upsertDeliveryQueueEntryInDatabase } from "./delivery-queue-sqlite.kernel.js";
 import { resolvePreferredOpenClawTmpDir } from "./tmp-openclaw-dir.js";
 
 describe("delivery queue deferral inventory", () => {
@@ -31,13 +32,18 @@ describe("delivery queue deferral inventory", () => {
       { id: "later", enqueuedAt: 3, retryCount: 0, deferredUntilMs: now + 2_000 },
       { id: "earlier", enqueuedAt: 4, retryCount: 0, deferredUntilMs: now + 1_000 },
     ]) {
-      upsertDeliveryQueueEntry({ queueName: "outbound", entry, stateDir });
+      upsertDeliveryQueueEntryInDatabase(
+        { queueName: "outbound", entry },
+        openOpenClawStateDatabase({ env: { ...process.env, OPENCLAW_STATE_DIR: stateDir } }),
+      );
     }
-    upsertDeliveryQueueEntry({
-      queueName: "other-q",
-      entry: { id: "other", enqueuedAt: 5, retryCount: 0, deferredUntilMs: now + 500 },
-      stateDir,
-    });
+    upsertDeliveryQueueEntryInDatabase(
+      {
+        queueName: "other-q",
+        entry: { id: "other", enqueuedAt: 5, retryCount: 0, deferredUntilMs: now + 500 },
+      },
+      openOpenClawStateDatabase({ env: { ...process.env, OPENCLAW_STATE_DIR: stateDir } }),
+    );
 
     await expect(inspectPendingDeliveryQueueDeferrals("outbound", now, stateDir)).resolves.toEqual({
       pendingCount: 4,

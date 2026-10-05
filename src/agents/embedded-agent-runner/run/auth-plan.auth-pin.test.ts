@@ -113,6 +113,7 @@ describe("embedded run auth plan provider pin", () => {
       { metadataSnapshot: createPluginMetadataSnapshotFixture() },
       () =>
         prepareEmbeddedRunAuthPlan({
+          assertCurrent: () => {},
           runParams: {
             sessionId: "migration-session",
             runId: "migration-run",
@@ -170,6 +171,7 @@ describe("embedded run auth plan provider pin", () => {
       .mockResolvedValue({ model } as never);
 
     const prepared = await prepareEmbeddedRunAuthPlan({
+      assertCurrent: () => {},
       runParams: {
         agentId: "main",
         config,
@@ -274,6 +276,7 @@ describe("embedded run auth plan provider pin", () => {
         { metadataSnapshot: createPluginMetadataSnapshotFixture() },
         () =>
           prepareEmbeddedRunAuthPlan({
+            assertCurrent: () => {},
             runParams: {
               sessionId: "verify-session",
               runId: "verify-run",
@@ -340,6 +343,7 @@ describe("embedded run auth plan provider pin", () => {
         { metadataSnapshot: createPluginMetadataSnapshotFixture() },
         () =>
           prepareEmbeddedRunAuthPlan({
+            assertCurrent: () => {},
             runParams: {
               sessionId: "auth-pin-session",
               runId: "auth-pin-run",

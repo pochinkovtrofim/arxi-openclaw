@@ -1,9 +1,9 @@
 import { assertOutboundHandoffCurrent } from "./deliver-handoff.js";
 import { OutboundDeliveryDeferredError, OutboundDeliveryError } from "./deliver-types.js";
 
-type DeferredDeliveryOwner = { defer(retryAtMs: number): void };
+type DeferredDeliveryOwner = { defer(retryAtMs: number): Promise<void> };
 
-export function settlePreDispatchDeliveryError(params: {
+export async function settlePreDispatchDeliveryError(params: {
   error: unknown;
   platformQueueId?: string;
   queueOwner?: DeferredDeliveryOwner;
@@ -12,10 +12,11 @@ export function settlePreDispatchDeliveryError(params: {
   dispatchedPayloadCount: number;
   queuedPostSendState?: unknown;
   assertDirectAdapterHandoff?: () => void;
-}):
+}): Promise<
   | { accepted: true }
   | { accepted: false; propagate: true; error: unknown }
-  | { accepted: false; propagate: false; error: unknown } {
+  | { accepted: false; propagate: false; error: unknown }
+> {
   let error = params.error;
   const hasSendEvidence =
     params.deliveredResultCount > 0 ||
@@ -23,7 +24,7 @@ export function settlePreDispatchDeliveryError(params: {
     params.queuedPostSendState !== undefined;
   if (error instanceof OutboundDeliveryDeferredError) {
     if (!hasSendEvidence && params.platformQueueId && params.queueOwner) {
-      params.queueOwner.defer(error.retryAtMs);
+      await params.queueOwner.defer(error.retryAtMs);
       return { accepted: true };
     }
     if (!hasSendEvidence && params.platformQueueId) {

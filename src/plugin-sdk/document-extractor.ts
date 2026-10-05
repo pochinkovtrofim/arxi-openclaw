@@ -5,6 +5,7 @@ export { OFFICE_DOCUMENT_FORMATS, officeDocumentFormat } from "@openclaw/media-c
 export { DocumentExtractionError } from "../plugins/document-extractor-types.js";
 export type {
   DocumentExtractedImage,
+  DocumentExtractionMetadata,
   DocumentExtractionRequest,
   DocumentExtractionResult,
   DocumentExtractorPlugin,

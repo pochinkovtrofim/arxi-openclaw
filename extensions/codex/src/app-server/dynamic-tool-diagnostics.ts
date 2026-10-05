@@ -5,7 +5,8 @@ import {
   emitTrustedDiagnosticEvent,
   type DiagnosticTraceContext,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
-import type { CodexDynamicToolCallParams, CodexDynamicToolCallResponse } from "./protocol.js";
+import type { CodexDynamicToolRuntimeResponse } from "./dynamic-tool-response-state.js";
+import type { CodexDynamicToolCallParams } from "./protocol.js";
 
 type DynamicToolDiagnosticContext = {
   call: CodexDynamicToolCallParams;
@@ -16,10 +17,8 @@ type DynamicToolDiagnosticContext = {
   trace?: DiagnosticTraceContext | undefined;
 };
 
-/** Emits a start event for one Codex dynamic tool call. */
-export function emitDynamicToolStartedDiagnostic(params: DynamicToolDiagnosticContext): void {
-  emitTrustedDiagnosticEvent({
-    type: "tool.execution.started",
+function diagnosticToolIdentity(params: DynamicToolDiagnosticContext) {
+  return {
     agentId: params.agentId,
     runId: params.runId,
     sessionId: params.sessionId,
@@ -27,6 +26,14 @@ export function emitDynamicToolStartedDiagnostic(params: DynamicToolDiagnosticCo
     trace: params.trace,
     toolName: params.call.tool,
     toolCallId: params.call.callId,
+  };
+}
+
+/** Emits a start event for one Codex dynamic tool call. */
+export function emitDynamicToolStartedDiagnostic(params: DynamicToolDiagnosticContext): void {
+  emitTrustedDiagnosticEvent({
+    type: "tool.execution.started",
+    ...diagnosticToolIdentity(params),
   });
 }
 
@@ -39,13 +46,7 @@ export function emitDynamicToolErrorDiagnostic(
 ): void {
   emitTrustedDiagnosticEvent({
     type: "tool.execution.error",
-    agentId: params.agentId,
-    runId: params.runId,
-    sessionId: params.sessionId,
-    sessionKey: params.sessionKey,
-    trace: params.trace,
-    toolName: params.call.tool,
-    toolCallId: params.call.callId,
+    ...diagnosticToolIdentity(params),
     durationMs: params.durationMs,
     errorCategory: "codex_dynamic_tool_error",
     terminalReason: params.terminalReason ?? "failed",
@@ -55,7 +56,7 @@ export function emitDynamicToolErrorDiagnostic(
 /** Emits the terminal event matching a dynamic tool response's diagnostic type. */
 export function emitDynamicToolTerminalDiagnostic(
   params: DynamicToolDiagnosticContext & {
-    response: CodexDynamicToolCallResponse;
+    response: CodexDynamicToolRuntimeResponse;
     durationMs: number;
   },
 ): void {
@@ -64,13 +65,7 @@ export function emitDynamicToolTerminalDiagnostic(
   if (terminalType === "completed") {
     emitTrustedDiagnosticEvent({
       type: "tool.execution.completed",
-      agentId: params.agentId,
-      runId: params.runId,
-      sessionId: params.sessionId,
-      sessionKey: params.sessionKey,
-      trace: params.trace,
-      toolName: params.call.tool,
-      toolCallId: params.call.callId,
+      ...diagnosticToolIdentity(params),
       durationMs: params.durationMs,
     });
     return;
@@ -78,13 +73,7 @@ export function emitDynamicToolTerminalDiagnostic(
   if (terminalType === "blocked") {
     emitTrustedDiagnosticEvent({
       type: "tool.execution.blocked",
-      agentId: params.agentId,
-      runId: params.runId,
-      sessionId: params.sessionId,
-      sessionKey: params.sessionKey,
-      trace: params.trace,
-      toolName: params.call.tool,
-      toolCallId: params.call.callId,
+      ...diagnosticToolIdentity(params),
       deniedReason: "plugin-before-tool-call",
       reason: "Tool call blocked",
     });

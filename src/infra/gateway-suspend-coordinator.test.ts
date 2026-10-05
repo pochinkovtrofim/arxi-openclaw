@@ -18,10 +18,7 @@ import {
   tryBeginGatewayPreparedRestartRootWorkAdmission,
   tryBeginGatewayRootWorkAdmission,
 } from "../process/gateway-work-admission.js";
-import {
-  createGatewayActiveWorkSnapshot,
-  type GatewayActiveWorkInspectors,
-} from "./gateway-active-work.js";
+import { createGatewayActiveWorkSnapshot } from "./gateway-active-work.js";
 import {
   armGatewaySuspendHandoff,
   consumeGatewaySuspendHandoff,
@@ -31,31 +28,10 @@ import {
   resetGatewaySuspendCoordinatorForLifecycleRestart,
   resumeGatewaySuspend,
 } from "./gateway-suspend-coordinator.js";
+import { inspectors } from "./gateway-suspend-coordinator.test-support.js";
 
 const SUSPEND_TTL_MS = 2 * 60_000;
 const SUSPEND_RETRY_AFTER_MS = 20_000;
-
-function inspectors(
-  overrides: Partial<GatewayActiveWorkInspectors> = {},
-): GatewayActiveWorkInspectors {
-  return {
-    getQueueSize: () => 0,
-    getPendingReplies: () => 0,
-    getEmbeddedRuns: () => 0,
-    getBackgroundExecSessions: () => 0,
-    getCronRuns: () => 0,
-    getActiveTasks: () => 0,
-    getTaskBlockers: () => [],
-    getRootRequests: () => 0,
-    getSessionAdmissions: () => 0,
-    getSessionMutations: () => 0,
-    getChatRuns: () => 0,
-    getQueuedTurns: () => 0,
-    getTerminalPersistence: () => 0,
-    getTerminalSessions: () => 0,
-    ...overrides,
-  };
-}
 
 beforeEach(() => {
   resetProcessRegistryForTests();
@@ -140,6 +116,7 @@ describe("gateway suspend coordinator", () => {
       status: "ready",
       expiresAtMs: expect.any(Number),
       wakeRequirement: { kind: "at", atMs: 1_900_000_000_000 },
+      writeCustody: [],
     });
     expect(inspectWakeRequirement).toHaveBeenCalledOnce();
   });
@@ -345,6 +322,7 @@ describe("gateway suspend coordinator", () => {
       expiresAtMs: 1_000 + SUSPEND_TTL_MS,
       retryAfterMs: SUSPEND_RETRY_AFTER_MS,
       activeCount: 3,
+      writeCustody: [{ phase: "terminal-persistence", count: 1 }],
       blockers: [
         { kind: "reply", count: 1, message: "1 pending reply delivery operation(s)" },
         {
@@ -369,6 +347,7 @@ describe("gateway suspend coordinator", () => {
       retryAfterMs: SUSPEND_RETRY_AFTER_MS,
       activeCount: 1,
       blockers: [{ kind: "reply", count: 1, message: "1 pending reply delivery operation(s)" }],
+      writeCustody: [],
     });
     expect(getGatewaySuspendAdmissionPhase()).toBe("draining");
 
@@ -377,6 +356,7 @@ describe("gateway suspend coordinator", () => {
       status: "ready",
       expiresAtMs: 1_000 + SUSPEND_TTL_MS,
       wakeRequirement: { kind: "external-event-only" },
+      writeCustody: [],
     });
     expect(getGatewaySuspendAdmissionPhase()).toBe("prepared");
     expect(tryBeginGatewayRootWorkAdmission()).toBeNull();
@@ -448,6 +428,7 @@ describe("gateway suspend coordinator", () => {
         activeCount: 0,
         blockers: [],
         wakeRequirement: { kind: "external-event-only" },
+        writeCustody: [],
       });
       expect(getGatewaySuspendAdmissionPhase()).toBe("prepared");
       expect(pauseScheduling).toHaveBeenCalledOnce();
@@ -495,6 +476,7 @@ describe("gateway suspend coordinator", () => {
         reason: "active-work",
         retryAfterMs: SUSPEND_RETRY_AFTER_MS,
         activeCount: 2,
+        writeCustody: [],
         blockers: [
           {
             kind: "terminal-session",
@@ -535,13 +517,9 @@ describe("gateway suspend coordinator", () => {
       resumeScheduling: vi.fn(),
       inspect: inspectors({ getTerminalSessions: () => 2 }),
     };
-    const ready = prepareGatewaySuspend(params);
-    expect(ready).toMatchObject({ status: "ready", activeCount: 0, blockers: [] });
-    expect(prepareGatewaySuspend(params)).toMatchObject({
-      status: "ready",
-      activeCount: 0,
-      blockers: [],
-    });
+    const expected = { status: "ready", activeCount: 0, blockers: [] };
+    expect(prepareGatewaySuspend(params)).toMatchObject(expected);
+    expect(prepareGatewaySuspend(params)).toMatchObject(expected);
     expect(prepareGatewaySuspend({ ...params, terminalPolicy: "preserve" })).toMatchObject({
       status: "conflict",
     });
@@ -565,6 +543,7 @@ describe("gateway suspend coordinator", () => {
       reason: "active-work",
       retryAfterMs: SUSPEND_RETRY_AFTER_MS,
       activeCount: 2,
+      writeCustody: [{ phase: "terminal-persistence", count: 1 }],
       blockers: [
         { kind: "queue", count: 1, message: "1 queued or active operation(s)" },
         {
@@ -600,6 +579,7 @@ describe("gateway suspend coordinator", () => {
       reason: "active-work",
       retryAfterMs: SUSPEND_RETRY_AFTER_MS,
       activeCount: 1,
+      writeCustody: [],
       blockers: [
         {
           kind: "background-exec",
@@ -790,7 +770,7 @@ describe("gateway suspend coordinator", () => {
   });
 
   it.each([false, true])(
-    "lets restart supersede a suspension without reopening its scheduler (drain: %s)",
+    "joins restart to a suspension without reopening its scheduler (drain: %s)",
     (drain) => {
       const resumeScheduling = vi.fn();
       const result = prepareGatewaySuspend({
@@ -805,7 +785,12 @@ describe("gateway suspend coordinator", () => {
 
       markGatewayRestartDraining();
 
-      expect(getGatewaySuspendStatus("suspension-restart")).toEqual({ status: "running" });
+      expect(getGatewaySuspendStatus("suspension-restart", true)).toMatchObject({
+        status: "draining",
+        ownerId: "request-restart",
+        phase: "interrupting",
+        activeCount: Number(drain),
+      });
       expect(resumeScheduling).not.toHaveBeenCalled();
       expect(isGatewayWorkAdmissionClosed()).toBe(true);
     },

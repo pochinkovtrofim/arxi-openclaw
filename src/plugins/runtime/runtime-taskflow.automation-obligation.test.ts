@@ -9,10 +9,7 @@ import type { CronJob } from "../../cron/types.js";
 import { claimAgentRunContext, clearAgentRunContext } from "../../infra/agent-run-registry.js";
 import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import { listTaskFlowAutomationObligationsForCronJobFromSqlite } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
-import {
-  installRuntimeTaskDeliveryMock,
-  resetRuntimeTaskTestState,
-} from "./runtime-task-test-harness.js";
+import { resetRuntimeTaskTestState } from "./runtime-task-test-harness.js";
 import { createRuntimeTaskFlow } from "./runtime-taskflow.js";
 
 let storePath: string;
@@ -23,7 +20,6 @@ const ownerKey = "agent:main:main";
 const controllerId = "tests/automation-obligation";
 
 beforeEach(async () => {
-  installRuntimeTaskDeliveryMock();
   paused = false;
   storePath = path.join(os.tmpdir(), `obligation-${randomUUID()}`, "jobs.json");
   runId = randomUUID();
@@ -64,7 +60,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   clearAgentRunContext(runId);
-  await resetRuntimeTaskTestState();
+  resetRuntimeTaskTestState();
   await saveCronJobsStore(storePath, { version: 1, jobs: [] });
 });
 

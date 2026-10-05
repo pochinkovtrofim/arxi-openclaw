@@ -171,6 +171,7 @@ it.each([
         channel: OriginatingChannelType | undefined,
       ): channel is OriginatingChannelType => channel !== undefined,
       routeReply,
+      routePreparedReply: routeReply,
     });
     const dispatcher = createReplyDispatcher({ deliver: async () => undefined });
     try {

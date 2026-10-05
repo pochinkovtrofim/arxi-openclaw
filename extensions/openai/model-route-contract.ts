@@ -5,6 +5,12 @@ export const OPENAI_GPT_6_ASTRA_MODEL_ID = "gpt-6-astra";
 export const OPENAI_GPT_61_SOL_MODEL_ID = "gpt-6.1-sol";
 export const OPENAI_GPT_6_SOL_MODEL_ID = "gpt-6-sol";
 export const OPENAI_GPT_6_LUNA_MODEL_ID = "gpt-6-luna";
+export const OPENAI_GPT_6_MODEL_IDS = [
+  OPENAI_GPT_6_ASTRA_MODEL_ID,
+  "gpt-6-sol",
+  "gpt-6-luna",
+  "gpt-6.1-sol",
+] as const;
 export const OPENAI_GPT_56_MODEL_ID = "gpt-5.6";
 export const OPENAI_GPT_56_SOL_MODEL_ID = "gpt-5.6-sol";
 export const OPENAI_GPT_56_TERRA_MODEL_ID = "gpt-5.6-terra";
@@ -45,10 +51,7 @@ const OPENAI_CODEX_REASONING_EFFORTS_BY_MODEL = new Map<
 
 /** Models with known first-party Platform and ChatGPT transports. */
 const OPENAI_DUAL_ROUTE_MODEL_IDS = [
-  OPENAI_GPT_6_ASTRA_MODEL_ID,
-  OPENAI_GPT_61_SOL_MODEL_ID,
-  OPENAI_GPT_6_SOL_MODEL_ID,
-  OPENAI_GPT_6_LUNA_MODEL_ID,
+  ...OPENAI_GPT_6_MODEL_IDS,
   ...OPENAI_GPT_56_VARIANT_MODEL_IDS,
   OPENAI_GPT_55_MODEL_ID,
   OPENAI_GPT_55_PRO_MODEL_ID,

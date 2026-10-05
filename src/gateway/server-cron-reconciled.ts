@@ -2,7 +2,7 @@
 // Suppresses stale scheduler completions across reload and shutdown boundaries.
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginCoreCronReconciledContext } from "../plugins/hook-cron-context.js";
-import type { PluginHookCronReconciledEvent } from "../plugins/hook-types.js";
+import type { PluginHookCronReconciledEvent } from "../plugins/hook-gateway.types.js";
 import type { GatewayCronState } from "./server-cron.js";
 
 type GatewayCronReconciliationArmParams = {

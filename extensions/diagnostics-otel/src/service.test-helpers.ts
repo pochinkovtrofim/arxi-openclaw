@@ -8,13 +8,13 @@ import {
   type DiagnosticTraceContext,
   waitForDiagnosticEventsDrained,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
+import type { OpenClawPluginServiceContext } from "openclaw/plugin-sdk/plugin-entry";
 import {
   onTrustedInternalDiagnosticEvent,
   registerDiagnosticTracePropagationBridge,
 } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { vi } from "vitest";
 import { createTrustedDiagnosticSpanBindingEmitter } from "../../../src/infra/diagnostic-span-bindings.js";
-import type { OpenClawPluginServiceContext } from "../api.js";
 import type { ExporterHealthUpdate } from "./service-exporter-health.js";
 import { createDiagnosticsOtelService } from "./service.js";
 

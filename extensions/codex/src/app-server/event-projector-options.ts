@@ -1,7 +1,7 @@
 import type { runAgentHarnessBeforeCompactionHook } from "openclaw/plugin-sdk/agent-harness-runtime";
-import type { AgentPlanStep } from "openclaw/plugin-sdk/channel-outbound";
 import type { DiagnosticTraceContext } from "openclaw/plugin-sdk/diagnostic-runtime";
 import type { AssistantMessage } from "openclaw/plugin-sdk/llm";
+import type { CodexNativePlan } from "./plan-compaction-state.js";
 import type { CodexThreadItem, JsonValue } from "./protocol.js";
 import type { CodexRemoteWorkspaceFileReader } from "./remote-workspace-media.js";
 import type { CodexTrajectoryRecorder } from "./trajectory.js";
@@ -20,10 +20,7 @@ export type CodexAppServerEventProjectorOptions = {
     text: string;
   }) => CodexAsyncDeliverySettlement | Promise<CodexAsyncDeliverySettlement>;
   onNativeToolResultRecorded?: () => void | Promise<void>;
-  onNativePlanUpdate?: (update: {
-    markdown?: string;
-    steps: AgentPlanStep[];
-  }) => void | Promise<void>;
+  onNativePlanUpdate?: (update: CodexNativePlan) => void | Promise<void>;
   prepareNativeMcpAppResultDetails?: (item: CodexThreadItem) => Promise<unknown>;
   readRecentRateLimits?: () => JsonValue | undefined;
   runAbortSignal?: AbortSignal;

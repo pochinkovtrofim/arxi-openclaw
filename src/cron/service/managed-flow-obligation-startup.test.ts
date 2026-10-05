@@ -6,9 +6,10 @@ import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.
 import { upsertTaskFlowAutomationObligationInStateTransaction } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { createManagedTaskFlow } from "../../tasks/task-flow-registry.js";
 import { resetTaskFlowRegistryForTests } from "../../tasks/task-runtime.test-helpers.js";
+import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-clock.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import { CronService } from "../service.js";
-import { loadCronJobsStoreSync, saveCronJobsStore } from "../store.js";
+import { loadCronStore, saveCronJobsStore } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
 import type { CronJob } from "../types.js";
 import { repairManagedFlowAutomationObligations } from "./managed-flow-obligation-repair.js";
@@ -23,6 +24,7 @@ const run = vi.fn(async () => ({ status: "ok" as const }));
 function deps(cronEnabled = true) {
   return {
     storePath,
+    scheduler: createTestGatewayScheduler(),
     cronEnabled,
     log,
     enqueueSystemEvent: vi.fn(),
@@ -30,8 +32,8 @@ function deps(cronEnabled = true) {
     runIsolatedAgentJob: run,
   };
 }
-function stored() {
-  const storedJob = loadCronJobsStoreSync(storePath).jobs[0];
+async function stored() {
+  const storedJob = (await loadCronStore(storePath)).jobs[0];
   if (!storedJob) {
     throw new Error("expected stored cron job");
   }
@@ -98,12 +100,15 @@ afterEach(async () => {
 describe("durable Automation obligation scheduler startup", () => {
   it("restores the exact receipt through real CronService start and a second fresh service", async () => {
     for (let attempt = 0; attempt < 2; attempt++) {
-      await saveCronJobsStore(storePath, { version: 1, jobs: [{ ...stored(), state: {} }] });
+      await saveCronJobsStore(storePath, {
+        version: 1,
+        jobs: [{ ...(await stored()), state: {} }],
+      });
       const service = new CronService(deps());
       services.push(service);
       await service.start();
-      expect(stored().state.nextRunAtMs).toBe(due);
-      expect(stored().state.pacedNextRunAtMs).toBe(due);
+      expect((await stored()).state.nextRunAtMs).toBe(due);
+      expect((await stored()).state.pacedNextRunAtMs).toBe(due);
       expect(run).not.toHaveBeenCalled();
       service.stop();
     }
@@ -116,19 +121,19 @@ describe("durable Automation obligation scheduler startup", () => {
       jobs: [{ ...job, state: { nextRunAtMs: earlier } }],
     });
     const state = createCronServiceState(deps());
-    state.store = loadCronJobsStoreSync(storePath);
+    state.store = await loadCronStore(storePath);
     expect(repairManagedFlowAutomationObligations(state)).toBe(false);
-    expect(stored().state.nextRunAtMs).toBe(earlier);
+    expect((await stored()).state.nextRunAtMs).toBe(earlier);
     await saveCronJobsStore(storePath, { version: 1, jobs: [job] });
-    state.store = loadCronJobsStoreSync(storePath);
+    state.store = await loadCronStore(storePath);
     state.schedulingPaused = true;
     expect(repairManagedFlowAutomationObligations(state)).toBe(false);
-    expect(stored().state.nextRunAtMs).toBeUndefined();
+    expect((await stored()).state.nextRunAtMs).toBeUndefined();
     state.schedulingPaused = false;
     await saveCronJobsStore(storePath, { version: 1, jobs: [{ ...job, enabled: false }] });
-    state.store = loadCronJobsStoreSync(storePath);
+    state.store = await loadCronStore(storePath);
     expect(repairManagedFlowAutomationObligations(state)).toBe(false);
-    expect(stored().enabled).toBe(false);
-    expect(stored().state.nextRunAtMs).toBeUndefined();
+    expect((await stored()).enabled).toBe(false);
+    expect((await stored()).state.nextRunAtMs).toBeUndefined();
   });
 });

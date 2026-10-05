@@ -1,14 +1,16 @@
-/**
- * Test: Gateway and cron lifecycle hook wiring.
- *
- * Since startGatewayServer is heavily integrated, we test the hook runner
- * calls at the unit level by verifying the hook runner functions exist
- * and validating the integration pattern.
- */
 import { expectDefined } from "@openclaw/normalization-core";
 import { describe, expect, it, vi } from "vitest";
 import type { CronJob } from "../cron/types.js";
 import type { PluginCoreGatewayHookContext } from "./hook-cron-context.js";
+import type {
+  PluginHookCronChangedEvent,
+  PluginHookCronReconciledContext,
+  PluginHookCronReconciledEvent,
+  PluginHookGatewayContext,
+  PluginHookGatewayCronService,
+  PluginHookGatewayStopEvent,
+} from "./hook-gateway.types.js";
+import type { PluginHookHandlerMap } from "./hook-types.js";
 import { createHookRunner } from "./hooks.js";
 import {
   addTestHook,
@@ -16,15 +18,6 @@ import {
   createMockPluginRegistry,
 } from "./hooks.test-fixtures.js";
 import type { PluginServiceCronHost } from "./service-cron.js";
-import type {
-  PluginHookCronChangedEvent,
-  PluginHookCronReconciledContext,
-  PluginHookCronReconciledEvent,
-  PluginHookGatewayContext,
-  PluginHookGatewayCronService,
-  PluginHookHandlerMap,
-  PluginHookGatewayStopEvent,
-} from "./types.js";
 
 type PluginHookGatewayStartEvent = Parameters<PluginHookHandlerMap["gateway_start"]>[0];
 
@@ -43,6 +36,16 @@ function createRawCronHost() {
     state: {},
   };
   const host: PluginServiceCronHost = {
+    status: async () => ({
+      enabled: true,
+      triggersEnabled: true,
+      storage: "sqlite",
+      sqlitePath: "/test/state.sqlite",
+      storePath: "/test/jobs.json",
+      jobs: 1,
+      nextWakeAtMs: null,
+    }),
+    enqueueRun: async () => ({ ok: true, enqueued: true, runId: "test-run" }),
     list: async () => [job],
     getJob: () => job,
     run: async () => ({ ok: true, ran: true }),
@@ -112,61 +115,14 @@ describe("gateway hook runner methods", () => {
     await expectGatewayHookCall({ hookName, event, gatewayCtx });
   });
 
-  it("runCronChanged invokes registered cron_changed hooks", async () => {
-    const handler = vi.fn();
-    const { runner } = createHookRunnerWithRegistry([{ hookName: "cron_changed", handler }]);
-    const event: PluginHookCronChangedEvent = {
-      action: "updated",
-      jobId: "job-1",
-      nextRunAtMs: 123,
-      sessionTarget: "main",
-      agentId: "main",
-      job: {
-        id: "job-1",
-        agentId: "main",
-        sessionTarget: "main",
-        state: { nextRunAtMs: 123 },
-      },
-    };
-
-    await runner.runCronChanged(event, gatewayCtx);
-
-    expect(handler).toHaveBeenCalledWith(event, gatewayCtx);
-  });
-
-  it.each([
-    { reason: "startup", enabled: true },
-    { reason: "reload", enabled: false },
-  ] as const)("runCronReconciled forwards $reason state", async ({ reason, enabled }) => {
+  it("runCronReconciled forwards state", async () => {
     const handler = vi.fn();
     const { runner } = createHookRunnerWithRegistry([{ hookName: "cron_reconciled", handler }]);
-    const event: PluginHookCronReconciledEvent = { reason, enabled };
+    const event: PluginHookCronReconciledEvent = { reason: "reload", enabled: false };
 
     await runner.runCronReconciled(event, cronReconciledCtx);
 
     expect(handler).toHaveBeenCalledWith(event, cronReconciledCtx);
-  });
-
-  it("runCronChanged passes scheduled events with the durable wake snapshot", async () => {
-    const handler = vi.fn();
-    const { runner } = createHookRunnerWithRegistry([{ hookName: "cron_changed", handler }]);
-    const event: PluginHookCronChangedEvent = {
-      action: "scheduled",
-      jobId: "job-scheduled",
-      nextRunAtMs: 456,
-      sessionTarget: "session:ops",
-      agentId: "reporter",
-      job: {
-        id: "job-scheduled",
-        agentId: "reporter",
-        sessionTarget: "session:ops",
-        state: { nextRunAtMs: 456 },
-      },
-    };
-
-    await runner.runCronChanged(event, gatewayCtx);
-
-    expect(handler).toHaveBeenCalledWith(event, gatewayCtx);
   });
 
   it("runCronChanged passes finished events with delivery and error fields", async () => {

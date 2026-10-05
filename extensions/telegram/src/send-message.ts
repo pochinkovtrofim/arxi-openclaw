@@ -5,8 +5,14 @@ import {
   isChannelPartialDeliveryError,
 } from "openclaw/plugin-sdk/channel-inbound";
 import { createMessageReceiptFromOutboundResults } from "openclaw/plugin-sdk/channel-outbound";
+import {
+  buildOutboundMediaLoadOptions,
+  getImageMetadata,
+  probeVideoDimensions,
+} from "openclaw/plugin-sdk/media-runtime";
 import { isSingleUseReplyToMode } from "openclaw/plugin-sdk/reply-reference";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
+import { loadWebMedia } from "openclaw/plugin-sdk/web-media";
 import { telegramCaptionDeliveryMetadata } from "./caption.js";
 import { renderTelegramHtmlText } from "./format.js";
 import { buildInlineKeyboard } from "./inline-keyboard.js";
@@ -18,6 +24,7 @@ import {
 import { recordOutboundMessageForPromptContext } from "./outbound-message-context.js";
 import type { TelegramOutboundPromptContextMessage as TelegramMessageLike } from "./outbound-message-context.js";
 import { buildTelegramThreadReplyParams } from "./reply-parameters.js";
+import { resolveTelegramRichMessages, resolveTelegramTableMode } from "./rich-messages-config.js";
 import { isTelegramEmptyContentError } from "./rich-plain-fallback.js";
 import {
   logTelegramOutboundSendOk,
@@ -39,13 +46,6 @@ import {
   reportTelegramProviderDelivery,
 } from "./send-outbound.js";
 import { createTelegramPreparedSender, type TelegramPreparedSendPart } from "./send-prepared.js";
-import {
-  buildOutboundMediaLoadOptions,
-  getImageMetadata,
-  loadWebMedia,
-  probeVideoDimensions,
-  resolveMarkdownTableMode,
-} from "./send.runtime.js";
 import { recordSentMessage } from "./sent-message-cache.js";
 import { shouldSendTelegramImageAsPhoto } from "./telegram-runtime-planning.js";
 import { resolveTelegramBotUserIdFromToken } from "./token-fingerprint.js";
@@ -156,15 +156,14 @@ export async function sendMessageTelegram(
     const textMode = opts.textMode ?? "markdown";
     // Caller-authored HTML keeps legacy parse_mode HTML semantics (literal
     // newlines, 4096 chunking) even on rich accounts; blocks are markdown-only.
-    const useRichMessages = account.config.richMessages === true && textMode !== "html";
-    const tableMode =
-      opts.tableMode ??
-      resolveMarkdownTableMode({
-        cfg,
-        channel: "telegram",
-        accountId: account.accountId,
-        supportsBlockTables: useRichMessages,
-      });
+    const richMessagesParams = {
+      cfg,
+      accountId: account.accountId,
+      accountConfig: account.config,
+      htmlTextMode: textMode === "html",
+    };
+    const useRichMessages = resolveTelegramRichMessages(richMessagesParams);
+    const tableMode = opts.tableMode ?? resolveTelegramTableMode(richMessagesParams);
     const renderHtmlText = (value: string) =>
       renderTelegramHtmlText(value, { textMode, tableMode });
     // Resolve link preview setting from config (default: enabled).
@@ -264,7 +263,7 @@ export async function sendMessageTelegram(
           (message) => sendLogger.warn(message),
           getImageMetadata,
         ));
-      const { sender: mediaSender, documentSender } = resolveTelegramOutboundMediaSenders<Message>({
+      const { sender: mediaSender, documentSender } = resolveTelegramOutboundMediaSenders({
         api,
         chatId,
         media,
@@ -434,10 +433,12 @@ export async function sendMessageTelegram(
             silent: opts.silent,
           });
         },
-        () => ({
-          receipt: buildMediaReceipt(),
-          visibleReplySent: true,
-        }),
+        {
+          partialDeliveryResult: () => ({
+            receipt: buildMediaReceipt(),
+            visibleReplySent: true,
+          }),
+        },
       );
       const mediaMessageId = resolveTelegramMessageIdOrThrow(lastMedia.result, "media send");
       const resolvedChatId = String(lastMedia.result.chat?.id ?? chatId);

@@ -27,7 +27,7 @@ import {
   type CodexNativePreToolUseFailure,
 } from "./native-hook-relay.js";
 import { isCodexNotificationForTurn } from "./notification-correlation.js";
-import { readCodexTurn } from "./protocol-validators.js";
+import { readCodexTurnCompletedNotification } from "./protocol-validators.js";
 import {
   isJsonObject,
   type CodexServerNotification,
@@ -78,6 +78,7 @@ export class CodexNativeToolLifecycleProjector {
       toolName: string;
       unfinishedStatus: CodexNativeToolUnfinishedStatus;
       mcpToolCall?: CodexThreadItem;
+      commandProcessId?: string | null;
     }
   >();
   private readonly webSearchCompletionByItem = new Map<
@@ -188,7 +189,7 @@ export class CodexNativeToolLifecycleProjector {
       this.pendingMcpNotifications += 1;
     } else if (
       notification.method === "turn/completed" &&
-      readCodexTurn(params.turn)?.id === this.turnId
+      readCodexTurnCompletedNotification(params)?.turn.id === this.turnId
     ) {
       this.turnCompleted = true;
     }
@@ -206,12 +207,12 @@ export class CodexNativeToolLifecycleProjector {
       this.pendingMcpNotifications -= 1;
     }
     if (notification.method === "turn/completed") {
-      const turn = readCodexTurn(params.turn);
+      const turn = readCodexTurnCompletedNotification(params)?.turn;
       if (!turn || turn.id !== this.turnId) {
         return;
       }
       this.turnCompleted = true;
-      for (const item of turn.items ?? []) {
+      for (const item of turn.items) {
         this.recordSnapshotItem(item);
       }
       return;
@@ -258,6 +259,9 @@ export class CodexNativeToolLifecycleProjector {
         auditNativeToolUnfinishedStatus(params.item),
         params.sourceTimestampMs,
         params.item.type === "mcpToolCall" ? params.item : undefined,
+        params.item.type === "commandExecution"
+          ? (readString(params.item, "processId") ?? null)
+          : undefined,
       );
       return;
     }
@@ -422,14 +426,32 @@ export class CodexNativeToolLifecycleProjector {
     });
   }
 
-  finalizeActive(runWasAborted = this.options.runAbortSignal?.aborted === true): void {
+  pendingCommands(): ReadonlyMap<string, string | null> {
+    const commands = new Map<string, string | null>();
+    for (const [id, item] of this.activeItems) {
+      if (item.commandProcessId !== undefined) {
+        commands.set(id, item.commandProcessId);
+      }
+    }
+    return commands;
+  }
+
+  finalizeActive(
+    runWasAborted = this.options.runAbortSignal?.aborted === true,
+    retainedCommands: ReadonlyMap<string, string> = new Map(),
+  ): void {
     this.finalized = true;
-    for (const [toolCallId, { toolName, unfinishedStatus }] of this.activeItems) {
+    for (const [toolCallId, { toolName, unfinishedStatus, commandProcessId }] of this.activeItems) {
       const webSearchCompletion = this.webSearchCompletionByItem.get(toolCallId);
       const itemRunWasAborted = webSearchCompletion
         ? webSearchCompletion.runWasAborted
         : runWasAborted;
-      this.recordTerminal(toolCallId, toolName, unfinishedStatus, {
+      const retained =
+        !itemRunWasAborted &&
+        commandProcessId !== undefined &&
+        retainedCommands.has(toolCallId) &&
+        (commandProcessId === null || retainedCommands.get(toolCallId) === commandProcessId);
+      this.recordTerminal(toolCallId, toolName, retained ? "unknown" : unfinishedStatus, {
         runWasAborted: itemRunWasAborted,
         sourceTimestampMs: webSearchCompletion?.sourceTimestampMs,
       });
@@ -466,15 +488,8 @@ export class CodexNativeToolLifecycleProjector {
   }
 
   private recordSnapshotItem(item: CodexThreadItem): void {
-    if (
-      !auditNativeToolName(item) ||
-      this.completedItemIds.has(item.id) ||
-      itemStatus(item) === "running"
-    ) {
-      return;
-    }
     const toolName = auditNativeToolName(item);
-    if (!toolName) {
+    if (!toolName || this.completedItemIds.has(item.id) || itemStatus(item) === "running") {
       return;
     }
     this.recordStarted(item.id, toolName, auditNativeToolUnfinishedStatus(item));
@@ -487,12 +502,13 @@ export class CodexNativeToolLifecycleProjector {
     unfinishedStatus: CodexNativeToolUnfinishedStatus,
     sourceTimestampMs?: number,
     mcpToolCall?: CodexThreadItem,
+    commandProcessId?: string | null,
   ): void {
     if (this.activeItems.has(toolCallId)) {
       return;
     }
     this.startedAtByItem.set(toolCallId, sourceTimestampMs ?? Date.now());
-    this.activeItems.set(toolCallId, { toolName, unfinishedStatus, mcpToolCall });
+    this.activeItems.set(toolCallId, { toolName, unfinishedStatus, mcpToolCall, commandProcessId });
     const trace = this.options.modelCallTrace
       ? freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(this.options.modelCallTrace))
       : undefined;

@@ -53,12 +53,21 @@ import {
   createPluginMetadataSnapshot,
   makeRegistry,
 } from "../config/plugin-auto-enable.test-helpers.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../config/runtime-snapshot.js";
+import {
+  captureRuntimeConfig,
+  projectConfigOntoRuntimeSourceSnapshot,
+} from "../config/runtime-source-projection.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   getCurrentPluginMetadataSnapshot,
   setGatewayPluginMetadataSnapshot,
 } from "../plugins/current-plugin-metadata-snapshot.js";
 import { selectCurrentPluginMetadataCache } from "../plugins/current-plugin-metadata-state.js";
+import { validatePluginConfig } from "../plugins/loader-shared.js";
 import {
   bindPluginMetadataSnapshotCache,
   createPluginCache,
@@ -183,6 +192,7 @@ describe("agent runtime plugin registries", () => {
   });
 
   afterEach(() => {
+    clearRuntimeConfigSnapshot();
     for (const [options] of hoisted.loadPluginRegistryHandle.mock.calls) {
       expect(options).not.toHaveProperty("capabilityCatalogContext");
       expect(options.runtimeOptions ?? {}).not.toHaveProperty("modelAuth");
@@ -190,7 +200,89 @@ describe("agent runtime plugin registries", () => {
     }
   });
 
-  it("adopts full-only runtime capabilities from the active composition-root registry", () => {
+  it.each([
+    { rotated: false, projected: false },
+    { rotated: true, projected: false },
+    { rotated: false, projected: true },
+    { rotated: true, projected: true },
+  ])(
+    "validates captured SecretRefs (snapshot rotated: $rotated, policy projected: $projected)",
+    ({ rotated, projected }) => {
+      const source: OpenClawConfig = {
+        plugins: {
+          entries: {
+            fixture: {
+              enabled: true,
+              config: { apiKey: { source: "store", provider: "default", id: "SYNTHETIC_KEY" } },
+            },
+          },
+        },
+      };
+      const runtime: OpenClawConfig = {
+        plugins: {
+          entries: { fixture: { enabled: true, config: { apiKey: "synthetic-prepared" } } },
+        },
+      };
+      setRuntimeConfigSnapshot(runtime, source);
+      const captured = captureRuntimeConfig(runtime);
+      const capturedSource = projectConfigOntoRuntimeSourceSnapshot(captured);
+      if (rotated) {
+        setRuntimeConfigSnapshot(
+          {
+            plugins: {
+              entries: { fixture: { enabled: true, config: { apiKey: "synthetic-successor" } } },
+            },
+          },
+          {
+            plugins: {
+              entries: {
+                fixture: {
+                  enabled: true,
+                  config: {
+                    apiKey: { source: "store", provider: "default", id: "SYNTHETIC_SUCCESSOR" },
+                  },
+                },
+              },
+            },
+          },
+        );
+      }
+      hoisted.resolveAgentRuntimePluginLoadPlan.mockImplementation(({ config }) => ({
+        config: projected
+          ? { ...config, plugins: { ...config.plugins, allow: ["fixture"] } }
+          : config,
+        pluginIds: ["fixture"],
+      }));
+      hoisted.loadPluginRegistryHandle.mockImplementation((options) => {
+        const result = validatePluginConfig({
+          origin: "global",
+          schema: {
+            type: "object",
+            required: ["apiKey"],
+            properties: { apiKey: { type: "object", required: ["source", "provider", "id"] } },
+          },
+          value: options.config.plugins.entries.fixture.config,
+          sourceValue: options.activationSourceConfig.plugins.entries.fixture.config,
+        });
+        expect(result).toEqual({ ok: true, value: { apiKey: "synthetic-prepared" } });
+        expect(options.activationSourceConfig.plugins.allow).toEqual(
+          projected ? ["fixture"] : undefined,
+        );
+        if (!projected) {
+          expect(options.activationSourceConfig).toBe(capturedSource);
+        }
+        expect(options.activationSourceConfig.plugins.entries.fixture.config).toEqual(
+          source.plugins?.entries?.fixture?.config,
+        );
+        return createEmptyPluginRegistry();
+      });
+      loadAgentRuntimePluginRegistryHandle({ config: captured, workspaceDir: "/synthetic" });
+      expect(hoisted.loadPluginRegistryHandle).toHaveBeenCalledOnce();
+      expect(source.plugins?.allow).toBeUndefined();
+    },
+  );
+
+  it.each([false, true])("adopts full-only runtime capabilities with gateway binding=%s", (allowGatewaySubagentBinding) => {
     const activeRegistry = createEmptyPluginRegistry();
     const primaryRegistry = createEmptyPluginRegistry();
     const contextEnginesAdopted = { handle: "context-engines" };
@@ -203,15 +295,19 @@ describe("agent runtime plugin registries", () => {
 
     expect(
       loadAgentRuntimePluginRegistryHandle(
-        { config: {}, workspaceDir: "/tmp/workspace" },
+        { config: {}, workspaceDir: "/tmp/workspace", allowGatewaySubagentBinding },
         onPrimaryRegistry,
       ),
     ).toBe(presentersAdopted);
-    expect(hoisted.adoptRuntimeToolPolicyRegistrations).toHaveBeenCalledWith(
-      primaryRegistry,
-      activeRegistry,
-      {},
-    );
+    if (allowGatewaySubagentBinding) {
+      expect(hoisted.adoptRuntimeToolPolicyRegistrations).toHaveBeenCalledWith(
+        primaryRegistry,
+        activeRegistry,
+        {},
+      );
+    } else {
+      expect(hoisted.adoptRuntimeToolPolicyRegistrations).not.toHaveBeenCalled();
+    }
     expect(onPrimaryRegistry).toHaveBeenCalledExactlyOnceWith(primaryRegistry);
     expect(hoisted.adoptRuntimeContextEngineRegistrations).toHaveBeenCalledWith(
       primaryRegistry,
@@ -364,6 +460,7 @@ describe("agent runtime plugin registries", () => {
         workspaceDir,
       },
       metadataSnapshot as never,
+      vi.fn(),
       createPreparedInboundRegistryLoader(),
       true,
     );

@@ -55,8 +55,8 @@ describe("buildDeliveryQueueHealthSummary", () => {
       pendingCount: 0,
       futureDeferredCount: 0,
     });
-    countIngressFailed.mockReset().mockReturnValue([]);
-    countIngressPressure.mockReset().mockReturnValue([]);
+    countIngressFailed.mockReset().mockResolvedValue([]);
+    countIngressPressure.mockReset().mockResolvedValue([]);
   });
 
   it.each([
@@ -64,9 +64,7 @@ describe("buildDeliveryQueueHealthSummary", () => {
       name: "outbound failures when the ingress dead-letter read fails",
       arrange: () => {
         countOutbound.mockResolvedValue(outboundFailed);
-        countIngressFailed.mockImplementation(() => {
-          throw new Error("ingress database unavailable");
-        });
+        countIngressFailed.mockRejectedValue(new Error("ingress database unavailable"));
       },
       expected: { failed: outboundFailed, outbound },
     },
@@ -74,27 +72,23 @@ describe("buildDeliveryQueueHealthSummary", () => {
       name: "ingress failures when the outbound read fails",
       arrange: () => {
         countOutbound.mockRejectedValue(new Error("outbound database unavailable"));
-        countIngressFailed.mockReturnValue(ingressFailed);
+        countIngressFailed.mockResolvedValue(ingressFailed);
       },
       expected: { failed: [], outbound, ingressFailed },
     },
     {
       name: "dead letters when the ingress pressure read fails",
       arrange: () => {
-        countIngressFailed.mockReturnValue(ingressFailed);
-        countIngressPressure.mockImplementation(() => {
-          throw new Error("ingress pressure read unavailable");
-        });
+        countIngressFailed.mockResolvedValue(ingressFailed);
+        countIngressPressure.mockRejectedValue(new Error("ingress pressure read unavailable"));
       },
       expected: { failed: [], outbound, ingressFailed },
     },
     {
       name: "ingress pressure when the dead-letter read fails",
       arrange: () => {
-        countIngressFailed.mockImplementation(() => {
-          throw new Error("ingress failed read unavailable");
-        });
-        countIngressPressure.mockReturnValue(ingressPressure);
+        countIngressFailed.mockRejectedValue(new Error("ingress failed read unavailable"));
+        countIngressPressure.mockResolvedValue(ingressPressure);
       },
       expected: { failed: [], outbound, ingressPressure },
     },
@@ -118,7 +112,7 @@ describe("buildDeliveryQueueHealthSummary", () => {
       .mockImplementation(() => {
         throw new Error("outbound admission unavailable");
       });
-    countIngressFailed.mockReturnValue(ingressFailed);
+    countIngressFailed.mockResolvedValue(ingressFailed);
     try {
       expect(await buildDeliveryQueueHealthSummary(ingressPressure)).toEqual({
         failed: [],

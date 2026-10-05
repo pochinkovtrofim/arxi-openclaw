@@ -1,181 +1,42 @@
-// Reconciles stale task-flow records with their child task state.
-import { listTasksForFlowId } from "./runtime-internal.js";
-import { isTaskFlowCancellationPending } from "./task-cancellation-state.js";
-import {
-  listTaskFlowAuditFindings,
-  summarizeTaskFlowAuditFindings,
-  type TaskFlowAuditSummary,
-} from "./task-flow-registry.audit.js";
 import {
   deleteTaskFlowRecordById,
-  getTaskFlowById,
-  getTaskFlowRegistryRestoreFailure,
   listTaskFlowRecords,
   updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-registry.js";
 import { getTaskFlowRegistryStore } from "./task-flow-registry.store.js";
-import { isTerminalTaskFlow, type TaskFlowRecord } from "./task-flow-registry.types.js";
+import { isTerminalTaskFlow } from "./task-flow-registry.types.js";
 
 const TASK_FLOW_RETENTION_MS = 7 * 24 * 60 * 60_000;
 
-/** Counts task-flow registry maintenance actions without exposing individual records. */
-type TaskFlowRegistryMaintenanceSummary = {
-  reconciled: number;
-  pruned: number;
-};
-
-export function assertTaskFlowRegistryMaintenanceReady(): void {
-  const restoreFailure = getTaskFlowRegistryRestoreFailure();
-  if (restoreFailure) {
-    throw new Error(
-      `Task-flow registry restore failed: ${restoreFailure}. Refusing task maintenance.`,
-    );
-  }
-}
-
-function hasActiveLinkedTasks(flowId: string): boolean {
-  return listTasksForFlowId(flowId).some(isTaskFlowCancellationPending);
-}
-
-function resolveTerminalAt(flow: TaskFlowRecord): number {
-  return flow.endedAt ?? flow.updatedAt ?? flow.createdAt;
-}
-
-function shouldPruneFlow(flow: TaskFlowRecord, now: number): boolean {
-  if (!isTerminalTaskFlow(flow)) {
-    return false;
-  }
-  if (hasActiveLinkedTasks(flow.flowId)) {
-    return false;
-  }
-  return now - resolveTerminalAt(flow) >= TASK_FLOW_RETENTION_MS;
-}
-
-function shouldFinalizeCancelledFlow(flow: TaskFlowRecord): boolean {
-  if (flow.syncMode !== "managed") {
-    return false;
-  }
-  if (flow.cancelRequestedAt == null || isTerminalTaskFlow(flow)) {
-    return false;
-  }
-  return !hasActiveLinkedTasks(flow.flowId);
-}
-
-function finalizeCancelledFlow(flow: TaskFlowRecord, now: number): boolean {
-  let current = flow;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const endedAt = Math.max(now, current.updatedAt, current.cancelRequestedAt ?? now);
-    const result = updateFlowRecordByIdExpectedRevision({
-      flowId: current.flowId,
-      expectedRevision: current.revision,
-      patch: {
-        status: "cancelled",
-        blockedTaskId: null,
-        blockedSummary: null,
-        waitJson: null,
-        endedAt,
-        updatedAt: endedAt,
-      },
-    });
-    if (result.applied) {
-      return true;
-    }
-    if (result.reason === "not_found" || !result.current) {
-      return false;
-    }
-    current = result.current;
-    if (!shouldFinalizeCancelledFlow(current)) {
-      return false;
-    }
-  }
-  return false;
-}
-
-function shouldRepairTerminalMirroredFlowTimestamp(flow: TaskFlowRecord): boolean {
-  if (flow.syncMode !== "task_mirrored" || !isTerminalTaskFlow(flow)) {
-    return false;
-  }
-  if (flow.endedAt == null || flow.endedAt < flow.createdAt) {
-    return false;
-  }
-  return flow.updatedAt > flow.endedAt;
-}
-
-function repairTerminalMirroredFlowTimestamp(flow: TaskFlowRecord): boolean {
-  let current = flow;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    if (!shouldRepairTerminalMirroredFlowTimestamp(current)) {
-      return false;
-    }
-    const result = updateFlowRecordByIdExpectedRevision({
-      flowId: current.flowId,
-      expectedRevision: current.revision,
-      patch: {
-        updatedAt: current.endedAt,
-      },
-    });
-    if (result.applied) {
-      return true;
-    }
-    if (result.reason === "not_found" || !result.current) {
-      return false;
-    }
-    current = result.current;
-  }
-  return false;
-}
-
-export function getInspectableTaskFlowAuditSummary(): TaskFlowAuditSummary {
-  return summarizeTaskFlowAuditFindings(listTaskFlowAuditFindings());
-}
-
-export function previewTaskFlowRegistryMaintenance(): TaskFlowRegistryMaintenanceSummary {
-  const now = Date.now();
-  let reconciled = 0;
-  let pruned = 0;
-  for (const flow of listTaskFlowRecords()) {
-    if (shouldRepairTerminalMirroredFlowTimestamp(flow)) {
-      reconciled += 1;
-      continue;
-    }
-    if (shouldFinalizeCancelledFlow(flow)) {
-      reconciled += 1;
-      continue;
-    }
-    if (shouldPruneFlow(flow, now)) {
-      pruned += 1;
-    }
-  }
-  return { reconciled, pruned };
-}
-
-export async function runTaskFlowRegistryMaintenance(): Promise<TaskFlowRegistryMaintenanceSummary> {
-  const now = Date.now();
-  // History retention uses the existing Task Flow maintenance cadence; it does
-  // not create a second scheduler and does not depend on flow_runs surviving GC.
+/** Retained managed controllers share the Gateway's existing maintenance lifetime. */
+export function runTaskFlowRegistryMaintenance(now = Date.now()): void {
+  // This read fails closed when restoration is unavailable; no partial projection is pruned.
+  const flows = listTaskFlowRecords();
   getTaskFlowRegistryStore().pruneHistory?.(now);
-  let reconciled = 0;
-  let pruned = 0;
-  for (const flow of listTaskFlowRecords()) {
-    const current = getTaskFlowById(flow.flowId);
-    if (!current) {
+  for (const flow of flows) {
+    // Historical task-mirrored records have no executor in this release.
+    if (flow.syncMode !== "managed") {
       continue;
     }
-    if (shouldRepairTerminalMirroredFlowTimestamp(current)) {
-      if (repairTerminalMirroredFlowTimestamp(current)) {
-        reconciled += 1;
-      }
-      continue;
-    }
-    if (shouldFinalizeCancelledFlow(current)) {
-      if (finalizeCancelledFlow(current, now)) {
-        reconciled += 1;
-      }
-      continue;
-    }
-    if (shouldPruneFlow(current, now) && deleteTaskFlowRecordById(current.flowId)) {
-      pruned += 1;
+    if (!isTerminalTaskFlow(flow) && flow.cancelRequestedAt != null) {
+      const endedAt = Math.max(now, flow.updatedAt, flow.cancelRequestedAt);
+      updateFlowRecordByIdExpectedRevision({
+        flowId: flow.flowId,
+        expectedRevision: flow.revision,
+        patch: {
+          status: "cancelled",
+          waitJson: null,
+          blockedTaskId: null,
+          blockedSummary: null,
+          endedAt,
+          updatedAt: endedAt,
+        },
+      });
+    } else if (
+      isTerminalTaskFlow(flow) &&
+      now - (flow.endedAt ?? flow.updatedAt ?? flow.createdAt) >= TASK_FLOW_RETENTION_MS
+    ) {
+      deleteTaskFlowRecordById(flow.flowId);
     }
   }
-  return { reconciled, pruned };
 }

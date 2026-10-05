@@ -4,7 +4,6 @@ import { resolveCronDeliveryPlan } from "../delivery-plan.js";
 import type { CronDelivery } from "../types.js";
 import type { dispatchCronDelivery } from "./delivery-dispatch.js";
 import type { DeliveryTargetResolution } from "./delivery-target.js";
-import type { RunCronAgentTurnResult } from "./run.types.js";
 
 type SuccessfulDeliveryResolution = Extract<DeliveryTargetResolution, { ok: true }>;
 
@@ -31,16 +30,6 @@ export function makeResolvedDelivery(
     mode: "explicit",
     ...overrides,
   };
-}
-
-function makeWithRunSession() {
-  return (
-    result: Omit<RunCronAgentTurnResult, "sessionId" | "sessionKey">,
-  ): RunCronAgentTurnResult => ({
-    ...result,
-    sessionId: "test-session-id",
-    sessionKey: "test-session-key",
-  });
 }
 
 export function makeBaseParams(overrides: {
@@ -92,7 +81,6 @@ export function makeBaseParams(overrides: {
     lifecycleRevision: "test-lifecycle-revision",
     sessionUpdatedAt: 1_000,
     runStartedAt,
-    runEndedAt: runStartedAt,
     timeoutMs: 30_000,
     resolvedDelivery,
     deliveryPlan: resolveCronDeliveryPlan({ delivery }),
@@ -112,10 +100,8 @@ export function makeBaseParams(overrides: {
     synthesizedText: overrides.synthesizedText ?? "on it",
     summary: overrides.synthesizedText ?? "on it",
     outputText: overrides.synthesizedText ?? "on it",
-    telemetry: undefined,
     abortSignal: undefined,
     isAborted: () => false,
     abortReason: () => "aborted",
-    withRunSession: makeWithRunSession(),
   };
 }

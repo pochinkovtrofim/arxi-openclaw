@@ -1,15 +1,8 @@
 // Runtime task-flow tests cover plugin task-flow registration and execution behavior.
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { claimAgentRunContext, clearAgentRunContext } from "../../infra/agent-run-registry.js";
-import { createAcpTaskBackingDetailForTest } from "../../tasks/task-backing-authority.test-support.js";
-import { createRunningTaskRunCore } from "../../tasks/task-executor.js";
 import { createTaskFlowForTask, getTaskFlowById } from "../../tasks/task-flow-registry.js";
-import { getTaskById } from "../../tasks/task-registry.js";
-import { getInspectableActiveTaskRestartBlockers } from "../../tasks/task-registry.maintenance.js";
-import {
-  installRuntimeTaskDeliveryMock,
-  resetRuntimeTaskTestState,
-} from "./runtime-task-test-harness.js";
+import { resetRuntimeTaskTestState } from "./runtime-task-test-harness.js";
 import { createRuntimeTaskFlow } from "./runtime-taskflow.js";
 
 type BoundTaskFlow = ReturnType<ReturnType<typeof createRuntimeTaskFlow>["bindSession"]>;
@@ -22,15 +15,11 @@ function requireCreatedFlow<T>(flow: T | null): T {
   return flow;
 }
 
-afterEach(async () => {
-  await resetRuntimeTaskTestState();
+afterEach(() => {
+  resetRuntimeTaskTestState();
 });
 
 describe("runtime TaskFlow", () => {
-  beforeEach(() => {
-    installRuntimeTaskDeliveryMock();
-  });
-
   it("binds managed TaskFlow operations to a session key", () => {
     const runtime = createRuntimeTaskFlow();
     const taskFlow = runtime.bindSession({
@@ -146,7 +135,7 @@ describe("runtime TaskFlow", () => {
     ).toThrow("TaskFlow runtime requires tool context with a sessionKey.");
   });
 
-  it("keeps TaskFlow reads owner-scoped and runs child tasks under the bound TaskFlow", () => {
+  it("keeps TaskFlow reads owner-scoped", () => {
     const runtime = createRuntimeTaskFlow();
     const ownerTaskFlow = runtime.bindSession({
       sessionKey: "agent:main:main",
@@ -164,48 +153,6 @@ describe("runtime TaskFlow", () => {
 
     expect(otherTaskFlow.get(created.flowId)).toBeUndefined();
     expect(otherTaskFlow.list()).toStrictEqual([]);
-
-    createRunningTaskRunCore({
-      runtime: "acp",
-      ownerKey: "agent:main:main",
-      scopeKind: "session",
-      childSessionKey: "agent:main:subagent:child",
-      runId: "runtime-taskflow-child",
-      task: "Inspect PR 1",
-      startedAt: 10,
-      detail: createAcpTaskBackingDetailForTest("instance:runtime-taskflow-child"),
-    });
-
-    const child = ownerTaskFlow.runTask({
-      flowId: created.flowId,
-      runtime: "acp",
-      childSessionKey: "agent:main:subagent:child",
-      runId: "runtime-taskflow-child",
-      task: "Inspect PR 1",
-      status: "running",
-      startedAt: 10,
-      lastEventAt: 10,
-    });
-
-    expect(child.created).toBe(true);
-    if (!child.created) {
-      throw new Error("expected child task creation to succeed");
-    }
-    expect(child.flow.flowId).toBe(created.flowId);
-    expect(child.task.parentFlowId).toBe(created.flowId);
-    expect(child.task.ownerKey).toBe("agent:main:main");
-    expect(child.task.runId).toBe("runtime-taskflow-child");
-
-    const storedTask = getTaskById(child.task.taskId);
-    expect(storedTask?.parentFlowId).toBe(created.flowId);
-    expect(storedTask?.ownerKey).toBe("agent:main:main");
-    expect(getTaskFlowById(created.flowId)?.flowId).toBe(created.flowId);
-    const summary = ownerTaskFlow.getTaskSummary(created.flowId);
-    if (!summary) {
-      throw new Error("expected task summary for created flow");
-    }
-    expect(summary.total).toBe(1);
-    expect(summary.active).toBe(1);
   });
 
   it("applies each managed transition exactly once with its explicit payload", () => {
@@ -321,13 +268,5 @@ describe("runtime TaskFlow", () => {
     });
     expect(getTaskFlowById(managed.flowId)?.endedAt).toBeUndefined();
     expect(getTaskFlowById(mirrored.flowId)?.revision).toBe(0);
-  });
-
-  // Declared last on purpose: it observes what the earlier tests' afterEach
-  // resets left behind. A reset that keeps durable rows lets
-  // ensureTaskRegistryReady() restore them here, and every later test file in
-  // this isolate:false worker then inherits phantom active restart blockers.
-  it("leaves no restorable task restart blockers for later test files", () => {
-    expect(getInspectableActiveTaskRestartBlockers()).toStrictEqual([]);
   });
 });

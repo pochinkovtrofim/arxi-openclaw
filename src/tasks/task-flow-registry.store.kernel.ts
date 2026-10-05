@@ -4,6 +4,7 @@ import type { Insertable, Selectable } from "kysely";
 import type { ExecutionOwnerBindingResult } from "../audit/execution-owner-binding.js";
 import {
   bindExecutionOwnerLifecycleMetadata,
+  ensureExecutionOwnerLifecycleBindingSchema,
   deleteExecutionOwnerLifecycleMetadata,
 } from "../audit/execution-owner-lifecycle-binding-store.js";
 import {
@@ -383,6 +384,7 @@ export function bindTaskFlowExecutionInDatabase(
   if (!current || !isFlowExecutionOwnerActive(current)) {
     return "missing";
   }
+  ensureExecutionOwnerLifecycleBindingSchema(db);
   return bindExecutionOwnerLifecycleMetadata({
     db,
     ownerKind: "flow",
@@ -405,5 +407,10 @@ export function deleteTaskFlowRowInDatabase(db: DatabaseSync, flowId: string): v
     db,
     getFlowRegistryKysely(db).deleteFrom("flow_runs").where("flow_id", "=", flowId),
   );
-  deleteExecutionOwnerLifecycleMetadata({ db, ownerKind: "flow", ownerIds: [flowId] });
+  deleteExecutionOwnerLifecycleMetadata({
+    db,
+    ownerKind: "flow",
+    ownerIds: [flowId],
+    executionOwnerLifecycleBindings: tableExists(db, "execution_owner_lifecycle_bindings"),
+  });
 }

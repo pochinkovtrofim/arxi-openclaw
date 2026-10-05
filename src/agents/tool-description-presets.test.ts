@@ -6,6 +6,7 @@ import {
   describeSessionsListTool,
   describeSessionsSearchTool,
   describeSessionsSendTool,
+  describeSessionsSpawnTool,
   SESSIONS_SEND_TOOL_DISPLAY_SUMMARY,
 } from "./tool-description-presets.js";
 
@@ -52,7 +53,7 @@ const SESSION_DESCRIPTIONS = [
     tool: "sessions_history",
     describe: describeSessionsHistoryTool,
     original:
-      "Read sanitized visible-session history. Read when needed context is missing from the current conversation. For a specific past fact, use a known messageId or a focused search; pass sessionId when available. offset is ignored when messageId is set. Use offset and returned nextOffset for broader or incomplete-search review; do not reread unchanged pages already available. limit bounds either mode. Include tool messages with includeTools. pendingInputs are accepted inputs outside model history; page with pendingBefore=nextBefore. Cancelled/interrupted inputs never replay automatically. Lower limit for richer pending previews.",
+      "Read sanitized visible-session history. Read when needed context is missing from the current conversation. Use messageId for a specific past fact; sessionId selects its transcript and requires messageId. Omit both for the latest tail. offset pages unanchored history and is ignored with messageId. Use returned nextOffset for broader review; do not reread unchanged pages already available. limit bounds either mode. Include tool messages with includeTools. pendingInputs are accepted inputs outside model history; page with pendingBefore=nextBefore. Cancelled/interrupted inputs never replay automatically. Lower limit for richer pending previews.",
   },
   {
     tool: "sessions_search",
@@ -83,5 +84,22 @@ describe("sessions_send tool description", () => {
     expect(describeSessionsSendTool()).toContain("reply may still announce");
     expect(describeSessionsSendTool()).toContain('`targetDisposition: "queued"` or `"steered"`');
     expect(describeSessionsSendTool()).toContain("neither proves target completion");
+    expect(describeSessionsSendTool()).toContain(
+      "With timeoutSeconds:0, your own running child is steered into its active run (admission only, no separate completion turn; use mode:followup for one); other sessions use ordinary message delivery.",
+    );
+  });
+});
+
+describe("sessions_spawn delegation guidance", () => {
+  it("bounds API investigation handoffs without delegating quick lookups", () => {
+    const description = describeSessionsSpawnTool();
+    expect(description).toContain(
+      "Default to a hidden subagent for internal QA, research, coding, review, tests, and parallel work supporting the current task. This includes substantial, bounded API/service investigations that can be handed off with the needed context and capabilities. Omit `visible` or set it false, and report results through the parent.",
+    );
+    expect(description).toContain(
+      "A PR/report, long runtime, or isolated worktree alone does not justify a sidebar session. A request for a subagent does not request a separate session. No spawn for quick lookup/single read.",
+    );
+    expect(description).not.toContain("trial-and-error");
+    expect(description).not.toContain("auth probing");
   });
 });
