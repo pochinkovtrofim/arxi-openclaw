@@ -56,18 +56,19 @@ export function resolveCommandReplyExpectation(params: {
   ) {
     return "required";
   }
-  if (params.opts.inputProvenance?.kind !== "inter_session") {
-    return undefined;
-  }
   const chatType = normalizeChatType(params.sessionEntry?.chatType);
-  return resolveSilentReplySettings({
+  const policy = resolveSilentReplySettings({
     cfg: params.cfg,
     sessionKey: params.sessionKey,
     surface: params.messageChannel,
     conversationType: chatType === "channel" ? "group" : chatType,
-  }).policy === "allow"
-    ? "optional"
-    : "required";
+  }).policy;
+  // The routed group's configured policy owns reply obligations, including
+  // external user turns. Model output cannot waive an otherwise required reply.
+  if (policy === "allow") {
+    return "optional";
+  }
+  return params.opts.inputProvenance?.kind === "inter_session" ? "required" : undefined;
 }
 
 function normalizeClaudeCliSessionId(sessionId: string | undefined): string | undefined {
