@@ -14,6 +14,7 @@ import type {
   PluginHookBeforeToolCallResult,
   PluginHookToolRequesterContext,
 } from "../plugins/types.js";
+import type { InputProvenance } from "../sessions/input-provenance.js";
 import type { SkillSnapshot, SkillTelemetrySource, SkillUsagePath } from "../skills/types.js";
 import type { AgentTool } from "./runtime/index.js";
 import type { SandboxFsBridge } from "./sandbox/fs-bridge.js";
@@ -46,6 +47,8 @@ export type HookContext = {
   runId?: string;
   /** What initiated this run, used to reject approvals on unattended surfaces. */
   trigger?: string;
+  /** Native input origin retained for tool-owned scheduled-run authorization. */
+  inputProvenance?: InputProvenance;
   /** Device-scoped operator session allowed to review approvals initiated by this run. */
   approvalReviewerDeviceId?: string;
   trace?: DiagnosticTraceContext;
