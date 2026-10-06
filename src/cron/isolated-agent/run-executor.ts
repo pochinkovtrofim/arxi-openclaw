@@ -449,6 +449,7 @@ function createCronPromptExecutor(
             agentId: params.agentId,
             trigger: "cron",
             jobId: params.job.id,
+            inputProvenance: params.inputProvenance,
             messageActionTurnCapability,
             config: params.cfgWithAgentDefaults,
             prompt: promptText,
