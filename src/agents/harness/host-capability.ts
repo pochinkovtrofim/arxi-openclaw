@@ -363,6 +363,7 @@ export function createAgentHarnessHostCapabilities(params: {
       }),
     ),
     trigger: attempt.trigger,
+    inputProvenance: attempt.inputProvenance ? cloneSnapshot(attempt.inputProvenance) : undefined,
     approvalReviewerDeviceId: attempt.approvalReviewerDeviceId,
     turnSourceChannel: attempt.messageChannel ?? attempt.messageProvider,
     turnSourceTo: attempt.currentMessagingTarget ?? attempt.currentChannelId,

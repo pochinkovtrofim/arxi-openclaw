@@ -51,6 +51,61 @@ function callTool(
 setupRunAttemptTestHooks();
 
 describe("runCodexAppServerAttempt dynamic tools", () => {
+  it("retains native scheduled input provenance through tool preparation and finalization", async () => {
+    const harness = createStartedThreadHarness();
+    const params = createTestParams();
+    params.trigger = "cron";
+    params.sessionKey = "agent:main:resource-steward";
+    params.inputProvenance = {
+      kind: "internal_system",
+      sourceTool: "cron",
+      sourcePromptPrefix: "[cron:resource-job resource-steward]",
+      jobId: "resource-job",
+      runId: params.runId,
+      sourceSessionKey: params.sessionKey,
+    };
+    const expectedContext = {
+      runId: params.runId,
+      sessionKey: params.sessionKey,
+      trigger: "cron",
+      inputProvenance: params.inputProvenance,
+    };
+    const tool = createRuntimeDynamicTool("source_observation");
+    let preparedContext: unknown;
+    let finalizedContext: unknown;
+    const prepare = vi.fn((args: unknown, execution: { hookContext?: unknown }) => {
+      preparedContext = execution.hookContext;
+      return args;
+    });
+    const finalize = vi.fn(
+      (args: unknown, _prior: unknown, execution?: { hookContext?: unknown }) => {
+        finalizedContext = execution?.hookContext;
+        return args;
+      },
+    );
+    tool.prepareBeforeToolCallParams = prepare;
+    tool.finalizeBeforeToolCallParams = finalize;
+    setCodexTestToolFactory(params, () => [tool]);
+    params.runtimePlan = createCodexRuntimePlanFixture();
+    setCodexTestModelSupportsTools(params, true);
+    const closeHostCapabilities = await bindProductionHarnessHostCapabilitiesForTest(params);
+    const run = runCodexAppServerAttempt(params);
+    try {
+      await harness.waitForMethod("turn/start");
+      const response = await callTool(harness, tool.name, "scheduled-source-claim");
+      expect(response).toMatchObject({ success: true });
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(finalize).toHaveBeenCalledOnce();
+      expect(tool.execute).toHaveBeenCalledOnce();
+      expect(preparedContext).toMatchObject(expectedContext);
+      expect(finalizedContext).toMatchObject(expectedContext);
+    } finally {
+      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+      await run;
+      closeHostCapabilities();
+    }
+  });
+
   it("carries the model-call trace on dynamic tool lifecycle diagnostics", async () => {
     const diagnosticTrace = {
       traceId: "11111111111111111111111111111111",

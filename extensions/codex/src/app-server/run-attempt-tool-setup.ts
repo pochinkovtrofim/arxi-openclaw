@@ -676,6 +676,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
       onToolOutcome: onCodexToolOutcome,
       allocateToolOutcomeOrdinal: allocateCodexToolOutcomeOrdinal,
       trigger: params.trigger,
+      inputProvenance: params.inputProvenance,
       approvalReviewerDeviceId: params.approvalReviewerDeviceId,
       ...(requester && !mayResolveBackgroundMcp ? { requester } : {}),
       ...(turnSourceChannel ? { turnSourceChannel } : {}),

@@ -726,6 +726,7 @@ export function createOpenClawCodingToolsInternal(
     sessionId: options?.sessionId,
     runId: options?.runId,
     trigger: options?.trigger,
+    inputProvenance: options?.inputProvenance,
     approvalReviewerDeviceId: options?.approvalReviewerDeviceId,
     channelId: options?.hookChannelId ?? options?.currentChannelId,
     ...(hasRequester ? { requester } : {}),
