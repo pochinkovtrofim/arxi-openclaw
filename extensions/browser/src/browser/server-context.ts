@@ -22,6 +22,7 @@ import {
   getProfileLifecycle,
   getOrCreateProfileRuntime,
   isBrowserRuntimeRunning,
+  recordProfileTabActivity,
   withProfileOperationLease,
 } from "./server-context.lifecycle.js";
 import { createProfileResetOps } from "./server-context.reset.js";
@@ -157,7 +158,9 @@ function createProfileContext(
             `Browser profile "${profile.name}" is not running. Start the browser or open a new tab, then select a current target.`,
           );
         }
-        return await rawSelection.ensureTabAvailable(targetId, { ...options, signal });
+        const tab = await rawSelection.ensureTabAvailable(targetId, { ...options, signal });
+        recordProfileTabActivity(profileState, tab.targetId);
+        return tab;
       });
     },
     isHttpReachable: (timeoutMs, callerSignal) =>
@@ -173,7 +176,11 @@ function createProfileContext(
     listTabs: (options) =>
       withLease(options?.signal, (signal) => rawTabOps.listTabs({ ...options, signal })),
     openTab: (url, options) =>
-      withLease(options?.signal, (signal) => rawTabOps.openTab(url, { ...options, signal })),
+      withLease(options?.signal, async (signal) => {
+        const tab = await rawTabOps.openTab(url, { ...options, signal });
+        recordProfileTabActivity(profileState, tab.targetId);
+        return tab;
+      }),
     labelTab: (targetId, label) =>
       withLease(undefined, (signal) => rawTabOps.labelTab(targetId, label, { signal })),
     focusTab: (targetId, options) =>
@@ -181,9 +188,11 @@ function createProfileContext(
         rawSelection.focusTab(targetId, { ...options, signal }),
       ),
     closeTab: (targetId, options) =>
-      withLease(options?.signal, (signal) =>
-        rawSelection.closeTab(targetId, { ...options, signal }),
-      ),
+      withLease(options?.signal, async (signal) => {
+        const closed = await rawSelection.closeTab(targetId, { ...options, signal });
+        getProfileLifecycle(profileState).tabLastUsedAt.delete(closed);
+        return closed;
+      }),
     stopRunningBrowser,
     resetProfile: rawReset.resetProfile,
   };

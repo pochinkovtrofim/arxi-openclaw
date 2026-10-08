@@ -28,6 +28,8 @@ type ProfileLifecycleActor = {
   tail: Promise<void>;
   starts: Map<string, Promise<void>>;
   leases: Set<Promise<void>>;
+  /** Ephemeral activity; Chromium owns durable history and cookies. */
+  tabLastUsedAt: Map<string, number>;
   handles: Set<RunningChrome>;
   cleanupChromeMcp: Set<string>;
   cleanupPlaywright: Map<string, PlaywrightConnectionRetirement>;
@@ -60,6 +62,7 @@ type ProfileTransitionResult = {
 type ProfileLeaseContext = {
   generation: number;
   signal: AbortSignal;
+  tabTargets?: Set<string>;
 };
 
 const profileLeaseStorage = new AsyncLocalStorage<Map<ProfileRuntimeState, ProfileLeaseContext>>();
@@ -74,6 +77,7 @@ function createProfileLifecycleActor(): ProfileLifecycleActor {
     tail: Promise.resolve(),
     starts: new Map(),
     leases: new Set(),
+    tabLastUsedAt: new Map(),
     handles: new Set(),
     cleanupChromeMcp: new Set(),
     cleanupPlaywright: new Map(),
@@ -92,6 +96,12 @@ export function getProfileLifecycle(runtime: ProfileRuntimeState): ProfileLifecy
     profileLifecycles.set(runtime, actor);
   }
   return actor;
+}
+
+/** Retain exact activity ownership even when concurrent actions change the selected tab. */
+export function recordProfileTabActivity(runtime: ProfileRuntimeState, targetId: string): void {
+  getProfileLifecycle(runtime).tabLastUsedAt.set(targetId, Date.now());
+  profileLeaseStorage.getStore()?.get(runtime)?.tabTargets?.add(targetId);
 }
 
 export function isBrowserRuntimeRunning(state: BrowserServerState): boolean {
@@ -305,9 +315,10 @@ export async function withProfileOperationLease<T>(params: {
       : combineSignals(lifecycleSignal, params.signal);
   signal.throwIfAborted();
   const release = createLease(actor);
+  const tabTargets = new Set<string>();
   try {
     const leases = new Map(inherited);
-    leases.set(params.runtime, { generation, signal });
+    leases.set(params.runtime, { generation, signal, tabTargets });
     const result = await profileLeaseStorage.run(leases, async () => await params.run(signal));
     signal.throwIfAborted();
     assertProfileCurrent({ ...params, generation });
@@ -317,6 +328,12 @@ export async function withProfileOperationLease<T>(params: {
     await params.commit?.(result);
     return result;
   } finally {
+    // Long actions get a full idle interval after completion. Closed targets stay removed.
+    for (const targetId of tabTargets) {
+      if (actor.tabLastUsedAt.has(targetId)) {
+        actor.tabLastUsedAt.set(targetId, Date.now());
+      }
+    }
     release();
   }
 }

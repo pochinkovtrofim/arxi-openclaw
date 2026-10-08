@@ -16,6 +16,7 @@ import {
   OPEN_TAB_DISCOVERY_POLL_MS,
   OPEN_TAB_DISCOVERY_WINDOW_MS,
 } from "./server-context.constants.js";
+import { recordProfileTabActivity } from "./server-context.lifecycle.js";
 import type {
   BrowserTab,
   BrowserOperationOptions,
@@ -199,6 +200,7 @@ export function createProfileSelectionOps({
 
   const focusTab = async (targetId: string, options?: BrowserTabTargetOptions): Promise<void> => {
     const resolvedTargetId = await resolveTargetIdOrThrow(targetId, options);
+    recordProfileTabActivity(runtime, resolvedTargetId);
 
     if (capabilities.usesChromeMcp) {
       assertChromeMcpCdpTransportAllowed(profile, getCdpControlPolicy());
