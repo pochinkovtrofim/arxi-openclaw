@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { coerceToFailoverError, FailoverError } from "../../agents/failover-error.js";
 import {
-  GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
-  HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  renderExternalRunFailureText,
+  renderHeartbeatFailureText,
 } from "../../agents/failover/user-copy.js";
 import { AgentHarnessPreflightError } from "../../agents/harness/errors.js";
 import { resolveReplyCompletion } from "../../agents/reply-completion.js";
@@ -53,7 +53,7 @@ describe("buildExternalRunFailureReply", () => {
       userMessage: "untrusted-public-canary",
     });
     expect(buildExternalRunFailureReply({ message: error.message, error })).toEqual({
-      text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      text: renderExternalRunFailureText(),
       isGenericRunnerFailure: true,
     });
   });
@@ -104,7 +104,7 @@ describe("buildExternalRunFailureReply", () => {
         }),
       ).toBeUndefined();
       expect(buildExternalRunFailureReply(input)).toEqual({
-        text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+        text: renderExternalRunFailureText(),
         isGenericRunnerFailure: true,
       });
       const heartbeat = buildExternalRunFailureReply(input, {
@@ -127,7 +127,7 @@ describe("buildExternalRunFailureReply", () => {
   it("keeps raw heartbeat failure details behind verbose opt-in", () => {
     const input = { message: "boom-canary", error: new Error("boom-canary") };
     expect(buildExternalRunFailureReply(input, { isHeartbeat: true })).toEqual({
-      text: HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+      text: renderHeartbeatFailureText(),
       isGenericRunnerFailure: false,
     });
     const verbose = buildExternalRunFailureReply(input, {

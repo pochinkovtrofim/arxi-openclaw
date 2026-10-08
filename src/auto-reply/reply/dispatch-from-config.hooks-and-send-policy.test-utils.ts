@@ -1,6 +1,6 @@
 // Imported by a dispatch-from-config entrypoint to keep its mocked suite in one Vitest module graph.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE } from "../../agents/failover/user-copy.js";
+import { renderConversationStateErrorText } from "../../agents/failover/user-copy.js";
 import { resolveReplyCompletion } from "../../agents/reply-completion.js";
 import { readAgentRunTerminalOutcome } from "../../channels/turn/agent-run-terminal-outcome.js";
 import type { OpenClawConfig } from "../../config/config.js";
@@ -1415,7 +1415,7 @@ describe("sendPolicy deny — suppress delivery, not processing (#53328)", () =>
     const replyResolver = vi.fn(async (receivedCtx: MsgContext) => {
       expect(receivedCtx.Body).toBe(exactProviderError);
       return {
-        text: PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE,
+        text: renderConversationStateErrorText(),
       } satisfies ReplyPayload;
     });
     const ctx = buildTestCtx({
@@ -1438,7 +1438,7 @@ describe("sendPolicy deny — suppress delivery, not processing (#53328)", () =>
 
     expect(replyResolver).toHaveBeenCalledTimes(1);
     expect(dispatcher.sendFinalReply).toHaveBeenCalledWith({
-      text: PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE,
+      text: renderConversationStateErrorText(),
     });
   });
 

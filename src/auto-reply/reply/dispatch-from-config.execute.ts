@@ -2,7 +2,7 @@ import {
   hasOutboundReplyContent,
   isFastModeAutoProgressPayload,
 } from "openclaw/plugin-sdk/reply-payload";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../../agents/failover/user-copy.js";
+import { renderExternalRunFailureText } from "../../agents/failover/user-copy.js";
 import { isAskUserPromptPending } from "../../agents/tools/ask-user-tool.js";
 import { settleProgressVisibilityCallbackResult } from "../../channels/progress-visibility.js";
 import { normalizeAgentPlanSteps } from "../../channels/streaming.js";
@@ -486,7 +486,7 @@ export async function executeDispatch(state: PrepareDispatchExecutionReadyState)
         state.replyOperationRunState.replyCompletion.outcome !== "blocked" &&
         !state.suppressDelivery &&
         !state.getObservedReplyDelivery()
-        ? { text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT, isError: true }
+        ? { text: renderExternalRunFailureText(), isError: true }
         : undefined;
     }
     return buildTerminalAgentRunFailureReplyPayload({

@@ -50,7 +50,7 @@ import { classifyEmbeddedAgentRunResultForModelFallback } from "../embedded-agen
 import type { RunEmbeddedAgentInternalParams } from "../embedded-agent-runner/run/internal-params.js";
 import type { EmbeddedAgentRunResult } from "../embedded-agent.js";
 import { FailoverError } from "../failover-error.js";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../failover/user-copy.js";
+import { renderExternalRunFailureText } from "../failover/user-copy.js";
 import { LiveSessionModelSwitchError } from "../live-model-switch-error.js";
 import { resetGeneratedMediaTaskActivityForTests } from "../media-generation-activity.test-support.js";
 import type { ModelFallbackAttemptProvenance } from "../model-fallback.types.js";
@@ -1199,8 +1199,8 @@ describe("CLI attempt execution", () => {
         await finishFirst.promise;
         const result = makeCliResult("parent completed");
         if (!accepted) {
-          result.payloads = [{ text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT }];
-          result.meta.finalAssistantVisibleText = GENERIC_EXTERNAL_RUN_FAILURE_TEXT;
+          result.payloads = [{ text: renderExternalRunFailureText() }];
+          result.meta.finalAssistantVisibleText = renderExternalRunFailureText();
         }
         if (outcome === "rejected-clear") {
           result.meta.agentMeta!.clearCliSessionBinding = true;
@@ -1264,7 +1264,7 @@ describe("CLI attempt execution", () => {
     const runId = "cli-settlement-owner-loss-run";
     await writeSessionStoreSeed(sessionStore);
     const output = {
-      text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      text: renderExternalRunFailureText(),
       rawText: "Captured raw action result",
       sessionId: "captured-native-session",
       usage: { input: 71, output: 9, total: 80 },

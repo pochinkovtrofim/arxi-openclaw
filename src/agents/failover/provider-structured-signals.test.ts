@@ -10,7 +10,7 @@ import {
 import { classifyProviderRuntimeFailureKind } from "../embedded-agent-helpers/provider-runtime-failure.js";
 import { resolveFailoverReasonFromError } from "../failover-error.js";
 import { makeAssistantMessageFixture } from "../test-helpers/assistant-message-fixtures.js";
-import { PROVIDER_SCHEMA_REJECTION_USER_TEXT } from "./assistant-request-failure-copy.js";
+import { renderSchemaRejectionText } from "./assistant-request-failure-copy.js";
 import { classifyFailoverSignal } from "./classify.js";
 import { formatBillingErrorMessage } from "./user-copy.js";
 
@@ -88,7 +88,7 @@ describe("provider failover hook structured signals", () => {
           "Context overflow: prompt too large for the model. Try /reset (or /new) to start a fresh session, or use a larger-context model.",
         model_not_found:
           "The selected model was not found by the provider. Check the model id or choose a different model.",
-        format: PROVIDER_SCHEMA_REJECTION_USER_TEXT,
+        format: renderSchemaRejectionText(),
       };
       expect(
         formatUserFacingAssistantErrorText(message, {
@@ -130,7 +130,7 @@ describe("provider failover hook structured signals", () => {
       errorCode: "RESOURCE_EXHAUSTED",
       copy: "⚠️ API rate limit reached. Please try again later.",
     },
-    { errorType: "invalid_request_error", copy: PROVIDER_SCHEMA_REJECTION_USER_TEXT },
+    { errorType: "invalid_request_error", copy: renderSchemaRejectionText() },
     {
       errorMessage: undefined,
       errorCode: "RESOURCE_EXHAUSTED",
@@ -139,7 +139,7 @@ describe("provider failover hook structured signals", () => {
     {
       errorMessage: undefined,
       errorType: "invalid_request_error",
-      copy: PROVIDER_SCHEMA_REJECTION_USER_TEXT,
+      copy: renderSchemaRejectionText(),
     },
     {
       errorMessage:

@@ -5,7 +5,7 @@ import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { formatRawAssistantErrorForUi } from "../agents/embedded-agent-helpers.js";
 import { areRuntimeModelRefsEquivalent } from "../agents/model-runtime-aliases.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { arxiUserCopy } from "../shared/arxi-user-copy.js";
+import { renderUserMessage } from "../shared/user-message.js";
 import type { FallbackNoticeState } from "../status/fallback-notice-state.js";
 import type { RuntimeFallbackAttempt } from "./reply/agent-runner-execution.types.js";
 
@@ -104,9 +104,9 @@ export function buildFallbackNotice(params: {
     return null;
   }
   const reasonSummary = buildFallbackReasonSummary(params.attempts);
-  return arxiUserCopy(
+  return renderUserMessage(
+    { code: "model_fallback", activeModel: params.activeModel },
     `↪️ Model Fallback: ${active} (selected ${selected}; ${reasonSummary})`,
-    `Основная модель недоступна. Продолжу с ${params.activeModel}.`,
   );
 }
 
@@ -134,12 +134,12 @@ export function buildFallbackClearedNotice(params: {
   const selected = buildModelCatalogRef(params.selectedProvider, params.selectedModel);
   const previous = normalizeOptionalString(params.previousActiveModel);
   if (previous && previous !== selected) {
-    return arxiUserCopy(
+    return renderUserMessage(
+      { code: "model_restored" },
       `↪️ Model Fallback cleared: ${selected} (was ${previous})`,
-      "Основная модель снова доступна.",
     );
   }
-  return arxiUserCopy(`↪️ Model Fallback cleared: ${selected}`, "Основная модель снова доступна.");
+  return renderUserMessage({ code: "model_restored" }, `↪️ Model Fallback cleared: ${selected}`);
 }
 
 type ResolvedFallbackTransition = {

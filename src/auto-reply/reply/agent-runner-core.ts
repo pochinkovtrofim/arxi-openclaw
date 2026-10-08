@@ -22,7 +22,7 @@ import type { TypingMode } from "../../config/types.js";
 import { logVerbose } from "../../globals.js";
 import { CommandLaneClearedError, GatewayDrainingError } from "../../process/command-queue.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
-import { arxiUserCopy } from "../../shared/arxi-user-copy.js";
+import { renderUserMessage } from "../../shared/user-message.js";
 import { sessionDeliveryChannel } from "../../utils/delivery-context.read.js";
 import {
   type DeliveryContext,
@@ -132,9 +132,9 @@ export function buildSilentFallbackFailurePayload(params: {
     }
   }
   return markReplyPayloadForSourceSuppressionDelivery({
-    text: arxiUserCopy(
+    text: renderUserMessage(
+      { code: "fallback_reply_missing" },
       `${primary}Fallback used ${active}, but it produced no visible reply.`,
-      "Основная модель недоступна, а запасная не вернула ответ.",
     ),
     isError: true,
   });

@@ -15,8 +15,8 @@ import { buildCurrentRunRestartRecoveryClaim } from "../../agents/agent-command-
 import { buildEmbeddedRunPayloads } from "../../agents/embedded-agent-runner/run/payloads.js";
 import type { EmbeddedAgentRunResult } from "../../agents/embedded-agent-runner/types.js";
 import {
-  GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
-  HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  renderExternalRunFailureText,
+  renderHeartbeatFailureText,
 } from "../../agents/failover/user-copy.js";
 import { makeAssistantMessageFixture } from "../../agents/test-helpers/assistant-message-fixtures.js";
 import {
@@ -1893,7 +1893,7 @@ describe("runReplyAgent heartbeat followup guard", () => {
           const result = await run();
           const payload = Array.isArray(result) ? result[0] : result;
           expect(payload).toMatchObject({
-            text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+            text: renderExternalRunFailureText,
             isError: true,
           });
         }
@@ -2086,7 +2086,7 @@ describe("runReplyAgent heartbeat followup guard", () => {
         });
 
         await expect(run()).resolves.toMatchObject({
-          text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+          text: renderExternalRunFailureText,
           isError: true,
         });
         expect(resolveReplyOperationAgentTurn(runState)).toBe("failed");
@@ -4342,7 +4342,7 @@ describe("runReplyAgent typing (heartbeat)", () => {
 
     expect(toolResultDelivered).toBe(true);
     expect(payload).toMatchObject({
-      text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      text: renderExternalRunFailureText(),
       isError: true,
     });
   });
@@ -4515,31 +4515,31 @@ describe("runReplyAgent typing (heartbeat)", () => {
       label: "silent token",
       payload: { text: "NO_REPLY" },
       opts: undefined,
-      expectedText: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      expectedText: renderExternalRunFailureText(),
     },
     {
       label: "heartbeat acknowledgement",
       payload: { text: "HEARTBEAT_OK" },
       opts: { isHeartbeat: true as const },
-      expectedText: HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+      expectedText: renderHeartbeatFailureText(),
     },
     {
       label: "reasoning-only output",
       payload: { text: "internal reasoning", isReasoning: true },
       opts: undefined,
-      expectedText: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      expectedText: renderExternalRunFailureText(),
     },
     {
       label: "commentary-only output",
       payload: { text: "internal commentary", isCommentary: true },
       opts: undefined,
-      expectedText: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      expectedText: renderExternalRunFailureText(),
     },
     {
       label: "directive-only output",
       payload: { text: "[[reply_to_current]]" },
       opts: undefined,
-      expectedText: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      expectedText: renderExternalRunFailureText(),
     },
   ])("replaces filtered $label after a terminal failure", async (testCase) => {
     state.runEmbeddedAgentMock.mockResolvedValueOnce({

@@ -2,7 +2,6 @@ import { stableStringify } from "@openclaw/normalization-core";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { formatCommandErrorForUser } from "../../process/command-error.js";
-import { arxiUserCopy, isArxiConversation } from "../../shared/arxi-user-copy.js";
 import {
   extractErrorHttpStatus,
   extractLeadingHttpStatus,
@@ -14,6 +13,7 @@ import {
   parseApiErrorInfo,
   parseApiErrorPayload,
 } from "../../shared/assistant-error-format.js";
+import { renderUserMessage, resolveUserMessage } from "../../shared/user-message.js";
 import { formatExecDeniedUserMessage } from "../exec-approval-result.js";
 import type { CliTimeoutContext, FallbackAttemptRecord } from "../failover-error.js";
 import { ERROR_PREFIX_RE, renderFormatErrorCopy } from "./assistant-request-failure-copy.js";
@@ -37,37 +37,40 @@ type FailoverUserCopyContext = {
 
 type FailoverBaseCopyRenderer = (context: FailoverUserCopyContext) => string;
 
-const RATE_LIMIT_ERROR_USER_MESSAGE = arxiUserCopy(
-  "⚠️ API rate limit reached. Please try again later.",
-  "Достигнут лимит запросов. Попробуй чуть позже.",
-);
-export const AUTH_INVALID_TOKEN_USER_TEXT = arxiUserCopy(
+const renderRateLimitErrorUserMessage = () =>
+  renderUserMessage({ code: "rate_limit" }, "⚠️ API rate limit reached. Please try again later.");
+const AUTH_INVALID_TOKEN_USER_TEXT =
   "Authentication failed (provider returned HTTP 401). " +
-    "Your provider token may have expired — try the request again in a moment. " +
-    "If the failure persists, re-authenticate this provider.",
-  "Подключение к ChatGPT больше не действует. Подключи подписку заново в настройках.",
-);
-const SELECTED_AUTH_PROFILE_UNAVAILABLE_USER_TEXT = arxiUserCopy(
-  "The selected auth profile is unavailable in this agent's OpenClaw credential store. " +
-    "Import or migrate that credential into the agent, select another configured profile, or run `openclaw configure`, then retry.",
-  "Подключение к ChatGPT недоступно. Подключи подписку заново в настройках.",
-);
+  "Your provider token may have expired — try the request again in a moment. " +
+  "If the failure persists, re-authenticate this provider.";
+export function renderInvalidTokenText(): string {
+  return renderUserMessage({ code: "auth_invalid_token" }, AUTH_INVALID_TOKEN_USER_TEXT);
+}
+const renderSelectedAuthProfileUnavailableUserText = () =>
+  renderUserMessage(
+    { code: "selected_auth_unavailable" },
+    "The selected auth profile is unavailable in this agent's OpenClaw credential store. " +
+      "Import or migrate that credential into the agent, select another configured profile, or run `openclaw configure`, then retry.",
+  );
 export const renderFailoverCodeUserCopy = (code: unknown): string | undefined =>
   code === "selected_auth_profile_unavailable"
-    ? SELECTED_AUTH_PROFILE_UNAVAILABLE_USER_TEXT
+    ? renderSelectedAuthProfileUnavailableUserText()
     : undefined;
-const MODEL_CAPACITY_ERROR_USER_MESSAGE = arxiUserCopy(
-  "⚠️ Selected model is at capacity. Try a different model, or wait and retry.",
-  "Сейчас слишком много запросов. Попробуй чуть позже.",
-);
-const OVERLOADED_ERROR_USER_MESSAGE = arxiUserCopy(
-  "The AI service is temporarily overloaded. Please try again in a moment.",
-  "Сервис перегружен. Попробуй через несколько минут.",
-);
-const RATE_LIMIT_RETRY_MESSAGE = arxiUserCopy(
-  "⚠️ The model request was rate-limited. Please try again in a few minutes.",
-  "Достигнут лимит запросов. Попробуй через несколько минут.",
-);
+const renderModelCapacityErrorUserMessage = () =>
+  renderUserMessage(
+    { code: "model_capacity" },
+    "⚠️ Selected model is at capacity. Try a different model, or wait and retry.",
+  );
+const renderOverloadedErrorUserMessage = () =>
+  renderUserMessage(
+    { code: "overloaded" },
+    "The AI service is temporarily overloaded. Please try again in a moment.",
+  );
+const renderRateLimitRetryMessage = () =>
+  renderUserMessage(
+    { code: "rate_limit_retry" },
+    "⚠️ The model request was rate-limited. Please try again in a few minutes.",
+  );
 const MODEL_CAPACITY_ERROR_RE = /\b(?:selected\s+)?model\s+(?:is\s+)?at capacity\b/i;
 const RATE_LIMIT_SPECIFIC_HINT_RE =
   /\bmin(ute)?s?\b|\bhours?\b|\bseconds?\b|\btry again in\b|\bresets?\b|\bplan\b|\bquota\b/i;
@@ -82,8 +85,9 @@ export function formatBillingErrorMessage(
   model?: string,
   authMode?: string,
 ): string {
-  if (isArxiConversation()) {
-    return "Сервис сообщил о проблеме с оплатой или подпиской. Проверь свой аккаунт ChatGPT.";
+  const copy = resolveUserMessage({ code: "billing" });
+  if (copy !== undefined) {
+    return copy;
   }
   const providerName = provider?.trim();
   const modelName = model?.trim();
@@ -100,7 +104,7 @@ export function formatBillingErrorMessage(
     : "⚠️ API provider returned a billing error — your API key has run out of credits or has an insufficient balance. Check your provider's billing dashboard and top up or switch to a different API key.";
 }
 
-const BILLING_ERROR_USER_MESSAGE = formatBillingErrorMessage();
+const renderBillingErrorUserMessage = () => formatBillingErrorMessage();
 
 function extractProviderRateLimitMessage(raw: string): string | undefined {
   const withoutPrefix = raw.replace(ERROR_PREFIX_RE, "").trim();
@@ -125,78 +129,65 @@ function extractProviderRateLimitMessage(raw: string): string | undefined {
 }
 
 function renderRateLimitBaseCopy(context: FailoverUserCopyContext): string {
-  if (isArxiConversation()) {
-    return RATE_LIMIT_ERROR_USER_MESSAGE;
+  const copy = resolveUserMessage({ code: "rate_limit" });
+  if (copy !== undefined) {
+    return copy;
   }
   const raw = context.raw ?? "";
   if (MODEL_CAPACITY_ERROR_RE.test(raw)) {
-    return MODEL_CAPACITY_ERROR_USER_MESSAGE;
+    return renderModelCapacityErrorUserMessage();
   }
-  return extractProviderRateLimitMessage(raw) ?? RATE_LIMIT_ERROR_USER_MESSAGE;
+  return extractProviderRateLimitMessage(raw) ?? renderRateLimitErrorUserMessage();
 }
 
 const FAILOVER_REASON_BASE_COPY = {
-  auth: () => AUTH_INVALID_TOKEN_USER_TEXT,
-  auth_permanent: () => AUTH_INVALID_TOKEN_USER_TEXT,
+  auth: () => renderInvalidTokenText(),
+  auth_permanent: () => renderInvalidTokenText(),
   format: (context) => renderFormatErrorCopy(context.raw ?? ""),
   rate_limit: renderRateLimitBaseCopy,
   overloaded: (context) =>
     MODEL_CAPACITY_ERROR_RE.test(context.raw ?? "")
-      ? MODEL_CAPACITY_ERROR_USER_MESSAGE
-      : OVERLOADED_ERROR_USER_MESSAGE,
+      ? renderModelCapacityErrorUserMessage()
+      : renderOverloadedErrorUserMessage(),
   billing: (context) =>
     formatBillingErrorMessage(context.provider, context.model, context.authMode),
   server_error: () =>
-    arxiUserCopy(
+    renderUserMessage(
+      { code: "server_error" },
       "LLM request failed: provider returned an internal error.",
-      "Сервис вернул ошибку. Попробуй чуть позже.",
     ),
-  timeout: () =>
-    arxiUserCopy("LLM request timed out.", "Не дождалась ответа от сервиса. Попробуй ещё раз."),
+  timeout: () => renderUserMessage({ code: "timeout" }, "LLM request timed out."),
   tls_certificate: () =>
-    arxiUserCopy(
+    renderUserMessage(
+      { code: "tls_certificate" },
       "LLM request failed: TLS certificate validation rejected the provider endpoint. Check the endpoint hostname, proxy, and local certificate trust.",
-      "Не удалось установить защищённое соединение с сервисом.",
     ),
   context_overflow: () =>
-    arxiUserCopy(
+    renderUserMessage(
+      { code: "context_overflow" },
       "Context overflow: prompt too large for the model. Try /reset (or /new) to start a fresh session, or use a larger-context model.",
-      "Переписка не помещается в один запрос. Попробуй /compact или начни новый разговор через /new.",
     ),
   model_not_found: () =>
-    arxiUserCopy(
+    renderUserMessage(
+      { code: "model_not_found" },
       "The selected model was not found by the provider. Check the model id or choose a different model.",
-      "Выбранная модель недоступна. Нужно выбрать другую в настройках.",
     ),
   session_expired: () =>
-    arxiUserCopy(
+    renderUserMessage(
+      { code: "session_expired" },
       "The provider session expired. Start a new session and try again.",
-      "Сессия истекла. Начни новый разговор через /new.",
     ),
   empty_response: () =>
-    arxiUserCopy(
+    renderUserMessage(
+      { code: "empty_response" },
       "The model returned an empty response. Please try again.",
-      "Ответ пришёл пустым. Попробуй ещё раз.",
     ),
   no_error_details: () =>
-    arxiUserCopy(
-      "LLM request failed with an unknown error.",
-      "Не получилось ответить. Причину пока не удалось определить.",
-    ),
-  unclassified: () => arxiUserCopy("LLM request failed.", "Не получилось выполнить запрос."),
+    renderUserMessage({ code: "unknown_error" }, "LLM request failed with an unknown error."),
+  unclassified: () => renderUserMessage({ code: "request_failed" }, "LLM request failed."),
   unknown: () =>
-    arxiUserCopy(
-      "LLM request failed with an unknown error.",
-      "Не получилось ответить. Причину пока не удалось определить.",
-    ),
+    renderUserMessage({ code: "unknown_error" }, "LLM request failed with an unknown error."),
 } satisfies Record<FailoverReason, FailoverBaseCopyRenderer>;
-
-export function renderFailoverBaseCopy(
-  reason: FailoverReason,
-  context: FailoverUserCopyContext = {},
-): string | undefined {
-  return FAILOVER_REASON_BASE_COPY[reason](context);
-}
 
 /** Render rate-limit versus overload copy from the canonical classified reason. */
 export function renderRateLimitOrOverloadedCopy(params: {
@@ -211,9 +202,9 @@ export function formatDiskSpaceErrorCopy(raw: string): string | undefined {
   return /\benospc\b/i.test(raw) ||
     lower.includes("no space left on device") ||
     lower.includes("disk full")
-    ? arxiUserCopy(
+    ? renderUserMessage(
+        { code: "disk_full" },
         "OpenClaw could not write local session data because the disk is full. Free some disk space and try again.",
-        "Закончилось место для сохранения переписки. Продолжить смогу после освобождения или расширения хранилища.",
       )
     : undefined;
 }
@@ -300,9 +291,9 @@ export function renderSanitizedUserFacingText(
     return diskSpace;
   }
   if (/incorrect role information|roles must alternate/i.test(trimmed)) {
-    return arxiUserCopy(
+    return renderUserMessage(
+      { code: "message_order" },
       "Message ordering conflict - please try again. If this persists, use /new to start a fresh session.",
-      "Не удалось обработать порядок сообщений. Попробуй ещё раз; если повторится — /new.",
     );
   }
   const reason = classifyFailoverReasonCore(trimmed);
@@ -327,24 +318,24 @@ export function renderSanitizedUserFacingText(
     status: extractErrorHttpStatus(trimmed)?.code,
   });
   if (providerRequestCode) {
-    return PROVIDER_REQUEST_COPY[providerRequestCode];
+    return PROVIDER_REQUEST_COPY[providerRequestCode]();
   }
   if (isGenericProviderInternalError(trimmed)) {
     return formatRawAssistantErrorForUi(trimmed);
   }
   if (isInvalidStreamingEventOrderError(trimmed)) {
-    return arxiUserCopy(
+    return renderUserMessage(
+      { code: "streaming_invalid" },
       "LLM request failed: provider returned an invalid streaming response. Please try again.",
-      "Ответ пришёл повреждённым. Попробуй ещё раз.",
     );
   }
   if (rawPayload || (status && status.code >= 400 && reason)) {
     return formatRawAssistantErrorForUi(trimmed);
   }
   if (isStreamingJsonParseError(trimmed)) {
-    return arxiUserCopy(
+    return renderUserMessage(
+      { code: "streaming_fragment" },
       "LLM streaming response contained a malformed fragment. Please try again.",
-      "Часть ответа пришла повреждённой. Попробуй ещё раз.",
     );
   }
   if (ERROR_PREFIX_RE.test(trimmed)) {
@@ -363,51 +354,64 @@ export function renderSanitizedUserFacingText(
   return sanitized;
 }
 
-export const GENERIC_EXTERNAL_RUN_FAILURE_TEXT = arxiUserCopy(
-  "⚠️ Something went wrong while processing your request. Please try again, or use /new to start a fresh session.",
-  "Не получилось закончить ответ. Попробуй ещё раз; если повторится — /new.",
-);
-export const HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT = arxiUserCopy(
-  "⚠️ Heartbeat check failed before it could produce an update. The main chat session remains available.",
-  "Не получилось выполнить фоновую проверку. Здесь можно продолжать разговор.",
-);
-export const PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE = arxiUserCopy(
-  "⚠️ The model provider rejected the conversation state. Please try again, or use /new to start a fresh session.",
-  "Не удалось продолжить этот разговор. Попробуй ещё раз; если повторится — /new.",
-);
-const PROVIDER_RATE_LIMIT_OR_QUOTA_ERROR_USER_MESSAGE = arxiUserCopy(
-  "⚠️ The model provider returned HTTP 429 before replying. This can mean rate limiting, exhausted quota, or an account balance/billing issue. Check the selected provider/model, API key, and provider billing/quota dashboard, then try again.",
-  "Сервис ограничил запросы. Проверь лимиты и состояние подписки в своём аккаунте.",
-);
-const PROVIDER_INTERNAL_ERROR_USER_MESSAGE = arxiUserCopy(
-  "⚠️ The model provider returned a temporary internal error before replying. Try again in a moment, or switch to another model if it keeps happening.",
-  "Сервис временно не отвечает. Попробуй чуть позже.",
-);
+const GENERIC_EXTERNAL_RUN_FAILURE_TEXT =
+  "⚠️ Something went wrong while processing your request. Please try again, or use /new to start a fresh session.";
+export function renderExternalRunFailureText(): string {
+  return renderUserMessage({ code: "external_run_failure" }, GENERIC_EXTERNAL_RUN_FAILURE_TEXT);
+}
+const HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT =
+  "⚠️ Heartbeat check failed before it could produce an update. The main chat session remains available.";
+export function renderHeartbeatFailureText(): string {
+  return renderUserMessage({ code: "heartbeat_failure" }, HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT);
+}
+const PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE =
+  "⚠️ The model provider rejected the conversation state. Please try again, or use /new to start a fresh session.";
+export function renderConversationStateErrorText(): string {
+  return renderUserMessage(
+    { code: "conversation_state" },
+    PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE,
+  );
+}
+const renderProviderRateLimitOrQuotaErrorUserMessage = () =>
+  renderUserMessage(
+    { code: "rate_limit_quota" },
+    "⚠️ The model provider returned HTTP 429 before replying. This can mean rate limiting, exhausted quota, or an account balance/billing issue. Check the selected provider/model, API key, and provider billing/quota dashboard, then try again.",
+  );
+const renderProviderInternalErrorUserMessage = () =>
+  renderUserMessage(
+    { code: "provider_internal" },
+    "⚠️ The model provider returned a temporary internal error before replying. Try again in a moment, or switch to another model if it keeps happening.",
+  );
 
 const HEARTBEAT_FAILURE_LEAD = "⚠️ Heartbeat check failed before it could produce an update";
 const HEARTBEAT_FAILURE_TAIL = "The main chat session remains available.";
 
 /** `reason` is the failure-reply owner's already sanitized and capped detail. */
 export function renderHeartbeatRunFailureCopy(reason?: string): string {
-  if (!reason || isArxiConversation()) {
-    return HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT;
+  const copy = resolveUserMessage({ code: "heartbeat_failure" });
+  if (copy !== undefined) {
+    return copy;
+  }
+  if (!reason) {
+    return renderHeartbeatFailureText();
   }
   const terminator = /[.!?]$/u.test(reason) ? "" : ".";
   return `${HEARTBEAT_FAILURE_LEAD}: ${reason}${terminator} ${HEARTBEAT_FAILURE_TAIL}`;
 }
 
-const PROVIDER_AUTHENTICATION_ERROR_USER_MESSAGE = `⚠️ ${AUTH_INVALID_TOKEN_USER_TEXT}`;
-const PROVIDER_MODEL_UNAVAILABLE_USER_MESSAGE = arxiUserCopy(
-  "⚠️ The selected model is unavailable from the provider — it may have been renamed, retired, or is not offered on this account. Select an available model or update the model configuration, then try again.",
-  "Выбранная модель недоступна для этого аккаунта. Нужно выбрать другую в настройках.",
-);
+const renderProviderAuthenticationErrorUserMessage = () => `⚠️ ${renderInvalidTokenText()}`;
+const renderProviderModelUnavailableUserMessage = () =>
+  renderUserMessage(
+    { code: "model_unavailable" },
+    "⚠️ The selected model is unavailable from the provider — it may have been renamed, retired, or is not offered on this account. Select an available model or update the model configuration, then try again.",
+  );
 
 const PROVIDER_REQUEST_COPY = {
-  provider_authentication_error: PROVIDER_AUTHENTICATION_ERROR_USER_MESSAGE,
-  provider_conversation_state_error: PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE,
-  provider_internal_error: PROVIDER_INTERNAL_ERROR_USER_MESSAGE,
-  provider_model_unavailable: PROVIDER_MODEL_UNAVAILABLE_USER_MESSAGE,
-  provider_rate_limit_or_quota_error: PROVIDER_RATE_LIMIT_OR_QUOTA_ERROR_USER_MESSAGE,
+  provider_authentication_error: renderProviderAuthenticationErrorUserMessage,
+  provider_conversation_state_error: renderConversationStateErrorText,
+  provider_internal_error: renderProviderInternalErrorUserMessage,
+  provider_model_unavailable: renderProviderModelUnavailableUserMessage,
+  provider_rate_limit_or_quota_error: renderProviderRateLimitOrQuotaErrorUserMessage,
 };
 
 type ProviderRequestErrorCode = keyof typeof PROVIDER_REQUEST_COPY;
@@ -450,7 +454,7 @@ export function resolveProviderRequestFailureCopy(params: {
   }
   return {
     code,
-    userMessage: PROVIDER_REQUEST_COPY[code],
+    userMessage: PROVIDER_REQUEST_COPY[code](),
     technicalMessage: params.technicalMessage,
   };
 }
@@ -474,9 +478,14 @@ function extractCodexUsageLimitErrorMessage(
   if (!text) {
     return undefined;
   }
-  const message = renderSanitizedUserFacingText(sanitizeText?.(text) ?? text, {
-    errorContext: true,
-  })
+  // The attempt already classifies this as a rate limit. A presentation plugin
+  // must not depend on recognizing the provider's free-form wording again.
+  const message = (
+    resolveUserMessage({ code: "rate_limit" }) ??
+    renderSanitizedUserFacingText(sanitizeText?.(text) ?? text, {
+      errorContext: true,
+    })
+  )
     .split(/\r?\n/u)
     .map((line) => line.trim())
     .filter(Boolean)
@@ -511,7 +520,7 @@ export function renderRateLimitReplyCopy(params: {
     return usageLimit;
   }
   if (attempts.some((attempt) => attempt.reason === "billing") || params.reason === "billing") {
-    return BILLING_ERROR_USER_MESSAGE;
+    return renderBillingErrorUserMessage();
   }
   if (attempts.length === 0) {
     if (params.reason === "rate_limit" && isPeriodicUsageLimitErrorMessage(params.message)) {
@@ -521,20 +530,20 @@ export function renderRateLimitReplyCopy(params: {
       );
       return providerMessage.startsWith("⚠️") ? providerMessage : `⚠️ ${providerMessage}`;
     }
-    return RATE_LIMIT_RETRY_MESSAGE;
+    return renderRateLimitRetryMessage();
   }
   const expiry = params.cooldownExpiry;
   const nowMs = params.nowMs ?? Date.now();
   if (typeof expiry === "number" && expiry > nowMs) {
     const secsLeft = Math.max(1, Math.ceil((expiry - nowMs) / 1000));
     return secsLeft <= 60
-      ? arxiUserCopy(
+      ? renderUserMessage(
+          { code: "cooldown_seconds", seconds: secsLeft },
           `⚠️ Rate-limited — ready in ~${secsLeft}s. Please wait a moment.`,
-          `Достигнут лимит запросов. Попробуй примерно через ${secsLeft} сек.`,
         )
-      : arxiUserCopy(
+      : renderUserMessage(
+          { code: "cooldown_minutes", minutes: Math.ceil(secsLeft / 60) },
           `⚠️ Rate-limited — ready in ~${Math.ceil(secsLeft / 60)} min. Please try again shortly.`,
-          `Достигнут лимит запросов. Попробуй примерно через ${Math.ceil(secsLeft / 60)} мин.`,
         );
   }
   const attemptedModels = new Set(
@@ -542,11 +551,11 @@ export function renderRateLimitReplyCopy(params: {
   );
   return attemptedModels.size > 1 &&
     attempts.every((attempt) => attempt.reason === "rate_limit" || attempt.reason === "overloaded")
-    ? arxiUserCopy(
+    ? renderUserMessage(
+        { code: "all_models_limited" },
         "⚠️ All attempted models were rate-limited or overloaded. Please try again in a few minutes.",
-        "Доступные модели перегружены или достигли лимита. Попробуй через несколько минут.",
       )
-    : RATE_LIMIT_RETRY_MESSAGE;
+    : renderRateLimitRetryMessage();
 }
 
 export function renderBillingReplyCopy(params: {
@@ -572,7 +581,7 @@ export function renderBillingReplyCopy(params: {
         billingFailure.model,
         billingFailure.authMode,
       )
-    : BILLING_ERROR_USER_MESSAGE;
+    : renderBillingErrorUserMessage();
 }
 
 const SAFE_MISSING_API_KEY_PROVIDERS = new Set(["anthropic", "google", "openai"]);
@@ -581,8 +590,9 @@ export function renderMissingApiKeyReplyCopy(params?: {
   provider: string;
   providerGuidance?: boolean;
 }): string | null {
-  if (isArxiConversation()) {
-    return "Подключение к ChatGPT недоступно. Подключи подписку заново в настройках.";
+  const copy = resolveUserMessage({ code: "missing_credentials" });
+  if (copy !== undefined) {
+    return copy;
   }
   const provider = params?.provider.trim().toLowerCase();
   if (!provider) {
@@ -703,8 +713,9 @@ const AUTH_PROFILE_RECOVERY_REASONS = new Set<FailoverReason>([
 ]);
 
 export function renderAuthProfileFailoverCopy(params: AuthProfileFailureCopyParams): string {
-  if (isArxiConversation()) {
-    return renderFailoverBaseCopy(params.reason) ?? GENERIC_EXTERNAL_RUN_FAILURE_TEXT;
+  const copy = resolveUserMessage({ code: "auth_profile_failure", reason: params.reason });
+  if (copy !== undefined) {
+    return copy;
   }
   const description = params.allInCooldown
     ? AUTH_PROFILE_COOLDOWN_COPY[params.reason](params.provider)
@@ -728,15 +739,13 @@ export function replaceGenericExternalRunFailureText(text: string): {
   text: string;
   replaced: boolean;
 } {
-  const start = text.indexOf(GENERIC_EXTERNAL_RUN_FAILURE_TEXT);
-  if (start < 0 || text.slice(start + GENERIC_EXTERNAL_RUN_FAILURE_TEXT.length).trim()) {
+  const start = text.indexOf(renderExternalRunFailureText());
+  if (start < 0 || text.slice(start + renderExternalRunFailureText().length).trim()) {
     return { text, replaced: false };
   }
   const prefix = text.slice(0, start).trimEnd();
   return {
-    text: prefix
-      ? `${prefix} ${HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT}`
-      : HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+    text: prefix ? `${prefix} ${renderHeartbeatFailureText()}` : renderHeartbeatFailureText(),
     replaced: true,
   };
 }

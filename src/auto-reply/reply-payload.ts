@@ -10,9 +10,9 @@ import type { HarnessCompletionRecovery } from "../config/sessions/restart-recov
 import type { ReplyToMode } from "../config/types.base.js";
 import { hasReplyPayloadContent } from "../interactive/payload.js";
 import type { AssistantDeliveryTtsFacts } from "../llm/types.js";
-import { arxiUserCopy } from "../shared/arxi-user-copy.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import type { ReplyPayload, ReplyPayloadTtsSupplement } from "../shared/reply-payload.types.js";
+import { renderUserMessage } from "../shared/user-message.js";
 import type { CommandOwnerAssertion } from "./command-owner-authority.js";
 import type { BlockReplySource } from "./reply/block-reply-source.types.js";
 
@@ -104,24 +104,27 @@ export type ReplyDeliveryContext = {
   replyToMode: ReplyToMode;
 };
 
-const REPLY_MEDIA_FAILURE_MESSAGES: Record<ReplyMediaFailureCode, string> = {
-  "file-not-found": arxiUserCopy(
-    "File not found. Check the path and try again.",
-    "Файл не найден. Нужно выбрать его заново.",
-  ),
-  "unsupported-format": arxiUserCopy(
-    "Rejected by the local attachment allowlist. Send a supported file type.",
-    "Этот формат файла не поддерживается.",
-  ),
-  "delivery-failed": arxiUserCopy(
-    "Delivery failed. Try sending this file again.",
-    "Не удалось доставить файл.",
-  ),
+const REPLY_MEDIA_FAILURE_MESSAGES: Record<ReplyMediaFailureCode, () => string> = {
+  "file-not-found": () =>
+    renderUserMessage(
+      { code: "media_file_not_found" },
+      "File not found. Check the path and try again.",
+    ),
+  "unsupported-format": () =>
+    renderUserMessage(
+      { code: "media_unsupported" },
+      "Rejected by the local attachment allowlist. Send a supported file type.",
+    ),
+  "delivery-failed": () =>
+    renderUserMessage(
+      { code: "media_delivery_failed" },
+      "Delivery failed. Try sending this file again.",
+    ),
 };
 
 function formatReplyMediaFailures(failures: readonly ReplyMediaFailure[]): string {
   return failures
-    .map((failure) => `⚠️ ${failure.label}: ${REPLY_MEDIA_FAILURE_MESSAGES[failure.code]}`)
+    .map((failure) => `⚠️ ${failure.label}: ${REPLY_MEDIA_FAILURE_MESSAGES[failure.code]()}`)
     .join("\n");
 }
 

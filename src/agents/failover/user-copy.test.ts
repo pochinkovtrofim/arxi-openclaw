@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { renderFormatErrorCopy } from "./assistant-request-failure-copy.js";
 import {
-  AUTH_INVALID_TOKEN_USER_TEXT,
-  HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  renderInvalidTokenText,
+  renderHeartbeatFailureText,
   renderBillingReplyCopy,
   renderCliTimeoutReplyCopy,
   renderFailoverCodeUserCopy,
@@ -15,8 +15,8 @@ import {
 
 describe("failover user copy", () => {
   it.each([
-    [undefined, HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT],
-    ["", HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT],
+    [undefined, renderHeartbeatFailureText()],
+    ["", renderHeartbeatFailureText()],
     [
       "Codex session became active in another runner; wait for it to finish before continuing",
       "⚠️ Heartbeat check failed before it could produce an update: Codex session became active in another runner; wait for it to finish before continuing. The main chat session remains available.",
@@ -165,7 +165,7 @@ describe("failover user copy", () => {
     "401 Unauthorized: invalid api key",
   ])("renders the provider authentication copy for %j", (raw) => {
     expect(renderSanitizedUserFacingText(raw, { errorContext: true })).toBe(
-      `⚠️ ${AUTH_INVALID_TOKEN_USER_TEXT}`,
+      `⚠️ ${renderInvalidTokenText()}`,
     );
   });
 

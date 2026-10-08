@@ -126,3 +126,33 @@ Decision rules:
   direct delivery keeps returning an empty result array for compatibility.
 - `message_sent` is observation-only. Handler failures are logged and do not
   change the delivery result.
+
+## Structured user messages
+
+`user_message` renders Core error, recovery, and status notices before delivery.
+Register a synchronous handler with `api.on("user_message", handler)`. The event is
+a discriminated union keyed by `code`; parameterized notices carry only their
+presentation facts (for example `seconds`, `activeModel`, or an already rendered
+failure `text`). Provider credentials, raw diagnostics, and the default message
+are not passed to the handler. Non-bundled plugins need
+`hooks.allowConversationAccess: true` because a composed notice can contain reply
+text.
+
+Return `{ text }` to replace the notice or `undefined` to retain Core wording.
+Handlers run in descending priority; the first nonblank string wins. Promises,
+empty results, and failed handlers are ignored with the normal hook diagnostics.
+This hook cannot cancel delivery, change classification, or authorize an action.
+Keep rendering pure: no network calls or mutations.
+
+Rendering uses the active request/generation registry, including its replacement
+and retirement rules. Core resolves copy at use time, so importing a module before
+plugin activation does not freeze the default language. Before plugin activation,
+or when no handler claims a notice, Core uses its existing wording.
+
+```ts
+api.on("user_message", (event) => {
+  if (event.code === "gateway_restarting") {
+    return { text: "Restarting. Please try again in a few seconds." };
+  }
+});
+```

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { heartbeatRunnerTelegramPlugin } from "../../test/helpers/infra/heartbeat-runner-channel-plugins.js";
 import type { EmbeddedAgentRunResult } from "../agents/embedded-agent-runner/types.js";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../agents/failover/user-copy.js";
+import { renderExternalRunFailureText } from "../agents/failover/user-copy.js";
 import { dispatchInboundMessageWithDispatcher } from "../auto-reply/dispatch.js";
 import { createHeartbeatToolResponsePayload } from "../auto-reply/heartbeat-tool-response.js";
 import { DEFAULT_HEARTBEAT_ACK_MAX_CHARS, stripHeartbeatToken } from "../auto-reply/heartbeat.js";
@@ -796,7 +796,7 @@ describe("runHeartbeatOnce failure delivery", () => {
           );
           replySpy.mockImplementation(async (_ctx, options) => {
             setHeartbeatAgentTurnStatus(options, "failed");
-            return { text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT, isError: true };
+            return { text: renderExternalRunFailureText(), isError: true };
           });
           expect(await run()).toEqual({
             status: "failed",

@@ -1,11 +1,11 @@
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import type { GatewayStorageFailure } from "../../infra/sqlite-error-diagnostics.js";
-import { arxiUserCopy, isArxiConversation } from "../../shared/arxi-user-copy.js";
 import {
   extractErrorHttpStatus,
   formatTransportErrorCopy,
   parseApiErrorInfo,
 } from "../../shared/assistant-error-format.js";
+import { renderUserMessage, resolveUserMessage } from "../../shared/user-message.js";
 import { classifyFailoverSignalCore } from "./classify-core.js";
 import { isContextOverflowErrorFromTables } from "./context-overflow-tables.js";
 import {
@@ -14,14 +14,14 @@ import {
 } from "./message-patterns.js";
 import { extractFailoverSignalDetails } from "./signal-details.js";
 import type { FailoverReason } from "./signal.js";
-import { renderFailoverBaseCopy } from "./user-copy.js";
 
 export const ERROR_PREFIX_RE =
   /^(?:error|(?:[a-z][\w-]*\s+)?api\s*error|openai\s*error|anthropic\s*error|gateway\s*error|codex\s*error|request failed|failed|exception)(?:\s+\d{3})?[:\s-]+/i;
-export const PROVIDER_SCHEMA_REJECTION_USER_TEXT = arxiUserCopy(
-  "LLM request failed: provider rejected the request schema or tool payload.",
-  "Не удалось выполнить запрос: сервис не принял его формат.",
-);
+const PROVIDER_SCHEMA_REJECTION_USER_TEXT =
+  "LLM request failed: provider rejected the request schema or tool payload.";
+export function renderSchemaRejectionText(): string {
+  return renderUserMessage({ code: "schema_rejection" }, PROVIDER_SCHEMA_REJECTION_USER_TEXT);
+}
 const GATEWAY_SESSION_TRANSCRIPT_VALIDATION_USER_TEXT =
   "LLM request failed: the Gateway rejected a session transcript entry. Compact or reset this session and try again.";
 const PROVIDER_OUTPUT_TOKEN_LIMIT_RE =
@@ -76,8 +76,14 @@ const ASSISTANT_REQUEST_FAILURE_REASON = {
 export function renderAssistantRequestFailureCopy(
   facts: AssistantRequestFailureCopyFacts,
 ): string | undefined {
-  if (isArxiConversation() && (facts.provider || facts.model || facts.reason || facts.status)) {
-    return renderFailoverBaseCopy(facts.reason ?? "unknown");
+  if (facts.provider || facts.model || facts.reason || facts.status) {
+    const copy = resolveUserMessage({
+      code: "assistant_request_failure",
+      reason: facts.reason ?? "unknown",
+    });
+    if (copy !== undefined) {
+      return copy;
+    }
   }
   if (facts.storageFailure) {
     return `⚠️ Agent run failed: ${STORAGE_FAILURE_COPY[facts.storageFailure]}`;
@@ -142,11 +148,11 @@ export function renderFormatErrorCopy(raw: string): string {
   const match = candidate.length <= 300 ? candidate.match(PROVIDER_OUTPUT_TOKEN_LIMIT_RE) : null;
   const [, value, maximum] = match ?? [];
   if (!value || !maximum) {
-    return PROVIDER_SCHEMA_REJECTION_USER_TEXT;
+    return renderSchemaRejectionText();
   }
-  return arxiUserCopy(
+  return renderUserMessage(
+    { code: "output_limit" },
     `LLM request rejected: configured maxTokens is ${value}, above the provider maximum of ${maximum}. Lower maxTokens and try again.`,
-    "Запрос превышает допустимый размер ответа. Нужно изменить настройку лимита ответа.",
   );
 }
 
@@ -169,7 +175,7 @@ export function renderAssistantFormatFailureCopy(message: {
       continue;
     }
     const copy = renderFormatErrorCopy(info?.message ?? raw);
-    if (copy !== PROVIDER_SCHEMA_REJECTION_USER_TEXT) {
+    if (copy !== renderSchemaRejectionText()) {
       return copy;
     }
   }

@@ -1,8 +1,8 @@
 import { asOptionalRecord, readStringField } from "@openclaw/normalization-core/record-coerce";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
-import { arxiUserCopy } from "./arxi-user-copy.js";
 import { extractHttpResponseBody } from "./http-error-response.js";
+import { renderUserMessage } from "./user-message.js";
 const ERROR_PAYLOAD_PREFIX_RE =
   /^(?:error|(?:[a-z][\w-]*\s+)?api\s*error|apierror|openai\s*error|anthropic\s*error|gateway\s*error|codex\s*error)(?:\s+\d{3})?[:\s-]+/i;
 const HTTP_STATUS_DELIMITER_RE = /(?:\s*:\s*|\s+)/;
@@ -276,41 +276,46 @@ const TRANSPORT_ERRORS = [
   {
     code: /\beconnrefused\b/i,
     phrases: ["connection refused", "actively refused"],
-    message: arxiUserCopy(
-      "LLM request failed: connection refused by the provider endpoint.",
-      "Сервис отклонил соединение. Попробуй чуть позже.",
-    ),
+    message: () =>
+      renderUserMessage(
+        { code: "connection_refused" },
+        "LLM request failed: connection refused by the provider endpoint.",
+      ),
   },
   {
     code: /\beconnreset\b|\beconnaborted\b|\benetreset\b|\bepipe\b/i,
     phrases: ["socket hang up", "connection reset", "connection aborted"],
-    message: arxiUserCopy(
-      "LLM request failed: network connection was interrupted.",
-      "Соединение прервалось до завершения ответа.",
-    ),
+    message: () =>
+      renderUserMessage(
+        { code: "connection_interrupted" },
+        "LLM request failed: network connection was interrupted.",
+      ),
   },
   {
     code: /\benotfound\b|\beai_again\b/i,
     phrases: ["getaddrinfo", "no such host", "dns"],
-    message: arxiUserCopy(
-      "LLM request failed: DNS lookup for the provider endpoint failed.",
-      "Не удалось найти адрес сервиса.",
-    ),
+    message: () =>
+      renderUserMessage(
+        { code: "dns_failed" },
+        "LLM request failed: DNS lookup for the provider endpoint failed.",
+      ),
   },
   {
     code: /\benetunreach\b|\behostunreach\b|\behostdown\b/i,
     phrases: ["network is unreachable", "host is unreachable"],
-    message: arxiUserCopy(
-      "LLM request failed: the provider endpoint is unreachable from this host.",
-      "Сервис сейчас недоступен.",
-    ),
+    message: () =>
+      renderUserMessage(
+        { code: "endpoint_unreachable" },
+        "LLM request failed: the provider endpoint is unreachable from this host.",
+      ),
   },
   {
     phrases: ["fetch failed", "connection error", "network request failed"],
-    message: arxiUserCopy(
-      "LLM request failed: network connection error.",
-      "Не удалось соединиться с сервисом.",
-    ),
+    message: () =>
+      renderUserMessage(
+        { code: "connection_failed" },
+        "LLM request failed: network connection error.",
+      ),
   },
 ];
 
@@ -325,13 +330,13 @@ export function formatTransportErrorCopy(raw: string): string | undefined {
   const lower = normalizeLowercaseStringOrEmpty(raw);
   for (const { code, phrases, message } of TRANSPORT_ERRORS) {
     if (code?.test(raw) || phrases.some((phrase) => lower.includes(phrase))) {
-      return message;
+      return message();
     }
   }
   if (raw.includes("网络错误") || raw.includes("网络异常") || raw.includes("连接错误")) {
-    return arxiUserCopy(
+    return renderUserMessage(
+      { code: "provider_network" },
       "LLM request failed: provider reported a network error.",
-      "Сервис сообщил об ошибке соединения.",
     );
   }
   return undefined;

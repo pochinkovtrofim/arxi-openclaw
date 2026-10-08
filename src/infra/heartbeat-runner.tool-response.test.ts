@@ -1,8 +1,8 @@
 import { STREAM_ERROR_FALLBACK_TEXT } from "@openclaw/ai/internal/shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
-  HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  renderExternalRunFailureText,
+  renderHeartbeatFailureText,
 } from "../agents/failover/user-copy.js";
 import { createHeartbeatToolResponsePayload } from "../auto-reply/heartbeat-tool-response.js";
 import { markReplyPayloadForSourceSuppressionDelivery } from "../auto-reply/reply-payload.js";
@@ -374,14 +374,14 @@ describe("runHeartbeatOnce heartbeat response tool", () => {
         const inspectedEvents = peekSystemEventEntries(sessionKey);
         replySpy.mockImplementationOnce(async (_ctx, options) => {
           setHeartbeatAgentTurnStatus(options, "failed");
-          return [quietReply(), { text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT, isError: true }];
+          return [quietReply(), { text: renderExternalRunFailureText(), isError: true }];
         });
         expect(await run({ reason: "exec-event" })).toEqual({
           status: "failed",
           reason: "agent-runner-failure",
         });
-        expectSend(HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT);
-        expect(HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT).not.toContain("/new");
+        expectSend(renderHeartbeatFailureText());
+        expect(renderHeartbeatFailureText()).not.toContain("/new");
         expect(peekSystemEventEntries(sessionKey)).toEqual(inspectedEvents);
         expect(readSessionStoreForTest(storePath)[sessionKey]).toMatchObject(previousHeartbeat);
         replySpy.mockImplementationOnce(async (_ctx, options) => {

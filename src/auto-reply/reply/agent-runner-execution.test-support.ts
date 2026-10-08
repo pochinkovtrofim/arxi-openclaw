@@ -8,7 +8,7 @@ import type { DeferredEmbeddedRunLifecycleOwner } from "../../agents/embedded-ag
 import type { RunEmbeddedAgentInternalParams } from "../../agents/embedded-agent-runner/run/internal-params.js";
 import type { EmbeddedAgentRunResult } from "../../agents/embedded-agent-runner/types.js";
 import { FailoverError, type FallbackAttemptRecord } from "../../agents/failover-error.js";
-import { AUTH_INVALID_TOKEN_USER_TEXT } from "../../agents/failover/user-copy.js";
+import { renderInvalidTokenText } from "../../agents/failover/user-copy.js";
 import {
   initialModelFallbackAttemptOptions,
   type TestModelFallbackRunnerParams,
@@ -35,7 +35,7 @@ type RunEntryResult = Awaited<ReturnType<typeof runEmbeddedAgentEntry<EmbeddedAg
 type RunEntryDelegate = (params: RunEntryParams) => Promise<RunEntryResult>;
 type RunCliAgent = typeof import("../../agents/cli-runner.js").runCliAgent;
 
-export const PROVIDER_AUTHENTICATION_ERROR_USER_MESSAGE = `⚠️ ${AUTH_INVALID_TOKEN_USER_TEXT}`;
+export const PROVIDER_AUTHENTICATION_ERROR_USER_MESSAGE = `⚠️ ${renderInvalidTokenText()}`;
 export { createMockReplyOperation } from "./test-helpers.js";
 export const PROVIDER_RATE_LIMIT_OR_QUOTA_ERROR_USER_MESSAGE =
   "⚠️ The model provider returned HTTP 429 before replying. This can mean rate limiting, exhausted quota, or an account balance/billing issue. Check the selected provider/model, API key, and provider billing/quota dashboard, then try again.";

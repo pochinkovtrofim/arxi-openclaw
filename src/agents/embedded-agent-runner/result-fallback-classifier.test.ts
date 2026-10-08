@@ -1,6 +1,6 @@
 // Coverage for deciding when embedded run results should trigger model fallback.
 import { describe, expect, it } from "vitest";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../failover/user-copy.js";
+import { renderExternalRunFailureText } from "../failover/user-copy.js";
 import { runWithModelFallback } from "../model-fallback-runner.js";
 import { resolveEmbeddedCyberFailoverConfig } from "./embedded-cyber-failover.js";
 import { classifyEmbeddedAgentRunResultForModelFallback } from "./result-fallback-classifier.js";
@@ -212,7 +212,7 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
   it.each([
     {
       name: "a generic external runner failure",
-      payload: { text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT },
+      payload: { text: renderExternalRunFailureText() },
       code: "generic_external_run_failure",
     },
     {
@@ -262,7 +262,7 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
       code,
     });
     if (code === "generic_external_run_failure") {
-      expect(result.attempts[0]?.error).toBe(GENERIC_EXTERNAL_RUN_FAILURE_TEXT);
+      expect(result.attempts[0]?.error).toBe(renderExternalRunFailureText());
     }
   });
 
@@ -302,7 +302,7 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
     {
       name: "non-text visible content",
       payload: {
-        text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+        text: renderExternalRunFailureText(),
         mediaUrl: "https://example.com/failure-screenshot.png",
         channelData: { delivered: true },
       },
@@ -310,7 +310,7 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
     {
       name: "interactive content",
       payload: {
-        text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+        text: renderExternalRunFailureText(),
         interactive: { type: "button", label: "Retry" },
       },
     },
@@ -330,7 +330,7 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
         provider: "external",
         model: "primary",
         result: {
-          payloads: [{ text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT }],
+          payloads: [{ text: renderExternalRunFailureText() }],
           messagingToolSentTexts: ["already delivered"],
           meta: { durationMs: 42 },
         },
@@ -344,10 +344,10 @@ describe("classifyEmbeddedAgentRunResultForModelFallback", () => {
         provider: "external",
         model: "primary",
         result: {
-          payloads: [{ text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT }],
+          payloads: [{ text: renderExternalRunFailureText() }],
           meta: {
             durationMs: 42,
-            error: { kind: "hook_block", message: GENERIC_EXTERNAL_RUN_FAILURE_TEXT },
+            error: { kind: "hook_block", message: renderExternalRunFailureText() },
           },
         },
       }),

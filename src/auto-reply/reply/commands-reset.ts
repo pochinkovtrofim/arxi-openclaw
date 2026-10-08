@@ -5,7 +5,7 @@ import { resetConfiguredBindingTargetInPlace } from "../../channels/plugins/bind
 import { updateSessionEntry } from "../../config/sessions/session-accessor.js";
 import { logVerbose } from "../../globals.js";
 import { isAcpSessionKey } from "../../routing/session-key.js";
-import { arxiUserCopy } from "../../shared/arxi-user-copy.js";
+import { renderUserMessage } from "../../shared/user-message.js";
 import { isInternalMessageChannel } from "../../utils/message-channel.js";
 import { isResetAuthorizedForContext } from "../command-auth.js";
 import { resolveCommandTurnTargetSessionKey } from "../command-turn-context.js";
@@ -215,8 +215,8 @@ export async function maybeHandleResetCommand(
             reply: {
               text:
                 commandAction === "reset"
-                  ? arxiUserCopy("✅ Session reset.", "Готово, начнём заново.")
-                  : arxiUserCopy("✅ New session started.", "Готово, начнём заново."),
+                  ? renderUserMessage({ code: "session_reset" }, "✅ Session reset.")
+                  : renderUserMessage({ code: "session_reset" }, "✅ New session started."),
               isStatusNotice: true,
             },
           }),

@@ -7,7 +7,7 @@ import type { RunEmbeddedAgentParams } from "../../agents/embedded-agent-runner/
 import { clearActiveEmbeddedRun } from "../../agents/embedded-agent-runner/runs.js";
 import { createStubSessionHarness } from "../../agents/embedded-agent-subscribe.e2e-harness.js";
 import { FailoverError } from "../../agents/failover-error.js";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../../agents/failover/user-copy.js";
+import { renderExternalRunFailureText } from "../../agents/failover/user-copy.js";
 import { AgentHarnessPreflightError } from "../../agents/harness/errors.js";
 import { AuthStorage } from "../../agents/sessions/auth-storage.js";
 import { ModelRegistry } from "../../agents/sessions/model-registry.js";
@@ -197,7 +197,7 @@ describe("runCronIsolatedAgentTurn terminal lifecycle", () => {
         // The real classifier rejects generic CLI failure copy; exhaustion
         // merges this candidate's metadata with the native incomplete reply.
         return {
-          payloads: [{ text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT }],
+          payloads: [{ text: renderExternalRunFailureText() }],
           meta: { agentMeta: {} },
         };
       }
