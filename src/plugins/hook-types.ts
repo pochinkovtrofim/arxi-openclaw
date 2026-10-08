@@ -16,6 +16,7 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { TtsAutoMode } from "../config/types.tts.js";
 import type { DiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
 import type { InputProvenance } from "../sessions/input-provenance.js";
+import type { UserMessageEvent } from "../shared/user-message.types.js";
 import type {
   PluginHookBeforeModelResolveEvent,
   PluginHookBeforeModelResolveResult,
@@ -126,6 +127,7 @@ const PLUGIN_HOOK_NAMES = [
   "channel_pairing_requested",
   "message_received",
   "message_sending",
+  "user_message",
   "reply_payload_sending",
   "message_sent",
   "before_tool_call",
@@ -192,6 +194,7 @@ export const isPromptInjectionHookName = (hookName: PluginHookName): boolean =>
   promptInjectionHookNameSet.has(hookName);
 
 const CONVERSATION_HOOK_NAMES = [
+  "user_message",
   "before_model_resolve",
   "agent_turn_prepare",
   "before_prompt_build",
@@ -966,6 +969,8 @@ type AsyncPluginHook<Event, Context, Result = void> = (
 ) => Promise<Result | void> | Result | void;
 
 export type PluginHookHandlerMap = {
+  /** Synchronous first-result rendering; undefined preserves Core defaults. */
+  user_message: (event: UserMessageEvent, ctx: Record<string, never>) => { text: string } | void;
   agent_turn_prepare: AsyncPluginHook<
     PluginAgentTurnPrepareEvent,
     PluginHookAgentContext,

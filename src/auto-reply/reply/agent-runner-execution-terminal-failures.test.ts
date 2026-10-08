@@ -3,7 +3,7 @@ import { createCliTimeoutError } from "../../agents/cli-runner/no-output-timeout
 import { FailoverError } from "../../agents/failover-error.js";
 import {
   formatBillingErrorMessage,
-  HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  renderHeartbeatFailureText,
   renderHeartbeatRunFailureCopy,
 } from "../../agents/failover/user-copy.js";
 import {
@@ -577,7 +577,7 @@ describe("executeAgentTurn: terminal failures", () => {
     if (result.kind !== "final") {
       throw new Error("expected final reply");
     }
-    expect(result.payload.text).toBe(HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT);
+    expect(result.payload.text).toBe(renderHeartbeatFailureText());
     expect(result.payload.text).not.toBe(GENERIC_RUN_FAILURE_TEXT);
     expect(result.payload.text).not.toContain("/new");
   });

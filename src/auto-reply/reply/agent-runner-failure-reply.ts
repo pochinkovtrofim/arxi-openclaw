@@ -22,8 +22,8 @@ import {
 import { renderAssistantRequestFailureCopy } from "../../agents/failover/assistant-request-failure-copy.js";
 import { resolveReplyFailoverFacts } from "../../agents/failover/request-error-facts.js";
 import {
-  GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
-  HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  renderExternalRunFailureText,
+  renderHeartbeatFailureText,
   renderAuthProfileFailoverCopy,
   renderBillingReplyCopy,
   renderCliTimeoutReplyCopy,
@@ -45,7 +45,7 @@ import {
   readErrorCauses,
   readErrorName,
 } from "../../infra/errors.js";
-import { arxiUserCopy } from "../../shared/arxi-user-copy.js";
+import { renderUserMessage } from "../../shared/user-message.js";
 import { buildProviderLoginRecovery } from "../provider-login-recovery.js";
 import {
   copyReplyPayloadMetadata,
@@ -157,21 +157,21 @@ const CODEX_SESSION_GENERATION_NOT_CURRENT_RE =
 function buildCodexAppServerFailureText(message: string): string | null {
   const normalizedMessage = collapseRepeatedFailureDetail(message);
   if (CODEX_SESSION_GENERATION_NOT_CURRENT_RE.test(normalizedMessage)) {
-    return arxiUserCopy(
+    return renderUserMessage(
+      { code: "session_changed" },
       "⚠️ This Codex session changed before your message could run. Please send it again.",
-      "Разговор изменился до обработки сообщения. Отправь его ещё раз.",
     );
   }
   if (CODEX_APP_SERVER_CLIENT_CLOSED_BEFORE_REPLY_RE.test(normalizedMessage)) {
-    return arxiUserCopy(
+    return renderUserMessage(
+      { code: "connection_retry_exhausted" },
       "⚠️ Codex app-server connection closed before this turn finished. OpenClaw retried once when the stdio turn was still replay-safe; please try again if this keeps happening.",
-      "Соединение прервалось до завершения ответа. Одна безопасная повторная попытка уже сделана.",
     );
   }
   if (CODEX_APP_SERVER_TURN_COMPLETION_IDLE_TIMEOUT_RE.test(normalizedMessage)) {
-    return arxiUserCopy(
+    return renderUserMessage(
+      { code: "completion_unconfirmed" },
       "⚠️ Codex app-server stopped before confirming turn completion. OpenClaw did not replay the turn automatically because it may still be active; try again, or use /new if the session stays stuck.",
-      "Не удалось подтвердить завершение работы: она ещё может продолжаться. Автоматически повторять действие не буду.",
     );
   }
   return null;
@@ -197,9 +197,9 @@ export function buildPreflightCompactionFailureText(
   const summary = isTimeout
     ? "⚠️ Context is too large and auto-compaction timed out before it could finish."
     : "⚠️ Context is too large and auto-compaction could not recover this turn.";
-  return arxiUserCopy(
+  return renderUserMessage(
+    { code: "preflight_compaction_failed" },
     `${summary}${reasonSuffix} Try again, use /compact, or use /new to start a fresh session.`,
-    "Не удалось сократить историю для следующего ответа. Попробуй /compact или начни новый разговор через /new.",
   );
 }
 
@@ -230,7 +230,7 @@ function formatForwardedExternalRunFailureText(message: string): string {
   const detail = resolveExternalRunFailureDetail(message);
   return detail
     ? `⚠️ Agent failed before reply: ${detail}${/[.!?]$/u.test(detail) ? "" : "."} Please try again, or use /new to start a fresh session.`
-    : GENERIC_EXTERNAL_RUN_FAILURE_TEXT;
+    : renderExternalRunFailureText();
 }
 
 function hasLocalWorkerTimeoutCause(error: unknown): boolean {
@@ -280,7 +280,7 @@ export function buildExternalRunFailureReply(
         ? renderHeartbeatRunFailureCopy(resolveExternalRunFailureDetail(sanitizedMessage))
         : options?.includeDetails
           ? formatForwardedExternalRunFailureText(sanitizedMessage)
-          : GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+          : renderExternalRunFailureText(),
       isGenericRunnerFailure: !options?.isHeartbeat,
     };
   }
@@ -397,7 +397,7 @@ export function buildExternalRunFailureReply(
       ? formatForwardedExternalRunFailureText(
           renderUserFacingText(normalizedMessage, { errorContext: true }),
         )
-      : GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      : renderExternalRunFailureText(),
     isGenericRunnerFailure: true,
   };
 }
@@ -427,9 +427,9 @@ export function renderPostCompactionModelFailurePayload(payload: ReplyPayload): 
     typeof payload.text === "string"
     ? copyReplyPayloadMetadata(payload, {
         ...payload,
-        text: arxiUserCopy(
+        text: renderUserMessage(
+          { code: "post_compaction_failed", text: payload.text.replace(/^⚠️\s*/u, "") },
           `⚠️ Context compaction succeeded, but the later model request still failed. ${payload.text.replace(/^⚠️\s*/u, "")}`,
-          `Историю удалось сократить, но ответ всё ещё не получен. ${payload.text.replace(/^⚠️\s*/u, "")}`,
         ),
       })
     : payload;
@@ -457,9 +457,7 @@ export function buildTerminalAgentRunFailureReplyPayload(params: {
   return markAgentRunFailureReplyPayload({
     text: resolveAgentRunFailureText({
       ...params,
-      text: params.isHeartbeat
-        ? HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT
-        : GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      text: params.isHeartbeat ? renderHeartbeatFailureText() : renderExternalRunFailureText(),
       isGenericRunnerFailure: !params.isHeartbeat,
     }),
   });
@@ -472,9 +470,9 @@ export function buildEmptyInteractiveReplyPayload(params: {
     return undefined;
   }
   return markAgentRunFailureReplyPayload({
-    text: arxiUserCopy(
+    text: renderUserMessage(
+      { code: "reply_missing" },
       "I finished the turn, but it did not produce a visible reply. Please try again, or start a new session if this keeps happening.",
-      "Ответ не появился. Попробуй ещё раз; если повторится — /new.",
     ),
   });
 }

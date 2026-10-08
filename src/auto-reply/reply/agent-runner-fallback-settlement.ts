@@ -2,7 +2,7 @@ import { classifyAgentRunTerminalOutcome } from "../../agents/agent-run-terminal
 import { isContextOverflowError } from "../../agents/embedded-agent-helpers.js";
 import { hasCompletedSourceReplyDeliveryEvidence } from "../../agents/embedded-agent-runner/delivery-evidence.js";
 import {
-  PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE,
+  renderConversationStateErrorText,
   renderControlUiAgentFailureCopy,
 } from "../../agents/failover/user-copy.js";
 import { logVerbose } from "../../globals.js";
@@ -126,7 +126,7 @@ export async function settleAgentFallbackCycle(params: {
       payload: markAgentRunFailureReplyPayload({
         text: cycle.shouldSurfaceToControlUi
           ? renderControlUiAgentFailureCopy(embeddedErrorText)
-          : PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE,
+          : renderConversationStateErrorText(),
       }),
       postCompactionModelFailure: cycle.state.postCompactionModelAttempted || undefined,
     };

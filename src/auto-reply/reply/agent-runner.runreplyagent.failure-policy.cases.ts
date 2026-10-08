@@ -1,7 +1,7 @@
 import { describe, expect, it, type Mock } from "vitest";
 import type { RunEmbeddedAgentInternalParams as AgentRunParams } from "../../agents/embedded-agent-runner/run/internal-params.js";
 import { FailoverError } from "../../agents/failover-error.js";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../../agents/failover/user-copy.js";
+import { renderExternalRunFailureText } from "../../agents/failover/user-copy.js";
 import type { TemplateContext } from "../templating.js";
 import type { ReplyPayload } from "../types.js";
 import { setBlockReplyDelivery } from "./block-reply-delivery.js";
@@ -128,7 +128,7 @@ export function registerImmediateFailurePolicyCases({
         expect(fixture.delivered).toEqual([
           expect.objectContaining({ isError: true, text: expect.any(String) }),
         ]);
-        expect(fixture.delivered[0]?.text).not.toBe(GENERIC_EXTERNAL_RUN_FAILURE_TEXT);
+        expect(fixture.delivered[0]?.text).not.toBe(renderExternalRunFailureText());
         expect(fixture.delivered[0]?.text).not.toContain("private-provider-diagnostic");
       },
     );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE } from "../../agents/failover/user-copy.js";
+import { renderConversationStateErrorText } from "../../agents/failover/user-copy.js";
 import type { TemplateContext } from "../templating.js";
 import {
   createAgentTurnExecutionDefaults,
@@ -51,7 +51,7 @@ describe("executeAgentTurn: conversation failures", () => {
 
     expect(result.kind).toBe("final");
     if (result.kind === "final") {
-      expect(result.payload.text).toBe(PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE);
+      expect(result.payload.text).toBe(renderConversationStateErrorText());
     }
   });
 
@@ -75,7 +75,7 @@ describe("executeAgentTurn: conversation failures", () => {
 
     expect(result.kind).toBe("final");
     if (result.kind === "final") {
-      expect(result.payload.text).toBe(PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE);
+      expect(result.payload.text).toBe(renderConversationStateErrorText());
     }
   });
 
@@ -109,7 +109,7 @@ describe("executeAgentTurn: conversation failures", () => {
     expect(sessionStore.main).toEqual(sessionSnapshot);
     expect(result.kind).toBe("final");
     if (result.kind === "final") {
-      expect(result.payload.text).toBe(PROVIDER_CONVERSATION_STATE_ERROR_USER_MESSAGE);
+      expect(result.payload.text).toBe(renderConversationStateErrorText());
     }
   });
 

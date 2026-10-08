@@ -7,7 +7,7 @@ import { executeDeps } from "../../agents/cli-runner/execute-deps.js";
 import { executePreparedCliRun } from "../../agents/cli-runner/execute.js";
 import { buildCliMcpGrantContext } from "../../agents/cli-runner/mcp-grant-context.js";
 import type { RunCliAgentParams } from "../../agents/cli-runner/types.js";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../../agents/failover/user-copy.js";
+import { renderExternalRunFailureText } from "../../agents/failover/user-copy.js";
 import { installSessionPlacementAdmissionProvider } from "../../agents/session-placement-admission.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { loadSessionEntry, replaceSessionEntry } from "../../config/sessions/session-accessor.js";
@@ -193,7 +193,7 @@ describe("executeAgentTurn: CLI admission", () => {
       rejected
         ? buildCliRunResult({
             context: buildPreparedCliRunContext(),
-            output: { text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT },
+            output: { text: renderExternalRunFailureText() },
             effectiveCliSessionId: settledBinding.sessionId,
             bindingFlushOk: kind !== "rejected-clear",
             usedHistoryPrompt: false,
@@ -291,7 +291,7 @@ describe("executeAgentTurn: CLI admission", () => {
       const candidate = buildCliRunResult({
         context: buildPreparedCliRunContext(),
         output: {
-          text: kind === "rejected-clear" ? GENERIC_EXTERNAL_RUN_FAILURE_TEXT : "Captured reply",
+          text: kind === "rejected-clear" ? renderExternalRunFailureText() : "Captured reply",
         },
         effectiveCliSessionId: "replacement-native-session",
         bindingFlushOk: kind !== "rejected-clear",

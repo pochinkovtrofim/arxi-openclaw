@@ -1,14 +1,15 @@
 /** Detects reminder commitments that were not backed by scheduled cron jobs. */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { loadCronJobsStore, resolveCronJobsStorePath } from "../../cron/store.js";
-import { arxiUserCopy } from "../../shared/arxi-user-copy.js";
+import { renderUserMessage } from "../../shared/user-message.js";
 import { copyReplyPayloadMetadata } from "../reply-payload.js";
 import type { ReplyPayload } from "../types.js";
 
-const UNSCHEDULED_REMINDER_NOTE = arxiUserCopy(
-  "Note: I did not schedule a reminder in this turn, so this will not trigger automatically.",
-  "Напоминание не настроено и само не сработает.",
-);
+const renderUnscheduledReminderNote = () =>
+  renderUserMessage(
+    { code: "reminder_unscheduled" },
+    "Note: I did not schedule a reminder in this turn, so this will not trigger automatically.",
+  );
 
 const REMINDER_COMMITMENT_PATTERNS: RegExp[] = [
   /\b(?:i\s*['’]?ll|i will)\s+(?:make sure to\s+)?(?:remind|ping|follow up|follow-up|check (?:back|on)|circle back)\b/i,
@@ -23,7 +24,7 @@ export function hasUnbackedReminderCommitment(text: string): boolean {
   if (!normalized.trim()) {
     return false;
   }
-  if (normalized.includes(normalizeLowercaseStringOrEmpty(UNSCHEDULED_REMINDER_NOTE))) {
+  if (normalized.includes(normalizeLowercaseStringOrEmpty(renderUnscheduledReminderNote()))) {
     return false;
   }
   return REMINDER_COMMITMENT_PATTERNS.some((pattern) => pattern.test(text));
@@ -65,7 +66,7 @@ export function appendUnscheduledReminderNote(payloads: ReplyPayload[]): ReplyPa
     const trimmed = payload.text.trimEnd();
     return copyReplyPayloadMetadata(payload, {
       ...payload,
-      text: `${trimmed}\n\n${UNSCHEDULED_REMINDER_NOTE}`,
+      text: `${trimmed}\n\n${renderUnscheduledReminderNote()}`,
     });
   });
 }

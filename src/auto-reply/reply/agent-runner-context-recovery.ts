@@ -8,7 +8,7 @@ import { resolveContextTokensForModel } from "../../agents/context.js";
 import type { ModelRef } from "../../agents/model-ref-shared.js";
 import { resolveModelRefFromString } from "../../agents/model-selection.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import { isArxiConversation } from "../../shared/arxi-user-copy.js";
+import { resolveUserMessage } from "../../shared/user-message.js";
 import type { FollowupRun } from "./queue.js";
 
 function resolveAgentHeartbeatModelRaw(params: {
@@ -134,8 +134,9 @@ export function buildContextOverflowRecoveryText(params: {
   runtimeModel?: string;
   activeSessionEntry?: SessionEntry;
 }): string {
-  if (isArxiConversation()) {
-    return "Не удалось сократить историю. Разговор сохранён; попробуй /compact или начни новый через /new.";
+  const copy = resolveUserMessage({ code: "context_recovery_failed" });
+  if (copy !== undefined) {
+    return copy;
   }
   const prefix =
     "⚠️ Auto-compaction could not recover this turn. I kept this conversation mapped to the current session. Please try again, use /compact, or use /new to start a fresh session.";

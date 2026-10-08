@@ -1,7 +1,7 @@
 import { assert, describe, expect, it, vi } from "vitest";
 import {
-  GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
-  HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  renderExternalRunFailureText,
+  renderHeartbeatFailureText,
 } from "../../agents/failover/user-copy.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { getReplyPayloadMetadata } from "../reply-payload.js";
@@ -31,8 +31,8 @@ const state = await setupAgentRunnerExecutionTestState();
 
 describe("executeAgentTurn: result and tool delivery", () => {
   it.each([
-    { stopReason: "error", isHeartbeat: false, failureText: GENERIC_EXTERNAL_RUN_FAILURE_TEXT },
-    { stopReason: "error", isHeartbeat: true, failureText: HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT },
+    { stopReason: "error", isHeartbeat: false, failureText: renderExternalRunFailureText() },
+    { stopReason: "error", isHeartbeat: true, failureText: renderHeartbeatFailureText() },
     { stopReason: "aborted", isHeartbeat: false, failureText: undefined },
     { stopReason: "superseded", isHeartbeat: false, failureText: undefined },
   ])(

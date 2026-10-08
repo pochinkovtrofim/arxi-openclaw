@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCliTimeoutError } from "../../agents/cli-runner/no-output-timeout-policy.js";
-import { HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT } from "../../agents/failover/user-copy.js";
+import { renderHeartbeatFailureText } from "../../agents/failover/user-copy.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { resolveRunAfterAutoFallbackPrimaryProbeRecheck } from "./agent-runner-auto-fallback.js";
@@ -468,7 +468,7 @@ describe("executeAgentTurn: primary probe routing", () => {
       outcome: "completed" as const,
       attempts: [],
       isHeartbeat: true,
-      expectedText: HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+      expectedText: renderHeartbeatFailureText(),
     },
   ])("surfaces an empty $label terminal result through the normal reply path", async (testCase) => {
     state.runEmbeddedAgentMock.mockResolvedValueOnce({

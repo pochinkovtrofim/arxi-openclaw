@@ -1,7 +1,7 @@
 import { isSilentReplyPayloadText } from "../../auto-reply/tokens.js";
 import { classifyFailoverReason } from "../failover/classify.js";
 import type { FailoverReason } from "../failover/signal.js";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../failover/user-copy.js";
+import { renderExternalRunFailureText } from "../failover/user-copy.js";
 import type { ModelFallbackResultClassification } from "../model-fallback-attempt.js";
 import {
   hasCommittedOutboundDeliveryEvidence,
@@ -113,7 +113,7 @@ function classifyGenericExternalRunFailurePayload(params: {
     payload?.isError === true ||
     payload?.isReasoning === true ||
     typeof text !== "string" ||
-    text.trim() !== GENERIC_EXTERNAL_RUN_FAILURE_TEXT ||
+    text.trim() !== renderExternalRunFailureText() ||
     !payload ||
     hasNonTextVisiblePayloadContent(payload)
   ) {

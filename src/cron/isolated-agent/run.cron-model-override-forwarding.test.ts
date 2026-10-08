@@ -5,7 +5,7 @@ import { createDeferred } from "../../../test/helpers/promise.js";
 import { buildPreparedCliRunContext } from "../../agents/cli-runner.test-helpers.js";
 import { buildCliRunResult } from "../../agents/cli-runner/cli-run-settlement.js";
 import type { classifyEmbeddedAgentRunResultForModelFallback } from "../../agents/embedded-agent-runner/result-fallback-classifier.js";
-import { GENERIC_EXTERNAL_RUN_FAILURE_TEXT } from "../../agents/failover/user-copy.js";
+import { renderExternalRunFailureText } from "../../agents/failover/user-copy.js";
 import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
 import {
   runFallbackModelAttempt,
@@ -325,7 +325,7 @@ describe("runCronIsolatedAgentTurn — cron model override forwarding (#58065)",
         ? acceptedResult
         : buildCliRunResult({
             context: buildPreparedCliRunContext(),
-            output: { text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT, usage: { input: 10, output: 20 } },
+            output: { text: renderExternalRunFailureText(), usage: { input: 10, output: 20 } },
             effectiveCliSessionId: "fresh-cli-session",
             bindingFlushOk: !clear,
             usedHistoryPrompt: false,

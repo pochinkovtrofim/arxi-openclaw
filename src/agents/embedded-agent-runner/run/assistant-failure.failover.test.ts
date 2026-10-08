@@ -4,7 +4,7 @@ import { buildRealtimeVoiceAgentErrorProviderResult } from "../../../talk/agent-
 import type { AgentRunAttemptTerminal } from "../../agent-run-terminal-outcome.js";
 import { formatBillingErrorMessage } from "../../embedded-agent-helpers.js";
 import { FailoverError } from "../../failover-error.js";
-import { AUTH_INVALID_TOKEN_USER_TEXT } from "../../failover/user-copy.js";
+import { renderInvalidTokenText } from "../../failover/user-copy.js";
 import { resolveAgentRunErrorLifecycleFields } from "../../run-termination.js";
 import {
   buildEmbeddedRunnerAssistant,
@@ -275,7 +275,7 @@ describe("assistant failure recovery", () => {
           model: "test-model",
         });
         if (reason === "auth") {
-          expect(failure.message).toBe(AUTH_INVALID_TOKEN_USER_TEXT);
+          expect(failure.message).toBe(renderInvalidTokenText());
         } else if (reason === "rate_limit") {
           expect(failure.message).toBe("⚠️ API rate limit reached. Please try again later.");
         }

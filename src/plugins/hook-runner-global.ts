@@ -1,6 +1,7 @@
 // The singleton resolves the current request registry or process root on every dispatch,
 // so registry replacement and hooks added after initialization take effect immediately.
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { setUserMessageRenderer } from "../shared/user-message.js";
 import type { PluginHookGatewayContext, PluginHookGatewayStopEvent } from "./hook-gateway.types.js";
 import type { GlobalHookRunnerRegistry } from "./hook-registry.types.js";
 import {
@@ -29,6 +30,8 @@ export function initializeGlobalHookRunner(registry: GlobalHookRunnerRegistry): 
       },
     });
   }
+
+  setUserMessageRenderer((event) => state.hookRunner?.runUserMessage(event));
 
   const hookCount = registry.hooks.length;
   if (hookCount > 0) {
@@ -90,6 +93,7 @@ export async function runGlobalGatewayStopSafely(params: {
  * Reset the global hook runner (for testing).
  */
 export function resetGlobalHookRunner(): void {
+  setUserMessageRenderer(undefined);
   state.hookRunner = null;
   state.registry = null;
 }

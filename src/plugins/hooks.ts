@@ -1253,6 +1253,27 @@ export function createHookRunner(
     runBeforeReset: bindVoidHook("before_reset"),
     // Lifecycle gate hooks
     runBeforeAgentRun,
+    // Presentation is synchronous and does not pass raw provider diagnostics.
+    runUserMessage(event: HookEvent<"user_message">): string | undefined {
+      for (const hook of getHooksForName(registry, "user_message")) {
+        try {
+          const result = hook.handler({ ...event }, {});
+          if (isPromiseLike(result)) {
+            void Promise.resolve(result).catch(() => undefined);
+            logger?.warn(
+              `[hooks] user_message handler from ${hook.pluginId} returned a Promise; synchronous result required`,
+            );
+            continue;
+          }
+          if (result && typeof result.text === "string" && result.text.trim()) {
+            return result.text;
+          }
+        } catch (error) {
+          handleHookError({ hookName: "user_message", pluginId: hook.pluginId, error });
+        }
+      }
+      return undefined;
+    },
     // Message hooks
     runInboundClaim: bindClaimingHook("inbound_claim"),
     runInboundClaimForPlugin,

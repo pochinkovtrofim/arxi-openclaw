@@ -14,7 +14,7 @@ import {
   parseApiErrorInfo,
 } from "../../shared/assistant-error-format.js";
 import {
-  PROVIDER_SCHEMA_REJECTION_USER_TEXT,
+  renderSchemaRejectionText,
   renderAssistantFormatFailureCopy,
   renderAssistantRequestFailureCopy,
   renderFormatErrorCopy,
@@ -27,7 +27,7 @@ import {
 import { isReasoningConstraintErrorMessage } from "../failover/context-overflow-tables.js";
 import type { PreparedProviderFailoverOwner } from "../failover/provider-patterns.js";
 import {
-  AUTH_INVALID_TOKEN_USER_TEXT,
+  renderInvalidTokenText,
   formatBillingErrorMessage,
   formatDiskSpaceErrorCopy,
   isInvalidStreamingEventOrderError,
@@ -61,7 +61,9 @@ const RUNTIME_FAILURE_COPY: Partial<
     "Authentication is missing the required OpenAI ChatGPT scopes. Re-run OpenAI login and try again.",
   auth_html:
     "Authentication failed at the provider. Re-authenticate and verify your provider credentials and account access.",
-  auth_invalid_token: AUTH_INVALID_TOKEN_USER_TEXT,
+  get auth_invalid_token() {
+    return renderInvalidTokenText();
+  },
   upstream_html:
     "The provider returned an HTML error page instead of an API response. This usually means a CDN or gateway (e.g. Cloudflare) blocked the request. Retry in a moment or check provider status.",
   proxy: "LLM request failed: proxy or tunnel configuration blocked the provider request.",
@@ -176,7 +178,7 @@ export function formatAssistantErrorText(
 
   if (
     (formatStatus === 400 || formatStatus === 422) &&
-    formatCopy !== PROVIDER_SCHEMA_REJECTION_USER_TEXT
+    formatCopy !== renderSchemaRejectionText()
   ) {
     return formatCopy;
   }
@@ -312,13 +314,13 @@ export function formatUserFacingAssistantErrorText(
   const friendlyError = formatAssistantErrorText(msg, opts, facts);
   const rawPassthrough = isRawAssistantErrorPassthrough({ friendlyError, rawError });
   const schemaFriendlyError =
-    friendlyError === PROVIDER_SCHEMA_REJECTION_USER_TEXT ||
+    friendlyError === renderSchemaRejectionText() ||
     friendlyError?.startsWith("LLM request rejected:");
   const safeFriendlyError =
     (schemaFriendlyError ? renderAssistantFormatFailureCopy(msg) : undefined) ??
     (rawPassthrough
       ? schemaFriendlyError
-        ? PROVIDER_SCHEMA_REJECTION_USER_TEXT
+        ? renderSchemaRejectionText()
         : undefined
       : friendlyError);
   if (safeFriendlyError) {

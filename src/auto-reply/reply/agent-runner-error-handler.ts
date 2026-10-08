@@ -10,8 +10,8 @@ import {
 import { findCliTimeoutError, isFailoverError } from "../../agents/failover-error.js";
 import { resolveReplyFailoverFacts } from "../../agents/failover/request-error-facts.js";
 import {
-  GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
-  HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT,
+  renderExternalRunFailureText,
+  renderHeartbeatFailureText,
   renderControlUiAgentFailureCopy,
   renderFailoverCodeUserCopy,
 } from "../../agents/failover/user-copy.js";
@@ -279,8 +279,8 @@ export async function handleAgentExecutionError(params: {
         (params.shouldSurfaceToControlUi
           ? renderControlUiAgentFailureCopy(message)
           : turn.isHeartbeat
-            ? HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT
-            : GENERIC_EXTERNAL_RUN_FAILURE_TEXT)));
+            ? renderHeartbeatFailureText()
+            : renderExternalRunFailureText())));
   return await settleFailure(
     {
       text: fallbackText,

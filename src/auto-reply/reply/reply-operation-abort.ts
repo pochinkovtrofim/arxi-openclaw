@@ -8,13 +8,13 @@ import {
   resolveAgentRunErrorLifecycleFields,
 } from "../../agents/run-termination.js";
 import { CommandLaneClearedError, GatewayDrainingError } from "../../process/command-queue.js";
-import { arxiUserCopy } from "../../shared/arxi-user-copy.js";
+import { renderUserMessage } from "../../shared/user-message.js";
 import type { ReplyOperation } from "./reply-run-registry.js";
 
 export function buildRestartLifecycleReplyText(): string {
-  return arxiUserCopy(
+  return renderUserMessage(
+    { code: "gateway_restarting" },
     "⚠️ Gateway is restarting. Please wait a few seconds and try again.",
-    "Перезапускаюсь. Попробуй через несколько секунд.",
   );
 }
 
