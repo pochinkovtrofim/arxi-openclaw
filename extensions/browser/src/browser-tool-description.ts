@@ -74,6 +74,11 @@ function describeBrowserTool(opts: {
   const evaluateEnabled = opts.capabilities.actKinds.includes("evaluate");
   const lines = [
     `Control the browser via OpenClaw's browser control server. Available actions: ${opts.capabilities.actions.join(", ")}.`,
+    ...(actions.has("history") && actions.has("open")
+      ? [
+          'Idle pages in managed headless browsers close after 10 minutes. If a target is gone, use action="history" to find its URL, then action="open" with targetUrl in the same profile. History and cookies remain; unsaved page state does not.',
+        ]
+      : []),
     ...(actions.has("profiles")
       ? [
           "Browser choice: omit profile to use the configured default (normally the isolated OpenClaw-managed `openclaw` browser).",

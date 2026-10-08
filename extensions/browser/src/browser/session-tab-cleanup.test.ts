@@ -107,4 +107,18 @@ describe("session tab cleanup timer", () => {
     expect(registryMocks.sweepTrackedBrowserTabs).toHaveBeenCalledOnce();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("sweeps managed pages each minute and honors disable and shutdown", async () => {
+    registryMocks.sweepTrackedBrowserTabs.mockResolvedValue(0);
+    const sweepManagedTabs = vi.fn(async () => {});
+    const stop = startTrackedBrowserTabCleanupTimer({ sweepManagedTabs, onWarn: vi.fn() });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sweepManagedTabs).toHaveBeenCalledOnce();
+    const disabled = { browser: { tabCleanup: { enabled: false } } };
+    setRuntimeConfigSnapshot(disabled, disabled);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sweepManagedTabs).toHaveBeenCalledOnce();
+    await stop();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

@@ -78,11 +78,23 @@ an unmarked baseline. Existing-session snapshots omit deltas.
 
 Session tab cleanup applies only to tabs a session owns: tabs created by the
 OpenClaw browser tool with `action: "open"` and tabs opened from that session's
-Browser panel in the Control UI. OpenClaw does not adopt tabs that were already
+Browser panel in the Control UI. Session cleanup does not adopt tabs that were already
 open, opened outside OpenClaw, or otherwise have unknown ownership. The
 `browser.tabCleanup` block controls periodic idle and cap sweeps for primary
 sessions. Changes apply on the next sweep without restarting the browser;
 disabling it does not disable explicit session lifecycle cleanup.
+
+Locally launched headless browsers also reclaim page tabs after ten minutes
+without browser actions, checked once a minute. This includes restored pages
+and site-created tabs; newly discovered tabs receive a full idle interval.
+In-flight profile operations and retained dashboard tabs are protected. One
+blank page stays open so Chromium can keep session cookies. Closing pages does
+not delete the profile, history, cookies, or local storage. Use `action: "history"`
+to find a URL and `action: "open"` in the same profile to load it again. Unsaved
+forms, scroll position, and page JavaScript state are not restored. Clients
+controlling CDP directly must send `/tabs/focus` through the browser controller
+when using a tab so cleanup observes their activity. Visible desktop browsers,
+remote browsers, and attach-only profiles do not use this headless idle policy.
 
 OpenClaw-managed Chrome also applies a separate, best-effort cap of eight page
 tabs when opening a tab. This cap is independent of `browser.tabCleanup`;

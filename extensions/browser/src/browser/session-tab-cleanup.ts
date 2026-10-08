@@ -37,6 +37,7 @@ function resolveBrowserTabCleanupRuntimeConfig(): ResolvedBrowserTabCleanupConfi
 /** Starts the recurring Browser tab cleanup timer and returns its disposer. */
 export function startTrackedBrowserTabCleanupTimer(params: {
   getResolvedBrowserConfig?: () => ResolvedBrowserConfig | null;
+  sweepManagedTabs?: () => Promise<void>;
   onWarn: (message: string) => void;
 }): () => Promise<void> {
   let stopped = false;
@@ -53,7 +54,12 @@ export function startTrackedBrowserTabCleanupTimer(params: {
     } catch (err) {
       params.onWarn(`failed to resolve browser tab cleanup config: ${String(err)}`);
     }
-    timer = setTimeout(run, Math.max(MIN_SWEEP_INTERVAL_MS, minutesToMs(sweepMinutes)));
+    timer = setTimeout(
+      run,
+      params.sweepManagedTabs
+        ? MIN_SWEEP_INTERVAL_MS
+        : Math.max(MIN_SWEEP_INTERVAL_MS, minutesToMs(sweepMinutes)),
+    );
     timer.unref?.();
   };
 
@@ -63,6 +69,9 @@ export function startTrackedBrowserTabCleanupTimer(params: {
     }
     running = (async () => {
       const cleanup = resolveBrowserTabCleanupRuntimeConfig();
+      if (cleanup.enabled) {
+        await params.sweepManagedTabs?.();
+      }
       await sweepTrackedBrowserTabs({
         idleMs: cleanup.enabled ? minutesToMs(cleanup.idleMinutes) : undefined,
         maxTabsPerSession: cleanup.enabled ? cleanup.maxTabsPerSession : undefined,

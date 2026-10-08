@@ -3,6 +3,7 @@
  */
 import type { Server } from "node:http";
 import { getExtensionRelayModule } from "./extension-relay.runtime.js";
+import { sweepIdleManagedBrowserTabs } from "./managed-tab-cleanup.js";
 import { stopBrowserScreencasts } from "./screencast/session.js";
 import type { BrowserServerState } from "./server-context.js";
 import { markBrowserRuntimeStopping } from "./server-context.lifecycle.js";
@@ -31,6 +32,7 @@ export async function createBrowserRuntimeState(
   };
   const stopTrackedTabCleanup = startTrackedBrowserTabCleanupTimer({
     getResolvedBrowserConfig: () => state.resolved,
+    sweepManagedTabs: () => sweepIdleManagedBrowserTabs(state, params.onWarn),
     onWarn: params.onWarn,
   });
   trackedTabCleanupDisposers.set(state, stopTrackedTabCleanup);
