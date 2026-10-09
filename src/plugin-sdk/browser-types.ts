@@ -48,6 +48,8 @@ export type ResolvedBrowserConfig = {
   defaultProfile: string;
   profiles: Record<string, ResolvedBrowserProfileConfig>;
   tabCleanup: ResolvedBrowserTabCleanupConfig;
+  /** Minutes without page tabs before a managed headless browser process stops; 0 or unset never stops it. */
+  idleStopMinutes?: number;
   ssrfPolicy?: ResolvedBrowserSsrFPolicy;
   extraArgs: string[];
 };

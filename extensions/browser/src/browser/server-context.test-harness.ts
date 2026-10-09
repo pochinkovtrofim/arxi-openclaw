@@ -61,6 +61,7 @@ export function makeBrowserServerState(params?: {
       maxTabsPerSession: 8,
       sweepMinutes: 5,
     },
+    idleStopMinutes: 0,
     defaultProfile: profile.name,
     profiles: {
       [profile.name]: profile,

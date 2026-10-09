@@ -30,6 +30,8 @@ type ProfileLifecycleActor = {
   leases: Set<Promise<void>>;
   /** Ephemeral activity; Chromium owns durable history and cookies. */
   tabLastUsedAt: Map<string, number>;
+  /** When the managed browser was last seen without page tabs; null while a page is open. */
+  pagesIdleSince: number | null;
   handles: Set<RunningChrome>;
   cleanupChromeMcp: Set<string>;
   cleanupPlaywright: Map<string, PlaywrightConnectionRetirement>;
@@ -78,6 +80,7 @@ function createProfileLifecycleActor(): ProfileLifecycleActor {
     starts: new Map(),
     leases: new Set(),
     tabLastUsedAt: new Map(),
+    pagesIdleSince: null,
     handles: new Set(),
     cleanupChromeMcp: new Set(),
     cleanupPlaywright: new Map(),

@@ -228,6 +228,12 @@ export const OpenClawSchemaShape = {
           enabled: z.boolean().optional(),
         })
         .optional(),
+      /**
+       * Minutes a locally managed headless browser may run with no page tabs (only
+       * about:blank) before its process is stopped; the profile is kept and the next
+       * browser action relaunches it. Needs tabCleanup.enabled. Default: 0 (never stop).
+       */
+      idleStopMinutes: z.number().int().nonnegative().optional(),
       /** Chrome extension relay authentication compatibility settings. */
       extensionRelay: z
         .strictObject({

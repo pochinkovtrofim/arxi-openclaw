@@ -189,6 +189,12 @@ function resolveBrowserTabCleanupConfig(
   };
 }
 
+/** Whole minutes without page tabs before a managed headless browser stops; 0 never stops it. */
+function resolveBrowserIdleStopMinutes(cfg: BrowserConfig | undefined): number {
+  const raw = cfg?.idleStopMinutes;
+  return typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+}
+
 function resolveBrowserSsrFPolicy(cfg: BrowserConfig | undefined): SsrFPolicy | undefined {
   const rawPolicy = cfg?.ssrfPolicy as BrowserSsrFPolicyCompat | undefined;
   const allowPrivateNetwork = rawPolicy?.allowPrivateNetwork;
@@ -370,6 +376,7 @@ export function resolveBrowserConfig(
     defaultProfile,
     profiles,
     tabCleanup: resolveBrowserTabCleanupConfig(cfg),
+    idleStopMinutes: resolveBrowserIdleStopMinutes(cfg),
     ssrfPolicy: resolveBrowserSsrFPolicy(cfg),
     extraArgs,
     extensionRelayDefaultPort: controlPort + EXTENSION_RELAY_PORT_OFFSET,

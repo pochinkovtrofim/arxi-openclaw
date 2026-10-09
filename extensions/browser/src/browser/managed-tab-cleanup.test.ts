@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../test-support/browser-security.mock.js";
 import "./server-context.chrome-test-harness.js";
 import * as cdpHelpers from "./cdp.helpers.js";
 import * as cdp from "./cdp.js";
+import * as chrome from "./chrome.js";
 import { sweepIdleManagedBrowserTabs } from "./managed-tab-cleanup.js";
 import { createBrowserRouteContext, withProfileContextOperation } from "./server-context.js";
 import { getProfileLifecycle } from "./server-context.lifecycle.js";
@@ -200,4 +201,139 @@ it("retains a failed close for retry and reports no private URL", async () => {
   expect(JSON.stringify(warn.mock.calls)).not.toContain("private.test");
   await sweepIdleManagedBrowserTabs(state, warn);
   expect(tabs.map((tab) => tab.id)).toEqual(["blank"]);
+});
+
+describe("idle process stop", () => {
+  const stopMs = 15 * 60_000;
+
+  function runtime() {
+    return state.profiles.get("openclaw")!;
+  }
+
+  async function sweepFor(ms: number) {
+    for (let elapsed = 0; elapsed < ms; elapsed += 60_000) {
+      now += Math.min(60_000, ms - elapsed);
+      await sweepIdleManagedBrowserTabs(state, warn);
+    }
+  }
+
+  beforeEach(() => {
+    // vi.restoreAllMocks() leaves vi.mock() call history in place.
+    vi.clearAllMocks();
+    state.resolved.idleStopMinutes = 15;
+    tabs = [page("blank", "about:blank")];
+  });
+
+  it("stops the browser through the stop lifecycle once no page has been open for idleStopMinutes", async () => {
+    const running = runtime().running!;
+    await sweepIdleManagedBrowserTabs(state, warn);
+    await sweepFor(stopMs - 60_000);
+    expect(runtime().running).toBe(running);
+    await sweepFor(60_000);
+    expect(runtime().running).toBeNull();
+    expect(chrome.stopOpenClawChrome).toHaveBeenCalledWith(running);
+    expect(chrome.stopOwnedOpenClawChrome).toHaveBeenCalledOnce();
+    expect(cdpHelpers.fetchOk).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("keeps the browser resident by default", async () => {
+    state.resolved.idleStopMinutes = 0;
+    await sweepIdleManagedBrowserTabs(state, warn);
+    await sweepFor(24 * 60 * 60_000);
+    expect(runtime().running).not.toBeNull();
+    expect(chrome.stopOpenClawChrome).not.toHaveBeenCalled();
+  });
+
+  it("starts the stop clock only after the last page tab is reclaimed", async () => {
+    tabs = [page("old"), page("blank", "about:blank")];
+    await sweepIdleManagedBrowserTabs(state, warn);
+    await sweepFor(idleMs);
+    expect(tabs.map((tab) => tab.id)).toEqual(["blank"]);
+    await sweepFor(stopMs - 60_000);
+    expect(runtime().running).not.toBeNull();
+    await sweepFor(60_000);
+    expect(runtime().running).toBeNull();
+  });
+
+  it("restarts the stop clock when the blank page is used, as a manual session does", async () => {
+    await sweepIdleManagedBrowserTabs(state, warn);
+    await sweepFor(stopMs - 60_000);
+    const profile = createBrowserRouteContext({ getState: () => state }).forProfile("openclaw");
+    await profile.focusTab("blank");
+    await sweepFor(stopMs - 60_000);
+    expect(runtime().running).not.toBeNull();
+    await sweepFor(60_000);
+    expect(runtime().running).toBeNull();
+  });
+
+  it("defers the stop while a profile operation is admitted", async () => {
+    await sweepIdleManagedBrowserTabs(state, warn);
+    const profile = createBrowserRouteContext({ getState: () => state }).forProfile("openclaw");
+    await withProfileContextOperation(profile, undefined, async () => {
+      await sweepFor(2 * stopMs);
+      expect(runtime().running).not.toBeNull();
+    });
+    expect(runtime().running).not.toBeNull();
+    await sweepFor(stopMs);
+    expect(runtime().running).toBeNull();
+  });
+
+  it("keeps a browser whose only page is retained by a dashboard", async () => {
+    tabs.push(page("dashboard"));
+    vi.spyOn(sessionTabStore, "dispatchBrowserTabClose").mockImplementation(
+      async (id, _profile, close) => (id === "dashboard" ? undefined : await close()),
+    );
+    await sweepIdleManagedBrowserTabs(state, warn);
+    await sweepFor(idleMs + 2 * stopMs);
+    expect(tabs.map((tab) => tab.id)).toEqual(["blank", "dashboard"]);
+    expect(runtime().running).not.toBeNull();
+  });
+
+  it("lets an action that arrives during the idle stop wait and relaunch", async () => {
+    await sweepIdleManagedBrowserTabs(state, warn);
+    const stopEntered = Promise.withResolvers<void>();
+    const stopReleased = Promise.withResolvers<void>();
+    vi.mocked(chrome.stopOpenClawChrome).mockImplementationOnce(async () => {
+      stopEntered.resolve();
+      await stopReleased.promise;
+    });
+    const relaunched = mockLaunchedChrome(vi.mocked(chrome.launchOpenClawChrome), 789);
+    vi.mocked(chrome.isChromeReachable).mockResolvedValue(false);
+    vi.mocked(chrome.isChromeCdpReady).mockResolvedValue(true);
+    const sweeps = sweepFor(stopMs);
+    await stopEntered.promise;
+    const profile = createBrowserRouteContext({ getState: () => state }).forProfile("openclaw");
+    const action = profile.ensureBrowserAvailable();
+    expect(chrome.launchOpenClawChrome).not.toHaveBeenCalled();
+    stopReleased.resolve();
+    await sweeps;
+    await expect(action).resolves.toBeUndefined();
+    expect(chrome.launchOpenClawChrome).toHaveBeenCalledOnce();
+    expect(runtime().running).toBe(relaunched);
+    expect(warn).not.toHaveBeenCalled();
+    vi.mocked(chrome.isChromeReachable).mockResolvedValue(true);
+  });
+
+  it("relaunches the browser on the next action after an idle stop", async () => {
+    await sweepIdleManagedBrowserTabs(state, warn);
+    await sweepFor(stopMs);
+    expect(runtime().running).toBeNull();
+    const relaunched = mockLaunchedChrome(vi.mocked(chrome.launchOpenClawChrome), 456);
+    vi.mocked(chrome.isChromeReachable).mockResolvedValue(false);
+    vi.mocked(chrome.isChromeCdpReady).mockResolvedValue(true);
+    const profile = createBrowserRouteContext({ getState: () => state }).forProfile("openclaw");
+    await profile.ensureBrowserAvailable();
+    expect(chrome.launchOpenClawChrome).toHaveBeenCalledOnce();
+    expect(runtime().running).toBe(relaunched);
+    // The restored blank page gets a fresh window from its discovery sweep.
+    tabs = [page("blank-2", "about:blank")];
+    await sweepIdleManagedBrowserTabs(state, warn);
+    await sweepFor(stopMs - 60_000);
+    expect(runtime().running).toBe(relaunched);
+    await sweepFor(60_000);
+    expect(runtime().running).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+    vi.mocked(chrome.isChromeReachable).mockResolvedValue(true);
+  });
 });

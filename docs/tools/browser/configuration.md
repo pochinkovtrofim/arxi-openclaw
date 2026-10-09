@@ -36,6 +36,7 @@ Extension relay configuration still requires a Gateway restart.
     tabCleanup: {
       enabled: true, // default: true
     },
+    // idleStopMinutes: 15, // default: 0; stop a managed headless browser with no page tabs
     // snapshotDefaults: { mode: "efficient" }, // default snapshot mode when the caller omits one
     defaultProfile: "openclaw",
     headless: false,
@@ -95,6 +96,18 @@ forms, scroll position, and page JavaScript state are not restored. Clients
 controlling CDP directly must send `/tabs/focus` through the browser controller
 when using a tab so cleanup observes their activity. Visible desktop browsers,
 remote browsers, and attach-only profiles do not use this headless idle policy.
+
+`browser.idleStopMinutes` (default `0`, never) additionally stops the managed
+headless browser process once it has shown no page tabs, only `about:blank`,
+for that many minutes. The clock starts when the last page is reclaimed and
+restarts on any browser action that uses a tab, including a focus of the blank
+page. An admitted profile operation or a retained dashboard page defers the
+stop. The stop uses the same lifecycle as `/stop` and `openclaw browser stop`:
+the profile directory, cookies and history are kept, and the next browser
+action launches the browser again. The check runs inside the tab cleanup sweep,
+so it needs `browser.tabCleanup.enabled`. Set it on memory-bound hosts where an
+idle browser process must not stay resident; a window of fifteen minutes or more
+keeps manual sessions clear of it.
 
 OpenClaw-managed Chrome also applies a separate, best-effort cap of eight page
 tabs when opening a tab. This cap is independent of `browser.tabCleanup`;
