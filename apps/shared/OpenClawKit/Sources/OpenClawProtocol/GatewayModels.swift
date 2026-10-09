@@ -5326,6 +5326,7 @@ public struct CronAddJobResult: Codable, Sendable {
     public let trigger: [String: AnyCodable]?
     public let sessiontarget: AnyCodable
     public let wakemode: AnyCodable
+    public let suspendwake: AnyCodable?
     public let payload: AnyCodable
     public let delivery: AnyCodable?
     public let failurealert: AnyCodable?
@@ -5363,6 +5364,7 @@ public struct CronAddJobResult: Codable, Sendable {
         trigger: [String: AnyCodable]? = nil,
         sessiontarget: AnyCodable,
         wakemode: AnyCodable,
+        suspendwake: AnyCodable? = nil,
         payload: AnyCodable,
         delivery: AnyCodable? = nil,
         failurealert: AnyCodable? = nil,
@@ -5399,6 +5401,7 @@ public struct CronAddJobResult: Codable, Sendable {
         self.trigger = trigger
         self.sessiontarget = sessiontarget
         self.wakemode = wakemode
+        self.suspendwake = suspendwake
         self.payload = payload
         self.delivery = delivery
         self.failurealert = failurealert
@@ -5437,6 +5440,7 @@ public struct CronAddJobResult: Codable, Sendable {
         case trigger
         case sessiontarget = "sessionTarget"
         case wakemode = "wakeMode"
+        case suspendwake = "suspendWake"
         case payload
         case delivery
         case failurealert = "failureAlert"
@@ -5471,6 +5475,7 @@ public struct CronAddParams: Codable, Sendable {
     public let trigger: [String: AnyCodable]?
     public let sessiontarget: AnyCodable
     public let wakemode: AnyCodable
+    public let suspendwake: AnyCodable?
     public let payload: AnyCodable
     public let delivery: AnyCodable?
     public let failurealert: AnyCodable?
@@ -5490,6 +5495,7 @@ public struct CronAddParams: Codable, Sendable {
         trigger: [String: AnyCodable]? = nil,
         sessiontarget: AnyCodable,
         wakemode: AnyCodable,
+        suspendwake: AnyCodable? = nil,
         payload: AnyCodable,
         delivery: AnyCodable? = nil,
         failurealert: AnyCodable? = nil)
@@ -5508,6 +5514,7 @@ public struct CronAddParams: Codable, Sendable {
         self.trigger = trigger
         self.sessiontarget = sessiontarget
         self.wakemode = wakemode
+        self.suspendwake = suspendwake
         self.payload = payload
         self.delivery = delivery
         self.failurealert = failurealert
@@ -5528,6 +5535,7 @@ public struct CronAddParams: Codable, Sendable {
         case trigger
         case sessiontarget = "sessionTarget"
         case wakemode = "wakeMode"
+        case suspendwake = "suspendWake"
         case payload
         case delivery
         case failurealert = "failureAlert"
@@ -5663,6 +5671,7 @@ public struct CronJob: Codable, Sendable {
     public let trigger: [String: AnyCodable]?
     public let sessiontarget: AnyCodable
     public let wakemode: AnyCodable
+    public let suspendwake: AnyCodable?
     public let payload: AnyCodable
     public let delivery: AnyCodable?
     public let failurealert: AnyCodable?
@@ -5699,6 +5708,7 @@ public struct CronJob: Codable, Sendable {
         trigger: [String: AnyCodable]? = nil,
         sessiontarget: AnyCodable,
         wakemode: AnyCodable,
+        suspendwake: AnyCodable? = nil,
         payload: AnyCodable,
         delivery: AnyCodable? = nil,
         failurealert: AnyCodable? = nil,
@@ -5734,6 +5744,7 @@ public struct CronJob: Codable, Sendable {
         self.trigger = trigger
         self.sessiontarget = sessiontarget
         self.wakemode = wakemode
+        self.suspendwake = suspendwake
         self.payload = payload
         self.delivery = delivery
         self.failurealert = failurealert
@@ -5771,6 +5782,7 @@ public struct CronJob: Codable, Sendable {
         case trigger
         case sessiontarget = "sessionTarget"
         case wakemode = "wakeMode"
+        case suspendwake = "suspendWake"
         case payload
         case delivery
         case failurealert = "failureAlert"

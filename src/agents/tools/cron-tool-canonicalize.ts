@@ -48,6 +48,7 @@ const CRON_RECOVERABLE_OBJECT_KEYS: ReadonlySet<string> = new Set([
   "trigger",
   "sessionTarget",
   "wakeMode",
+  "suspendWake",
   "payload",
   "delivery",
   "enabled",

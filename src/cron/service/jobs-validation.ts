@@ -133,6 +133,18 @@ export function assertTriggerSupport(
   }
 }
 
+export function assertSuspendWakeSupport(job: Pick<CronJob, "schedule" | "suspendWake">) {
+  // A one-shot or event job that cannot wake the host would be a silently late
+  // reminder; only a recurring cadence has a next tick to catch up on.
+  if (
+    job.suspendWake === "never" &&
+    job.schedule.kind !== "every" &&
+    job.schedule.kind !== "cron"
+  ) {
+    throw new Error('cron suspendWake "never" requires an every or cron schedule');
+  }
+}
+
 export function assertPacingSupport(job: Pick<CronJob, "schedule" | "pacing">) {
   if (job.pacing === undefined) {
     return;

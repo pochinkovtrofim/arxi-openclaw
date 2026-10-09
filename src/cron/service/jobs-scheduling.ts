@@ -305,6 +305,11 @@ export function isTimeScheduledJob(job: Pick<CronJob, "schedule">): boolean {
   return job.schedule.kind !== "on-exit" && job.schedule.kind !== "stream";
 }
 
+/** A job whose own cadence must not wake a suspended host; it runs at the first pass after any wake. */
+export function isSuspendWakeDeferredJob(job: Pick<CronJob, "suspendWake">): boolean {
+  return job.suspendWake === "never";
+}
+
 /** Computes the next run timestamp for enabled jobs across every/at/cron schedules. */
 export function computeJobNextRunAtMs(job: CronJob, nowMs: number): number | undefined {
   if (!isJobEnabled(job)) {
@@ -730,6 +735,7 @@ export function recomputeNextRunsForMaintenance(
 export function summarizeCronJobSchedule(state: CronServiceState) {
   const jobs = state.store?.jobs ?? [];
   let nextWake: number | undefined;
+  let nextSuspendWake: number | undefined;
   let jobCount = 0;
   let enabledCount = 0;
   for (const job of jobs) {
@@ -744,12 +750,20 @@ export function summarizeCronJobSchedule(state: CronServiceState) {
     }
     if ((rawEnabled ?? true) && isTimeScheduledJob(job) && hasNextRun) {
       nextWake = nextWake === undefined ? nextRun : Math.min(nextWake, nextRun);
+      // The in-process timer still fires deferred jobs; only the host wake
+      // deadline reported through suspension skips their cadence.
+      if (!isSuspendWakeDeferredJob(job)) {
+        nextSuspendWake =
+          nextSuspendWake === undefined ? nextRun : Math.min(nextSuspendWake, nextRun);
+      }
     }
   }
   return {
     jobCount,
     enabledCount,
     nextWakeAtMs: nextWake,
+    /** Earliest slot that may wake a suspended host; excludes `suspendWake: "never"` cadences. */
+    nextSuspendWakeAtMs: nextSuspendWake,
   };
 }
 

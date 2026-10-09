@@ -28,6 +28,12 @@ const CronSessionTargetSchema = Type.Union([
 ]);
 /** Whether a cron job waits for heartbeat processing or wakes immediately. */
 const CronWakeModeSchema = Type.Union([Type.Literal("next-heartbeat"), Type.Literal("now")]);
+/**
+ * Whether a due run may wake a suspended gateway host. "never" keeps the job out
+ * of the suspend wake deadline; it still runs at the first scheduler pass after
+ * any other wake. Omitted means "always".
+ */
+const CronSuspendWakeSchema = Type.Union([Type.Literal("always"), Type.Literal("never")]);
 /** Run status factory reused for the active field and deprecated alias metadata. */
 function cronRunStatusSchema(options: Record<string, unknown> = {}) {
   return Type.Union([Type.Literal("ok"), Type.Literal("error"), Type.Literal("skipped")], options);
@@ -518,6 +524,7 @@ export const CronJobSchema = closedObject({
   trigger: Type.Optional(CronTriggerSchema),
   sessionTarget: CronSessionTargetSchema,
   wakeMode: CronWakeModeSchema,
+  suspendWake: Type.Optional(CronSuspendWakeSchema),
   payload: CronReportedPayloadSchema,
   delivery: Type.Optional(CronDeliverySchema),
   failureAlert: Type.Optional(Type.Union([Type.Literal(false), CronFailureAlertSchema])),
@@ -606,6 +613,7 @@ export const CronAddParamsSchema = closedObject({
   trigger: Type.Optional(CronTriggerSchema),
   sessionTarget: CronSessionTargetSchema,
   wakeMode: CronWakeModeSchema,
+  suspendWake: Type.Optional(CronSuspendWakeSchema),
   payload: CronPayloadSchema,
   delivery: Type.Optional(CronDeliverySchema),
   failureAlert: Type.Optional(Type.Union([Type.Literal(false), CronFailureAlertSchema])),
@@ -647,6 +655,7 @@ const CronJobPatchSchema = closedObject({
   trigger: Type.Optional(Type.Union([CronTriggerSchema, Type.Null()])),
   sessionTarget: Type.Optional(CronSessionTargetSchema),
   wakeMode: Type.Optional(CronWakeModeSchema),
+  suspendWake: Type.Optional(CronSuspendWakeSchema),
   payload: Type.Optional(CronPayloadPatchSchema),
   delivery: Type.Optional(CronDeliveryPatchSchema),
   failureAlert: Type.Optional(

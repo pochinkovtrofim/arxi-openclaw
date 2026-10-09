@@ -4,6 +4,13 @@ export type CronPacing = {
   max?: string;
 };
 
+/**
+ * Host wake policy for a suspended gateway. "never" keeps a due run out of the
+ * suspend wake deadline; the job still runs once at the first scheduler pass
+ * after any other wake. Omitted means "always".
+ */
+type CronSuspendWake = "always" | "never";
+
 /** Shared persisted cron job envelope used by runtime and external config shapes. */
 export type CronJobBase<TSchedule, TSessionTarget, TWakeMode, TPayload, TDelivery, TFailureAlert> =
   {
@@ -20,6 +27,7 @@ export type CronJobBase<TSchedule, TSessionTarget, TWakeMode, TPayload, TDeliver
     pacing?: CronPacing;
     sessionTarget: TSessionTarget;
     wakeMode: TWakeMode;
+    suspendWake?: CronSuspendWake;
     payload: TPayload;
     delivery?: TDelivery;
     failureAlert?: TFailureAlert;

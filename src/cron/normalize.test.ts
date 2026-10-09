@@ -665,6 +665,13 @@ describe("normalizeCronJobCreate", () => {
     expect(normalized.sessionTarget).toBe("isolated");
     expect(normalized.wakeMode).toBe("now");
   });
+  it("normalizes suspendWake without inventing a create-time default", () => {
+    expect(createAgent({ suspendWake: " NEVER " }).suspendWake).toBe("never");
+    expect(createAgent({ suspendWake: "sometimes" })).not.toHaveProperty("suspendWake");
+    expect(createAgent()).not.toHaveProperty("suspendWake");
+    expect(normalizePatch({ suspendWake: "always" })).toEqual({ suspendWake: "always" });
+    expect(normalizePatch({ enabled: false })).not.toHaveProperty("suspendWake");
+  });
   it("strips invalid delivery mode from partial delivery objects", () => {
     const delivery = child(
       createDefaulted(AGENT_TURN, {
