@@ -185,6 +185,14 @@ describe("browser config", () => {
       maxTabsPerSession: 8,
       sweepMinutes: 5,
     });
+    expect(resolved.idleStopMinutes).toBe(0);
+  });
+
+  it("resolves idleStopMinutes to whole minutes and never to a negative value", () => {
+    expect(resolveBrowserConfig({ idleStopMinutes: 15 }).idleStopMinutes).toBe(15);
+    expect(resolveBrowserConfig({ idleStopMinutes: 2.9 }).idleStopMinutes).toBe(2);
+    expect(resolveBrowserConfig({ idleStopMinutes: 0 }).idleStopMinutes).toBe(0);
+    expect(resolveBrowserConfig({ idleStopMinutes: -5 }).idleStopMinutes).toBe(0);
   });
 
   it("provides a built-in chrome extension-relay profile with a derived loopback port", () => {

@@ -53,6 +53,8 @@ export const RUNTIME_FIELD_HELP: Record<string, string> = {
     "Best-effort cleanup policy for browser tabs opened by primary-agent sessions. Keep enabled to avoid stale sandbox or managed-browser tabs accumulating across long-lived gateways.",
   "browser.tabCleanup.enabled":
     "Enables cleanup of idle tracked browser tabs for primary-agent sessions. Disable only when external tooling owns tab lifecycle completely.",
+  "browser.idleStopMinutes":
+    "Minutes a locally managed headless browser may sit with no page tabs (only about:blank) before OpenClaw stops its process to free memory. The profile, cookies and history are kept and the next browser action relaunches it; an admitted operation or a retained dashboard page defers the stop. 0 (default) never stops it. The check runs inside the tab cleanup sweep, so it needs browser.tabCleanup.enabled. Set this for memory-bound hosts where an idle browser process must not stay resident.",
   "browser.extensionRelay":
     "Chrome extension relay authentication compatibility settings. Keep the legacy window only while older paired extensions or external CDP clients still need it.",
   "browser.extensionRelay.allowLegacyAuth":

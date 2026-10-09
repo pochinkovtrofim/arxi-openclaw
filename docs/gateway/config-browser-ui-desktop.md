@@ -64,6 +64,9 @@ For the full key index and the other top-level config domains, see [Configuratio
   tabs after idle time or when a session exceeds its cap. Tracking applies only
   to tabs created by browser tool `action: "open"`; tabs opened by the user or
   with unknown ownership are never adopted. Disabling `tabCleanup` does not disable explicit session lifecycle cleanup.
+- `idleStopMinutes` (default `0`, never) stops a managed headless browser
+  process after that many minutes with no page tabs; the profile is kept and the
+  next browser action relaunches it.
 - Host-local opens with a stable native CDP target and browser identity are
   stored in shared SQLite state and remain eligible across Gateway restarts for
   `/new` and session lifecycle cleanup. Native tool-facing CDP targets also
