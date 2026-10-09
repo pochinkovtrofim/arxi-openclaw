@@ -11,6 +11,8 @@ export type CodexDynamicToolRuntimeResponse = CodexDynamicToolCallResponse & {
   asyncStarted?: boolean;
   diagnosticTerminalReason?: CodexDynamicToolDiagnosticTerminalReason;
   diagnosticTerminalType?: CodexDynamicToolDiagnosticTerminalType;
+  /** Content-free failure code a tool attached to its error or result details. */
+  errorCode?: string;
   executionStarted?: boolean;
   executedArguments?: Record<string, unknown>;
   replaySafe?: boolean;

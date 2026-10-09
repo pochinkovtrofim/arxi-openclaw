@@ -20,7 +20,10 @@ import {
 import { loadExecApprovals } from "openclaw/plugin-sdk/exec-approvals-runtime";
 import { registerNativeHookRelayForBundledRuntime } from "openclaw/plugin-sdk/native-hook-relay-runtime";
 import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
-import { readStringField as readString } from "openclaw/plugin-sdk/string-coerce-runtime";
+import {
+  asOptionalRecord,
+  readStringField as readString,
+} from "openclaw/plugin-sdk/string-coerce-runtime";
 import { resolveCodexAppServerForModelProvider } from "./app-server-policy.js";
 import { handleCodexAppServerApprovalRequest } from "./approval-bridge.js";
 import { retireUnsafeCodexTurnClientBestEffort } from "./attempt-client-cleanup.js";
@@ -580,6 +583,7 @@ export async function runCodexAppServerSideQuestion(
           ...diagnosticContext,
           durationMs: Math.max(0, Date.now() - toolStartedAt),
           terminalReason: signal.aborted ? resolveCodexToolAbortTerminalReason(signal) : "failed",
+          errorCode: asOptionalRecord(error)?.code,
         });
         throw error;
       } finally {

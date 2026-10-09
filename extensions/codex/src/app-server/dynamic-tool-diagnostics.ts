@@ -17,6 +17,14 @@ type DynamicToolDiagnosticContext = {
   trace?: DiagnosticTraceContext | undefined;
 };
 
+// A fixed per-tool vocabulary, never error prose: anything else is dropped, not truncated.
+const CONTENT_FREE_TOOL_ERROR_CODE = /^[a-z_]{1,64}$/u;
+
+/** Returns a tool's failure code only when it is a content-free identifier. */
+export function readDynamicToolErrorCode(value: unknown): string | undefined {
+  return typeof value === "string" && CONTENT_FREE_TOOL_ERROR_CODE.test(value) ? value : undefined;
+}
+
 function diagnosticToolIdentity(params: DynamicToolDiagnosticContext) {
   return {
     agentId: params.agentId,
@@ -42,13 +50,16 @@ export function emitDynamicToolErrorDiagnostic(
   params: DynamicToolDiagnosticContext & {
     durationMs: number;
     terminalReason?: "failed" | "cancelled" | "timed_out";
+    errorCode?: unknown;
   },
 ): void {
+  const errorCode = readDynamicToolErrorCode(params.errorCode);
   emitTrustedDiagnosticEvent({
     type: "tool.execution.error",
     ...diagnosticToolIdentity(params),
     durationMs: params.durationMs,
     errorCategory: "codex_dynamic_tool_error",
+    ...(errorCode ? { errorCode } : {}),
     terminalReason: params.terminalReason ?? "failed",
   });
 }
@@ -82,5 +93,6 @@ export function emitDynamicToolTerminalDiagnostic(
   emitDynamicToolErrorDiagnostic({
     ...params,
     terminalReason: params.response.diagnosticTerminalReason ?? "failed",
+    errorCode: params.response.errorCode,
   });
 }

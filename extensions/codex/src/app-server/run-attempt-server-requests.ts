@@ -8,6 +8,7 @@ import {
   freezeDiagnosticTraceContext,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
+import { asOptionalRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { handleCodexAppServerApprovalRequest } from "./approval-bridge.js";
 import { terminateCodexBackgroundTerminals } from "./attempt-client-cleanup.js";
 import { isCodexAppServerApprovalRequest } from "./client.js";
@@ -408,6 +409,7 @@ export function createCodexAttemptServerRequestController(
           emitDynamicToolErrorDiagnostic({
             ...diagnosticContext,
             durationMs: Math.max(0, Date.now() - toolStartedAt),
+            errorCode: asOptionalRecord(error)?.code,
           });
         }
         await settlePluginRuntimeRefresh(turnId);
