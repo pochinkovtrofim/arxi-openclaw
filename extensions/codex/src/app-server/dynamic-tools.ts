@@ -68,6 +68,7 @@ import {
   type CodexDynamicToolSchemaQuarantine,
   type CodexToolDescriptor,
 } from "./dynamic-tool-catalog.js";
+import { readDynamicToolErrorCode } from "./dynamic-tool-diagnostics.js";
 import {
   type CodexDynamicToolHookContextBase,
   projectCodexExecutableDynamicToolSurface,
@@ -633,12 +634,16 @@ export function createCodexDynamicToolBridge(params: {
             // Middleware may replace screenshots; retain coordinates only for exact frame bytes.
             invalidateComputerFrame(params.computerContextEpoch);
           }
+          const errorCode = resultIsError
+            ? readDynamicToolErrorCode(asOptionalRecord(result.details)?.code)
+            : undefined;
           const response: CodexDynamicToolRuntimeResponse = {
             contentItems,
             success: !resultIsError,
             diagnosticTerminalType: terminalType,
             diagnosticTerminalReason:
               resultFailureKind === "blocked" ? undefined : resultFailureKind,
+            ...(errorCode ? { errorCode } : {}),
             transcriptDetails: asOptionalRecord(sanitizeToolResult(result))?.details,
           };
           const toolConfirmedSourceReply =
@@ -748,12 +753,14 @@ export function createCodexDynamicToolBridge(params: {
             executionBoundary.executionPrevented ||
             (isReplaySafeToolInstance(toolEntry.tool) &&
               isReplaySafeToolCall(toolName, executedArgs));
+          const errorCode = readDynamicToolErrorCode(asOptionalRecord(error)?.code);
           return {
             contentItems: [{ type: "inputText", text: errorMessage }],
             success: false,
             diagnosticTerminalType: executionDisposition === "blocked" ? "blocked" : "error",
             diagnosticTerminalReason:
               executionDisposition === "blocked" ? undefined : executionDisposition,
+            ...(errorCode ? { errorCode } : {}),
             executedArguments: executedArgs,
             executionStarted: executionBoundary.executionStarted,
             replaySafe,

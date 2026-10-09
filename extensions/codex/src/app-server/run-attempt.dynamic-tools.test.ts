@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
 import {
   emitDynamicToolStartedDiagnostic,
+  emitDynamicToolErrorDiagnostic,
   emitDynamicToolTerminalDiagnostic,
 } from "./dynamic-tool-diagnostics.js";
 import { setCodexTestToolFactory } from "./host-capability.test-support.js";
@@ -156,6 +157,67 @@ describe("runCodexAppServerAttempt dynamic tools", () => {
       { type: "tool.execution.completed", trace: diagnosticTrace },
     ]);
     expect(JSON.stringify(diagnosticEvents)).not.toContain("sensitive");
+  });
+
+  it("carries a content-free tool error code and drops anything that is not one", async () => {
+    const diagnosticEvents: DiagnosticEventPayload[] = [];
+    const unsubscribeDiagnostics = onInternalDiagnosticEvent((event) =>
+      diagnosticEvents.push(event),
+    );
+    const call = (callId: string) =>
+      ({
+        threadId: "thread-1",
+        turnId: "turn-1",
+        callId,
+        namespace: null,
+        tool: "arxi_group_context",
+        arguments: {},
+      }) satisfies CodexDynamicToolCallParams;
+    const tooLong = "a".repeat(65);
+    try {
+      emitDynamicToolTerminalDiagnostic({
+        call: call("call-coded"),
+        runId: "run-coded",
+        durationMs: 3,
+        response: {
+          success: false,
+          contentItems: [{ type: "inputText", text: "private failure prose" }],
+          errorCode: "revision_required",
+        },
+      });
+      for (const [callId, errorCode] of [
+        ["call-spaces", "bad code"],
+        ["call-unicode", "кодошибки"],
+        ["call-long", tooLong],
+        ["call-object", { code: "nested" }],
+      ] as const) {
+        emitDynamicToolErrorDiagnostic({
+          call: call(callId),
+          runId: "run-uncoded",
+          durationMs: 3,
+          errorCode,
+        });
+      }
+      await waitForDiagnosticEventsDrained();
+    } finally {
+      unsubscribeDiagnostics();
+    }
+    const errors = diagnosticEvents.filter(
+      (event): event is Extract<DiagnosticEventPayload, { type: "tool.execution.error" }> =>
+        event.type === "tool.execution.error" && "toolCallId" in event,
+    );
+    expect(errors.map((event) => [event.toolCallId, event.errorCode])).toEqual([
+      ["call-coded", "revision_required"],
+      ["call-spaces", undefined],
+      ["call-unicode", undefined],
+      ["call-long", undefined],
+      ["call-object", undefined],
+    ]);
+    expect(errors.every((event) => event.errorCategory === "codex_dynamic_tool_error")).toBe(true);
+    const encoded = JSON.stringify(diagnosticEvents);
+    for (const dropped of ["bad code", "кодошибки", tooLong, "a".repeat(64), "private failure"]) {
+      expect(encoded).not.toContain(dropped);
+    }
   });
 
   it("acknowledges a terminal sandbox process poll only after Codex accepts its exact result", async () => {
