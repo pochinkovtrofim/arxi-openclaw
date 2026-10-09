@@ -1,6 +1,9 @@
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { describe, expect, it } from "vitest";
-import { LOCAL_INDEX_REQUEST_INPUTS, resolveLocalEmbeddingSchedule } from "./embedding-scheduler.js";
+import {
+  LOCAL_INDEX_REQUEST_INPUTS,
+  resolveLocalEmbeddingSchedule,
+} from "./embedding-scheduler.js";
 
 type SentRequest = { slice: string[]; release: () => void; released: boolean };
 
@@ -42,7 +45,11 @@ describe("local embedding schedule", () => {
   it("sends index inputs in short sub-requests, one at a time per server, in input order", async () => {
     const schedule = resolveLocalEmbeddingSchedule("http://127.0.0.1:19450/v1");
     const recorder = createSendRecorder();
-    const batch = schedule.runIndexBatch(["a", "bb", "ccc", "dddd", "eeeee"], undefined, recorder.send);
+    const batch = schedule.runIndexBatch(
+      ["a", "bb", "ccc", "dddd", "eeeee"],
+      undefined,
+      recorder.send,
+    );
     const other = schedule.runIndexBatch(["zz"], undefined, recorder.send);
     await flush();
     expect(recorder.sent.map((request) => request.slice)).toEqual([["a", "bb"]]);

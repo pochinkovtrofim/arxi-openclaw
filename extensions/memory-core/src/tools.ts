@@ -1,6 +1,11 @@
 import {
+  emitTrustedDiagnosticEvent,
+  normalizeDiagnosticValue,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
+import {
   resolveMemorySearchStaleness,
   type MemorySearchDeadlineControl,
+  type MemorySearchPhaseTiming,
   type MemorySource,
 } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import {
@@ -71,8 +76,30 @@ type PrimaryMemorySearchValue = {
   staleness?: Exclude<ReturnType<typeof resolveMemorySearchStaleness>, null>;
   automaticRebuildWarning?: string;
   debug?: MemorySearchToolQueryDebug & { toolMs?: number; outsideSearchMs?: number };
+  timing?: MemorySearchPhaseTiming;
   unavailableResult?: ReturnType<typeof buildPausedMemoryIndexUnavailableResult>;
 };
+
+type MemorySearchDiagnosticOutcome = "ok" | "partial" | "unavailable" | "error";
+
+// Content-free phase timing for exporters: bounded provider id, closed outcome,
+// durations only. Never the query, results, paths or session identity.
+function emitMemorySearchDiagnostic(params: {
+  toolCallId: string;
+  provider: string | undefined;
+  outcome: MemorySearchDiagnosticOutcome;
+  durationMs: number;
+  timing?: MemorySearchPhaseTiming;
+}): void {
+  emitTrustedDiagnosticEvent({
+    type: "memory.search.completed",
+    toolCallId: params.toolCallId,
+    provider: normalizeDiagnosticValue(params.provider, "other"),
+    outcome: params.outcome,
+    durationMs: params.durationMs,
+    ...(params.timing ?? {}),
+  });
+}
 
 const MEMORY_SEARCH_TOOL_COOLDOWN_MS = 60_000;
 
@@ -233,7 +260,7 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
     contract: MEMORY_SEARCH_TOOL_CONTRACT,
     execute:
       ({ cfg, agentId, settings }) =>
-      async (_toolCallId, params, callerSignal) => {
+      async (toolCallId, params, callerSignal) => {
         const rawParams = asToolParamsRecord(params);
         if (callerSignal?.aborted) {
           throw resolveMemorySearchAbortError(callerSignal);
@@ -404,6 +431,7 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
               model: status.model,
               fallback: status.fallback,
               mode: executed.searchMode,
+              timing: executed.timing,
               staleness: resolveMemorySearchStaleness(status, agentId) ?? undefined,
               automaticRebuildWarning: readRebuildWarning(),
               debug:
@@ -546,6 +574,18 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                     outsideSearchMs: Math.max(0, elapsed - memoryValue.debug.searchMs),
                   }
                 : undefined;
+              if (memory) {
+                emitMemorySearchDiagnostic({
+                  toolCallId,
+                  provider: memoryValue?.provider,
+                  outcome:
+                    memory.outcome === "ok" || memory.outcome === "partial"
+                      ? memory.outcome
+                      : "unavailable",
+                  durationMs: elapsed,
+                  timing: memoryValue?.timing,
+                });
+              }
               return jsonResult({
                 results: results.map((result) => presentation.get(result) ?? result),
                 ...(sourceReads.length > 0 ? { sourceReads } : {}),
@@ -564,6 +604,14 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
             },
           });
         } catch (error) {
+          if (searchesMemory) {
+            emitMemorySearchDiagnostic({
+              toolCallId,
+              provider: undefined,
+              outcome: "error",
+              durationMs: Math.max(0, Date.now() - toolStartedAt),
+            });
+          }
           if (callerSignal?.aborted) {
             throw resolveMemorySearchAbortError(callerSignal);
           }

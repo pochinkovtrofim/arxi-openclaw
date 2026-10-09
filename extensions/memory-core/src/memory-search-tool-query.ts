@@ -8,6 +8,7 @@ import {
   type MemoryProviderStatus,
   type MemorySearchDeadlineControl,
   type MemorySearchManager,
+  type MemorySearchPhaseTiming,
   type MemorySearchRuntimeDebug,
   type MemorySearchResult,
   type MemorySource,
@@ -83,6 +84,7 @@ export async function executeMemorySearchToolQuery(params: {
 }) {
   const startedAt = Date.now();
   const runtimeDebug: MemorySearchRuntimeDebug[] = [];
+  let timing: MemorySearchPhaseTiming | undefined;
   let active = params.initialManager;
   let partialGeneration = 0;
   const { query, signal, visibility } = params;
@@ -130,6 +132,9 @@ export async function executeMemorySearchToolQuery(params: {
         ? { [MEMORY_SEARCH_DEADLINE_CONTROL]: params.deadlineControl }
         : {}),
       onDebug: (debug) => runtimeDebug.push(debug),
+      onTiming: (settled) => {
+        timing = settled;
+      },
       onPartialResults: params.onPartialResults
         ? (partialCandidates) => {
             const generation = ++partialGeneration;
@@ -148,6 +153,7 @@ export async function executeMemorySearchToolQuery(params: {
               searched: { candidates: memoryCandidates, searchWindow },
               ...queryContext,
               runtimeDebug: [...runtimeDebug],
+              timing,
               effectiveMode: "keyword-only",
             }).then(
               (result) => {
@@ -188,6 +194,7 @@ export async function executeMemorySearchToolQuery(params: {
     ...searched,
     ...queryContext,
     runtimeDebug,
+    timing,
   });
 }
 
@@ -199,6 +206,7 @@ async function finalizeMemorySearchToolQuery(params: {
   visibility: MemorySearchToolVisibility;
   searchSources: MemorySource[] | undefined;
   runtimeDebug: MemorySearchRuntimeDebug[];
+  timing?: MemorySearchPhaseTiming;
   startedAt: number;
   effectiveMode?: string;
 }) {
@@ -252,6 +260,7 @@ async function finalizeMemorySearchToolQuery(params: {
     searchStartedAt: startedAt,
     status,
     rawResults,
+    timing: params.timing,
     pausedIndexIdentity: undefined,
     searchMode: params.effectiveMode ?? latestDebug?.effectiveMode,
     debug: {

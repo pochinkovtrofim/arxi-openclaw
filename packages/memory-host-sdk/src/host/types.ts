@@ -86,6 +86,16 @@ export type MemorySyncParams = {
   progress?: (update: MemorySyncProgressUpdate) => void;
 };
 
+/** Content-free phase durations of one manager search, for diagnostics only. */
+export type MemorySearchPhaseTiming = {
+  /** Index generation lease plus published index-state reads. */
+  indexReadMs: number;
+  /** Query embedding, including provider retries. */
+  embedQueryMs: number;
+  /** Bootstrap or identity-repair syncs the search had to await. */
+  syncWaitMs: number;
+};
+
 export type MemorySearchRuntimeDebug = {
   backend: "builtin";
   configuredMode?: string;
@@ -396,6 +406,8 @@ export interface MemorySearchManager {
       /** Active repository identities used only for project-aware ranking. */
       activeProjectKeys?: string[];
       onDebug?: (debug: MemorySearchRuntimeDebug) => void;
+      /** Phase durations reported once when the search settles, whatever its outcome. */
+      onTiming?: (timing: MemorySearchPhaseTiming) => void;
       /**
        * Ranked memory-file keyword candidates bounded by maxResults, available before semantic retrieval completes.
        * Callers must apply the same visibility checks as for final results.

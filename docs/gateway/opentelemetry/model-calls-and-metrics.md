@@ -272,9 +272,13 @@ see [Prometheus event-loop windows](/gateway/prometheus#event-loop-observation-w
 
 ### Tool execution and loop detection
 
-- `openclaw.tool.execution.duration_ms` (histogram, attrs: `gen_ai.tool.name`, `openclaw.toolName`, `openclaw.tool.source`, `openclaw.tool.owner`, `openclaw.tool.params.kind`, plus `openclaw.errorCategory` on errors)
+- `openclaw.tool.execution.duration_ms` (histogram, attrs: `gen_ai.tool.name`, `openclaw.toolName`, `openclaw.tool.source`, `openclaw.tool.owner`, `openclaw.tool.params.kind`, plus `openclaw.errorCategory` on errors and `openclaw.memory_search.phase` for `memory_search`)
 - `openclaw.tool.execution.blocked` (counter, attrs: `gen_ai.tool.name`, `openclaw.toolName`, `openclaw.tool.source`, `openclaw.tool.owner`, `openclaw.tool.params.kind`, `openclaw.deniedReason`)
 - `openclaw.tool.loop` (counter, attrs: `openclaw.toolName`, `openclaw.loop.level`, `openclaw.loop.action`, `openclaw.loop.detector`, `openclaw.loop.count`, optional `openclaw.loop.paired_tool`; emitted when a repetitive tool-call loop is detected)
+
+### Memory search
+
+- `openclaw.memory_search.duration_ms` (histogram, attrs: `openclaw.memory_search.phase` in `total`, `index_read`, `embed_query`, `sync_wait`; `openclaw.memory_search.provider`; `openclaw.memory_search.outcome` in `ok`, `partial`, `unavailable`, `error`). One `total` sample per `memory_search` tool call and one sample per phase the manager search ran, so a slow call can be attributed to the query embedding, the index read (generation lease and published state), or an awaited bootstrap/identity-repair sync. Content-free: no query, results, paths or session identity.
 
 ### Exec
 

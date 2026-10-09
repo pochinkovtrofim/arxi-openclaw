@@ -45,6 +45,8 @@ export function createDiagnosticsEventHandler(params: {
           return recorders.recordGatewayEventLoopSample(evt, metadata);
         case "gateway.rpc":
           return recorders.recordGatewayRpc(evt, metadata);
+        case "memory.search.completed":
+          return recorders.recordMemorySearchCompleted(evt, metadata);
         case "model.usage":
           return recorders.recordModelUsage(evt, metadata, privateData.hostPluginId);
         case "webhook.received":

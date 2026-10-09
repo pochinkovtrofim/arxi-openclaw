@@ -49,6 +49,37 @@ describe("memory index", () => {
     expect(await manager.search("unpublished maintenance marker")).toEqual([]);
   });
 
+  it("reports content-free phase timing once per search, including a skipped query embed", async () => {
+    const manager = await getPersistentManager(createCfg({ minScore: 0 }));
+    await manager.sync({ reason: "test" });
+    const fields = manager as unknown as { provider: EmbeddingProvider };
+    const originalEmbed = fields.provider.embed.bind(fields.provider);
+    const embedSpy = vi
+      .spyOn(fields.provider, "embed")
+      .mockImplementation(async (input, options) => {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return await originalEmbed(input, options);
+      });
+    try {
+      const timings: Array<{ indexReadMs: number; embedQueryMs: number; syncWaitMs: number }> = [];
+      await manager.search("zebra", { minScore: 0, onTiming: (timing) => timings.push(timing) });
+      expect(timings).toHaveLength(1);
+      expect(timings[0]?.embedQueryMs).toBeGreaterThanOrEqual(20);
+      expect(timings[0]?.indexReadMs).toBeGreaterThanOrEqual(0);
+      expect(timings[0]?.syncWaitMs).toBe(0);
+
+      const lexical: Array<{ embedQueryMs: number }> = [];
+      await manager.search("zebra", {
+        minScore: 0,
+        lexicalOnly: true,
+        onTiming: (timing) => lexical.push(timing),
+      });
+      expect(lexical).toEqual([expect.objectContaining({ embedQueryMs: 0 })]);
+    } finally {
+      embedSpy.mockRestore();
+    }
+  });
+
   it("invalidates keyword snapshots before changing the fallback provider", async () => {
     const manager = await getPersistentManager(
       createCfg({ fallback: "fallback-provider", minScore: 0 }),

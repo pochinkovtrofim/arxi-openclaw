@@ -126,6 +126,15 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       Math.max(1, Math.floor(maxResults * hybrid.candidateMultiplier)),
     );
     const keywordOptions = { boostFallbackRanking: true, signal: opts?.signal };
+    const timing = { indexReadMs: 0, embedQueryMs: 0, syncWaitMs: 0 };
+    const timed = async <T>(phase: keyof typeof timing, run: () => Promise<T>): Promise<T> => {
+      const startedAt = performance.now();
+      try {
+        return await run();
+      } finally {
+        timing[phase] += performance.now() - startedAt;
+      }
+    };
     let preparedKeyword: MemoryKeywordWorkerResult | undefined;
     let releaseGeneration: (() => Promise<void>) | undefined;
     const releaseReadGeneration = async () => {
@@ -135,9 +144,8 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       await release?.();
     };
     const readIndexState = async () => {
-      releaseGeneration ??= await acquireMemoryIndexReadGeneration(
-        this.settings.store.databasePath,
-        opts?.signal,
+      releaseGeneration ??= await timed("indexReadMs", () =>
+        acquireMemoryIndexReadGeneration(this.settings.store.databasePath, opts?.signal),
       );
       preparedKeyword = undefined;
       if (
@@ -150,16 +158,13 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
           (this.providerInitialized && !this.provider) ||
           this.embeddingBootstrapFailure !== undefined)
       ) {
-        const prepared = await this.prepareKeywordSearch(
-          normalizedQuery,
-          candidates,
-          keywordOptions,
-          sourceFilterList,
+        const prepared = await timed("indexReadMs", () =>
+          this.prepareKeywordSearch(normalizedQuery, candidates, keywordOptions, sourceFilterList),
         );
         preparedKeyword = prepared.keyword;
         return prepared.indexState;
       }
-      return await this.readRetrievalIndexState(opts?.signal);
+      return await timed("indexReadMs", () => this.readRetrievalIndexState(opts?.signal));
     };
     const runSearch = async () => {
       opts?.onDebug?.({ backend: "builtin" });
@@ -175,9 +180,11 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
           // A fresh process can receive its first search before background watch/session
           // syncs have built the index. Await fresh source discovery, but let the
           // sync owner decide whether the index needs a full rebuild.
-          await this.syncAdmitted(
-            { reason: "search-bootstrap" },
-            { allowEmbeddingBootstrapFallback: true },
+          await timed("syncWaitMs", () =>
+            this.syncAdmitted(
+              { reason: "search-bootstrap" },
+              { allowEmbeddingBootstrapFallback: true },
+            ),
           );
         } catch (err) {
           if (err instanceof WorkerTaskError && err.code === "overloaded") {
@@ -192,17 +199,17 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
               log.warn(`memory search-bootstrap: failed to retire embedding provider: ${message}`);
             });
             this.markEmbeddingBootstrapFailure(err, { provider: failedProvider });
-            await this.syncAdmitted({ reason: "search-bootstrap" }).catch(
-              (fallbackErr: unknown) => {
-                if (fallbackErr instanceof WorkerTaskError && fallbackErr.code === "overloaded") {
-                  throw fallbackErr;
-                }
-                const message = redactSensitiveText(formatErrorMessage(fallbackErr), {
-                  mode: "tools",
-                });
-                log.warn(`memory sync failed (search-bootstrap-fallback): ${message}`);
-              },
-            );
+            await timed("syncWaitMs", () =>
+              this.syncAdmitted({ reason: "search-bootstrap" }),
+            ).catch((fallbackErr: unknown) => {
+              if (fallbackErr instanceof WorkerTaskError && fallbackErr.code === "overloaded") {
+                throw fallbackErr;
+              }
+              const message = redactSensitiveText(formatErrorMessage(fallbackErr), {
+                mode: "tools",
+              });
+              log.warn(`memory sync failed (search-bootstrap-fallback): ${message}`);
+            });
           } else {
             log.warn(`memory sync failed (search-bootstrap): ${String(err)}`);
           }
@@ -287,9 +294,8 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         await releaseReadGeneration();
         this.recordAutomaticRebuild();
         // The writer rechecks identity under its lease; another manager may have repaired it.
-        await this.syncAdmitted(
-          { reason: "search" },
-          { allowEmbeddingBootstrapFallback: true },
+        await timed("syncWaitMs", () =>
+          this.syncAdmitted({ reason: "search" }, { allowEmbeddingBootstrapFallback: true }),
         ).catch((err: unknown) => {
           if (err instanceof WorkerTaskError && err.code === "overloaded") {
             throw err;
@@ -446,13 +452,15 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       };
 
       const embedQuery = () =>
-        this.embedQueryWithRetry(
-          normalizedQuery,
-          opts?.signal,
-          semanticProvider,
-          false,
-          semanticProviderRuntime,
-          opts?.[MEMORY_SEARCH_DEADLINE_CONTROL],
+        timed("embedQueryMs", () =>
+          this.embedQueryWithRetry(
+            normalizedQuery,
+            opts?.signal,
+            semanticProvider,
+            false,
+            semanticProviderRuntime,
+            opts?.[MEMORY_SEARCH_DEADLINE_CONTROL],
+          ),
         );
       let keywordResults: Awaited<ReturnType<typeof loadKeywordResults>> = [];
       let queryVec: number[];
@@ -609,6 +617,11 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         return await runSearch();
       } finally {
         await releaseReadGeneration();
+        opts?.onTiming?.({
+          indexReadMs: Math.round(timing.indexReadMs),
+          embedQueryMs: Math.round(timing.embedQueryMs),
+          syncWaitMs: Math.round(timing.syncWaitMs),
+        });
       }
     });
   }

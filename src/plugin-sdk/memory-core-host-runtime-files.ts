@@ -11,6 +11,7 @@ export type {
   MemoryEntryProvenance,
   MemoryOriginClass,
   MemorySearchResult,
+  MemorySearchPhaseTiming,
   MemorySearchRuntimeDebug,
   MemorySessionKind,
 } from "../../packages/memory-host-sdk/src/runtime-files.js";

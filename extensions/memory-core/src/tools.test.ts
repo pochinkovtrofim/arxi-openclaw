@@ -1,3 +1,7 @@
+import {
+  onInternalDiagnosticEvent,
+  waitForDiagnosticEventsDrained,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import "./tools.session-catalog.test-mocks.js";
 import type { MemorySearchRuntimeDebug } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
@@ -1370,6 +1374,59 @@ describe("memory_search corpus labels", () => {
         source: "sessions",
       },
     ]);
+  });
+});
+
+describe("memory_search diagnostics", () => {
+  beforeEach(() => {
+    clearMemoryPluginState();
+    resetMemoryToolMockState({ searchImpl: async () => [] });
+    memoryToolsTesting.resetMemorySearchToolCooldowns();
+  });
+
+  it("emits one trusted content-free timing event per call and keeps timing out of the tool result", async () => {
+    setMemorySearchImpl(async (opts) => {
+      opts?.onTiming?.({ indexReadMs: 3, embedQueryMs: 41, syncWaitMs: 0 });
+      return [
+        {
+          path: "MEMORY.md",
+          startLine: 1,
+          endLine: 2,
+          score: 0.9,
+          snippet: "ramen",
+          source: "memory",
+        },
+      ];
+    });
+    const events: Array<Record<string, unknown>> = [];
+    const unsubscribe = onInternalDiagnosticEvent((event) => {
+      if (event.type === "memory.search.completed") {
+        events.push({ ...event });
+      }
+    });
+    try {
+      const tool = createMemorySearchToolOrThrow({
+        config: { agents: { list: [{ id: "main", default: true }] } },
+      });
+      const result = await tool.execute("diagnostic-timing", { query: "favorite food" });
+      await waitForDiagnosticEventsDrained();
+      expect(events).toEqual([
+        expect.objectContaining({
+          type: "memory.search.completed",
+          toolCallId: "diagnostic-timing",
+          provider: "builtin",
+          outcome: "ok",
+          durationMs: expect.any(Number),
+          indexReadMs: 3,
+          embedQueryMs: 41,
+          syncWaitMs: 0,
+        }),
+      ]);
+      expect(JSON.stringify(result.details)).not.toContain("embedQueryMs");
+      expect(JSON.stringify(result.details)).not.toContain("timing");
+    } finally {
+      unsubscribe();
+    }
   });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

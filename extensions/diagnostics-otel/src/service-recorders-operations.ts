@@ -22,6 +22,7 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
     gatewayRpcHandlerHistogram,
     gatewayRpcAdmissionHistogram,
     gatewayRpcQueueWaitHistogram,
+    memorySearchDurationHistogram,
     queueDepthHistogram,
     queueWaitHistogram,
     laneEnqueueCounter,
@@ -115,6 +116,50 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
       span.setStatus({ code: SpanStatusCode.ERROR });
     }
     span.end(evt.ts);
+  };
+
+  const recordMemorySearchCompleted = (
+    evt: Extract<DiagnosticEventPayload, { type: "memory.search.completed" }>,
+    metadata: DiagnosticEventMetadata,
+  ) => {
+    if (!metadata.trusted) {
+      return;
+    }
+    const attrs = {
+      "openclaw.memory_search.provider": normalizeDiagnosticValue(evt.provider, "other"),
+      "openclaw.memory_search.outcome": evt.outcome,
+    };
+    const phases = [
+      ["total", evt.durationMs],
+      ["index_read", evt.indexReadMs],
+      ["embed_query", evt.embedQueryMs],
+      ["sync_wait", evt.syncWaitMs],
+    ] as const;
+    for (const [phase, ms] of phases) {
+      if (typeof ms === "number") {
+        memorySearchDurationHistogram.record(ms, { ...attrs, "openclaw.memory_search.phase": phase });
+      }
+    }
+    if (evt.toolCallId) {
+      // The phase that dominated the call; "search" when no timed phase did.
+      const dominant = phases
+        .filter(([phase, ms]) => phase !== "total" && typeof ms === "number" && ms > 0)
+        .toSorted(([, left], [, right]) => (right as number) - (left as number))[0]?.[0];
+      runtime.rememberMemorySearchPhase(evt.toolCallId, dominant ?? "search");
+    }
+    if (!tracesEnabled) {
+      return;
+    }
+    const spanAttrs: Record<string, string | number | boolean> = { ...attrs };
+    for (const [phase, ms] of phases) {
+      if (phase !== "total" && typeof ms === "number") {
+        spanAttrs[`openclaw.memory_search.${phase}_ms`] = ms;
+      }
+    }
+    spanWithDuration("openclaw.memory_search", spanAttrs, evt.durationMs, {
+      parentContext: activeTrustedParentContext(evt, metadata),
+      endTimeMs: evt.ts,
+    }).end(evt.ts);
   };
 
   const recordLaneEnqueue = (
@@ -397,6 +442,7 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
 
   return {
     recordGatewayRpc,
+    recordMemorySearchCompleted,
     recordLaneEnqueue,
     recordLaneDequeue,
     recordSessionState,

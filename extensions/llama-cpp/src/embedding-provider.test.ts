@@ -82,7 +82,10 @@ describe("managed llama.cpp embedding provider", () => {
         return inputs.map((input) => [input.length]);
       }),
     };
-    mocks.genericCreate.mockResolvedValue({ provider: generic, runtime: { id: "openai-compatible" } });
+    mocks.genericCreate.mockResolvedValue({
+      provider: generic,
+      runtime: { id: "openai-compatible" },
+    });
   });
 
   afterEach(() => {

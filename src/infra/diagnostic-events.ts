@@ -61,6 +61,21 @@ type DiagnosticBaseEvent = {
   trace?: DiagnosticTraceContext;
 };
 
+/** Payload-free memory_search phase timing from the memory-core tool owner. */
+type DiagnosticMemorySearchCompletedEvent = DiagnosticBaseEvent & {
+  type: "memory.search.completed";
+  /** Correlates with the tool.execution lifecycle of the same call; never exported. */
+  toolCallId?: string;
+  /** Bounded embedding provider id, or a fixed other bucket. */
+  provider: string;
+  outcome: "ok" | "partial" | "unavailable" | "error";
+  durationMs: number;
+  /** Phase durations inside the manager search; an absent phase did not run. */
+  indexReadMs?: number;
+  embedQueryMs?: number;
+  syncWaitMs?: number;
+};
+
 /** Payload-free facts from authenticated Gateway WebSocket request owners. */
 type DiagnosticGatewayRpcEvent = DiagnosticBaseEvent & {
   type: "gateway.rpc";
@@ -870,6 +885,7 @@ export type DiagnosticAsyncQueueDroppedEvent = DiagnosticBaseEvent & {
 
 export type DiagnosticEventPayload =
   | DiagnosticGatewayRpcEvent
+  | DiagnosticMemorySearchCompletedEvent
   | DiagnosticUsageEvent
   | DiagnosticWebhookReceivedEvent
   | DiagnosticWebhookProcessedEvent
@@ -1052,6 +1068,7 @@ const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
   "diagnostic.gc",
   "gateway.event_loop.sample",
   "gateway.rpc",
+  "memory.search.completed",
   "tool.execution.started",
   "tool.execution.completed",
   "tool.execution.error",
