@@ -64,7 +64,7 @@ export function parseInlineSessionDirectives(
     return parseInlineSessionDirectives(
       shortcut[1]?.toLowerCase() === "luna"
         ? "/think max /model openai/gpt-5.6-luna"
-        : "/think medium /model openai/gpt-5.6-sol",
+        : "/think medium /model openai/gpt-6.1-sol",
       options,
     );
   }
