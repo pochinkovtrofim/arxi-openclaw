@@ -100,10 +100,10 @@ describe("mixed inline directives", () => {
 
   it.each([
     ["/luna", "gpt-5.6-luna", "max"],
-    ["/sol", "gpt-5.6-sol", "medium"],
+    ["/sol", "gpt-6.1-sol", "medium"],
   ] as const)("persists %s as one model and thinking change", async (body, model, effort) => {
     const sessionEntry =
-      model === "gpt-5.6-sol"
+      model === "gpt-6.1-sol"
         ? createSessionEntry({
             providerOverride: "openai",
             modelOverride: "gpt-5.6-luna",
@@ -113,18 +113,18 @@ describe("mixed inline directives", () => {
     const { result } = await applyMixedDirectives({
       body,
       provider: "openai",
-      model: "gpt-5.6-sol",
+      model: "gpt-6.1-sol",
       defaultProvider: "openai",
-      defaultModel: "gpt-5.6-sol",
+      defaultModel: "gpt-6.1-sol",
       sessionEntry,
       allowedModels: [
-        { provider: "openai", id: "gpt-5.6-sol", name: "Sol", reasoning: true },
+        { provider: "openai", id: "gpt-6.1-sol", name: "Sol", reasoning: true },
         { provider: "openai", id: "gpt-5.6-luna", name: "Luna", reasoning: true },
       ],
     });
     expect(result).toMatchObject({ kind: "reply", reply: { text: expect.any(String) } });
     expect(sessionEntry.thinkingLevel).toBe(effort);
-    expect(sessionEntry.modelOverride).toBe(model === "gpt-5.6-sol" ? undefined : "gpt-5.6-luna");
+    expect(sessionEntry.modelOverride).toBe(model === "gpt-6.1-sol" ? undefined : "gpt-5.6-luna");
   });
 
   afterEach(() => {

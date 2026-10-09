@@ -6,7 +6,7 @@ import { parseInlineSessionDirectives } from "./directive-handling.parse.js";
 describe("model shortcuts", () => {
   it.each([
     ["/luna", "openai/gpt-5.6-luna", "max"],
-    ["/sol", "openai/gpt-5.6-sol", "medium"],
+    ["/sol", "openai/gpt-6.1-sol", "medium"],
   ] as const)("routes %s through model and thinking directives", (command, model, effort) => {
     const parsed = parseInlineSessionDirectives(command);
     expect(parsed).toMatchObject({
