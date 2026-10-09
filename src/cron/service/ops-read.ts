@@ -14,8 +14,10 @@ import { failureNotificationDeliveryFromJobState } from "./failure-alerts.js";
 import {
   findJobOrThrow,
   isJobEnabled,
+  isSuspendWakeDeferredJob,
   nextWakeAtMs,
   resolveJobLastRunStatus,
+  summarizeCronJobSchedule,
 } from "./jobs-scheduling.js";
 import { sortCronJobs } from "./list-page-sort.js";
 import type {
@@ -27,6 +29,7 @@ import type {
   CronListPageResult,
 } from "./list-page-types.js";
 import { locked } from "./locked.js";
+import { earliestManagedFlowObligationAtMs } from "./managed-flow-obligation-repair.js";
 import { normalizeOptionalAgentId } from "./normalize.js";
 import { emitCronRunFinished } from "./ops-run-preparation.js";
 import {
@@ -44,9 +47,36 @@ export function getSuspendWakeSnapshot(state: CronServiceState): CronSuspendWake
   if (!state.store || !state.schedulerStarted || state.stopped) {
     return { complete: false };
   }
+  if (!state.deps.cronEnabled) {
+    return { complete: true, nextWakeAtMs: null };
+  }
+  const candidates: number[] = [];
+  const { nextSuspendWakeAtMs } = summarizeCronJobSchedule(state);
+  if (nextSuspendWakeAtMs !== undefined) {
+    candidates.push(nextSuspendWakeAtMs);
+  }
+  const deferred = state.store.jobs.filter(
+    (job) => isJobEnabled(job) && isSuspendWakeDeferredJob(job),
+  );
+  if (deferred.length > 0) {
+    let obligationAtMs: number | undefined;
+    try {
+      obligationAtMs = earliestManagedFlowObligationAtMs(state, deferred);
+    } catch (err) {
+      // An unreadable receipt must not turn due owner work into external-event-only sleep.
+      state.deps.log.warn(
+        { err: String(err) },
+        "cron: suspend wake snapshot could not read managed Flow obligations",
+      );
+      return { complete: false };
+    }
+    if (obligationAtMs !== undefined) {
+      candidates.push(obligationAtMs);
+    }
+  }
   return {
     complete: true,
-    nextWakeAtMs: state.deps.cronEnabled ? (nextWakeAtMs(state) ?? null) : null,
+    nextWakeAtMs: candidates.length > 0 ? Math.min(...candidates) : null,
   };
 }
 

@@ -281,6 +281,14 @@ function normalizeWakeMode(raw: unknown) {
   return undefined;
 }
 
+function normalizeSuspendWake(raw: unknown) {
+  const trimmed = normalizeOptionalLowercaseString(raw);
+  if (trimmed === "always" || trimmed === "never") {
+    return trimmed;
+  }
+  return undefined;
+}
+
 /** Normalizes raw cron job input without deciding whether create-time defaults apply. */
 export function normalizeCronJobInput(
   raw: unknown,
@@ -379,6 +387,17 @@ export function normalizeCronJobInput(
       next.wakeMode = normalized;
     } else {
       delete next.wakeMode;
+    }
+  }
+
+  // No create-time default: an absent field already means "always", and older
+  // gateways that load this row must keep treating it as today's behavior.
+  if ("suspendWake" in base) {
+    const normalized = normalizeSuspendWake(base.suspendWake);
+    if (normalized) {
+      next.suspendWake = normalized;
+    } else {
+      delete next.suspendWake;
     }
   }
 

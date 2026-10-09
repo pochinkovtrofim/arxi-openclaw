@@ -291,6 +291,16 @@ describe("cron protocol validators", () => {
     expectCases(validateCronAddParams, false, [withoutWakeMode]);
   });
 
+  it("accepts only the closed suspendWake policies on add and update", () => {
+    expectCases(validateCronAddParams, true, [
+      add({ suspendWake: "never" }),
+      add({ suspendWake: "always" }),
+    ]);
+    expectCases(validateCronAddParams, false, [add({ suspendWake: "sometimes" })]);
+    expectCases(validateCronUpdateParams, true, [update({ suspendWake: "never" })]);
+    expectCases(validateCronUpdateParams, false, [update({ suspendWake: 1 })]);
+  });
+
   it("accepts update params for id and jobId selectors", () => {
     expectCases(validateCronUpdateParams, true, [
       update({ enabled: false }),

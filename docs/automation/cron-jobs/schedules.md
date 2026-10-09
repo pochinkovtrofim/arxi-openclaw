@@ -72,6 +72,12 @@ During an agent-turn run, a paced job can call the `automations` tool with `acti
 
 Pacing without a proposal leaves the normal schedule unchanged. Failed, timed-out, and skipped runs discard the proposal, so existing retry and error-backoff behavior takes precedence. Manually forcing a recurring job is out-of-band and preserves its pending natural or paced slot. For condition-triggered jobs, the built-in minimum interval remains a lower bound even when a proposal requests an earlier check.
 
+### Host suspension and `suspendWake`
+
+A host that suspends an idle Gateway (for example a paused or stopped VM) asks `gateway suspend` for the next moment it must wake the process. That deadline is the earliest `nextRunAtMs` over enabled `at`, `every`, and `cron` jobs, combined with any deferred outbound delivery. A condition watcher polling every few minutes therefore keeps the host awake even when its usual outcome is "nothing changed".
+
+Set `suspendWake: "never"` on such a job to keep its cadence out of that deadline. The job still runs normally whenever the Gateway is awake; after a resume, an overdue `every` or `cron` job runs once at the first scheduler pass (one catch-up run, never a replay of every missed tick) and then continues on its cadence. Due managed-Flow work bound to a paced job (an exact reminder or an accepted obligation) remains a wake deadline even on a `"never"` job, so the host still wakes for it. The default `"always"` (or an omitted field) keeps today's behavior: the job's next run wakes the host. `"never"` is accepted only for `every` and `cron` schedules; a one-shot `at` job must keep `"always"`.
+
 ### `/loop` chat shortcut
 
 In chat, the owner-only `/loop [interval] <prompt>` command creates a recurring agent-turn job bound to that conversation. Give an interval such as `5m` for fixed cadence, or omit it to let the loop self-pace between 1 minute and 1 hour with `next_check`. Use `/loop status` to list conversation-bound loops and `/loop stop [name]` to remove them.

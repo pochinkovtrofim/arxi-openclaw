@@ -42,6 +42,7 @@ const CRON_SCHEDULE_KINDS = ["at", "every", "cron", "stream"] as const;
 // model-facing schema must not advertise them.
 const CRON_SCHEDULE_KINDS_TRIGGERS_DISABLED = ["at", "every", "cron"] as const;
 const CRON_WAKE_MODES = ["now", "next-heartbeat"] as const;
+const CRON_SUSPEND_WAKE_POLICIES = ["always", "never"] as const;
 const CRON_PAYLOAD_KINDS = ["systemEvent", "agentTurn", "script"] as const;
 const CRON_PAYLOAD_KINDS_TRIGGERS_DISABLED = ["systemEvent", "agentTurn"] as const;
 const CRON_DELIVERY_MODES = ["none", "announce", "webhook"] as const;
@@ -372,6 +373,10 @@ export function createCronToolSchema(options?: CronToolSchemaOptions): TSchema {
           }),
         ),
         wakeMode: optionalStringEnum(CRON_WAKE_MODES, { description: "Wake timing" }),
+        suspendWake: optionalStringEnum(CRON_SUSPEND_WAKE_POLICIES, {
+          description:
+            'Host wake while the Gateway is suspended: "always" (default) wakes it for this job; "never" skips the wake and runs the job at the first tick after the host wakes (every/cron only)',
+        }),
         payload: createCronPayloadSchema({ triggersEnabled, management }),
         delivery: createCronDeliverySchema(),
         // Session-scoped updates reject retargeting; do not advertise it to the model.

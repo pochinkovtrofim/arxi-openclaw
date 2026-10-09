@@ -6,6 +6,7 @@ import {
   computeJobNextRunAtMs,
   computeJobPreviousRunAtOrBeforeMs,
   nextWakeAtMs,
+  summarizeCronJobSchedule,
 } from "./service/jobs-scheduling.js";
 import { applyDeclarativeJobSpec, applyJobPatch, createJob } from "./service/jobs.js";
 import type { CronServiceState } from "./service/state.js";
@@ -353,6 +354,43 @@ describe("time schedule validation", () => {
   });
 });
 
+describe("suspend wake policy", () => {
+  const oneShot: CronJob["schedule"] = { kind: "at", at: new Date(NOW + 60_000).toISOString() };
+  const rejection = 'cron suspendWake "never" requires an every or cron schedule';
+
+  it("stores never on recurring schedules and leaves the default absent", () => {
+    expect(createJob(state(), input({ suspendWake: "never" })).suspendWake).toBe("never");
+    expect(createJob(state(), input())).not.toHaveProperty("suspendWake");
+  });
+
+  it("rejects never on a one-shot at create and when a schedule change makes it one", () => {
+    expect(() => createJob(state(), input({ suspendWake: "never", schedule: oneShot }))).toThrow(
+      rejection,
+    );
+    expect(() =>
+      applyJobPatch(
+        job({ suspendWake: "never" }),
+        { schedule: oneShot },
+        { scheduleValidationNowMs: NOW },
+      ),
+    ).toThrow(rejection);
+    expect(() => applyJobPatch(job({ schedule: oneShot }), { suspendWake: "never" })).toThrow(
+      rejection,
+    );
+    const current = job({ suspendWake: "never" });
+    applyJobPatch(current, { schedule: { kind: "cron", expr: "0 * * * *", tz: "UTC" } });
+    expect(current.suspendWake).toBe("never");
+  });
+
+  it("converges suspendWake declaratively in both directions", () => {
+    const current = job();
+    applyDeclarativeJobSpec(current, input({ suspendWake: "never" }), convergence);
+    expect(current.suspendWake).toBe("never");
+    applyDeclarativeJobSpec(current, input(), convergence);
+    expect(current).not.toHaveProperty("suspendWake");
+  });
+});
+
 describe("announce delivery channel validation", () => {
   const configuredChannels = ["reef", "discord"];
   const options = { configuredChannels };
@@ -648,6 +686,20 @@ describe("cron schedules", () => {
       ],
     };
     expect(nextWakeAtMs(serviceState)).toBe(NOW + 60_000);
+  });
+
+  it("keeps a suspendWake never cadence on the timer but off the host wake", () => {
+    const serviceState = state();
+    const watch = job({ id: "watch", suspendWake: "never", state: { nextRunAtMs: NOW + 60_000 } });
+    const reminder = job({ id: "reminder", state: { nextRunAtMs: NOW + 3_600_000 } });
+    serviceState.store = { version: 1, jobs: [watch, reminder] };
+    expect(summarizeCronJobSchedule(serviceState)).toMatchObject({
+      nextWakeAtMs: NOW + 60_000,
+      nextSuspendWakeAtMs: NOW + 3_600_000,
+    });
+    serviceState.store = { version: 1, jobs: [watch] };
+    expect(nextWakeAtMs(serviceState)).toBe(NOW + 60_000);
+    expect(summarizeCronJobSchedule(serviceState).nextSuspendWakeAtMs).toBeUndefined();
   });
 
   it("derives fresh top-of-hour staggering when replacing an expression", () => {

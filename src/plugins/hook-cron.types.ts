@@ -74,6 +74,7 @@ export type PluginHookGatewayCronJob = {
       };
   sessionTarget?: string;
   wakeMode?: string;
+  suspendWake?: string;
   payload?: {
     kind?: string;
     text?: string;
@@ -95,6 +96,7 @@ type PluginHookGatewayCronCreateInput = {
   };
   sessionTarget: string;
   wakeMode: string;
+  suspendWake?: string;
   payload: {
     kind: string;
     text?: string;

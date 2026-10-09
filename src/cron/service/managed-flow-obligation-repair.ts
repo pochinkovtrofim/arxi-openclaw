@@ -5,6 +5,7 @@ import {
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
 /** Restores durable managed-Flow Automation receipts into their exact paced cron job. */
 import { cronStoreKey } from "../store/key.js";
+import type { CronJob } from "../types.js";
 import { commitCronRuntimeRows } from "./runtime-store.js";
 import type { CronServiceState } from "./state.js";
 import type { TimedCronRunOutcome } from "./timer-execution-timeout.js";
@@ -94,13 +95,56 @@ export function repairManagedFlowAutomationObligations(state: CronServiceState):
 }
 
 /**
+ * Earliest pending managed-Flow receipt across the given paced jobs. Due owner
+ * work bound to a job whose own cadence never wakes a suspended host must still
+ * become that host's wake deadline; a far receipt never shows in the job's slot
+ * because repair only pulls a slot earlier.
+ */
+export function earliestManagedFlowObligationAtMs(
+  state: CronServiceState,
+  jobs: readonly CronJob[],
+): number | undefined {
+  const storeKey = cronStoreKey(state.deps.storePath);
+  const eligibleJobIds = jobs
+    .filter((job) => job.pacing !== undefined && tryCronScheduleIdentity(job))
+    .map((job) => job.id);
+  if (eligibleJobIds.length === 0) {
+    return undefined;
+  }
+  return commitCronRuntimeRows({
+    state,
+    jobIds: eligibleJobIds,
+    operationLabel: "cron.suspend-wake-obligations",
+    mutate: ({ database, jobs: rows }) => {
+      let earliest: number | undefined;
+      for (const jobId of eligibleJobIds) {
+        const job = rows.get(jobId);
+        const scheduleIdentity = job ? tryCronScheduleIdentity(job) : undefined;
+        if (!job || !job.enabled || job.pacing === undefined || !scheduleIdentity) {
+          continue;
+        }
+        const receipt = listTaskFlowAutomationObligationsForCronJobFromSqlite(database, {
+          cronStoreKey: storeKey,
+          cronJobId: job.id,
+          phases: ["bound", "scheduled"],
+        }).find((entry) => entry.cronScheduleIdentity === scheduleIdentity);
+        if (receipt && (earliest === undefined || receipt.scheduledAtMs < earliest)) {
+          earliest = receipt.scheduledAtMs;
+        }
+      }
+      return { upsertJobIds: [], runHooks: false, value: earliest };
+    },
+  });
+}
+
+/**
  * A scheduled receipt is one timer opportunity. Once that timer run reaches a
  * terminal outcome, suspend it unless the run itself atomically replaced it.
  */
 export function suspendConsumedManagedFlowAutomationObligations(params: {
   database: import("node:sqlite").DatabaseSync;
   storePath: string;
-  jobs: ReadonlyMap<string, import("../types.js").CronJob>;
+  jobs: ReadonlyMap<string, CronJob>;
   outcomes: readonly TimedCronRunOutcome[];
 }): void {
   const storeKey = cronStoreKey(params.storePath);

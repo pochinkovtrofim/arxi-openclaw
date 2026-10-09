@@ -24,6 +24,7 @@ export function declarativeFields(job: CronStoredJob, includeEnabled: boolean) {
   return {
     schedule: job.schedule,
     pacing: job.pacing,
+    suspendWake: job.suspendWake,
     trigger: job.trigger,
     payload: job.payload,
     scheduledToolPolicy: job.scheduledToolPolicy,

@@ -44,6 +44,7 @@ import {
   assertScriptPayloadSupport,
   assertStreamScheduleSupport,
   assertSupportedJobSpec,
+  assertSuspendWakeSupport,
   assertTriggerSupport,
 } from "./jobs-validation.js";
 import { normalizeOptionalAgentId, normalizeRequiredName } from "./normalize.js";
@@ -167,6 +168,7 @@ function validateFullJob(
   }
   assertSupportedJobSpec(job);
   assertPacingSupport(job);
+  assertSuspendWakeSupport(job);
   if (context.kind !== "declarative") {
     validateCapabilities();
   }
@@ -247,6 +249,7 @@ export function createJob(
     ...(input.pacing !== undefined ? { pacing: structuredClone(input.pacing) } : {}),
     sessionTarget: input.sessionTarget,
     wakeMode: input.wakeMode,
+    ...(input.suspendWake ? { suspendWake: input.suspendWake } : {}),
     payload:
       input.payload.kind === "script"
         ? normalizeCronScriptPayload(structuredClone(input.payload))
@@ -357,6 +360,9 @@ export function applyJobPatch(
   }
   if (patch.wakeMode) {
     job.wakeMode = patch.wakeMode;
+  }
+  if (patch.suspendWake) {
+    job.suspendWake = patch.suspendWake;
   }
   if (patch.payload) {
     job.payload = mergeCronPayload(job.payload, patch.payload);
@@ -486,6 +492,11 @@ export function applyDeclarativeJobSpec(
     job.pacing = structuredClone(input.pacing);
   } else {
     delete job.pacing;
+  }
+  if (input.suspendWake !== undefined) {
+    job.suspendWake = input.suspendWake;
+  } else {
+    delete job.suspendWake;
   }
   job.payload =
     input.payload.kind === "script"
