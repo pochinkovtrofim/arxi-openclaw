@@ -3093,7 +3093,8 @@ describe("diagnostics-otel service", () => {
     );
     const readCall = telemetryState.tracer.startSpan.mock.calls.find(
       (call) =>
-        call[0] === "openclaw.tool.execution" && call[1]?.attributes?.["openclaw.toolName"] === "read",
+        call[0] === "openclaw.tool.execution" &&
+        call[1]?.attributes?.["openclaw.toolName"] === "read",
     );
     expect(Object.hasOwn(readCall?.[1]?.attributes ?? {}, "openclaw.tool.exec_class")).toBe(false);
     const toolDuration = lastHistogramRecord("openclaw.tool.execution.duration_ms");
