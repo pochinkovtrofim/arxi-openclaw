@@ -7,6 +7,7 @@ import {
   buildSessionEntry,
   statSessionEntrySync,
 } from "openclaw/plugin-sdk/memory-core-host-engine-sessions";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import type { MemorySyncParams } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import { resetPluginStateStoreForTests } from "openclaw/plugin-sdk/plugin-state-test-runtime";
 import {
@@ -752,6 +753,34 @@ describe("session startup catch-up", () => {
       }
     },
   );
+
+  it("collects transcript changes for the configured memory-core session index delay", async () => {
+    vi.useFakeTimers();
+    const session = await writeSessionFile("thread.jsonl.reset.2026-06-23T10-00-00.000Z");
+    class MinuteDelayHarness extends SessionStartupCatchupHarness {
+      protected override readonly cfg = {
+        plugins: { entries: { "memory-core": { config: { sessionSync: { debounceMs: 60_000 } } } } },
+      } as OpenClawConfig;
+    }
+    const harness = new MinuteDelayHarness([], true);
+    harness.startTranscriptListener();
+
+    try {
+      emitSessionTranscriptUpdate({ sessionFile: session.filePath });
+      await harness.waitForCorpusList();
+      // The default five-second delay no longer starts a re-index.
+      await vi.advanceTimersByTimeAsync(59_999);
+      await harness.waitForSessionSync();
+      expect(harness.syncCalls).toEqual([]);
+      expect(harness.getPendingArchiveFiles()).toEqual([session.filePath]);
+
+      await vi.advanceTimersByTimeAsync(1);
+      await harness.waitForSessionSync();
+      expect(harness.syncCalls.map((call) => call.archiveFiles)).toEqual([[session.filePath]]);
+    } finally {
+      harness.stopTranscriptListener();
+    }
+  });
 
   it.each([
     "thread.jsonl.bak.2026-06-23T10-00-00.000Z",
