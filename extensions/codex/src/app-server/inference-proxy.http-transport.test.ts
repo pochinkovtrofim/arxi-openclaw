@@ -303,6 +303,9 @@ describe("HTTP-only inference transport", () => {
     });
     await upstream.waitFor("request", 1);
     const forwarded = upstream.requests[0];
+    if (!forwarded) {
+      throw new Error("fixture did not record the upstream request");
+    }
     expect(JSON.parse(forwarded.body.toString())).toEqual(child);
     expect(forwarded.headers).toMatchObject({
       accept: "text/event-stream",
@@ -339,6 +342,9 @@ describe("HTTP-only inference transport", () => {
     const upload = post(proxy, zstdCompressSync(wire), { "content-encoding": "zstd" });
     await upstream.waitFor("request", 1);
     const forwarded = upstream.requests[0];
+    if (!forwarded) {
+      throw new Error("fixture did not record the upstream request");
+    }
     expect(forwarded.headers["content-encoding"]).toBe("zstd");
     expect(zstdDecompressSync(forwarded.body)).toEqual(wire);
     upstream.controllers[0]?.close();
