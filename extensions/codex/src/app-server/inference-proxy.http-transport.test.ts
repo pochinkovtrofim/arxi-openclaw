@@ -370,7 +370,9 @@ describe("HTTP-only inference transport", () => {
     const body = collect(response);
     // Stream well past the shortened receipt bound: eight more events, 150 ms apart.
     for (let index = 1; index <= 8; index++) {
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 150);
+      });
       upstream.send(0, `data: synthetic delta ${index}\n\n`);
       await body.waitFor(index + 1);
     }
