@@ -135,22 +135,7 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
     if (this.closed || !this.memoryWatchDegraded || this.memoryWatchRebuilding) {
       return;
     }
-    // ensureWatcher must not start a second watcher while this one is replaced.
-    this.memoryWatchRebuilding = true;
-    let watcher: MemoryFileWatcher | undefined;
-    try {
-      const previous = this.fileWatcher;
-      this.fileWatcher = undefined;
-      await previous?.close().catch((error: unknown) => {
-        log.warn(`memory watcher close failed: ${String(error)}`);
-      });
-      if (this.closed) {
-        return;
-      }
-      watcher = this.createMemoryFileWatcher();
-    } finally {
-      this.memoryWatchRebuilding = false;
-    }
+    const watcher = await this.replaceMemoryFileWatcher();
     if (!watcher) {
       return;
     }
@@ -182,6 +167,21 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
     // Edits made while no watcher ran are picked up once, now.
     this.dirty = true;
     runDetachedMemorySync(() => this.sync({ reason: "watch" }), "watch");
+  }
+
+  /** Closes the failed watcher and creates its replacement; ensureWatcher waits meanwhile. */
+  private async replaceMemoryFileWatcher(): Promise<MemoryFileWatcher | undefined> {
+    this.memoryWatchRebuilding = true;
+    try {
+      const previous = this.fileWatcher;
+      this.fileWatcher = undefined;
+      await previous?.close().catch((error: unknown) => {
+        log.warn(`memory watcher close failed: ${String(error)}`);
+      });
+      return this.closed ? undefined : this.createMemoryFileWatcher();
+    } finally {
+      this.memoryWatchRebuilding = false;
+    }
   }
 
   private createMemoryFileWatcher(): MemoryFileWatcher {
