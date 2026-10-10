@@ -3,6 +3,7 @@
  */
 import {
   emitTrustedDiagnosticEvent,
+  resolveDiagnosticExecClass,
   type DiagnosticTraceContext,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import type { CodexDynamicToolRuntimeResponse } from "./dynamic-tool-response-state.js";
@@ -26,7 +27,10 @@ export function readDynamicToolErrorCode(value: unknown): string | undefined {
 }
 
 function diagnosticToolIdentity(params: DynamicToolDiagnosticContext) {
+  // Content-free command class only; the arguments themselves never leave here.
+  const execClass = resolveDiagnosticExecClass(params.call.tool, params.call.arguments);
   return {
+    ...(execClass ? { execClass } : {}),
     agentId: params.agentId,
     runId: params.runId,
     sessionId: params.sessionId,

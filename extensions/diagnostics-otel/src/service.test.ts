@@ -3053,6 +3053,53 @@ describe("diagnostics-otel service", () => {
     expect(toolSpans[0]?.end).toHaveBeenCalledWith(1_250);
   });
 
+  test("puts the content-free exec class on exec tool spans only", async () => {
+    await startServiceFixture(["traces", "metrics"]);
+
+    emitTrustedEvent("tool.execution.started", {
+      runId: "run-exec-class",
+      toolName: "exec",
+      toolCallId: "call-exec-class",
+      execClass: "python3",
+      paramsSummary: { kind: "object" },
+      sourceTimestampMs: 1_000,
+      trace: createTestTrace(TOOL_SPAN_ID, CHILD_SPAN_ID),
+    });
+    await emitTrustedEventAndFlush("tool.execution.completed", {
+      runId: "run-exec-class",
+      toolName: "exec",
+      toolCallId: "call-exec-class",
+      execClass: "python3",
+      paramsSummary: { kind: "object" },
+      durationMs: 40,
+      sourceTimestampMs: 1_040,
+      trace: createTestTrace(TOOL_SPAN_ID, CHILD_SPAN_ID),
+    });
+    await emitTrustedAndFlush({
+      type: "tool.execution.completed",
+      runId: "run-read",
+      toolName: "read",
+      toolCallId: "call-read",
+      durationMs: 5,
+    });
+
+    expect(startedSpanOptions("openclaw.tool.execution")?.attributes).toMatchObject({
+      "openclaw.toolName": "exec",
+      "openclaw.tool.exec_class": "python3",
+    });
+    const execSpan = spanByName("openclaw.tool.execution");
+    expect(execSpan?.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({ "openclaw.tool.exec_class": "python3" }),
+    );
+    const readCall = telemetryState.tracer.startSpan.mock.calls.find(
+      (call) =>
+        call[0] === "openclaw.tool.execution" && call[1]?.attributes?.["openclaw.toolName"] === "read",
+    );
+    expect(Object.hasOwn(readCall?.[1]?.attributes ?? {}, "openclaw.tool.exec_class")).toBe(false);
+    const toolDuration = lastHistogramRecord("openclaw.tool.execution.duration_ms");
+    expect(Object.hasOwn(toolDuration?.[1] ?? {}, "openclaw.tool.exec_class")).toBe(false);
+  });
+
   test("uses authoritative source timestamps for terminal-only tool spans", async () => {
     await startServiceFixture(["traces", "metrics"]);
 
