@@ -1,3 +1,4 @@
+import type { EmbeddingInput } from "openclaw/plugin-sdk/embedding-providers";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { describe, expect, it } from "vitest";
 import {
@@ -7,11 +8,14 @@ import {
 
 type SentRequest = { slice: string[]; release: () => void; released: boolean };
 
+const textOf = (input: EmbeddingInput) => (typeof input === "string" ? input : input.text);
+
 function createSendRecorder() {
   const sent: SentRequest[] = [];
   let active = 0;
   let maxActive = 0;
-  const send = async (slice: string[]) => {
+  const send = async (inputs: EmbeddingInput[]) => {
+    const slice = inputs.map(textOf);
     active += 1;
     maxActive = Math.max(maxActive, active);
     const completion = createDeferred<void>();
@@ -75,7 +79,7 @@ describe("local embedding schedule", () => {
     const recorder = createSendRecorder();
     const order: string[] = [];
     const batch = schedule.runIndexBatch(["a", "b", "c", "d"], undefined, async (slice) => {
-      order.push(`batch:${slice.join("")}`);
+      order.push(`batch:${slice.map(textOf).join("")}`);
       return await recorder.send(slice);
     });
     await flush();
