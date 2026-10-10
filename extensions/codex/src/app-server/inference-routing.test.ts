@@ -721,7 +721,7 @@ describe("managed inference route ownership", () => {
       }
       expect(response.statusCode).toBe(426);
       expect(response.headers).toMatchObject({ connection: "close", "content-type": "text/plain" });
-      expect(Buffer.concat(chunks).toString()).toContain("HTTP Responses only");
+      expect(Buffer.concat(chunks).toString()).toContain("serves HTTP only");
     } finally {
       socket.terminate();
     }

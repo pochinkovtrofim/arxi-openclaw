@@ -232,7 +232,7 @@ describe("HTTP-only inference transport", () => {
     const rejection = await upgrade(proxy);
     expect(rejection.status).toBe(426);
     expect(rejection.headers).toMatchObject({ connection: "close", "content-type": "text/plain" });
-    expect(rejection.body).toBe("Codex parent-local inference relay serves HTTP Responses only.");
+    expect(rejection.body).toBe("Codex relay serves HTTP only.");
     expect(transport.resolve).not.toHaveBeenCalled();
     expect(transport.dials).toEqual([]);
     // More refused handshakes than the relay has resident and pending slots (80 + 16).
