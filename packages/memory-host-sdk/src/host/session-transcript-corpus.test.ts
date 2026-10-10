@@ -80,6 +80,52 @@ describe("listSessionTranscriptCorpusEntriesForAgent", () => {
     },
   );
 
+  it("classifies persistent cron targets as cron but never the main session", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const storePath = path.join(state.sessionsDir(), "sessions.json");
+      const rows = [
+        [
+          "agent:main:arxi-proactive-steward",
+          { sessionId: "steward", updatedAt: 1, createdVia: "cron" },
+        ],
+        [
+          "agent:main:arxi-interest-watch-0a1b",
+          { sessionId: "watch", updatedAt: 2, createdVia: "cron" },
+        ],
+        [
+          "agent:main:steward-child",
+          { sessionId: "child", updatedAt: 3, spawnedBy: "agent:main:arxi-proactive-steward" },
+        ],
+        ["agent:main:main", { sessionId: "main-chat", updatedAt: 4, createdVia: "cron" }],
+        [
+          "agent:main:telegram:direct:42",
+          { sessionId: "owner-chat", updatedAt: 5, createdVia: "channel" },
+        ],
+        ["agent:main:legacy", { sessionId: "legacy-chat", updatedAt: 6 }],
+      ] as const;
+      for (const [sessionKey, entry] of rows) {
+        await upsertSessionEntryCore({ sessionKey, storePath }, { ...entry });
+      }
+      const entries = await listSessionTranscriptCorpusEntriesForAgent("main", {
+        includeContentRevision: false,
+      });
+      const kinds = Object.fromEntries(
+        entries.map((entry) => [
+          entry.sessionId,
+          [entry.sessionKind, entry.generatedByCronRun === true],
+        ]),
+      );
+      expect(kinds).toEqual({
+        steward: ["cron", true],
+        watch: ["cron", true],
+        child: ["cron", true],
+        "main-chat": ["interactive", false],
+        "owner-chat": ["interactive", false],
+        "legacy-chat": ["interactive", false],
+      });
+    });
+  });
+
   it.each([false, true])(
     "classifies prompt-rich entries without decoding saved prompts (readOnly: %s)",
     async (readOnly) => {
