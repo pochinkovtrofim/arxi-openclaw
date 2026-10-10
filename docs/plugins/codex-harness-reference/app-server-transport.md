@@ -94,6 +94,7 @@ managed stdio or the local Unix control socket for production workloads.
 | Field                            | Default                                                | Meaning                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | -------------------------------- | ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `transport`                      | `"stdio"`                                              | `"stdio"` spawns Codex; explicit `"unix"` connects to the local control socket; `"websocket"` connects to `url`.                                                                                                                                                                                                                                                                                                                   |
+| `inferenceTransport`             | `"websocket"`                                          | Managed stdio only. `"http"` answers native WebSocket upgrades with HTTP 426 so Codex uses plain HTTP Responses for the whole session; see [HTTP-only inference](#http-only-inference).                                                                                                                                                                                                                                            |
 | `homeScope`                      | `"agent"`                                              | `"agent"` isolates ordinary harness state per OpenClaw agent. `"user"` is an explicit opt-in that shares the native `$CODEX_HOME` or `~/.codex`, uses native auth, and enables owner-only thread management. User scope supports local stdio or Unix transport. For the separate supervision connection, an unset value resolves to `"user"` for stdio or Unix and `"agent"` for WebSocket.                                        |
 | `command`                        | managed Codex binary                                   | Executable for stdio transport. Leave unset to use the managed binary.                                                                                                                                                                                                                                                                                                                                                             |
 | `args`                           | `["app-server", "--listen", "stdio://"]`               | Arguments for stdio transport.                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -113,6 +114,34 @@ managed stdio or the local Unix control socket for production workloads.
 | `enableUltrafast`                | `false`                                                | Upgrade Codex turns to `ultrafast` only when the authenticated app-server catalog advertises it for the selected native model. Unsupported models and unavailable catalogs keep the current tier; shared Fast off remains off.                                                                                                                                                                                                     |
 | `networkProxy`                   | disabled                                               | Opt into Codex permissions-profile networking for app-server commands. OpenClaw defines the selected `permissions.<profile>.network` config and selects it with `default_permissions` instead of sending `sandbox`.                                                                                                                                                                                                                |
 | `experimental.sandboxExecServer` | `false`                                                | Preview opt-in that registers an OpenClaw sandbox-backed Codex environment with the supported Codex app-server so native Codex execution can run inside the active OpenClaw sandbox.                                                                                                                                                                                                                                               |
+
+## HTTP-only inference
+
+Managed stdio connections reach the model provider through OpenClaw's private
+inference relay. Native Codex opens that route over a WebSocket by default and
+sends only incremental input with `previous_response_id` while the socket lives;
+after any reconnect it resends the full input without a continuation, and the
+provider then reports no cached prompt tokens. Idle relay sockets close after
+60 seconds, so a run that starts a few minutes after the previous one usually
+pays a cold prefill of the whole context.
+
+`appServer.inferenceTransport: "http"` makes the relay answer every WebSocket
+upgrade with HTTP 426 Upgrade Required before any admission or upstream work.
+Codex treats that answer as "use HTTP Responses for this session": the same
+request proceeds over HTTP in the same call and later turns stay on HTTP. Every
+HTTP request carries the full `input` and the thread's stable `prompt_cache_key`,
+so the provider's prefix cache applies across turns (OpenAI keeps cached prefixes
+warm for minutes to an hour on current models). Streaming responses, zstd request
+bodies, `x-codex-*` rate-limit and `x-codex-turn-state` headers, and
+`X-Models-Etag` pass through the relay unchanged; the relay bounds only request
+receipt and queue waits, never a streaming response.
+
+Trade-offs: every request uploads the full input again (about 4 bytes per prompt
+token; a busy owner with 40k-token contexts can upload hundreds of megabytes per
+day), and HTTP has no mid-response interrupt message, so an interrupt drops the
+request instead. Leave the default `"websocket"` where sockets stay open between
+turns. Changing the value restarts the managed client because the relay mode is
+part of its identity.
 
 `appServer.args` accepts an array (recommended) or a quoted argument string.
 `OPENCLAW_CODEX_APP_SERVER_ARGS` uses the same string parsing on every platform:

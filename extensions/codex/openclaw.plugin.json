@@ -356,6 +356,11 @@
             "enum": ["stdio", "websocket", "unix"],
             "default": "stdio"
           },
+          "inferenceTransport": {
+            "type": "string",
+            "enum": ["websocket", "http"],
+            "default": "websocket"
+          },
           "homeScope": {
             "type": "string",
             "enum": ["agent", "user"]
@@ -668,6 +673,11 @@
     "appServer.transport": {
       "label": "Transport",
       "help": "Use stdio to spawn Codex locally or unix for the shared local control socket. Remote websocket transport is experimental and unsupported by Codex.",
+      "advanced": true
+    },
+    "appServer.inferenceTransport": {
+      "label": "Inference transport",
+      "help": "How managed Codex reaches the model provider through the inference relay. \"http\" answers WebSocket upgrades with 426 so Codex uses HTTP Responses for the whole session, keeping the provider prompt cache warm across turns at the cost of resending the full input on every request.",
       "advanced": true
     },
     "appServer.homeScope": {

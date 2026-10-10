@@ -140,6 +140,7 @@ const codexPluginConfigSchema = z.strictObject({
     .strictObject({
       mode: z.enum(["yolo", "guardian"]).optional(),
       transport: z.enum(["stdio", "websocket", "unix"]).optional(),
+      inferenceTransport: z.enum(["websocket", "http"]).optional(),
       homeScope: z.enum(["agent", "user"]).optional(),
       command: z.string().optional(),
       args: z.union([z.array(z.string()), z.string()]).optional(),

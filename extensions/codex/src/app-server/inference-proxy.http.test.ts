@@ -266,6 +266,31 @@ describe("inference HTTP transport ownership", () => {
     expect(requests.every(({ req }) => req.socket?.closed)).toBe(true);
   });
 
+  it("aborts the upstream SSE stream when the client disconnects mid-response", async () => {
+    const upstreamClosed = createDeferred<ServerResponse>();
+    handle = (req, res) => {
+      void readBody(req).then(() => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write("data: synthetic delta 1\n\n");
+        const timer = setInterval(() => res.write("data: synthetic delta\n\n"), 20);
+        res.once("close", () => {
+          clearInterval(timer);
+          upstreamClosed.resolve(res);
+        });
+      });
+    };
+    const upload = post();
+    const response = await upload.response;
+    expect(response.statusCode).toBe(200);
+    const [first] = await once(response, "data");
+    expect(Buffer.from(first).toString()).toContain("synthetic delta 1");
+    // Native interrupts an HTTP turn by dropping the request; the relay must drop upstream too.
+    response.destroy();
+    const upstream = await upstreamClosed.promise;
+    expect(upstream.writableEnded).toBe(false);
+    await Promise.all([upload.closed, waitForUpstreamClose()]);
+  });
+
   it("cancels a backpressured upload after early response headers and drains owned sockets", async (context) => {
     const received = createDeferred<IncomingMessage>();
     const writes = { blocked: 0, drained: 0 };

@@ -253,8 +253,11 @@ with room for 16 pending or closing admissions. It retains up to 64 usable
 WebSockets and reclaims the oldest completed idle connection when either
 transport needs room. Active responses and newly opened connections awaiting
 their first request are not evicted. HTTP connections close after each response;
-native WebSocket reuse remains intact. The separate limit of 64 admitted root
-contexts is unchanged; transport capacity is not a count of saved conversations.
+native WebSocket reuse remains intact. With `appServer.inferenceTransport: "http"`
+the relay refuses every WebSocket upgrade with 426 and the whole 80-operation
+envelope serves HTTP model calls, which may stream for minutes. The separate
+limit of 64 admitted root contexts is unchanged; transport capacity is not a
+count of saved conversations.
 
 A new WebSocket waits before opening its upstream connection; admission and its
 handshake share a 10-second deadline. HTTP admission and queued WebSocket

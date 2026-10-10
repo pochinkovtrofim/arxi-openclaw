@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { defineCodexBuildState } from "../build-state.js";
 import type { CodexAppServerClient } from "./client.js";
-import type { CodexAppServerStartOptions } from "./config-contracts.js";
+import type { CodexAppServerStartOptions, CodexInferenceTransport } from "./config-contracts.js";
 import {
   CODEX_SESSION_OVERRIDABLE_LAYER_TYPES,
   readCodexEffectiveConfig,
@@ -43,6 +43,7 @@ type Owner = {
   >;
   authRoute?: "apiKey" | "chatgpt";
   oauth?: CodexResponsesOAuth;
+  inferenceTransport: CodexInferenceTransport;
 };
 // Shared clients survive duplicate module loads; their inference ownership must too.
 const owners = defineCodexBuildState(
@@ -55,7 +56,7 @@ const MAX_THREADS = 256;
 /** Only managed native stdio startup calls this; locality or metadata cannot opt a client in. */
 export function ownCodexInferenceClient(
   client: CodexAppServerClient,
-  startOptions: Pick<CodexAppServerStartOptions, "env" | "clearEnv"> = {},
+  startOptions: Pick<CodexAppServerStartOptions, "env" | "clearEnv" | "inferenceTransport"> = {},
   oauth?: CodexResponsesOAuth,
 ): void {
   if (owners.has(client)) {
@@ -78,6 +79,7 @@ export function ownCodexInferenceClient(
     threads: new Map(),
     handles: new Map(),
     oauth,
+    inferenceTransport: startOptions.inferenceTransport === "http" ? "http" : "websocket",
   };
   owners.set(client, owner);
   const close = () => {
@@ -342,6 +344,7 @@ async function prepareCodexInferenceRoute(params: {
         upstream: target,
         assertCurrent: assertClient,
         oauth: owner.oauth,
+        inferenceTransport: owner.inferenceTransport,
         preserveAzureUrlFeatures,
         preserveCodexBackendRoutes,
         bindModelExecution: createCodexInferenceModelBinding({

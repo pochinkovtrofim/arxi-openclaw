@@ -14,6 +14,7 @@ import {
   WebSocket,
   WebSocketServer,
 } from "openclaw/plugin-sdk/websocket-runtime";
+import type { CodexInferenceTransport } from "./config-contracts.js";
 import { createCodexInferenceContext } from "./inference-context.js";
 import {
   authorizationFailure,
@@ -48,6 +49,8 @@ const MAX_RESIDENTS = MAX_WEBSOCKETS + MAX_UPLOADS;
 const REQUEST_TIMEOUT_MS = 30_000;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
 const IDLE_WEBSOCKET_MS = 60_000;
+// Native Codex treats a 426 handshake answer as "use HTTP Responses for this session".
+const HTTP_TRANSPORT_REQUIRED = "Codex parent-local inference relay serves HTTP Responses only.";
 
 type ResidentTicket = {
   signal: AbortSignal;
@@ -62,6 +65,13 @@ export async function createCodexInferenceProxy(params: {
   upstream: URL;
   assertCurrent: () => void;
   oauth?: CodexResponsesOAuth;
+  /**
+   * `"http"` refuses every WebSocket upgrade with 426 so native Codex falls back to
+   * plain HTTP Responses for the whole session. Each HTTP request resends the full
+   * input under one `prompt_cache_key`, so the provider's prefix cache survives the
+   * idle gaps that would otherwise restart a WebSocket continuation cold.
+   */
+  inferenceTransport?: CodexInferenceTransport;
   preserveAzureUrlFeatures?: boolean;
   preserveCodexBackendRoutes?: boolean;
   bindModelExecution?: (
@@ -69,6 +79,7 @@ export async function createCodexInferenceProxy(params: {
   ) => Promise<CodexInferenceModelExecution> | CodexInferenceModelExecution;
 }) {
   const upstream = new URL(params.upstream);
+  const httpOnly = params.inferenceTransport === "http";
   if (upstream.protocol !== "https:" || upstream.username || upstream.password || upstream.hash) {
     throw new Error("Codex inference requires a credential-free HTTPS upstream URL");
   }
@@ -358,9 +369,21 @@ export async function createCodexInferenceProxy(params: {
   // Leave HTTP/failure-response headroom beyond the separately bounded WS pool.
   // This last-resort TCP ceiling must not be the normal inference admission limit.
   server.maxConnections = MAX_WEBSOCKETS + MAX_UPLOADS * 4;
+  // Both bounds cover request receipt only. Node stops the request clock once the
+  // request message is complete, so a streaming response may run for minutes.
   server.requestTimeout = REQUEST_TIMEOUT_MS;
   server.headersTimeout = HANDSHAKE_TIMEOUT_MS;
   server.on("upgrade", (req, socket, head) => {
+    if (httpOnly) {
+      // Answer before any route, admission or upstream work: the handshake consumes
+      // no resident slot, and the same request proceeds over HTTP in native's call.
+      socket.once("error", () => {});
+      rejectWebSocketUpgrade(socket, {
+        status: 426,
+        body: { contentType: "text/plain", text: HTTP_TRANSPORT_REQUIRED },
+      });
+      return;
+    }
     void (async () => {
       let remote: WebSocket | undefined;
       let local: WebSocket | undefined;
