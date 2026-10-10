@@ -798,7 +798,19 @@ export type DiagnosticContextAssembledEvent = DiagnosticBaseEvent & {
   promptImages: number;
   contextTokenBudget?: number;
   reserveTokens?: number;
+  /** Content-free timing of the gating plugin hooks that ran before this prompt. */
+  promptHooks?: DiagnosticHookPhaseTiming;
+  agentRunHooks?: DiagnosticHookPhaseTiming;
 };
+
+/** Sequential plugin hook phase timing; labels are plugin/registration code ids. */
+export type DiagnosticHookPhaseTiming = Readonly<{
+  durationMs: number;
+  count: number;
+  timeouts: number;
+  slowest: string;
+  slowestMs: number;
+}>;
 
 export type DiagnosticMemorySampleEvent = DiagnosticBaseEvent & {
   type: "diagnostic.memory.sample";
