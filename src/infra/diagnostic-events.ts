@@ -14,6 +14,7 @@ import {
   createDiagnosticMetadataForListener,
   deepFreezeDiagnosticValue,
 } from "./diagnostic-event-snapshot.js";
+import type { DiagnosticExecCommandClass } from "./diagnostic-exec-class.js";
 import {
   consumeCoreModelRequestLifecycleDiagnosticEvent,
   CORE_MODEL_REQUEST_LIFECYCLE_METADATA_KEY,
@@ -567,6 +568,11 @@ type DiagnosticToolExecutionBaseEvent = DiagnosticBaseEvent & {
   toolOwner?: string;
   toolCallId?: string;
   paramsSummary?: DiagnosticToolParamsSummary;
+  /**
+   * Content-free class of an `exec` command: an allowlisted binary name or
+   * "other", never arguments or paths. See diagnostic-exec-class.ts.
+   */
+  execClass?: DiagnosticExecCommandClass;
   /** Deterministic mutation classification computed before tool execution. */
   mutatingAction?: boolean;
 };
