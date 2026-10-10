@@ -1,4 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const hoisted = vi.hoisted(() => ({ emitTrustedDiagnosticEvent: vi.fn() }));
+vi.mock("../../infra/diagnostic-events.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../infra/diagnostic-events.js")>()),
+  emitTrustedDiagnosticEvent: hoisted.emitTrustedDiagnosticEvent,
+}));
+
 import {
   getGlobalHookRunner,
   initializeGlobalHookRunner,
@@ -11,9 +18,69 @@ import { resolveAgentHarnessBeforePromptBuildResult } from "./prompt-compaction-
 
 afterEach(() => {
   resetGlobalHookRunner();
+  hoisted.emitTrustedDiagnosticEvent.mockReset();
 });
 
 describe("resolveAgentHarnessBeforePromptBuildResult", () => {
+  it("reports context.assembled with the prompt hook timing for harness turns", async () => {
+    initializeGlobalHookRunner(
+      createMockPluginRegistry([
+        {
+          hookName: "before_prompt_build",
+          pluginId: "arxi-channel",
+          registrationId: "relationship-state",
+          handler: () => ({ appendContext: "state" }),
+        },
+      ]),
+    );
+    const trace = {
+      traceId: "0123456789abcdef0123456789abcdef",
+      spanId: "0123456789abcdef",
+      traceFlags: "01",
+    };
+    await resolveAgentHarnessBeforePromptBuildResult({
+      prompt: "hello",
+      messages: [{ role: "user", content: "earlier" }],
+      developerInstructions: "base",
+      ctx: {
+        runId: "harness-run",
+        sessionKey: "agent:main:telegram:direct:1",
+        modelProviderId: "openai",
+        modelId: "gpt-test",
+        trigger: "user",
+        trace,
+      },
+    });
+
+    expect(hoisted.emitTrustedDiagnosticEvent).toHaveBeenCalledOnce();
+    const event = hoisted.emitTrustedDiagnosticEvent.mock.calls[0]?.[0];
+    expect(event).toMatchObject({
+      type: "context.assembled",
+      runId: "harness-run",
+      provider: "openai",
+      model: "gpt-test",
+      trigger: "user",
+      messageCount: 1,
+      historyTextChars: 7,
+      promptChars: "hello\n\nstate".length,
+      promptHooks: { count: 1, timeouts: 0, slowest: "arxi-channel:relationship-state" },
+    });
+    expect(event.trace).toMatchObject({ traceId: trace.traceId, parentSpanId: trace.spanId });
+  });
+
+  it("reports context.assembled even when no prompt hooks are registered", async () => {
+    await resolveAgentHarnessBeforePromptBuildResult({
+      prompt: "hello",
+      messages: async () => [],
+      developerInstructions: "base",
+      ctx: { runId: "plain-run" },
+    });
+    expect(hoisted.emitTrustedDiagnosticEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "context.assembled", runId: "plain-run", messageCount: 0 }),
+    );
+    expect(hoisted.emitTrustedDiagnosticEvent.mock.calls[0]?.[0]).not.toHaveProperty("promptHooks");
+  });
+
   it.each([false, true])(
     "preserves the admitted request through projected prompts (authorized=%s)",
     async (authorized) => {
