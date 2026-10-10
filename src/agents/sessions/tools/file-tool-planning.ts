@@ -26,7 +26,7 @@ const pool = new WorkerTaskPool<FileToolPlanningRequest, FileToolPlanningResult>
 
 function countLines(text: string, limit: number): number {
   let lines = 1;
-  for (let index = text.indexOf("\n"); index !== -1 && lines <= limit; ) {
+  for (let index = text.indexOf("\n"); index !== -1 && lines <= limit;) {
     lines++;
     index = text.indexOf("\n", index + 1);
   }

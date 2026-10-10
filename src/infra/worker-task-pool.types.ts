@@ -108,8 +108,6 @@ export type Task<Input, Output> = Deferred<Output> & {
   owner?: TaskOwner;
   inputBytes: number;
   computePermit?: WorkerComputePermit;
-  /** First refused shared-compute admission; cleared when the permit is granted. */
-  computeWaitStartedAt?: number;
   enqueuedAt: number;
   startedAt?: number;
   preparedAt?: number;

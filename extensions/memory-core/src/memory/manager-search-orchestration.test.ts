@@ -326,10 +326,11 @@ describe("memory index", () => {
         expect(manager.status().chunks).toBeGreaterThan(0);
         expect(manager.status().custom?.indexIdentity).toMatchObject({ status: "missing" });
       }
+      // Retrieval is interactive: only a full interactive admission budget can reject it.
       const capacityOwner = new WorkerTaskPool({
         workerUrl: resolveRuntimeWorkerUrl(memoryCpuProcessEntrypoints.search),
         maxWorkers: 1,
-        sharedCompute: true,
+        sharedCompute: "interactive",
       });
       const preparation = createDeferred<never>();
       let accepted: Promise<PromiseSettledResult<unknown>[]> = Promise.resolve([]);

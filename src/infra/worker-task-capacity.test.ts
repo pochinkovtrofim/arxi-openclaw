@@ -38,7 +38,10 @@ function createContender(
   const contender = {
     permit: undefined as WorkerComputePermit | undefined,
     acquire() {
-      contender.permit = capacity.acquire(contender.resume, checkpoint, computeClass);
+      contender.permit = capacity.acquire(contender.resume, checkpoint, {
+        computeClass,
+        lane: `compute.${computeClass}.${name}`,
+      });
       if (contender.permit) {
         order.push(name);
       }

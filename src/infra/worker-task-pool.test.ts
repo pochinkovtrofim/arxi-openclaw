@@ -463,7 +463,9 @@ describe("worker task pool", () => {
     }, {});
     const settled = Promise.allSettled([...running, queuedBatch, queuedInteractive]);
     try {
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 20);
+      });
       expect(started).toEqual([]);
       gates[0]!.resolve({ label: "first batch" });
       expect(await queuedInteractive).toMatchObject({ label: "interactive" });
@@ -477,7 +479,10 @@ describe("worker task pool", () => {
     }
     expect(await queuedBatch).toMatchObject({ label: "batch" });
     expect(started).toEqual(["interactive", "batch"]);
-    const entry = workerUrl.pathname.split("/").at(-1)!.replace(/\.[cm]?[jt]s$/u, "");
+    const entry = workerUrl.pathname
+      .split("/")
+      .at(-1)!
+      .replace(/\.[cm]?[jt]s$/u, "");
     const interactiveWaits = lanes.filter(({ lane }) => lane === `compute.interactive.${entry}`);
     expect(interactiveWaits).toHaveLength(1);
     expect(interactiveWaits[0]!.waitMs).toBeGreaterThanOrEqual(15);

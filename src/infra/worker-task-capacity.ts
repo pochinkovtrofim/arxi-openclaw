@@ -1,5 +1,6 @@
 import { availableParallelism } from "node:os";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
+import { emitInternalDiagnosticEvent } from "./diagnostic-events.js";
 
 export const DEFAULT_WORKER_PENDING_TASKS = 128;
 export const DEFAULT_WORKER_PENDING_BYTES = 256 * 1024 * 1024;
@@ -15,6 +16,23 @@ export type WorkerComputePermit = {
   requestCheckpoint: () => boolean;
   computeClass: WorkerComputeClass;
 };
+
+/** A pool's admission class and its content-free diagnostic lane (class and worker entry). */
+export type WorkerComputeLane = { computeClass: WorkerComputeClass; lane: string };
+
+export function workerComputeLane(
+  workerUrl: URL,
+  sharedCompute: boolean | "interactive" | undefined,
+): WorkerComputeLane {
+  const computeClass = sharedCompute === "interactive" ? "interactive" : "batch";
+  const entry = (workerUrl.pathname.split("/").at(-1) ?? "")
+    .replace(/\.[cm]?[jt]s$/u, "")
+    .replace(/[^A-Za-z0-9_.-]/gu, "_")
+    .slice(0, 80);
+  return { computeClass, lane: `compute.${computeClass}.${entry || "unknown"}` };
+}
+
+const BATCH_LANE: WorkerComputeLane = { computeClass: "batch", lane: "compute.batch.unknown" };
 
 /** Shared compute admission; database and generation workers keep their own ordering. */
 export function getWorkerComputeCapacity() {
@@ -42,6 +60,8 @@ function createWorkerComputeCapacity(parallelism: number) {
     interactive: { tasks: 0, bytes: 0 },
     batch: { tasks: 0, bytes: 0 },
   };
+  // First refused admission per waiting pool; a grant reports the wait as a lane diagnostic.
+  const waitSince = new Map<() => void, number>();
   let draining = false;
   const requestCheckpoints = () => {
     let demand = waiting.interactive.size + waiting.batch.size;
@@ -51,11 +71,7 @@ function createWorkerComputeCapacity(parallelism: number) {
     // Batch holders yield first; interactive holders cover only the remaining demand.
     for (const computeClass of ["batch", "interactive"] as const) {
       for (const permit of active) {
-        if (
-          permit.computeClass === computeClass &&
-          permit.requestCheckpoint() &&
-          --demand === 0
-        ) {
+        if (permit.computeClass === computeClass && permit.requestCheckpoint() && --demand === 0) {
           return;
         }
       }
@@ -74,6 +90,8 @@ function createWorkerComputeCapacity(parallelism: number) {
           const next = queue.values().next().value!;
           queue.delete(next);
           next();
+          // A resumed pool that could not start (no free worker) restarts its wait later.
+          waitSince.delete(next);
         }
       }
     } finally {
@@ -117,8 +135,9 @@ function createWorkerComputeCapacity(parallelism: number) {
     acquire(
       resume: () => void,
       requestCheckpoint: () => boolean,
-      computeClass: WorkerComputeClass = "batch",
+      compute: WorkerComputeLane = BATCH_LANE,
     ): WorkerComputePermit | undefined {
+      const { computeClass } = compute;
       // A newly submitting pool must not overtake an already waiting pool of its class,
       // and batch work never overtakes a waiting interactive pool.
       if (
@@ -127,11 +146,22 @@ function createWorkerComputeCapacity(parallelism: number) {
           (waiting.interactive.size > 0 || (computeClass === "batch" && waiting.batch.size > 0)))
       ) {
         waiting[computeClass].add(resume);
+        if (!waitSince.has(resume)) {
+          waitSince.set(resume, performance.now());
+        }
         requestCheckpoints();
         return undefined;
       }
       const permit = { requestCheckpoint, computeClass };
       active.add(permit);
+      const startedAt = waitSince.get(resume);
+      waitSince.delete(resume);
+      emitInternalDiagnosticEvent({
+        type: "queue.lane.dequeue",
+        lane: compute.lane,
+        queueSize: waiting.interactive.size + waiting.batch.size,
+        waitMs: startedAt === undefined ? 0 : Math.round(performance.now() - startedAt),
+      });
       return permit;
     },
     release(permit: WorkerComputePermit) {
@@ -139,6 +169,7 @@ function createWorkerComputeCapacity(parallelism: number) {
       drain();
     },
     remove(resume: () => void) {
+      waitSince.delete(resume);
       waiting.interactive.delete(resume);
       waiting.batch.delete(resume);
     },
