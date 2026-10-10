@@ -42,7 +42,13 @@ import {
   createHttp1Agent,
   createHttp1EnvHttpProxyAgent,
   createHttp1ProxyAgent,
+  resolveHttp1EnvProxyUris,
 } from "./undici-runtime.js";
+import {
+  createObservedOriginDispatcher,
+  observeUpstreamConnection,
+  type UpstreamConnection,
+} from "./upstream-connection-observation.js";
 
 function resolveDispatcherTimeoutMs(fromParams: number | undefined): number | undefined {
   // Fall back to module-level bridge set by ensureGlobalUndiciStreamTimeouts
@@ -100,7 +106,11 @@ export type GuardedFetchOptions = {
    */
   dangerouslyAllowEnvProxyWithoutPinnedDns?: boolean;
   auditContext?: string;
-  /** Internal opt-in for reusing freshly revalidated, direct pinned dispatchers. */
+  /**
+   * Internal opt-in for reusing freshly revalidated dispatchers: direct pinned
+   * dispatchers in strict mode and, for a pool created with envProxyTunnels, the
+   * env-proxy tunnel in trusted_env_proxy mode.
+   */
   dispatcherPool?: PinnedDispatcherPool;
 };
 
@@ -110,6 +120,8 @@ export type GuardedFetchResult = {
   release: () => Promise<void>;
   refreshTimeout?: () => void;
   dispatcherReused?: boolean;
+  /** Socket reuse and connect time, observed only on pooled env-proxy requests. */
+  connection?: UpstreamConnection;
 };
 
 export class GuardedFetchRedirectError extends Error {
@@ -492,6 +504,8 @@ async function fetchWithSsrFGuardInternal(
 
     let dispatcher: Dispatcher | null = null;
     let dispatcherLease: PinnedDispatcherLease | undefined;
+    let observeConnection = false;
+    let connection: UpstreamConnection | undefined;
     let response: Response | undefined;
     const requestController = new AbortController();
     const releaseDispatcher = async () => {
@@ -556,7 +570,38 @@ async function fetchWithSsrFGuardInternal(
         assertHostnameAllowedWithPolicy(parsedUrl.hostname, policyForUrl);
       }
 
-      if (canUseTrustedEnvProxy) {
+      if (canUseTrustedEnvProxy && params.dispatcherPool?.envProxyTunnels) {
+        const pool = params.dispatcherPool;
+        // Host policy ran above for this hop; the proxy owns destination DNS, so the
+        // key is the origin plus the exact proxy route and transport policy.
+        dispatcherLease = pool.acquire({
+          key: JSON.stringify({
+            mode: GUARDED_FETCH_MODE.TRUSTED_ENV_PROXY,
+            origin: parsedUrl.origin,
+            proxy: resolveHttp1EnvProxyUris(),
+            timeoutMs: timeoutMs ?? null,
+            familyConnect: resolveUndiciAutoSelectFamilyConnectOptions() ?? null,
+          }),
+          groupKey: parsedUrl.origin,
+          createDispatcher: () =>
+            createHttp1EnvHttpProxyAgent(
+              {
+                factory: createObservedOriginDispatcher,
+                // Close idle tunnels on our clock; a server Keep-Alive hint cannot extend it.
+                keepAliveTimeout: pool.idleTtlMs,
+                keepAliveMaxTimeout: pool.idleTtlMs,
+                ...(pool.maxActiveLeases !== undefined
+                  ? { connections: pool.maxActiveLeases }
+                  : {}),
+              },
+              timeoutMs,
+            ),
+        });
+        observeConnection = dispatcherLease !== undefined;
+        dispatcher = dispatcherLease
+          ? dispatcherLease.dispatcher
+          : createHttp1EnvHttpProxyAgent(undefined, timeoutMs);
+      } else if (canUseTrustedEnvProxy) {
         dispatcher = createHttp1EnvHttpProxyAgent(undefined, timeoutMs);
       } else if (canUseManagedProxy) {
         if (shouldCheckManagedProxyBypass) {
@@ -666,10 +711,18 @@ async function fetchWithSsrFGuardInternal(
         },
       };
       // Only transport rejection belongs here, not policy or capture failures.
-      try {
-        response = shouldUseRuntimeFetch
+      const send = async () =>
+        shouldUseRuntimeFetch
           ? await fetchWithRuntimeDispatcher(parsedUrl.toString(), init)
           : await captureAdmission.fetchImpl(parsedUrl.toString(), init);
+      try {
+        if (observeConnection) {
+          const observed = await observeUpstreamConnection(send);
+          response = observed.result;
+          connection = observed.connection;
+        } else {
+          response = await send();
+        }
       } catch (error) {
         void captureAdmission.capture?.({ ...captureParams, error });
         throw error;
@@ -730,6 +783,7 @@ async function fetchWithSsrFGuardInternal(
         release: async () => finishRequest(releaseDispatcher),
         refreshTimeout: refresh,
         dispatcherReused: dispatcherLease?.reused,
+        ...(connection ? { connection } : {}),
       };
     } catch (err) {
       if (err instanceof SsrFBlockedError) {

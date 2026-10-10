@@ -78,6 +78,9 @@ vi.mock("openclaw/plugin-sdk/ssrf-runtime", async (original) =>
   process.env.OPENCLAW_LIVE_CODEX_INFERENCE === "1"
     ? original()
     : {
+        createEnvProxyTunnelPool: (
+          await original<typeof import("openclaw/plugin-sdk/ssrf-runtime")>()
+        ).createEnvProxyTunnelPool,
         isBlockedHostnameOrIp: () => false,
         resolvePinnedHostnameWithPolicy: async () => ({ lookup: undefined }),
         fetchWithSsrFGuard: transport.fetch,

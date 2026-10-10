@@ -17,6 +17,7 @@ export {
 } from "../infra/net/ssrf.js";
 export { formatErrorMessage } from "../infra/errors.js";
 export { fetchWithSsrFGuard, GuardedFetchRedirectError } from "../infra/net/fetch-guard.js";
+export { createEnvProxyTunnelPool } from "../infra/net/pinned-dispatcher-pool.js";
 export {
   assertHttpUrlTargetsPrivateNetwork,
   buildHostnameAllowlistPolicyFromSuffixAllowlist,

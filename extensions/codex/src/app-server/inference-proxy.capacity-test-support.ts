@@ -53,7 +53,9 @@ vi.mock("node:http", async (original) => {
   };
 });
 vi.mock("openclaw/plugin-sdk/fetch-runtime", () => ({ createNodeProxyAgent: () => undefined }));
-vi.mock("openclaw/plugin-sdk/ssrf-runtime", () => ({
+vi.mock("openclaw/plugin-sdk/ssrf-runtime", async (original) => ({
+  createEnvProxyTunnelPool: (await original<typeof import("openclaw/plugin-sdk/ssrf-runtime")>())
+    .createEnvProxyTunnelPool,
   fetchWithSsrFGuard: transport.fetch,
   isBlockedHostnameOrIp: () => false,
   resolvePinnedHostnameWithPolicy: transport.resolve,

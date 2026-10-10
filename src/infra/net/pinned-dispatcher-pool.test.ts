@@ -7,7 +7,7 @@ import {
   getProviderTransportDispatcherPool,
 } from "../../agents/provider-transport-dispatcher-pool.js";
 import { createDeferredCore } from "../../shared/deferred.js";
-import { PinnedDispatcherPool } from "./pinned-dispatcher-pool.js";
+import { createEnvProxyTunnelPool, PinnedDispatcherPool } from "./pinned-dispatcher-pool.js";
 
 function createDispatcher() {
   const close = vi.fn(async () => undefined);
@@ -214,5 +214,66 @@ describe("PinnedDispatcherPool", () => {
     }
     expect(getProviderTransportDispatcherPool()).not.toBe(pool);
     await lease?.release();
+  });
+
+  it("replaces an entry past its reuse age without closing its active lease", async () => {
+    vi.useFakeTimers();
+    const pool = new PinnedDispatcherPool({
+      maxEntries: 2,
+      idleTtlMs: 60_000,
+      maxAgeMs: 120_000,
+    });
+    const old = createDispatcher();
+    const replacement = createDispatcher();
+    const acquire = (dispatcher: Dispatcher) =>
+      pool.acquire({
+        key: "origin-a/proxy",
+        groupKey: "origin-a",
+        createDispatcher: () => dispatcher,
+      });
+
+    const streaming = acquire(old.dispatcher);
+    vi.advanceTimersByTime(119_999);
+    const young = acquire(replacement.dispatcher);
+    expect(young?.dispatcher).toBe(old.dispatcher);
+    await young?.release();
+    vi.advanceTimersByTime(1);
+    const fresh = acquire(replacement.dispatcher);
+    expect(fresh?.dispatcher).toBe(replacement.dispatcher);
+    expect(fresh?.reused).toBe(false);
+    expect(old.close).not.toHaveBeenCalled();
+    await streaming?.release();
+    expect(old.close).toHaveBeenCalledOnce();
+    await fresh?.release();
+    await pool.closeAll();
+    expect(replacement.close).toHaveBeenCalledOnce();
+  });
+
+  it("refuses a lease beyond the active cap instead of queueing on the entry", async () => {
+    const pool = createEnvProxyTunnelPool({
+      maxEntries: 2,
+      idleTtlMs: 60_000,
+      maxAgeMs: 120_000,
+      maxActiveLeases: 2,
+    });
+    expect(pool.envProxyTunnels).toBe(true);
+    const created = createDispatcher();
+    const acquire = () =>
+      pool.acquire({
+        key: "origin-a/proxy",
+        groupKey: "origin-a",
+        createDispatcher: () => created.dispatcher,
+      });
+    const first = acquire();
+    const second = acquire();
+    expect(second?.dispatcher).toBe(first?.dispatcher);
+    expect(acquire()).toBeUndefined();
+    await first?.release();
+    const third = acquire();
+    expect(third?.reused).toBe(true);
+    await Promise.all([second?.release(), third?.release()]);
+    await pool.closeAll();
+    expect(created.close).toHaveBeenCalledOnce();
+    expect(new PinnedDispatcherPool({ maxEntries: 1, idleTtlMs: 1 }).envProxyTunnels).toBe(false);
   });
 });
