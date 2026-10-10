@@ -54,7 +54,10 @@ function managedOptions(port: number) {
   };
 }
 
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const flush = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 
 describe("managed llama.cpp embedding provider", () => {
   const order: string[] = [];

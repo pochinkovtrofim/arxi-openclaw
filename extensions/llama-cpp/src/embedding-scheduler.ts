@@ -93,7 +93,12 @@ async function raceWithAbort(waited: Promise<void>, signal: AbortSignal | undefi
   signal.throwIfAborted();
   let onAbort!: () => void;
   const aborted = new Promise<never>((_, reject) => {
-    onAbort = () => reject(signal.reason ?? new Error("aborted"));
+    onAbort = () =>
+      reject(
+        signal.reason instanceof Error
+          ? signal.reason
+          : new Error("aborted", { cause: signal.reason }),
+      );
     signal.addEventListener("abort", onAbort, { once: true });
   });
   try {

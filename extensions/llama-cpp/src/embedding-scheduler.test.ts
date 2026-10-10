@@ -40,7 +40,10 @@ function createSendRecorder() {
   };
 }
 
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const flush = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 
 describe("local embedding schedule", () => {
   it("sends index inputs in short sub-requests, one at a time per server, in input order", async () => {

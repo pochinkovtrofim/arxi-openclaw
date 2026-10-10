@@ -96,7 +96,7 @@ function emitMemorySearchDiagnostic(params: {
     provider: normalizeDiagnosticValue(params.provider, "other"),
     outcome: params.outcome,
     durationMs: params.durationMs,
-    ...(params.timing ?? {}),
+    ...params.timing,
   });
 }
 

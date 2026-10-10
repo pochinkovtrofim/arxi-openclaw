@@ -73,7 +73,9 @@ describe("memory index", () => {
         onTiming: (read) => readers.push(read),
       });
       await embedStarted.promise;
-      await new Promise((resolve) => setTimeout(resolve, 25));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 25);
+      });
       expect(readers).toHaveLength(1);
       // A caller giving up at its deadline still sees the query embedding it waited on.
       const inFlight = readers[0]!();
@@ -85,7 +87,9 @@ describe("memory index", () => {
       expect(settled.embedQueryMs).toBeGreaterThanOrEqual(inFlight.embedQueryMs);
       expect(settled.indexReadMs).toBeGreaterThanOrEqual(0);
       // Settled phases stop counting.
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise((resolve) => {
+        setTimeout(resolve, 10);
+      });
       expect(readers[0]!()).toEqual(settled);
 
       const lexical: Array<() => MemorySearchPhaseTiming> = [];
