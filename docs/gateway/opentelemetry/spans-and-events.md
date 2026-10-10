@@ -44,6 +44,7 @@ OpenTelemetry metrics or change Prometheus metric labels.
 - `openclaw.tool.execution`
   - `gen_ai.tool.name`, `gen_ai.operation.name` (`execute_tool`), `openclaw.toolName`, `openclaw.tool.source`, optional `gen_ai.tool.call.id`, `openclaw.tool.owner`, `openclaw.tool.params.*`, optional `openclaw.agent`
   - Optional `openclaw.errorCategory`/`openclaw.errorCode` on errors, `openclaw.deniedReason` and `openclaw.outcome=blocked` when denied by policy or sandbox
+  - For `exec`: `openclaw.tool.exec_class`, the command's first word when it is a well-known binary from a fixed allowlist (`ls`, `grep`, `curl`, `python3`, `git`, ...), otherwise `other`. Arguments, paths and output are never included. Span-only, not a metric dimension.
 - `openclaw.exec`
   - `openclaw.exec.target`, `openclaw.exec.mode`, `openclaw.outcome`, `openclaw.failureKind`, `openclaw.exec.command_length`, `openclaw.exec.exit_code`, `openclaw.exec.exit_signal`, `openclaw.exec.timed_out`
 - `openclaw.webhook.processed`

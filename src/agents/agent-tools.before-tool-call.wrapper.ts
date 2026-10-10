@@ -7,6 +7,7 @@ import {
   emitTrustedDiagnosticEvent,
   emitTrustedDiagnosticEventWithPrivateData,
 } from "../infra/diagnostic-events.js";
+import { resolveDiagnosticExecClass } from "../infra/diagnostic-exec-class.js";
 import { resolveDiagnosticModelContentCapturePolicy } from "../infra/diagnostic-llm-content.js";
 import {
   createChildDiagnosticTraceContext,
@@ -108,6 +109,11 @@ const INTERNAL_DISPOSED_RESULT = {
 };
 
 const MAX_TRACKED_ADJUSTED_PARAMS = 1024;
+
+function execClassField(toolName: string, toolParams: unknown) {
+  const execClass = resolveDiagnosticExecClass(toolName, toolParams);
+  return execClass ? { execClass } : {};
+}
 
 /** Run tool-owned preparation while retaining the exact prepared object. */
 export async function prepareBeforeToolCallExecutionParams(params: {
@@ -320,6 +326,7 @@ export function wrapToolWithBeforeToolCallHook(
         ...diagnosticIdentity,
         ...(toolCallId && { toolCallId }),
         paramsSummary: summarizeToolParams(toolParams),
+        ...execClassField(normalizedToolName, toolParams),
         mutatingAction: buildToolMutationState(normalizedToolName, toolParams).mutatingAction,
       });
       const recordPreExecutionError = (
