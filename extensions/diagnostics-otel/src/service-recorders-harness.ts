@@ -246,10 +246,15 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
       spanAttrs[`${prefix}.slowest`] = timing.slowest;
       spanAttrs[`${prefix}.slowest_ms`] = timing.slowestMs;
     }
-    const span = spanWithDuration("openclaw.context.assembled", spanAttrs, evt.promptHooks?.durationMs ?? 0, {
-      parentContext: activeTrustedParentContext(evt, metadata),
-      endTimeMs: evt.ts,
-    });
+    const span = spanWithDuration(
+      "openclaw.context.assembled",
+      spanAttrs,
+      evt.promptHooks?.durationMs ?? 0,
+      {
+        parentContext: activeTrustedParentContext(evt, metadata),
+        endTimeMs: evt.ts,
+      },
+    );
     span.end(evt.ts);
   };
 

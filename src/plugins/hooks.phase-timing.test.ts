@@ -30,7 +30,9 @@ describe("gating hook phase timing", () => {
           pluginId: "memory",
           priority: 1,
           handler: async () => {
-            await new Promise((resolve) => setTimeout(resolve, 300));
+            await new Promise<void>((resolve) => {
+              setTimeout(resolve, 300);
+            });
             return { appendContext: "recalled" };
           },
         },
