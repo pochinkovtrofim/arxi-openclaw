@@ -4,6 +4,7 @@ import {
   type DiagnosticTraceContext,
   freezeDiagnosticTraceContext,
 } from "../../../infra/diagnostic-trace-context.js";
+import { takeHookPhaseTimings } from "../../../plugins/hook-phase-timing.js";
 import type { PluginHookLlmInputEvent } from "../../../plugins/hook-types.js";
 import type { HookRunner } from "../../../plugins/hooks.js";
 import {
@@ -275,6 +276,7 @@ export function observeEmbeddedAttemptPrompt(input: {
   }
 
   const sessionSummary = summarizeSessionContext(input.sessionMessages);
+  const hookTimings = takeHookPhaseTimings(attempt.runId);
   emitTrustedDiagnosticEvent({
     type: "context.assembled",
     runId: attempt.runId,
@@ -295,6 +297,8 @@ export function observeEmbeddedAttemptPrompt(input: {
     promptImages: input.imageCount,
     contextTokenBudget: input.contextTokenBudget,
     reserveTokens: input.reserveTokens,
+    ...(hookTimings.before_prompt_build ? { promptHooks: hookTimings.before_prompt_build } : {}),
+    ...(hookTimings.before_agent_run ? { agentRunHooks: hookTimings.before_agent_run } : {}),
     trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(input.runTrace)),
   });
   attempt.onExecutionPhase?.({

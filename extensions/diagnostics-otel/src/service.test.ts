@@ -3405,6 +3405,58 @@ describe("diagnostics-otel service", () => {
     ).toBe(runSpanId);
   });
 
+  test("spans context assembly over the gating prompt hooks with bounded hook labels", async () => {
+    await startServiceFixture(["traces", "metrics"]);
+
+    emitTrustedEvent("run.started", {
+      trace: createTestTrace(SPAN_ID),
+    });
+    await emitTrustedEventAndFlush("context.assembled", {
+      runId: "run-1",
+      ...MODEL_FIXTURE,
+      trigger: "user",
+      messageCount: 3,
+      historyTextChars: 10,
+      historyImageBlocks: 0,
+      maxMessageTextChars: 5,
+      systemPromptChars: 20,
+      promptChars: 8,
+      promptImages: 0,
+      promptHooks: {
+        durationMs: 15_400,
+        count: 6,
+        timeouts: 1,
+        slowest: "arxi-channel:relationship-state",
+        slowestMs: 15_000,
+      },
+      agentRunHooks: {
+        durationMs: 3,
+        count: 2,
+        timeouts: 0,
+        slowest: "arxi-channel#0",
+        slowestMs: 2,
+      },
+      trace: createTestTrace(GRANDCHILD_SPAN_ID, SPAN_ID),
+    });
+
+    const contextOptions = startedSpanOptions("openclaw.context.assembled");
+    expect(contextOptions?.attributes).toMatchObject({
+      "openclaw.context.prompt_hooks.duration_ms": 15_400,
+      "openclaw.context.prompt_hooks.count": 6,
+      "openclaw.context.prompt_hooks.timeouts": 1,
+      "openclaw.context.prompt_hooks.slowest": "arxi-channel:relationship-state",
+      "openclaw.context.prompt_hooks.slowest_ms": 15_000,
+      "openclaw.context.agent_run_hooks.duration_ms": 3,
+      "openclaw.context.agent_run_hooks.timeouts": 0,
+      "openclaw.context.agent_run_hooks.slowest": "arxi-channel#0",
+    });
+    const span = telemetryState.spans.find(
+      (candidate) => candidate.name === "openclaw.context.assembled",
+    );
+    const endTime = span?.end.mock.calls[0]?.[0] as number;
+    expect(endTime - (contextOptions?.startTime as number)).toBe(15_400);
+  });
+
   test("exports tool loop diagnostics without loop messages or session identifiers", async () => {
     await startServiceFixture(["traces", "metrics"]);
 

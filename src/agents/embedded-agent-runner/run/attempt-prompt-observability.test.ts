@@ -43,6 +43,7 @@ vi.mock("../../../trajectory/runtime.js", () => ({
 }));
 vi.mock("../logger.js", () => ({ log: hoisted.log }));
 
+import { recordHookPhaseTiming } from "../../../plugins/hook-phase-timing.js";
 import { observeEmbeddedAttemptPrompt } from "./attempt-prompt-support.js";
 
 type PromptObservabilityInput = Parameters<typeof observeEmbeddedAttemptPrompt>[0];
@@ -112,6 +113,35 @@ describe("observeEmbeddedAttemptPrompt", () => {
     vi.clearAllMocks();
     hoisted.hasHooks.mockReturnValue(true);
     hoisted.log.isEnabled.mockReturnValue(false);
+  });
+
+  it("reports the prompt hook phase timing recorded for the run once", () => {
+    recordHookPhaseTiming({
+      runId: "run-1",
+      phase: "before_prompt_build",
+      label: "arxi-channel:relationship-state",
+      startedAt: 1_000,
+      endedAt: 16_000,
+      timedOut: true,
+    });
+
+    observeEmbeddedAttemptPrompt(createInput());
+    observeEmbeddedAttemptPrompt(createInput());
+
+    expect(hoisted.emitTrustedDiagnosticEvent).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        type: "context.assembled",
+        promptHooks: {
+          durationMs: 15_000,
+          count: 1,
+          timeouts: 1,
+          slowest: "arxi-channel:relationship-state",
+          slowestMs: 15_000,
+        },
+      }),
+    );
+    expect(hoisted.emitTrustedDiagnosticEvent.mock.calls[1]?.[0]).not.toHaveProperty("promptHooks");
   });
 
   it("records the assembled prompt boundary and dispatches a cloned llm_input snapshot", () => {

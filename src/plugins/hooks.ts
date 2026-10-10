@@ -34,6 +34,7 @@ import {
   isHookDecision,
 } from "./hook-decision-types.js";
 import { cloneHookIsolationValue, HookIsolationError } from "./hook-isolation.js";
+import { hookTimingLabel, isTimedHookPhase, recordHookPhaseTiming } from "./hook-phase-timing.js";
 import type { GlobalHookRunnerRegistry, HookRunnerRegistry } from "./hook-registry.types.js";
 import { acceptPluginReplyPayload, toPluginReplyPayload } from "./hook-reply-payload.js";
 import {
@@ -43,7 +44,7 @@ import {
   type HookRunnerOptions,
   type VoidHookRunOptions,
 } from "./hook-runner-options.js";
-import { withHookTimeout } from "./hook-timeout.js";
+import { HookTimeoutError, withHookTimeout } from "./hook-timeout.js";
 import { isPluginHookReplyDispatchKind } from "./hook-types.js";
 import type {
   PluginAgentTurnPrepareResult,
@@ -701,7 +702,13 @@ export function createHookRunner(
 
     let result: TResult | undefined;
 
-    for (const hook of selectedHooks) {
+    const timedRunId =
+      isTimedHookPhase(hookName) && typeof ctx === "object" && ctx !== null && "runId" in ctx
+        ? typeof ctx.runId === "string" && ctx.runId
+          ? ctx.runId
+          : undefined
+        : undefined;
+    for (const [hookIndex, hook] of selectedHooks.entries()) {
       policy.assertHandlerBoundaryActive?.();
       let shouldStop = false;
       try {
@@ -725,13 +732,28 @@ export function createHookRunner(
             }
           : ctx;
         let handlerResult: TResult | undefined;
+        const startedAt = timedRunId ? Date.now() : 0;
+        let timedOut = false;
         try {
           const promise = Promise.resolve(handler(handlerEvent, handlerContext));
           handlerResult = await awaitHook(hook, promise, modifyingHookTimeoutMsByHook[hookName]);
+        } catch (err) {
+          timedOut = err instanceof HookTimeoutError;
+          throw err;
         } finally {
           // Expiry closes this handler even while its work or a later handler continues.
           if (invocation) {
             invocation.active = false;
+          }
+          if (timedRunId && isTimedHookPhase(hookName)) {
+            recordHookPhaseTiming({
+              runId: timedRunId,
+              phase: hookName,
+              label: hookTimingLabel(hook, hookIndex),
+              startedAt,
+              endedAt: Date.now(),
+              timedOut,
+            });
           }
         }
 
