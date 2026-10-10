@@ -19,7 +19,7 @@ describe.skipIf(process.platform !== "linux")("memory watch capacity", () => {
     { failurePoint: "parent", code: "EMFILE" },
     { failurePoint: "subtree", code: "EMFILE" },
   ])(
-    "keeps later searches fresh after $failurePoint watch $code without per-file watches",
+    "keeps searches fresh within the degraded-sync interval after $failurePoint watch $code without per-file watches",
     async ({ failurePoint, code }) => {
       const state = await createOpenClawTestState({ label: "memory-watch-capacity" });
       const memoryDir = path.join(state.workspaceDir, "memory");
@@ -73,18 +73,28 @@ describe.skipIf(process.platform !== "linux")("memory watch capacity", () => {
         expect(
           nativeWatch.mock.calls.some(([watchPath]) => String(watchPath).endsWith(".md")),
         ).toBe(false);
-        for (const text of ["Cobalt heron discovered.", "Violet badger replaced it."]) {
-          await fs.writeFile(path.join(memoryDir, "fresh.md"), text);
-          await expect
-            .poll(async () => (await activeManager.search(text)).map((result) => result.snippet), {
-              timeout: 10_000,
-            })
-            .toContain(text);
-        }
+        // Without a watcher, a search requests a maintenance sync at most once a minute.
+        vi.useFakeTimers({ toFake: ["Date"], shouldAdvanceTime: true });
+        const first = "Cobalt heron discovered.";
+        await fs.writeFile(path.join(memoryDir, "fresh.md"), first);
+        await expect
+          .poll(async () => (await activeManager.search(first)).map((result) => result.snippet), {
+            timeout: 10_000,
+          })
+          .toContain(first);
+        const second = "Violet badger replaced it.";
+        await fs.writeFile(path.join(memoryDir, "fresh.md"), second);
+        vi.setSystemTime(Date.now() + 61_000);
+        await expect
+          .poll(async () => (await activeManager.search(second)).map((result) => result.snippet), {
+            timeout: 10_000,
+          })
+          .toContain(second);
         expect(await activeManager.search("Cobalt heron")).toEqual([]);
         await activeManager.close();
         await expect.poll(() => closed.size).toBe(opened.length);
       } finally {
+        vi.useRealTimers();
         await manager?.close();
         nativeWatch.mockRestore();
         syncBuiltinESMExports();

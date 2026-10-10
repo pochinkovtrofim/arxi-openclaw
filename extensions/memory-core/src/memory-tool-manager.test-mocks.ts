@@ -2,6 +2,7 @@
 import type {
   MemoryReadResult,
   MemorySearchDeadlineControlOptions,
+  MemorySearchPhaseTiming,
   MemorySource,
 } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import type { MemorySearchRuntimeDebug } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
@@ -15,6 +16,7 @@ type SearchImpl = (
     sessionKey?: string;
     activeProjectKeys?: string[];
     onDebug?: (debug: MemorySearchRuntimeDebug) => void;
+    onTiming?: (read: () => MemorySearchPhaseTiming) => void;
     signal?: AbortSignal;
     sources?: MemorySource[];
   } & MemorySearchDeadlineControlOptions,

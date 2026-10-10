@@ -252,6 +252,7 @@ function sanitizeDiagnosticEvent(event: DiagnosticEventPayload): DiagnosticStabi
     case "gateway.event_loop.sample":
     case "diagnostic.gc":
     case "diagnostic.child_process.spawn":
+    case "memory.search.completed":
       // Runtime measurements are exporter-only and excluded by the subscription.
       break;
     case "model.usage":
@@ -755,6 +756,7 @@ export function startDiagnosticStabilityRecorder(): void {
         "gateway.event_loop.sample",
         "diagnostic.gc",
         "diagnostic.child_process.spawn",
+        "memory.search.completed",
       ],
     },
   );

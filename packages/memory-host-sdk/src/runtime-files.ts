@@ -7,6 +7,7 @@ export type {
   MemoryEntryProvenance,
   MemoryOriginClass,
   MemorySearchManager,
+  MemorySearchPhaseTiming,
   MemorySearchRuntimeDebug,
   MemorySearchResult,
   MemorySessionKind,

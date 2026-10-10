@@ -33,8 +33,8 @@ import {
 import { inspectMemorySourceState, loadMemorySourceFileState } from "./manager-source-state.js";
 import { memorySessionSyncTargetKey } from "./manager-sync-control.js";
 import { MemoryManagerWatchOps } from "./manager-watch-ops.js";
+import { resolveSessionSyncDebounceMs } from "./session-sync-config.js";
 
-const SESSION_DIRTY_DEBOUNCE_MS = 5000;
 const log = createSubsystemLogger("memory");
 
 type MemorySessionTranscriptUpdate = Parameters<
@@ -306,7 +306,7 @@ export abstract class MemoryManagerSessionSyncOps extends MemoryManagerWatchOps 
           log.warn(`memory session update failed: ${String(err)}`);
         },
       );
-    }, SESSION_DIRTY_DEBOUNCE_MS);
+    }, resolveSessionSyncDebounceMs(this.cfg));
   }
 
   private async processSessionUpdateBatch(): Promise<void> {

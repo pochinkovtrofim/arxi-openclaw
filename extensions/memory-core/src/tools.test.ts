@@ -1,5 +1,11 @@
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import "./tools.session-catalog.test-mocks.js";
+
+const diagnosticMocks = vi.hoisted(() => ({ emitTrusted: vi.fn() }));
+vi.mock("openclaw/plugin-sdk/diagnostic-runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("openclaw/plugin-sdk/diagnostic-runtime")>()),
+  emitTrustedDiagnosticEvent: diagnosticMocks.emitTrusted,
+}));
 import type { MemorySearchRuntimeDebug } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
 // Memory Core tests cover tools plugin behavior.
 import { clearMemoryPluginState } from "openclaw/plugin-sdk/memory-host-core";
@@ -1370,6 +1376,107 @@ describe("memory_search corpus labels", () => {
         source: "sessions",
       },
     ]);
+  });
+});
+
+describe("memory_search diagnostics", () => {
+  beforeEach(() => {
+    clearMemoryPluginState();
+    resetMemoryToolMockState({ searchImpl: async () => [] });
+    memoryToolsTesting.resetMemorySearchToolCooldowns();
+  });
+
+  it("emits one trusted content-free timing event per call and keeps timing out of the tool result", async () => {
+    setMemorySearchImpl(async (opts) => {
+      opts?.onTiming?.(() => ({
+        indexReadMs: 3,
+        embedQueryMs: 41,
+        syncWaitMs: 0,
+        watch: "reconcile_failed",
+      }));
+      return [
+        {
+          path: "MEMORY.md",
+          startLine: 1,
+          endLine: 2,
+          score: 0.9,
+          snippet: "ramen",
+          source: "memory",
+        },
+      ];
+    });
+    diagnosticMocks.emitTrusted.mockClear();
+    const tool = createMemorySearchToolOrThrow({
+      config: { agents: { list: [{ id: "main", default: true }] } },
+    });
+    const result = await tool.execute("diagnostic-timing", { query: "favorite food" });
+    const events = diagnosticMocks.emitTrusted.mock.calls
+      .map((call) => call[0] as { type?: string })
+      .filter((event) => event.type === "memory.search.completed");
+    expect(events).toEqual([
+      {
+        type: "memory.search.completed",
+        toolCallId: "diagnostic-timing",
+        provider: "builtin",
+        outcome: "ok",
+        durationMs: expect.any(Number),
+        indexReadMs: 3,
+        embedQueryMs: 41,
+        syncWaitMs: 0,
+        watch: "reconcile_failed",
+      },
+    ]);
+    expect(JSON.stringify(result.details)).not.toContain("embedQueryMs");
+    expect(JSON.stringify(result.details)).not.toContain("reconcile_failed");
+    expect(JSON.stringify(result.details)).not.toContain("timing");
+  });
+
+  it("attributes a deadline expiry to the phase still running and marks cooldown calls phase-free", async () => {
+    vi.useFakeTimers();
+    try {
+      setMemorySearchImpl(async (opts) => {
+        const startedAt = Date.now();
+        opts?.onTiming?.(() => ({
+          indexReadMs: 4,
+          embedQueryMs: Date.now() - startedAt - 4,
+          syncWaitMs: 0,
+        }));
+        return await new Promise(() => {});
+      });
+      diagnosticMocks.emitTrusted.mockClear();
+      const tool = createMemorySearchToolOrThrow();
+      const resultPromise = tool.execute("diagnostic-deadline", { query: "hello" });
+      await vi.advanceTimersByTimeAsync(30_000);
+      const result = await resultPromise;
+      expect(result.details).toMatchObject({ timedOut: true });
+      const cooldown = await tool.execute("diagnostic-cooldown", { query: "hello again" });
+      expect(cooldown.details).toMatchObject({ unavailable: true });
+
+      const events = diagnosticMocks.emitTrusted.mock.calls
+        .map((call) => call[0] as { type?: string })
+        .filter((event) => event.type === "memory.search.completed");
+      expect(events).toEqual([
+        {
+          type: "memory.search.completed",
+          toolCallId: "diagnostic-deadline",
+          provider: "other",
+          outcome: "unavailable",
+          durationMs: 30_000,
+          indexReadMs: 4,
+          embedQueryMs: 29_996,
+          syncWaitMs: 0,
+        },
+        {
+          type: "memory.search.completed",
+          toolCallId: "diagnostic-cooldown",
+          provider: "other",
+          outcome: "unavailable",
+          durationMs: 0,
+        },
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

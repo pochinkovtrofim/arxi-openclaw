@@ -86,6 +86,21 @@ export type MemorySyncParams = {
   progress?: (update: MemorySyncProgressUpdate) => void;
 };
 
+/** Content-free phase durations of one manager search, for diagnostics only. */
+export type MemorySearchPhaseTiming = {
+  /**
+   * Memory watcher state when the search ran: the closed reason it is not observing
+   * edits, or "recovered" once after it was rebuilt. Absent while it works normally.
+   */
+  watch?: "enospc" | "emfile" | "reconcile_failed" | "start_failed" | "recovered";
+  /** Index generation lease plus published index-state reads. */
+  indexReadMs: number;
+  /** Query embedding, including provider retries. */
+  embedQueryMs: number;
+  /** Bootstrap or identity-repair syncs the search had to await. */
+  syncWaitMs: number;
+};
+
 export type MemorySearchRuntimeDebug = {
   backend: "builtin";
   configuredMode?: string;
@@ -396,6 +411,12 @@ export interface MemorySearchManager {
       /** Active repository identities used only for project-aware ranking. */
       activeProjectKeys?: string[];
       onDebug?: (debug: MemorySearchRuntimeDebug) => void;
+      /**
+       * Receives, once when the search starts, a reader of its phase durations. A phase
+       * still running counts up to the moment of reading, so a caller that gives up at
+       * its own deadline can still attribute the wait.
+       */
+      onTiming?: (read: () => MemorySearchPhaseTiming) => void;
       /**
        * Ranked memory-file keyword candidates bounded by maxResults, available before semantic retrieval completes.
        * Callers must apply the same visibility checks as for final results.

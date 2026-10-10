@@ -371,7 +371,10 @@ Use `provider: "openai-compatible"` for a generic OpenAI-compatible
 
 Memory engines own synchronization, batching, watch, and post-compaction
 indexing heuristics. OpenClaw keeps these behaviors enabled with maintained
-defaults rather than exposing per-install timing switches.
+defaults rather than exposing per-install timing switches. The one exception is
+the builtin engine's [session index delay](#session-index-delay), a memory-core
+plugin setting for hosts where re-embedding active transcripts competes with
+interactive work.
 
 ### File-watcher pressure
 
@@ -389,6 +392,14 @@ Removing extra-path entries does not exclude files that still belong to the
 default `MEMORY.md`, `USER.md`, or `memory/` roots. If reducing extra paths is
 insufficient, review file-watch and open-file limits on the Gateway host. There is no supported
 `memory.search.sync.watch` setting.
+
+When the watcher stops (watch or file-descriptor limits exhausted, a failed directory
+reconciliation, or a failed start), the builtin engine rebuilds it in the background,
+retrying after 30 seconds and backing off to at most every 10 minutes. Until it is
+back, a maintenance sync picks up memory edits at most once a minute when a search
+asks for one, and every 5 minutes otherwise, so searches can miss edits made in
+the last minute. `memory_search` diagnostics report the watcher state while it is
+down and once after it recovers.
 
 After changes, restart the Gateway. To refresh the affected index, run
 `openclaw memory index --force --agent <id>` on the Gateway host using its profile
@@ -596,6 +607,34 @@ default `all`:
   },
   tools: {
     sessions: { visibility: "agent" },
+  },
+}
+```
+
+### Session index delay
+
+When transcript indexing is on, committed transcript messages collect for a short
+delay and then one session re-index embeds the changed transcripts. The delay is a
+memory-core plugin setting:
+
+| Key                                                         | Type      | Default | Range                    |
+| ----------------------------------------------------------- | --------- | ------- | ------------------------ |
+| `plugins.entries.memory-core.config.sessionSync.debounceMs` | `integer` | `5000`  | `1000` to `3600000` (ms) |
+
+The delay starts at the first change after a re-index, so a busy conversation is
+re-embedded at most once per delay. A longer delay means fewer embedding batches
+on hosts that run a local embedding model on the same few CPUs as the agent, and
+it means `memory_search` finds the newest transcript messages up to that much
+later. It does not change which sessions are indexed.
+
+```json5
+{
+  plugins: {
+    entries: {
+      "memory-core": {
+        config: { sessionSync: { debounceMs: 60000 } },
+      },
+    },
   },
 }
 ```

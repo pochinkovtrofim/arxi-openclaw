@@ -263,6 +263,7 @@ describe("memory file watcher lifecycle", () => {
         );
         expect(fileWatcher.capacityDegraded).toBe(true);
         expect(onUnavailable).toHaveBeenCalledOnce();
+        expect(onUnavailable).toHaveBeenCalledWith(code === "ENOSPC" ? "enospc" : "emfile");
         expect(onDirty).toHaveBeenCalledOnce();
         resume.resolve();
         await starting;

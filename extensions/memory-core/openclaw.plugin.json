@@ -59,6 +59,10 @@
     "dreaming.phases.deep.maxPriorEntryLossFraction": {
       "label": "Maximum Prior Entry Loss",
       "help": "Maximum fraction of prior MEMORY.md entries an accepted consolidation rewrite may remove."
+    },
+    "sessionSync.debounceMs": {
+      "label": "Session Index Delay",
+      "help": "Milliseconds that committed transcript changes collect before one session re-index runs (default 5000). Raise it on CPU-constrained hosts with local embeddings to re-embed busy conversations less often; recall of the newest messages lags by up to this delay."
     }
   },
   "configGroups": [
@@ -67,6 +71,12 @@
       "title": "Memory policy",
       "order": 10,
       "properties": ["memoryPolicy"]
+    },
+    {
+      "id": "session-sync",
+      "title": "Session indexing",
+      "order": 15,
+      "properties": ["sessionSync"]
     },
     {
       "id": "dreaming",
@@ -100,6 +110,18 @@
                 "items": { "type": "string", "enum": ["direct", "group", "channel"] }
               }
             }
+          }
+        }
+      },
+      "sessionSync": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "debounceMs": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 3600000,
+            "default": 5000
           }
         }
       },
