@@ -210,7 +210,7 @@ export class WorkerTaskPoolCore<Input, Output> {
     if (
       this.pendingTasks >= this.maxPendingTasks ||
       this.pendingBytes + inputBytes > this.maxPendingBytes ||
-      (this.computeCapacity && !this.computeCapacity.admit(inputBytes))
+      (this.computeCapacity && !this.computeCapacity.admit(inputBytes, this.computeClass))
     ) {
       this.finish(task, new WorkerTaskError("worker task capacity reached", "overloaded"));
       return task;
@@ -760,7 +760,7 @@ export class WorkerTaskPoolCore<Input, Output> {
       task.admitted = false;
       this.pendingTasks--;
       this.pendingBytes -= task.inputBytes;
-      this.computeCapacity?.finish(task.inputBytes);
+      this.computeCapacity?.finish(task.inputBytes, this.computeClass);
     }
   }
 

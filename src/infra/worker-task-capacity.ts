@@ -37,8 +37,11 @@ function createWorkerComputeCapacity(parallelism: number) {
     interactive: new Set(),
     batch: new Set(),
   };
-  let pendingTasks = 0;
-  let pendingBytes = 0;
+  // Separate admission budgets: a batch backlog must not reject an interactive request.
+  const pending: Record<WorkerComputeClass, { tasks: number; bytes: number }> = {
+    interactive: { tasks: 0, bytes: 0 },
+    batch: { tasks: 0, bytes: 0 },
+  };
   let draining = false;
   const requestCheckpoints = () => {
     let demand = waiting.interactive.size + waiting.batch.size;
@@ -91,24 +94,25 @@ function createWorkerComputeCapacity(parallelism: number) {
         activeInteractive,
         waitingPools: waiting.interactive.size + waiting.batch.size,
         waitingInteractivePools: waiting.interactive.size,
-        pendingTasks,
-        pendingBytes,
+        pendingTasks: pending.interactive.tasks + pending.batch.tasks,
+        pendingBytes: pending.interactive.bytes + pending.batch.bytes,
       };
     },
-    admit(bytes: number): boolean {
+    admit(bytes: number, computeClass: WorkerComputeClass = "batch"): boolean {
+      const budget = pending[computeClass];
       if (
-        pendingTasks >= DEFAULT_WORKER_PENDING_TASKS ||
-        pendingBytes + bytes > DEFAULT_WORKER_PENDING_BYTES
+        budget.tasks >= DEFAULT_WORKER_PENDING_TASKS ||
+        budget.bytes + bytes > DEFAULT_WORKER_PENDING_BYTES
       ) {
         return false;
       }
-      pendingTasks++;
-      pendingBytes += bytes;
+      budget.tasks++;
+      budget.bytes += bytes;
       return true;
     },
-    finish(bytes: number) {
-      pendingTasks--;
-      pendingBytes -= bytes;
+    finish(bytes: number, computeClass: WorkerComputeClass = "batch") {
+      pending[computeClass].tasks--;
+      pending[computeClass].bytes -= bytes;
     },
     acquire(
       resume: () => void,

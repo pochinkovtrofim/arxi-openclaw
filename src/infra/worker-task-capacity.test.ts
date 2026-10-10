@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_WORKER_PENDING_BYTES,
+  DEFAULT_WORKER_PENDING_TASKS,
   getWorkerComputeCapacity,
   type WorkerComputeClass,
   type WorkerComputePermit,
@@ -142,6 +144,22 @@ describe("worker compute capacity", () => {
     expect(order.at(-1)).toBe("interactive");
     expect(batches[3]!.permit).toBeUndefined();
     expect(capacity.getSnapshot()).toMatchObject({ active: 3, waitingPools: 1 });
+  });
+
+  it("does not let a batch backlog reject interactive admission", () => {
+    const capacity = createWorkerComputeCapacity(2);
+    for (let index = 0; index < DEFAULT_WORKER_PENDING_TASKS; index++) {
+      expect(capacity.admit(1, "batch")).toBe(true);
+    }
+    expect(capacity.admit(1, "batch")).toBe(false);
+    expect(capacity.admit(1, "interactive")).toBe(true);
+    expect(capacity.admit(DEFAULT_WORKER_PENDING_BYTES, "interactive")).toBe(false);
+    capacity.finish(1, "batch");
+    expect(capacity.admit(1, "batch")).toBe(true);
+    expect(capacity.getSnapshot()).toMatchObject({
+      pendingTasks: DEFAULT_WORKER_PENDING_TASKS + 1,
+      pendingBytes: DEFAULT_WORKER_PENDING_TASKS + 1,
+    });
   });
 
   it("drops a removed waiter without resuming it", () => {
