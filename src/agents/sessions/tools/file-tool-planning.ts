@@ -2,26 +2,68 @@ import { constants } from "node:fs";
 import { access, readFile } from "node:fs/promises";
 import { resolveRuntimeProcessEntrypointUrl } from "../../../infra/runtime-process-url.js";
 import { WorkerTaskPool } from "../../../infra/worker-task-pool.js";
-import type { Edit, EditDiffError, EditDiffResult } from "./edit-diff.js";
+import {
+  prepareFileEdit,
+  type Edit,
+  type EditDiffError,
+  type EditDiffResult,
+} from "./edit-diff.js";
+import { prepareFileWriteDiff } from "./file-diff.js";
 import type {
   FileToolPlanningRequest,
   FileToolPlanningResult,
 } from "./file-tool-planning.worker.js";
 import { resolveLocalPathToCwd, resolveToCwd } from "./path-utils.js";
 
+/** Small plans diff in a few milliseconds; a worker round trip and permit wait cost more. */
+const FILE_TOOL_INLINE_PLANNING_MAX_CHARS = 64 * 1024;
+const FILE_TOOL_INLINE_PLANNING_MAX_LINES = 2_000;
+
 const pool = new WorkerTaskPool<FileToolPlanningRequest, FileToolPlanningResult>({
-  sharedCompute: true,
+  sharedCompute: "interactive",
   workerUrl: resolveRuntimeProcessEntrypointUrl("fileToolPlanning"),
 });
 
-function plan(input: FileToolPlanningRequest, signal?: AbortSignal) {
-  const chars =
-    input.path.length +
-    input.content.length +
-    (input.kind === "edit"
-      ? input.edits.reduce((sum, edit) => sum + edit.oldText.length + edit.newText.length, 0)
-      : (input.beforeText?.length ?? 0));
-  return pool.run(input, { signal, inputBytes: chars * 2 });
+function countLines(text: string, limit: number): number {
+  let lines = 1;
+  for (let index = text.indexOf("\n"); index !== -1 && lines <= limit; ) {
+    lines++;
+    index = text.indexOf("\n", index + 1);
+  }
+  return lines;
+}
+
+function planInline(input: FileToolPlanningRequest): FileToolPlanningResult {
+  return input.kind === "edit"
+    ? { kind: "edit", plan: prepareFileEdit(input.content, input.edits, input.path) }
+    : {
+        kind: "write",
+        receipt: prepareFileWriteDiff({
+          path: input.path,
+          content: input.content,
+          beforeText: input.beforeText,
+          created: input.created,
+        }),
+      };
+}
+
+async function plan(input: FileToolPlanningRequest, signal?: AbortSignal) {
+  const texts =
+    input.kind === "edit"
+      ? [input.content, ...input.edits.flatMap((edit) => [edit.oldText, edit.newText])]
+      : [input.content, input.beforeText ?? ""];
+  const chars = texts.reduce((sum, text) => sum + text.length, input.path.length);
+  if (chars <= FILE_TOOL_INLINE_PLANNING_MAX_CHARS) {
+    let lines = 0;
+    for (const text of texts) {
+      lines += countLines(text, FILE_TOOL_INLINE_PLANNING_MAX_LINES);
+    }
+    if (lines <= FILE_TOOL_INLINE_PLANNING_MAX_LINES) {
+      signal?.throwIfAborted();
+      return planInline(input);
+    }
+  }
+  return await pool.run(input, { signal, inputBytes: chars * 2 });
 }
 
 export async function planFileEdit(

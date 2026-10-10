@@ -19,10 +19,11 @@ export type MemoryIndexTaskResult = {
   value: ReturnType<typeof prepareMemoryIndexChunks>;
 };
 
+// Retrieval answers a waiting memory_search; indexing and transcript scans never delay it.
 const retrieval = new WorkerTaskPool<MemorySearchWorkerInput, MemorySearchWorkerOutput>({
   workerUrl: resolveRuntimeWorkerUrl(memoryCpuProcessEntrypoints.search),
   maxWorkers: 1,
-  sharedCompute: true,
+  sharedCompute: "interactive",
 });
 // Background chunk preparation must not occupy the foreground retrieval worker.
 const indexing = new WorkerTaskPool<MemoryIndexTask, MemoryIndexTaskResult>({

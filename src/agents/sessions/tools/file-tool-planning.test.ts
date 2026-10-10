@@ -1,7 +1,9 @@
 import { afterEach, expect, it, vi } from "vitest";
+import { WorkerTaskPool } from "../../../infra/worker-task-pool.js";
 import { createDeferredCore } from "../../../shared/deferred.js";
 import { createAgentToolExecutionBudget } from "../../agent-tool-source-execution-guard.js";
 import { createEditTool } from "./edit.js";
+import { prepareFileWriteDiff } from "./file-diff.js";
 import * as planning from "./file-tool-planning.js";
 import { createWriteTool } from "./write.js";
 
@@ -101,3 +103,41 @@ it.each(
     }
   },
 );
+
+it("plans small writes and edits inline and larger ones in the planning worker", async () => {
+  const run = vi.spyOn(WorkerTaskPool.prototype, "run");
+  const small = "alpha\nbeta\n";
+  await expect(
+    planning.planFileEdit({
+      path: "small.txt",
+      content: small,
+      edits: [{ oldText: "beta", newText: "gamma" }],
+    }),
+  ).resolves.toMatchObject({ changed: true, content: "alpha\ngamma\n" });
+  await expect(
+    planning.planFileWriteDiff({ path: "small.txt", content: "alpha\n", beforeText: small }),
+  ).resolves.toMatchObject({ firstChangedLine: 2 });
+  expect(run).not.toHaveBeenCalled();
+
+  // Either bound alone (2,000 lines or 64 KiB) moves planning off the main thread.
+  const manyLines = "x\n".repeat(2_000);
+  const wide = `${"y".repeat(64 * 1024)}\nend\n`;
+  for (const content of [manyLines, wide]) {
+    const inlineReceipt = prepareFileWriteDiff({ path: "big.txt", content, beforeText: small });
+    await expect(
+      planning.planFileWriteDiff({ path: "big.txt", content, beforeText: small }),
+    ).resolves.toEqual(inlineReceipt);
+  }
+  expect(run).toHaveBeenCalledTimes(2);
+});
+
+it("rejects an already aborted inline plan without mutating", async () => {
+  const controller = new AbortController();
+  controller.abort(new Error("Planning cancelled"));
+  await expect(
+    planning.planFileEdit(
+      { path: "small.txt", content: "a\n", edits: [{ oldText: "a", newText: "b" }] },
+      controller.signal,
+    ),
+  ).rejects.toThrow("Planning cancelled");
+});
