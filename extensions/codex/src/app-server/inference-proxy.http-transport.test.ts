@@ -28,7 +28,11 @@ vi.mock("node:http", async (original) => {
         // The relay assigns its receipt bounds after construction; pin the shortened
         // ones so the test can prove they cover request receipt only.
         for (const [key, value] of Object.entries(transport.relayServerOptions)) {
-          Object.defineProperty(server, key, { get: () => value, set: () => {}, configurable: true });
+          Object.defineProperty(server, key, {
+            get: () => value,
+            set: () => {},
+            configurable: true,
+          });
         }
       }
       return server;
