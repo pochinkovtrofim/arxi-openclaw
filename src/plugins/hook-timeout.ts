@@ -1,5 +1,12 @@
 import { trackAsyncWork } from "../shared/async-work-scope.js";
 
+/** A handler exceeded its hook budget; the runner skips its result. */
+export class HookTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`timed out after ${timeoutMs}ms`);
+  }
+}
+
 export const withHookTimeout = async <T>(
   promise: Promise<T>,
   timeoutMs: number,
@@ -11,7 +18,7 @@ export const withHookTimeout = async <T>(
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      reject(new Error(`timed out after ${timeoutMs}ms`));
+      reject(new HookTimeoutError(timeoutMs));
     }, timeoutMs);
     if (optionsResult.unref) {
       timer.unref?.();

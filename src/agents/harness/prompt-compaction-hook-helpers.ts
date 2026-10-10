@@ -1,9 +1,16 @@
+import { emitTrustedDiagnosticEvent } from "../../infra/diagnostic-events.js";
+import {
+  createChildDiagnosticTraceContext,
+  freezeDiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import { takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import type { PersistedUserTurnMessage } from "../../sessions/user-turn-transcript.types.js";
 import { joinPresentTextSegments } from "../../shared/text/join-segments.js";
 import type { BootstrapContextRunKind } from "../bootstrap-mode.js";
 import type { CurrentInboundPromptContext } from "../embedded-agent-runner/run/params.js";
+import { summarizeSessionContext } from "../embedded-agent-runner/run/attempt-context-summary.js";
 import { buildCurrentInboundPrompt } from "../embedded-agent-runner/run/runtime-context-prompt.js";
 import { wrapPluginSystemContextSection } from "../hook-system-context-boundary.js";
 import type { AgentMessage } from "../runtime/index.js";
@@ -56,6 +63,12 @@ export async function resolveAgentHarnessBeforePromptBuildResult(params: {
   const hasPromptBuildHooks = Boolean(hookRunner?.hasHooks("before_prompt_build"));
   if (!hasHeartbeatContribution && !hasPromptBuildHooks) {
     const developerInstructions = resolveDeveloperInstructions(params.developerInstructions);
+    emitHarnessContextAssembled({
+      ctx: params.ctx,
+      messages: Array.isArray(params.messages) ? params.messages : [],
+      systemPromptChars: developerInstructions.length,
+      promptChars: inputPrompt.length,
+    });
     return {
       prompt: inputPrompt,
       developerInstructions,
@@ -156,22 +169,75 @@ export async function resolveAgentHarnessBeforePromptBuildResult(params: {
       : promptPrefix
         ? promptPrefix.length + 2
         : 0;
+  const resolvedDeveloperInstructions =
+    joinPresentTextSegments([
+      wrapPluginSystemContextSection(promptBuildResult?.prependSystemContext),
+      systemPrompt,
+      wrapPluginSystemContextSection(promptBuildResult?.appendSystemContext),
+    ]) ?? systemPrompt;
+  emitHarnessContextAssembled({
+    ctx: params.ctx,
+    messages: promptEvent.messages,
+    systemPromptChars: resolvedDeveloperInstructions.length,
+    promptChars: prompt.length,
+  });
   return {
     prompt,
     ...(promptBuildResult?.toolsAllow !== undefined
       ? { toolsAllow: promptBuildResult.toolsAllow }
       : {}),
-    developerInstructions:
-      joinPresentTextSegments([
-        wrapPluginSystemContextSection(promptBuildResult?.prependSystemContext),
-        systemPrompt,
-        wrapPluginSystemContextSection(promptBuildResult?.appendSystemContext),
-      ]) ?? systemPrompt,
+    developerInstructions: resolvedDeveloperInstructions,
     promptInputRange: {
       start: promptInputStart,
       end: promptInputStart + inputPrompt.length,
     },
   };
+}
+
+/**
+ * Harness runtimes (e.g. the Codex app-server) assemble their prompt here, not
+ * in the embedded runner, so they report the same content-free context event,
+ * including how long the gating plugin hooks held the turn.
+ */
+function emitHarnessContextAssembled(params: {
+  ctx: AgentHarnessHookContext;
+  messages: unknown[];
+  systemPromptChars: number;
+  promptChars: number;
+}): void {
+  const { ctx } = params;
+  if (!ctx.runId) {
+    return;
+  }
+  const hookTimings = takeHookPhaseTimings(ctx.runId);
+  const messages = params.messages.filter(
+    (message): message is AgentMessage => typeof message === "object" && message !== null,
+  );
+  const summary = summarizeSessionContext(messages);
+  const channel = ctx.channel ?? ctx.messageProvider;
+  emitTrustedDiagnosticEvent({
+    type: "context.assembled",
+    runId: ctx.runId,
+    ...(ctx.sessionKey ? { sessionKey: ctx.sessionKey } : {}),
+    ...(ctx.sessionId ? { sessionId: ctx.sessionId } : {}),
+    provider: ctx.modelProviderId ?? "unknown",
+    model: ctx.modelId ?? "unknown",
+    ...(channel ? { channel } : {}),
+    ...(ctx.trigger ? { trigger: ctx.trigger } : {}),
+    messageCount: messages.length,
+    historyTextChars: summary.totalTextChars,
+    historyImageBlocks: summary.totalImageBlocks,
+    maxMessageTextChars: summary.maxMessageTextChars,
+    systemPromptChars: params.systemPromptChars,
+    promptChars: params.promptChars,
+    promptImages: 0,
+    ...(ctx.contextTokenBudget ? { contextTokenBudget: ctx.contextTokenBudget } : {}),
+    ...(hookTimings.before_prompt_build ? { promptHooks: hookTimings.before_prompt_build } : {}),
+    ...(hookTimings.before_agent_run ? { agentRunHooks: hookTimings.before_agent_run } : {}),
+    ...(ctx.trace
+      ? { trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(ctx.trace)) }
+      : {}),
+  });
 }
 
 function resolveDeveloperInstructions(

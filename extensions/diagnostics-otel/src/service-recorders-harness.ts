@@ -231,7 +231,22 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
     if (evt.reserveTokens !== undefined) {
       spanAttrs["openclaw.context.reserve_tokens"] = evt.reserveTokens;
     }
-    const span = spanWithDuration("openclaw.context.assembled", spanAttrs, 0, {
+    // The span covers the gating prompt hooks so the turn's pre-model wait is
+    // attributable; labels are plugin/registration code ids, never content.
+    for (const [prefix, timing] of [
+      ["openclaw.context.prompt_hooks", evt.promptHooks],
+      ["openclaw.context.agent_run_hooks", evt.agentRunHooks],
+    ] as const) {
+      if (!timing) {
+        continue;
+      }
+      spanAttrs[`${prefix}.duration_ms`] = timing.durationMs;
+      spanAttrs[`${prefix}.count`] = timing.count;
+      spanAttrs[`${prefix}.timeouts`] = timing.timeouts;
+      spanAttrs[`${prefix}.slowest`] = timing.slowest;
+      spanAttrs[`${prefix}.slowest_ms`] = timing.slowestMs;
+    }
+    const span = spanWithDuration("openclaw.context.assembled", spanAttrs, evt.promptHooks?.durationMs ?? 0, {
       parentContext: activeTrustedParentContext(evt, metadata),
       endTimeMs: evt.ts,
     });
