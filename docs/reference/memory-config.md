@@ -393,6 +393,14 @@ default `MEMORY.md`, `USER.md`, or `memory/` roots. If reducing extra paths is
 insufficient, review file-watch and open-file limits on the Gateway host. There is no supported
 `memory.search.sync.watch` setting.
 
+When the watcher stops (watch or file-descriptor limits exhausted, a failed directory
+reconciliation, or a failed start), the builtin engine rebuilds it in the background,
+retrying after 30 seconds and backing off to at most every 10 minutes. Until it is
+back, a maintenance sync picks up memory edits at most once a minute when a search
+asks for one, and every 5 minutes otherwise, so searches can miss edits made in
+the last minute. `memory_search` diagnostics report the watcher state while it is
+down and once after it recovers.
+
 After changes, restart the Gateway. To refresh the affected index, run
 `openclaw memory index --force --agent <id>` on the Gateway host using its profile
 and environment, including any `OPENCLAW_STATE_DIR` or `OPENCLAW_CONFIG_PATH`

@@ -188,6 +188,14 @@ test("labels the tool record with the dominant phase, counting the untimed remai
       { id: "slow-retrieval", outcome: "ok", durationMs: 30_000, embedQueryMs: 1_000 },
       // An awaited bootstrap sync.
       { id: "sync-bound", outcome: "partial", durationMs: 30_000, syncWaitMs: 25_000 },
+      // A search while the memory watcher is down carries the closed watch state.
+      {
+        id: "watch-down",
+        outcome: "unavailable",
+        durationMs: 30_000,
+        syncWaitMs: 29_000,
+        watch: "enospc",
+      },
     ] as const;
     for (const call of calls) {
       emitTrustedDiagnosticEvent({
@@ -199,6 +207,7 @@ test("labels the tool record with the dominant phase, counting the untimed remai
         indexReadMs: 10,
         embedQueryMs: "embedQueryMs" in call ? call.embedQueryMs : 0,
         syncWaitMs: "syncWaitMs" in call ? call.syncWaitMs : 0,
+        ...("watch" in call ? { watch: call.watch } : {}),
       });
       emitTrustedDiagnosticEvent({
         type: "tool.execution.completed",
@@ -232,8 +241,17 @@ test("labels the tool record with the dominant phase, counting the untimed remai
       "embed_query",
       "search",
       "sync_wait",
+      "sync_wait/enospc",
       undefined,
     ]);
+    const watchSpan = sdk.exporter
+      .getFinishedSpans()
+      .find(
+        (span) =>
+          span.name === "openclaw.memory_search" &&
+          span.attributes["openclaw.memory_search.watch"] === "enospc",
+      );
+    expect(watchSpan).toBeDefined();
   } finally {
     await stopStartedOtelServices();
   }

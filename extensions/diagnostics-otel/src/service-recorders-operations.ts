@@ -128,6 +128,7 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
     const attrs = {
       "openclaw.memory_search.provider": normalizeDiagnosticValue(evt.provider, "other"),
       "openclaw.memory_search.outcome": evt.outcome,
+      ...(evt.watch ? { "openclaw.memory_search.watch": evt.watch } : {}),
     };
     const phases = [
       ["total", evt.durationMs],
@@ -160,7 +161,12 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
           dominantMs = ms;
         }
       }
-      runtime.rememberMemorySearchPhase(evt.toolCallId, dominant);
+      // A degraded or just-recovered watcher rides the same bounded label, so the host
+      // export can attribute slow calls to it: "<phase>/<watch state>".
+      runtime.rememberMemorySearchPhase(
+        evt.toolCallId,
+        evt.watch ? `${dominant}/${evt.watch}` : dominant,
+      );
     }
     if (!tracesEnabled) {
       return;

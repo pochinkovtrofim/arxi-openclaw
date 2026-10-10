@@ -88,6 +88,11 @@ export type MemorySyncParams = {
 
 /** Content-free phase durations of one manager search, for diagnostics only. */
 export type MemorySearchPhaseTiming = {
+  /**
+   * Memory watcher state when the search ran: the closed reason it is not observing
+   * edits, or "recovered" once after it was rebuilt. Absent while it works normally.
+   */
+  watch?: "enospc" | "emfile" | "reconcile_failed" | "start_failed" | "recovered";
   /** Index generation lease plus published index-state reads. */
   indexReadMs: number;
   /** Query embedding, including provider retries. */

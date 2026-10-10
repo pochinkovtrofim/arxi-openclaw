@@ -129,6 +129,8 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
     // Phase clock read by the caller, possibly at its own deadline while a phase is
     // still running: a running phase counts up to the moment of reading.
     const timing = { indexReadMs: 0, embedQueryMs: 0, syncWaitMs: 0 };
+    // Read only for a caller that reports timing: "recovered" is reported once.
+    const watch = opts?.onTiming ? this.readMemoryWatchDiagnostic() : undefined;
     const running = new Set<{ phase: keyof typeof timing; startedAt: number }>();
     const timed = async <T>(phase: keyof typeof timing, run: () => Promise<T>): Promise<T> => {
       const entry = { phase, startedAt: performance.now() };
@@ -150,6 +152,7 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         indexReadMs: Math.round(read.indexReadMs),
         embedQueryMs: Math.round(read.embedQueryMs),
         syncWaitMs: Math.round(read.syncWaitMs),
+        ...(watch ? { watch } : {}),
       };
     });
     let preparedKeyword: MemoryKeywordWorkerResult | undefined;
@@ -352,15 +355,15 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
           "memory search: chunking upgrade rebuild is pending; serving the existing keyword index",
         );
       }
-      // No watcher can observe later edits after kernel capacity exhaustion.
-      // Record a fresh generation at the search boundary so detached maintenance
-      // receives the fact instead of starting from a clean transient manager.
-      if (this.memoryWatchCapacityDegraded || this.memoryWatchUnavailable) {
+      // No watcher observes later edits while it is degraded or being rebuilt.
+      // A search records a fresh generation for detached maintenance at most once
+      // per interval (each maintenance sync re-inspects every memory file); the
+      // periodic degraded-watch sync covers the time between searches.
+      if (this.claimDegradedWatchSearchSync()) {
         this.dirty = true;
       }
       const capacitySyncInFlight =
-        (this.memoryWatchCapacityDegraded || this.memoryWatchUnavailable) &&
-        this.activeBackgroundSearchSyncs.size > 0;
+        this.memoryWatchDegraded && this.activeBackgroundSearchSyncs.size > 0;
       if (
         searchSyncEnabled &&
         !capacitySyncInFlight &&

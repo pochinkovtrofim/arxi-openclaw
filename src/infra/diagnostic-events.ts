@@ -74,6 +74,8 @@ type DiagnosticMemorySearchCompletedEvent = DiagnosticBaseEvent & {
   indexReadMs?: number;
   embedQueryMs?: number;
   syncWaitMs?: number;
+  /** Closed memory watcher state: why it is not observing edits, or "recovered" once. */
+  watch?: "enospc" | "emfile" | "reconcile_failed" | "start_failed" | "recovered";
 };
 
 /** Payload-free facts from authenticated Gateway WebSocket request owners. */

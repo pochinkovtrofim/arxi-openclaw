@@ -1388,7 +1388,12 @@ describe("memory_search diagnostics", () => {
 
   it("emits one trusted content-free timing event per call and keeps timing out of the tool result", async () => {
     setMemorySearchImpl(async (opts) => {
-      opts?.onTiming?.(() => ({ indexReadMs: 3, embedQueryMs: 41, syncWaitMs: 0 }));
+      opts?.onTiming?.(() => ({
+        indexReadMs: 3,
+        embedQueryMs: 41,
+        syncWaitMs: 0,
+        watch: "reconcile_failed",
+      }));
       return [
         {
           path: "MEMORY.md",
@@ -1418,9 +1423,11 @@ describe("memory_search diagnostics", () => {
         indexReadMs: 3,
         embedQueryMs: 41,
         syncWaitMs: 0,
+        watch: "reconcile_failed",
       },
     ]);
     expect(JSON.stringify(result.details)).not.toContain("embedQueryMs");
+    expect(JSON.stringify(result.details)).not.toContain("reconcile_failed");
     expect(JSON.stringify(result.details)).not.toContain("timing");
   });
 

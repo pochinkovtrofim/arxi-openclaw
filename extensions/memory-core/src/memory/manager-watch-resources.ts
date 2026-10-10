@@ -32,9 +32,12 @@ type MemoryNativeWatchFactory = (
   listener: (eventType: fsSync.WatchEventType, filename: string | null) => void | Promise<void>,
 ) => fsSync.FSWatcher;
 
+/** Closed, content-free reason a memory watcher stopped observing edits. */
+export type MemoryWatchUnavailableReason = "enospc" | "emfile" | "reconcile_failed" | "start_failed";
+
 export type MemoryFileWatchCallbacks = {
   onChange: () => void | Promise<void>;
-  onUnavailable: () => void;
+  onUnavailable: (reason: MemoryWatchUnavailableReason) => void;
   onDirty?: () => void;
 };
 
@@ -176,7 +179,8 @@ export abstract class MemoryFileWatchResources {
       return true;
     }
     this.memoryWatchCapacityDegraded = true;
-    this.callbacks.onUnavailable();
+    // ENFILE (system-wide descriptors) shares the descriptor-exhaustion bucket with EMFILE.
+    this.callbacks.onUnavailable(code === "ENOSPC" ? "enospc" : "emfile");
     this.closeNativeMemoryWatchPairs();
     const watcher = this.watcher;
     if (watcher) {
@@ -343,7 +347,7 @@ export abstract class MemoryFileWatchResources {
             this.reconcileAll = false;
             this.pendingChange = true;
             this.callbacks.onDirty?.();
-            this.callbacks.onUnavailable();
+            this.callbacks.onUnavailable("reconcile_failed");
             this.scheduleWatchSync();
             log.warn(`memory watch reconciliation failed: ${String(error)}`);
           }

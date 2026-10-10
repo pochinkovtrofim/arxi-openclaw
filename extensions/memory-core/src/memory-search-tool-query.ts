@@ -88,12 +88,15 @@ export async function executeMemorySearchToolQuery(params: {
   const runtimeDebug: MemorySearchRuntimeDebug[] = [];
   const timingReaders: Array<() => MemorySearchPhaseTiming> = [];
   params.onTiming?.(() => {
-    const total = { indexReadMs: 0, embedQueryMs: 0, syncWaitMs: 0 };
+    const total: MemorySearchPhaseTiming = { indexReadMs: 0, embedQueryMs: 0, syncWaitMs: 0 };
     for (const read of timingReaders) {
       const phases = read();
       total.indexReadMs += phases.indexReadMs;
       total.embedQueryMs += phases.embedQueryMs;
       total.syncWaitMs += phases.syncWaitMs;
+      if (phases.watch) {
+        total.watch = phases.watch;
+      }
     }
     return total;
   });

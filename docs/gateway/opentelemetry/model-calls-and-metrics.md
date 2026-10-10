@@ -278,7 +278,7 @@ see [Prometheus event-loop windows](/gateway/prometheus#event-loop-observation-w
 
 ### Memory search
 
-- `openclaw.memory_search.duration_ms` (histogram, attrs: `openclaw.memory_search.phase` in `total`, `index_read`, `embed_query`, `sync_wait`; `openclaw.memory_search.provider`; `openclaw.memory_search.outcome` in `ok`, `partial`, `unavailable`, `error`). One `total` sample per `memory_search` tool call and one sample per phase the manager search ran, so a slow call can be attributed to the query embedding, the index read (generation lease and published state), or an awaited bootstrap/identity-repair sync. Content-free: no query, results, paths or session identity.
+- `openclaw.memory_search.duration_ms` (histogram, attrs: `openclaw.memory_search.phase` in `total`, `index_read`, `embed_query`, `sync_wait`; `openclaw.memory_search.provider`; `openclaw.memory_search.outcome` in `ok`, `partial`, `unavailable`, `error`; `openclaw.memory_search.watch` when the memory file watcher is down or just recovered). One `total` sample per `memory_search` tool call and one sample per phase the manager search ran, so a slow call can be attributed to the query embedding, the index read (generation lease and published state), or an awaited bootstrap/identity-repair sync. Content-free: no query, results, paths or session identity.
 
 ### Exec
 
