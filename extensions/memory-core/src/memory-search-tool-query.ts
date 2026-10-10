@@ -8,6 +8,7 @@ import {
   type MemoryProviderStatus,
   type MemorySearchDeadlineControl,
   type MemorySearchManager,
+  type MemorySearchPhaseTiming,
   type MemorySearchRuntimeDebug,
   type MemorySearchResult,
   type MemorySource,
@@ -77,12 +78,28 @@ export async function executeMemorySearchToolQuery(params: {
   signal: AbortSignal;
   deadlineControl?: MemorySearchDeadlineControl;
   onRebuildNotice?: (readWarning: () => string | undefined) => void;
+  /** Receives a reader of the phase durations of every manager search this query runs. */
+  onTiming?: (read: () => MemorySearchPhaseTiming) => void;
   onPartialResults?: (
     result: Awaited<ReturnType<typeof finalizeMemorySearchToolQuery>> | null,
   ) => void;
 }) {
   const startedAt = Date.now();
   const runtimeDebug: MemorySearchRuntimeDebug[] = [];
+  const timingReaders: Array<() => MemorySearchPhaseTiming> = [];
+  params.onTiming?.(() => {
+    const total: MemorySearchPhaseTiming = { indexReadMs: 0, embedQueryMs: 0, syncWaitMs: 0 };
+    for (const read of timingReaders) {
+      const phases = read();
+      total.indexReadMs += phases.indexReadMs;
+      total.embedQueryMs += phases.embedQueryMs;
+      total.syncWaitMs += phases.syncWaitMs;
+      if (phases.watch) {
+        total.watch = phases.watch;
+      }
+    }
+    return total;
+  });
   let active = params.initialManager;
   let partialGeneration = 0;
   const { query, signal, visibility } = params;
@@ -130,6 +147,9 @@ export async function executeMemorySearchToolQuery(params: {
         ? { [MEMORY_SEARCH_DEADLINE_CONTROL]: params.deadlineControl }
         : {}),
       onDebug: (debug) => runtimeDebug.push(debug),
+      onTiming: (read) => {
+        timingReaders.push(read);
+      },
       onPartialResults: params.onPartialResults
         ? (partialCandidates) => {
             const generation = ++partialGeneration;

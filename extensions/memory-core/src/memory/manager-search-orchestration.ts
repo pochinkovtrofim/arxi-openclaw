@@ -126,6 +126,35 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       Math.max(1, Math.floor(maxResults * hybrid.candidateMultiplier)),
     );
     const keywordOptions = { boostFallbackRanking: true, signal: opts?.signal };
+    // Phase clock read by the caller, possibly at its own deadline while a phase is
+    // still running: a running phase counts up to the moment of reading.
+    const timing = { indexReadMs: 0, embedQueryMs: 0, syncWaitMs: 0 };
+    // Read only for a caller that reports timing: "recovered" is reported once.
+    const watch = opts?.onTiming ? this.readMemoryWatchDiagnostic() : undefined;
+    const running = new Set<{ phase: keyof typeof timing; startedAt: number }>();
+    const timed = async <T>(phase: keyof typeof timing, run: () => Promise<T>): Promise<T> => {
+      const entry = { phase, startedAt: performance.now() };
+      running.add(entry);
+      try {
+        return await run();
+      } finally {
+        running.delete(entry);
+        timing[phase] += performance.now() - entry.startedAt;
+      }
+    };
+    opts?.onTiming?.(() => {
+      const now = performance.now();
+      const read = { ...timing };
+      for (const entry of running) {
+        read[entry.phase] += now - entry.startedAt;
+      }
+      return {
+        indexReadMs: Math.round(read.indexReadMs),
+        embedQueryMs: Math.round(read.embedQueryMs),
+        syncWaitMs: Math.round(read.syncWaitMs),
+        ...(watch ? { watch } : {}),
+      };
+    });
     let preparedKeyword: MemoryKeywordWorkerResult | undefined;
     let releaseGeneration: (() => Promise<void>) | undefined;
     const releaseReadGeneration = async () => {
@@ -135,9 +164,8 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       await release?.();
     };
     const readIndexState = async () => {
-      releaseGeneration ??= await acquireMemoryIndexReadGeneration(
-        this.settings.store.databasePath,
-        opts?.signal,
+      releaseGeneration ??= await timed("indexReadMs", () =>
+        acquireMemoryIndexReadGeneration(this.settings.store.databasePath, opts?.signal),
       );
       preparedKeyword = undefined;
       if (
@@ -150,16 +178,13 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
           (this.providerInitialized && !this.provider) ||
           this.embeddingBootstrapFailure !== undefined)
       ) {
-        const prepared = await this.prepareKeywordSearch(
-          normalizedQuery,
-          candidates,
-          keywordOptions,
-          sourceFilterList,
+        const prepared = await timed("indexReadMs", () =>
+          this.prepareKeywordSearch(normalizedQuery, candidates, keywordOptions, sourceFilterList),
         );
         preparedKeyword = prepared.keyword;
         return prepared.indexState;
       }
-      return await this.readRetrievalIndexState(opts?.signal);
+      return await timed("indexReadMs", () => this.readRetrievalIndexState(opts?.signal));
     };
     const runSearch = async () => {
       opts?.onDebug?.({ backend: "builtin" });
@@ -175,9 +200,11 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
           // A fresh process can receive its first search before background watch/session
           // syncs have built the index. Await fresh source discovery, but let the
           // sync owner decide whether the index needs a full rebuild.
-          await this.syncAdmitted(
-            { reason: "search-bootstrap" },
-            { allowEmbeddingBootstrapFallback: true },
+          await timed("syncWaitMs", () =>
+            this.syncAdmitted(
+              { reason: "search-bootstrap" },
+              { allowEmbeddingBootstrapFallback: true },
+            ),
           );
         } catch (err) {
           if (err instanceof WorkerTaskError && err.code === "overloaded") {
@@ -192,17 +219,17 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
               log.warn(`memory search-bootstrap: failed to retire embedding provider: ${message}`);
             });
             this.markEmbeddingBootstrapFailure(err, { provider: failedProvider });
-            await this.syncAdmitted({ reason: "search-bootstrap" }).catch(
-              (fallbackErr: unknown) => {
-                if (fallbackErr instanceof WorkerTaskError && fallbackErr.code === "overloaded") {
-                  throw fallbackErr;
-                }
-                const message = redactSensitiveText(formatErrorMessage(fallbackErr), {
-                  mode: "tools",
-                });
-                log.warn(`memory sync failed (search-bootstrap-fallback): ${message}`);
-              },
-            );
+            await timed("syncWaitMs", () =>
+              this.syncAdmitted({ reason: "search-bootstrap" }),
+            ).catch((fallbackErr: unknown) => {
+              if (fallbackErr instanceof WorkerTaskError && fallbackErr.code === "overloaded") {
+                throw fallbackErr;
+              }
+              const message = redactSensitiveText(formatErrorMessage(fallbackErr), {
+                mode: "tools",
+              });
+              log.warn(`memory sync failed (search-bootstrap-fallback): ${message}`);
+            });
           } else {
             log.warn(`memory sync failed (search-bootstrap): ${String(err)}`);
           }
@@ -287,9 +314,8 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         await releaseReadGeneration();
         this.recordAutomaticRebuild();
         // The writer rechecks identity under its lease; another manager may have repaired it.
-        await this.syncAdmitted(
-          { reason: "search" },
-          { allowEmbeddingBootstrapFallback: true },
+        await timed("syncWaitMs", () =>
+          this.syncAdmitted({ reason: "search" }, { allowEmbeddingBootstrapFallback: true }),
         ).catch((err: unknown) => {
           if (err instanceof WorkerTaskError && err.code === "overloaded") {
             throw err;
@@ -329,20 +355,25 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
           "memory search: chunking upgrade rebuild is pending; serving the existing keyword index",
         );
       }
-      // No watcher can observe later edits after kernel capacity exhaustion.
-      // Record a fresh generation at the search boundary so detached maintenance
-      // receives the fact instead of starting from a clean transient manager.
-      if (this.memoryWatchCapacityDegraded || this.memoryWatchUnavailable) {
+      // No watcher observes later edits while it is degraded or being rebuilt.
+      // A search records a fresh generation for detached maintenance at most once
+      // per interval (each maintenance sync re-inspects every memory file); the
+      // periodic degraded-watch sync covers the time between searches.
+      // The detached maintenance sync runs on a transient manager and never clears
+      // this manager's dirty flag, so a degraded watcher gates on the claim itself.
+      const watchDegraded = this.memoryWatchDegraded;
+      const degradedWatchSyncDue = watchDegraded && this.claimDegradedWatchSearchSync();
+      if (degradedWatchSyncDue) {
         this.dirty = true;
       }
-      const capacitySyncInFlight =
-        (this.memoryWatchCapacityDegraded || this.memoryWatchUnavailable) &&
-        this.activeBackgroundSearchSyncs.size > 0;
+      const capacitySyncInFlight = watchDegraded && this.activeBackgroundSearchSyncs.size > 0;
       if (
         searchSyncEnabled &&
         !capacitySyncInFlight &&
         !chunkingUpgradePendingKeywordOnly(repairedIndexIdentity) &&
-        (this.dirty || this.sessionsDirty)
+        (watchDegraded
+          ? degradedWatchSyncDue || this.sessionsDirty
+          : this.dirty || this.sessionsDirty)
       ) {
         const trackedSearchSync = this.syncPublishedIndexInBackground({ reason: "search" })
           .catch((err: unknown) => {
@@ -446,13 +477,15 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       };
 
       const embedQuery = () =>
-        this.embedQueryWithRetry(
-          normalizedQuery,
-          opts?.signal,
-          semanticProvider,
-          false,
-          semanticProviderRuntime,
-          opts?.[MEMORY_SEARCH_DEADLINE_CONTROL],
+        timed("embedQueryMs", () =>
+          this.embedQueryWithRetry(
+            normalizedQuery,
+            opts?.signal,
+            semanticProvider,
+            false,
+            semanticProviderRuntime,
+            opts?.[MEMORY_SEARCH_DEADLINE_CONTROL],
+          ),
         );
       let keywordResults: Awaited<ReturnType<typeof loadKeywordResults>> = [];
       let queryVec: number[];

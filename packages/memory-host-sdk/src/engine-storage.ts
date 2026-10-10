@@ -66,6 +66,7 @@ export type {
   MemoryOriginClass,
   MemoryProviderStatus,
   MemorySearchManager,
+  MemorySearchPhaseTiming,
   MemorySearchRuntimeDebug,
   MemorySearchResult,
   MemorySessionSyncTarget,

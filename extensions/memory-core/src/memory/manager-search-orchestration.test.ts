@@ -2,8 +2,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { setTimeout as sleep } from "node:timers/promises";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
-import { encodeMemoryEmbedding } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
+import {
+  encodeMemoryEmbedding,
+  type MemorySearchPhaseTiming,
+} from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import { resolveRuntimeWorkerUrl, WorkerTaskPool } from "openclaw/plugin-sdk/process-runtime";
 import { openOpenClawAgentDatabase } from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { describe, expect, it, vi } from "vitest";
@@ -47,6 +51,53 @@ describe("memory index", () => {
     expect(results.some((entry) => entry.path === "memory/2026-01-12.md")).toBe(true);
     expect(manager.status().dirty).toBe(true);
     expect(await manager.search("unpublished maintenance marker")).toEqual([]);
+  });
+
+  it("reads content-free phase timing live, counting a phase that is still running", async () => {
+    const manager = await getPersistentManager(createCfg({ minScore: 0 }));
+    await manager.sync({ reason: "test" });
+    const fields = manager as unknown as { provider: EmbeddingProvider };
+    const originalEmbed = fields.provider.embed.bind(fields.provider);
+    const embedStarted = createDeferred<void>();
+    const releaseEmbed = createDeferred<void>();
+    const embedSpy = vi
+      .spyOn(fields.provider, "embed")
+      .mockImplementation(async (input, options) => {
+        embedStarted.resolve();
+        await releaseEmbed.promise;
+        return await originalEmbed(input, options);
+      });
+    try {
+      const readers: Array<() => MemorySearchPhaseTiming> = [];
+      const search = manager.search("zebra", {
+        minScore: 0,
+        onTiming: (read) => readers.push(read),
+      });
+      await embedStarted.promise;
+      await sleep(25);
+      // A caller giving up at its deadline still sees the query embedding it waited on.
+      const inFlight = readers[0]!();
+      expect(inFlight.embedQueryMs).toBeGreaterThanOrEqual(20);
+      expect(inFlight.syncWaitMs).toBe(0);
+      releaseEmbed.resolve();
+      await search;
+      const settled = readers[0]!();
+      expect(settled.embedQueryMs).toBeGreaterThanOrEqual(inFlight.embedQueryMs);
+      expect(settled.indexReadMs).toBeGreaterThanOrEqual(0);
+      await sleep(10);
+      expect(readers[0]!()).toEqual(settled);
+
+      const lexical: Array<() => MemorySearchPhaseTiming> = [];
+      await manager.search("zebra", {
+        minScore: 0,
+        lexicalOnly: true,
+        onTiming: (read) => lexical.push(read),
+      });
+      expect(lexical.map((read) => read())).toEqual([expect.objectContaining({ embedQueryMs: 0 })]);
+    } finally {
+      releaseEmbed.resolve();
+      embedSpy.mockRestore();
+    }
   });
 
   it("invalidates keyword snapshots before changing the fallback provider", async () => {

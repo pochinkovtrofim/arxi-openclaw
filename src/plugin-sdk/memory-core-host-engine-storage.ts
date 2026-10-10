@@ -117,6 +117,7 @@ export type {
   MemorySearchDeadlineControlAction,
   MemorySearchDeadlineControlOptions,
   MemorySearchManager,
+  MemorySearchPhaseTiming,
   MemorySearchRuntimeDebug,
   MemorySyncProgressUpdate,
   MemorySessionSyncTarget,

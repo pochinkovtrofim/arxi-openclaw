@@ -140,6 +140,10 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
     if (evt.type === "tool.execution.error") {
       attrs["openclaw.errorCategory"] = normalizeDiagnosticValue(evt.errorCategory, "other");
     }
+    const memorySearchPhase = runtime.takeMemorySearchPhase(evt.toolCallId);
+    if (memorySearchPhase) {
+      attrs["openclaw.memory_search.phase"] = memorySearchPhase;
+    }
     toolExecutionDurationHistogram.record(evt.durationMs, attrs);
     if (!tracesEnabled) {
       return;

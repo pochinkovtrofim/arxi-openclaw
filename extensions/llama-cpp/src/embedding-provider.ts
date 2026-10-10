@@ -20,6 +20,7 @@ import {
   resolveLlamaCppEmbeddingModel,
   resolveLlamaCppModelCacheDir,
 } from "./defaults.js";
+import { resolveLocalEmbeddingSchedule } from "./embedding-scheduler.js";
 import { resolveManagedLlamaCppProviderConfig } from "./managed-provider-config.js";
 import {
   ensureLlamaCppModel,
@@ -179,6 +180,7 @@ function wrapProvider(params: {
   baseUrl: string;
 }): EmbeddingProvider {
   let runtimeFacts: LlamaServerRuntimeFacts | undefined;
+  const schedule = resolveLocalEmbeddingSchedule(params.baseUrl);
   const refreshFacts = async (loadError?: string) => {
     runtimeFacts = await inspectLlamaServerRuntime({
       baseUrl: params.baseUrl,
@@ -202,9 +204,18 @@ function wrapProvider(params: {
     dimensions: params.provider.dimensions,
     maxInputTokens: params.provider.maxInputTokens,
     embed: async (input, callOptions) =>
-      await withFacts(async () => await params.provider.embed(input, callOptions)),
+      await schedule.runQuery(
+        async () => await withFacts(async () => await params.provider.embed(input, callOptions)),
+      ),
     embedBatch: async (inputs, callOptions) =>
-      await withFacts(async () => await params.provider.embedBatch(inputs, callOptions)),
+      await withFacts(
+        async () =>
+          await schedule.runIndexBatch(
+            inputs,
+            callOptions?.signal,
+            async (slice) => await params.provider.embedBatch(slice, callOptions),
+          ),
+      ),
     close: params.provider.close,
   };
   Object.defineProperty(wrapped, LOCAL_EMBEDDING_RUNTIME_FACTS, {

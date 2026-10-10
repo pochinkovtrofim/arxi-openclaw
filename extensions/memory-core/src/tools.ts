@@ -1,6 +1,11 @@
 import {
+  emitTrustedDiagnosticEvent,
+  normalizeDiagnosticValue,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
+import {
   resolveMemorySearchStaleness,
   type MemorySearchDeadlineControl,
+  type MemorySearchPhaseTiming,
   type MemorySource,
 } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import {
@@ -73,6 +78,27 @@ type PrimaryMemorySearchValue = {
   debug?: MemorySearchToolQueryDebug & { toolMs?: number; outsideSearchMs?: number };
   unavailableResult?: ReturnType<typeof buildPausedMemoryIndexUnavailableResult>;
 };
+
+type MemorySearchDiagnosticOutcome = "ok" | "partial" | "unavailable" | "error";
+
+// Content-free phase timing for exporters: bounded provider id, closed outcome,
+// durations only. Never the query, results, paths or session identity.
+function emitMemorySearchDiagnostic(params: {
+  toolCallId: string;
+  provider: string | undefined;
+  outcome: MemorySearchDiagnosticOutcome;
+  durationMs: number;
+  timing?: MemorySearchPhaseTiming;
+}): void {
+  emitTrustedDiagnosticEvent({
+    type: "memory.search.completed",
+    toolCallId: params.toolCallId,
+    provider: normalizeDiagnosticValue(params.provider, "other"),
+    outcome: params.outcome,
+    durationMs: params.durationMs,
+    ...params.timing,
+  });
+}
 
 const MEMORY_SEARCH_TOOL_COOLDOWN_MS = 60_000;
 
@@ -233,7 +259,7 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
     contract: MEMORY_SEARCH_TOOL_CONTRACT,
     execute:
       ({ cfg, agentId, settings }) =>
-      async (_toolCallId, params, callerSignal) => {
+      async (toolCallId, params, callerSignal) => {
         const rawParams = asToolParamsRecord(params);
         if (callerSignal?.aborted) {
           throw resolveMemorySearchAbortError(callerSignal);
@@ -268,6 +294,11 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
         const toolStartedAt = Date.now();
         const searchesMemory = requestedCorpus !== "wiki";
         const searchesWiki = requestedCorpus === "wiki" || requestedCorpus === "all";
+        // Diagnostics only: the closed outcome and provider this call settled with, and
+        // a live reader of the manager phases (it also attributes a deadline expiry).
+        let diagnosticOutcome: MemorySearchDiagnosticOutcome = "error";
+        let diagnosticProvider: string | undefined;
+        let readSearchTiming: (() => MemorySearchPhaseTiming) | undefined;
         const memoryManagerPurpose = options.oneShotCliRun ? "cli" : undefined;
         const memoryManagersToClose = new Set<ActiveMemoryManagerContext["manager"]>();
         let cleanupStarted = false;
@@ -344,6 +375,9 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                 visibility: { cfg, agentId, sandboxed: options.sandboxed === true },
                 signal,
                 deadlineControl,
+                onTiming: (read) => {
+                  readSearchTiming = read;
+                },
                 onPartialResults: (result) => {
                   if (acceptingPartial) {
                     partial = result;
@@ -443,6 +477,11 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                   : Promise.resolve(null),
               ]);
               const memoryValue = memory?.outcome === "not-registered" ? null : memory?.value;
+              diagnosticProvider = memoryValue?.provider;
+              diagnosticOutcome =
+                memory?.outcome === "ok" || memory?.outcome === "partial"
+                  ? memory.outcome
+                  : "unavailable";
               if (searchesMemory && !searchesWiki && memory?.outcome === "unavailable") {
                 return jsonResult(
                   memoryValue?.unavailableResult ??
@@ -564,6 +603,7 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
             },
           });
         } catch (error) {
+          diagnosticOutcome = "error";
           if (callerSignal?.aborted) {
             throw resolveMemorySearchAbortError(callerSignal);
           }
@@ -580,6 +620,17 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
             }),
           );
         } finally {
+          // Emitted before the tool settles, so the exporter sees it ahead of the
+          // tool.execution lifecycle event of the same call.
+          if (searchesMemory) {
+            emitMemorySearchDiagnostic({
+              toolCallId,
+              provider: diagnosticProvider,
+              outcome: diagnosticOutcome,
+              durationMs: Math.max(0, Date.now() - toolStartedAt),
+              timing: readSearchTiming?.(),
+            });
+          }
           cleanupStarted = true;
           if (searchSignal?.aborted) {
             // Admitted searches retain their leases until they settle; teardown

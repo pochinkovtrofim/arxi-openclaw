@@ -242,6 +242,11 @@ export function createDiagnosticsMetrics(
       unit: "ms",
       description: "Tool execution duration",
     }),
+    memorySearchDurationHistogram: createHistogram("openclaw.memory_search.duration_ms", {
+      unit: "ms",
+      description: "memory_search tool duration by phase",
+      advice: { explicitBucketBoundaries: AGENT_DURATION_MS_BUCKETS },
+    }),
     toolExecutionBlockedCounter: createCounter("openclaw.tool.execution.blocked", {
       unit: "1",
       description: "Tool executions blocked by policy or sandbox diagnostics",
