@@ -359,16 +359,21 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       // A search records a fresh generation for detached maintenance at most once
       // per interval (each maintenance sync re-inspects every memory file); the
       // periodic degraded-watch sync covers the time between searches.
-      if (this.claimDegradedWatchSearchSync()) {
+      // The detached maintenance sync runs on a transient manager and never clears
+      // this manager's dirty flag, so a degraded watcher gates on the claim itself.
+      const watchDegraded = this.memoryWatchDegraded;
+      const degradedWatchSyncDue = watchDegraded && this.claimDegradedWatchSearchSync();
+      if (degradedWatchSyncDue) {
         this.dirty = true;
       }
-      const capacitySyncInFlight =
-        this.memoryWatchDegraded && this.activeBackgroundSearchSyncs.size > 0;
+      const capacitySyncInFlight = watchDegraded && this.activeBackgroundSearchSyncs.size > 0;
       if (
         searchSyncEnabled &&
         !capacitySyncInFlight &&
         !chunkingUpgradePendingKeywordOnly(repairedIndexIdentity) &&
-        (this.dirty || this.sessionsDirty)
+        (watchDegraded
+          ? degradedWatchSyncDue || this.sessionsDirty
+          : this.dirty || this.sessionsDirty)
       ) {
         const trackedSearchSync = this.syncPublishedIndexInBackground({ reason: "search" })
           .catch((err: unknown) => {

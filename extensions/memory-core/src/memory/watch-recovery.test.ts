@@ -91,8 +91,7 @@ describe.skipIf(process.platform !== "linux")("memory watcher recovery", () => {
       await fs.writeFile(path.join(memoryDir, "fresh.md"), "Cobalt heron discovered.");
       await expect
         .poll(
-          async () =>
-            (await activeManager.search("Cobalt heron")).map((result) => result.snippet),
+          async () => (await activeManager.search("Cobalt heron")).map((result) => result.snippet),
           { timeout: 10_000 },
         )
         .toContain("Cobalt heron discovered.");

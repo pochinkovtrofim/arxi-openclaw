@@ -33,7 +33,11 @@ type MemoryNativeWatchFactory = (
 ) => fsSync.FSWatcher;
 
 /** Closed, content-free reason a memory watcher stopped observing edits. */
-export type MemoryWatchUnavailableReason = "enospc" | "emfile" | "reconcile_failed" | "start_failed";
+export type MemoryWatchUnavailableReason =
+  | "enospc"
+  | "emfile"
+  | "reconcile_failed"
+  | "start_failed";
 
 export type MemoryFileWatchCallbacks = {
   onChange: () => void | Promise<void>;
