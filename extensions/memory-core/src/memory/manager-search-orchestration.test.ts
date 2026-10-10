@@ -1,8 +1,8 @@
 // Memory Core tests cover manager search orchestration behavior.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { setTimeout as sleep } from "node:timers/promises";
 import type { DatabaseSync } from "node:sqlite";
+import { setTimeout as sleep } from "node:timers/promises";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import {
   encodeMemoryEmbedding,
