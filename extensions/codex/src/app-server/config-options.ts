@@ -333,6 +333,9 @@ export function createCodexAppServerConfig({
         ...(authToken ? { authToken } : {}),
         headers,
         ...(transport === "stdio" && clearEnv.length > 0 ? { clearEnv } : {}),
+        ...(transport === "stdio" && config.inferenceTransport === "http"
+          ? { inferenceTransport: "http" as const }
+          : {}),
       },
       connectionClass,
       remoteAppsSubstrate,
@@ -564,6 +567,7 @@ export function codexAppServerStartOptionsKey(
       .toSorted(([left], [right]) => left.localeCompare(right))
       .map(([key, value]) => [key, hashSecretForKey(value, `env:${key}`)]),
     clearEnv: [...(options.clearEnv ?? [])].toSorted(),
+    inferenceTransport: options.inferenceTransport ?? "websocket",
     authProfileId: params.authProfileId ?? null,
     authBindingFingerprint: params.authBindingFingerprint ?? null,
     agentDir: params.agentDir ?? null,

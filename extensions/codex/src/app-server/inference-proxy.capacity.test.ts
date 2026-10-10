@@ -855,6 +855,16 @@ describe("inference relay capacity", () => {
     expect(Buffer.concat(chunks).toString()).toBe("denied");
   });
 
+  it("closes a fresh upgrade that never sends a frame after one minute", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const unused = await open();
+    const closed = once(unused.client, "close");
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(unused.client.readyState).toBe(WebSocket.OPEN);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await closed;
+  });
+
   it("expires only proven idle connections, not active streams, then admits their replacements", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const idle = await open();
@@ -865,7 +875,10 @@ describe("inference relay capacity", () => {
     await complete(active.client, active.upstream, '{"type":"response.completed"}');
     await complete(active.client, active.upstream, '{"type":"error","message":"unknown event"}');
     const closed = once(idle.client, "close");
-    await vi.advanceTimersByTimeAsync(60_000);
+    // Idle sockets survive ordinary gaps between turns so native can continue them.
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    expect(idle.client.readyState).toBe(WebSocket.OPEN);
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
     await closed;
     expect(active.client.readyState).toBe(WebSocket.OPEN);
     await complete(

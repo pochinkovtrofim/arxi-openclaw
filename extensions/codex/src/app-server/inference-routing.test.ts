@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { WebSocket } from "openclaw/plugin-sdk/websocket-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeCodexAppServerClient } from "./codex-app-server.test-fixtures.js";
 import {
@@ -704,6 +706,26 @@ describe("managed inference route ownership", () => {
       }
     },
   );
+
+  it("answers native WebSocket upgrades with 426 when start options select HTTP inference", async () => {
+    const h = harness();
+    ownCodexInferenceClient(h.client, { inferenceTransport: "http" });
+    const route = await prepare(h, "chatgpt");
+    const socket = new WebSocket(route.baseUrl.replace("http:", "ws:") + "/responses");
+    socket.on("error", () => {});
+    try {
+      const [, response] = await once(socket, "unexpected-response");
+      const chunks: Buffer[] = [];
+      for await (const chunk of response) {
+        chunks.push(Buffer.from(chunk));
+      }
+      expect(response.statusCode).toBe(426);
+      expect(response.headers).toMatchObject({ connection: "close", "content-type": "text/plain" });
+      expect(Buffer.concat(chunks).toString()).toContain("serves HTTP only");
+    } finally {
+      socket.terminate();
+    }
+  });
 
   it("does not guess an endpoint without native account evidence", async () => {
     const h = harness();

@@ -407,6 +407,47 @@ describe("Codex app-server config", () => {
     ).toStrictEqual({});
   });
 
+  it("accepts only the native WebSocket or HTTP-only inference transport", () => {
+    for (const inferenceTransport of ["websocket", "http"] as const) {
+      expect(readCodexPluginConfig({ appServer: { inferenceTransport } }).appServer).toEqual({
+        inferenceTransport,
+      });
+    }
+    expect(readCodexPluginConfig({ appServer: { inferenceTransport: "grpc" } })).toStrictEqual({});
+  });
+
+  it.each(["websocket", undefined])(
+    "keeps native WebSocket inference when inferenceTransport is %s",
+    (inferenceTransport) => {
+      const runtime = resolveRuntimeForTest({
+        pluginConfig: { appServer: { inferenceTransport } },
+      });
+      expect(runtime.start).not.toHaveProperty("inferenceTransport");
+    },
+  );
+
+  it("selects HTTP-only inference for managed stdio only and keys the shared client on it", () => {
+    const runtime = resolveRuntimeForTest({
+      pluginConfig: { appServer: { inferenceTransport: "http" } },
+    });
+    expect(runtime.start.transport).toBe("stdio");
+    expect(runtime.start.inferenceTransport).toBe("http");
+    expect(codexAppServerStartOptionsKey(runtime.start)).not.toEqual(
+      codexAppServerStartOptionsKey({ ...runtime.start, inferenceTransport: undefined }),
+    );
+    const remote = resolveRuntimeForTest({
+      pluginConfig: {
+        appServer: {
+          transport: "websocket",
+          url: "ws://127.0.0.1:39175",
+          inferenceTransport: "http",
+        },
+      },
+    });
+    expect(remote.start.transport).toBe("websocket");
+    expect(remote.start).not.toHaveProperty("inferenceTransport");
+  });
+
   it("rejects removed app-server topology fields", () => {
     expect(
       readCodexPluginConfig({

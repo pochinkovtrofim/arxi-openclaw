@@ -64,8 +64,19 @@ export type ResolvedCodexAppServerNetworkProxyConfig = {
   configPatch: JsonObject;
 };
 
+/**
+ * How the managed inference relay lets native Codex reach the model provider.
+ * `"http"` answers every WebSocket upgrade with 426 so native falls back to
+ * plain HTTP Responses for the whole session; each request then resends the
+ * full input under one `prompt_cache_key`, which keeps the provider's prefix
+ * cache warm across turns instead of restarting cold after every reconnect.
+ */
+export type CodexInferenceTransport = "websocket" | "http";
+
 export type CodexAppServerStartOptions = {
   transport: CodexAppServerTransportMode;
+  /** Managed stdio only; absent means the native WebSocket default. */
+  inferenceTransport?: CodexInferenceTransport;
   homeScope?: CodexAppServerHomeScope;
   /** Lifecycle-captured local home; does not change requested home ownership. */
   codexHome?: string;

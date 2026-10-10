@@ -14,6 +14,7 @@ import {
   WebSocket,
   WebSocketServer,
 } from "openclaw/plugin-sdk/websocket-runtime";
+import type { CodexInferenceTransport } from "./config-contracts.js";
 import { createCodexInferenceContext } from "./inference-context.js";
 import {
   authorizationFailure,
@@ -47,7 +48,13 @@ const MAX_WEBSOCKETS = 64;
 const MAX_RESIDENTS = MAX_WEBSOCKETS + MAX_UPLOADS;
 const REQUEST_TIMEOUT_MS = 30_000;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
-const IDLE_WEBSOCKET_MS = 60_000;
+// A proven-idle socket stays until native closes it or pressure reclaims it, so the
+// next turn continues with previous_response_id instead of a cold full resend; the
+// ceiling is above the 30 min live-thread idle. An unused fresh 101 keeps 60 s.
+const IDLE_WEBSOCKET_MS = 60 * 60_000;
+const FIRST_FRAME_MS = 60_000;
+// Native Codex treats a 426 handshake answer as "use HTTP Responses for this session".
+const HTTP_ONLY_BODY = { contentType: "text/plain", text: "Codex relay serves HTTP only." };
 
 type ResidentTicket = {
   signal: AbortSignal;
@@ -62,6 +69,8 @@ export async function createCodexInferenceProxy(params: {
   upstream: URL;
   assertCurrent: () => void;
   oauth?: CodexResponsesOAuth;
+  /** `"http"` answers WebSocket upgrades with 426; see `CodexInferenceTransport`. */
+  inferenceTransport?: CodexInferenceTransport;
   preserveAzureUrlFeatures?: boolean;
   preserveCodexBackendRoutes?: boolean;
   bindModelExecution?: (
@@ -358,9 +367,18 @@ export async function createCodexInferenceProxy(params: {
   // Leave HTTP/failure-response headroom beyond the separately bounded WS pool.
   // This last-resort TCP ceiling must not be the normal inference admission limit.
   server.maxConnections = MAX_WEBSOCKETS + MAX_UPLOADS * 4;
+  // Both bounds cover request receipt only. Node stops the request clock once the
+  // request message is complete, so a streaming response may run for minutes.
   server.requestTimeout = REQUEST_TIMEOUT_MS;
   server.headersTimeout = HANDSHAKE_TIMEOUT_MS;
   server.on("upgrade", (req, socket, head) => {
+    if (params.inferenceTransport === "http") {
+      // Answer before any route, admission or upstream work: the handshake consumes
+      // no resident slot, and the same request proceeds over HTTP in native's call.
+      socket.once("error", () => {});
+      rejectWebSocketUpgrade(socket, { status: 426, body: HTTP_ONLY_BODY });
+      return;
+    }
     void (async () => {
       let remote: WebSocket | undefined;
       let local: WebSocket | undefined;
@@ -555,7 +573,7 @@ export async function createCodexInferenceProxy(params: {
                   idleConnections.add(close);
                 }
                 clearTimeout(idleTimer);
-                idleTimer = setTimeout(close, IDLE_WEBSOCKET_MS);
+                idleTimer = setTimeout(close, reclaimable ? IDLE_WEBSOCKET_MS : FIRST_FRAME_MS);
                 idleTimer.unref();
                 reclaimIdle();
               };
