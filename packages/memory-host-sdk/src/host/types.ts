@@ -406,8 +406,12 @@ export interface MemorySearchManager {
       /** Active repository identities used only for project-aware ranking. */
       activeProjectKeys?: string[];
       onDebug?: (debug: MemorySearchRuntimeDebug) => void;
-      /** Phase durations reported once when the search settles, whatever its outcome. */
-      onTiming?: (timing: MemorySearchPhaseTiming) => void;
+      /**
+       * Receives, once when the search starts, a reader of its phase durations. A phase
+       * still running counts up to the moment of reading, so a caller that gives up at
+       * its own deadline can still attribute the wait.
+       */
+      onTiming?: (read: () => MemorySearchPhaseTiming) => void;
       /**
        * Ranked memory-file keyword candidates bounded by maxResults, available before semantic retrieval completes.
        * Callers must apply the same visibility checks as for final results.

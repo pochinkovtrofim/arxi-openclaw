@@ -16,7 +16,7 @@ type SearchImpl = (
     sessionKey?: string;
     activeProjectKeys?: string[];
     onDebug?: (debug: MemorySearchRuntimeDebug) => void;
-    onTiming?: (timing: MemorySearchPhaseTiming) => void;
+    onTiming?: (read: () => MemorySearchPhaseTiming) => void;
     signal?: AbortSignal;
     sources?: MemorySource[];
   } & MemorySearchDeadlineControlOptions,

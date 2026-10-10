@@ -44,7 +44,7 @@ OpenTelemetry metrics or change Prometheus metric labels.
 - `openclaw.tool.execution`
   - `gen_ai.tool.name`, `gen_ai.operation.name` (`execute_tool`), `openclaw.toolName`, `openclaw.tool.source`, optional `gen_ai.tool.call.id`, `openclaw.tool.owner`, `openclaw.tool.params.*`, optional `openclaw.agent`
   - Optional `openclaw.errorCategory`/`openclaw.errorCode` on errors, `openclaw.deniedReason` and `openclaw.outcome=blocked` when denied by policy or sandbox
-  - For `memory_search`, `openclaw.memory_search.phase`: the phase that dominated the call (`embed_query`, `index_read`, `sync_wait`, or `search` for the remaining retrieval work)
+  - For `memory_search`, `openclaw.memory_search.phase`: the phase that dominated the call (`embed_query`, `index_read`, `sync_wait`, or `search` for the untimed remainder such as retrieval and ranking). A phase still running when the call hit its deadline counts up to the deadline; a call that never reached a manager search (for example a cooldown answer) carries no phase
 - `openclaw.exec`
   - `openclaw.exec.target`, `openclaw.exec.mode`, `openclaw.outcome`, `openclaw.failureKind`, `openclaw.exec.command_length`, `openclaw.exec.exit_code`, `openclaw.exec.exit_signal`, `openclaw.exec.timed_out`
 - `openclaw.memory_search`
@@ -190,7 +190,8 @@ for usage methods and request options.
 - `memory.search.completed` - trusted, content-free phase timing emitted by the
   memory-core `memory_search` tool once per call: a bounded `provider`, the closed
   `outcome` (`ok`, `partial`, `unavailable`, `error`), the tool `durationMs`, and
-  the manager phases it ran (`indexReadMs`, `embedQueryMs`, `syncWaitMs`). Exported
+  the manager phases it ran (`indexReadMs`, `embedQueryMs`, `syncWaitMs`, read when
+  the call settles, so a deadline expiry counts the phase still running). Exported
   as the `openclaw.memory_search` span and the
   [`openclaw.memory_search.duration_ms` histogram](/gateway/opentelemetry#memory-search).
 

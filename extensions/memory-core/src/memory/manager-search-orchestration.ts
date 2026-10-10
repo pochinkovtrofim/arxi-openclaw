@@ -126,15 +126,32 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       Math.max(1, Math.floor(maxResults * hybrid.candidateMultiplier)),
     );
     const keywordOptions = { boostFallbackRanking: true, signal: opts?.signal };
+    // Phase clock read by the caller, possibly at its own deadline while a phase is
+    // still running: a running phase counts up to the moment of reading.
     const timing = { indexReadMs: 0, embedQueryMs: 0, syncWaitMs: 0 };
+    const running = new Set<{ phase: keyof typeof timing; startedAt: number }>();
     const timed = async <T>(phase: keyof typeof timing, run: () => Promise<T>): Promise<T> => {
-      const startedAt = performance.now();
+      const entry = { phase, startedAt: performance.now() };
+      running.add(entry);
       try {
         return await run();
       } finally {
-        timing[phase] += performance.now() - startedAt;
+        running.delete(entry);
+        timing[phase] += performance.now() - entry.startedAt;
       }
     };
+    opts?.onTiming?.(() => {
+      const now = performance.now();
+      const read = { ...timing };
+      for (const entry of running) {
+        read[entry.phase] += now - entry.startedAt;
+      }
+      return {
+        indexReadMs: Math.round(read.indexReadMs),
+        embedQueryMs: Math.round(read.embedQueryMs),
+        syncWaitMs: Math.round(read.syncWaitMs),
+      };
+    });
     let preparedKeyword: MemoryKeywordWorkerResult | undefined;
     let releaseGeneration: (() => Promise<void>) | undefined;
     const releaseReadGeneration = async () => {
@@ -617,11 +634,6 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         return await runSearch();
       } finally {
         await releaseReadGeneration();
-        opts?.onTiming?.({
-          indexReadMs: Math.round(timing.indexReadMs),
-          embedQueryMs: Math.round(timing.embedQueryMs),
-          syncWaitMs: Math.round(timing.syncWaitMs),
-        });
       }
     });
   }

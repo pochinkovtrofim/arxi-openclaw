@@ -165,7 +165,9 @@ test("exports memory_search phase timing as a histogram and span from trusted ev
       .flatMap((scope) => scope.metrics)
       .find((metric) => metric.descriptor.name === "openclaw.tool.execution.duration_ms");
     expect(
-      (toolHistogram?.dataPoints ?? []).map((point) => point.attributes["openclaw.memory_search.phase"]),
+      (toolHistogram?.dataPoints ?? []).map(
+        (point) => point.attributes["openclaw.memory_search.phase"],
+      ),
     ).toEqual(expect.arrayContaining(["embed_query", "search"]));
   } finally {
     try {
@@ -173,5 +175,66 @@ test("exports memory_search phase timing as a histogram and span from trusted ev
     } finally {
       await meterProvider.shutdown();
     }
+  }
+});
+
+test("labels the tool record with the dominant phase, counting the untimed remainder as search", async () => {
+  await startOtelService({ traces: true });
+  try {
+    const calls = [
+      // Deadline expiry while the query embedding was still running.
+      { id: "deadline-embed", outcome: "unavailable", durationMs: 30_000, embedQueryMs: 29_900 },
+      // A short embedding inside a call whose time went to retrieval.
+      { id: "slow-retrieval", outcome: "ok", durationMs: 30_000, embedQueryMs: 1_000 },
+      // An awaited bootstrap sync.
+      { id: "sync-bound", outcome: "partial", durationMs: 30_000, syncWaitMs: 25_000 },
+    ] as const;
+    for (const call of calls) {
+      emitTrustedDiagnosticEvent({
+        type: "memory.search.completed",
+        toolCallId: call.id,
+        provider: "local",
+        outcome: call.outcome,
+        durationMs: call.durationMs,
+        indexReadMs: 10,
+        embedQueryMs: "embedQueryMs" in call ? call.embedQueryMs : 0,
+        syncWaitMs: "syncWaitMs" in call ? call.syncWaitMs : 0,
+      });
+      emitTrustedDiagnosticEvent({
+        type: "tool.execution.completed",
+        toolName: "memory_search",
+        toolSource: "plugin",
+        toolCallId: call.id,
+        durationMs: call.durationMs,
+      });
+    }
+    // A cooldown answer never reached a manager search: no phase fields, no label.
+    emitTrustedDiagnosticEvent({
+      type: "memory.search.completed",
+      toolCallId: "cooldown",
+      provider: "other",
+      outcome: "unavailable",
+      durationMs: 1,
+    });
+    emitTrustedDiagnosticEvent({
+      type: "tool.execution.completed",
+      toolName: "memory_search",
+      toolSource: "plugin",
+      toolCallId: "cooldown",
+      durationMs: 2,
+    });
+    await waitForDiagnosticEventsDrained();
+
+    const toolSpans = sdk.exporter
+      .getFinishedSpans()
+      .filter((span) => span.name === "openclaw.tool.execution");
+    expect(toolSpans.map((span) => span.attributes["openclaw.memory_search.phase"])).toEqual([
+      "embed_query",
+      "search",
+      "sync_wait",
+      undefined,
+    ]);
+  } finally {
+    await stopStartedOtelServices();
   }
 });

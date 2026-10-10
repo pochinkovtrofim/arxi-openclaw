@@ -78,13 +78,25 @@ export async function executeMemorySearchToolQuery(params: {
   signal: AbortSignal;
   deadlineControl?: MemorySearchDeadlineControl;
   onRebuildNotice?: (readWarning: () => string | undefined) => void;
+  /** Receives a reader of the phase durations of every manager search this query runs. */
+  onTiming?: (read: () => MemorySearchPhaseTiming) => void;
   onPartialResults?: (
     result: Awaited<ReturnType<typeof finalizeMemorySearchToolQuery>> | null,
   ) => void;
 }) {
   const startedAt = Date.now();
   const runtimeDebug: MemorySearchRuntimeDebug[] = [];
-  let timing: MemorySearchPhaseTiming | undefined;
+  const timingReaders: Array<() => MemorySearchPhaseTiming> = [];
+  params.onTiming?.(() => {
+    const total = { indexReadMs: 0, embedQueryMs: 0, syncWaitMs: 0 };
+    for (const read of timingReaders) {
+      const phases = read();
+      total.indexReadMs += phases.indexReadMs;
+      total.embedQueryMs += phases.embedQueryMs;
+      total.syncWaitMs += phases.syncWaitMs;
+    }
+    return total;
+  });
   let active = params.initialManager;
   let partialGeneration = 0;
   const { query, signal, visibility } = params;
@@ -132,8 +144,8 @@ export async function executeMemorySearchToolQuery(params: {
         ? { [MEMORY_SEARCH_DEADLINE_CONTROL]: params.deadlineControl }
         : {}),
       onDebug: (debug) => runtimeDebug.push(debug),
-      onTiming: (settled) => {
-        timing = settled;
+      onTiming: (read) => {
+        timingReaders.push(read);
       },
       onPartialResults: params.onPartialResults
         ? (partialCandidates) => {
@@ -153,7 +165,6 @@ export async function executeMemorySearchToolQuery(params: {
               searched: { candidates: memoryCandidates, searchWindow },
               ...queryContext,
               runtimeDebug: [...runtimeDebug],
-              timing,
               effectiveMode: "keyword-only",
             }).then(
               (result) => {
@@ -194,7 +205,6 @@ export async function executeMemorySearchToolQuery(params: {
     ...searched,
     ...queryContext,
     runtimeDebug,
-    timing,
   });
 }
 
@@ -206,7 +216,6 @@ async function finalizeMemorySearchToolQuery(params: {
   visibility: MemorySearchToolVisibility;
   searchSources: MemorySource[] | undefined;
   runtimeDebug: MemorySearchRuntimeDebug[];
-  timing?: MemorySearchPhaseTiming;
   startedAt: number;
   effectiveMode?: string;
 }) {
@@ -260,7 +269,6 @@ async function finalizeMemorySearchToolQuery(params: {
     searchStartedAt: startedAt,
     status,
     rawResults,
-    timing: params.timing,
     pausedIndexIdentity: undefined,
     searchMode: params.effectiveMode ?? latestDebug?.effectiveMode,
     debug: {

@@ -76,7 +76,6 @@ type PrimaryMemorySearchValue = {
   staleness?: Exclude<ReturnType<typeof resolveMemorySearchStaleness>, null>;
   automaticRebuildWarning?: string;
   debug?: MemorySearchToolQueryDebug & { toolMs?: number; outsideSearchMs?: number };
-  timing?: MemorySearchPhaseTiming;
   unavailableResult?: ReturnType<typeof buildPausedMemoryIndexUnavailableResult>;
 };
 
@@ -295,6 +294,11 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
         const toolStartedAt = Date.now();
         const searchesMemory = requestedCorpus !== "wiki";
         const searchesWiki = requestedCorpus === "wiki" || requestedCorpus === "all";
+        // Diagnostics only: the closed outcome and provider this call settled with, and
+        // a live reader of the manager phases (it also attributes a deadline expiry).
+        let diagnosticOutcome: MemorySearchDiagnosticOutcome = "error";
+        let diagnosticProvider: string | undefined;
+        let readSearchTiming: (() => MemorySearchPhaseTiming) | undefined;
         const memoryManagerPurpose = options.oneShotCliRun ? "cli" : undefined;
         const memoryManagersToClose = new Set<ActiveMemoryManagerContext["manager"]>();
         let cleanupStarted = false;
@@ -371,6 +375,9 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                 visibility: { cfg, agentId, sandboxed: options.sandboxed === true },
                 signal,
                 deadlineControl,
+                onTiming: (read) => {
+                  readSearchTiming = read;
+                },
                 onPartialResults: (result) => {
                   if (acceptingPartial) {
                     partial = result;
@@ -431,7 +438,6 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
               model: status.model,
               fallback: status.fallback,
               mode: executed.searchMode,
-              timing: executed.timing,
               staleness: resolveMemorySearchStaleness(status, agentId) ?? undefined,
               automaticRebuildWarning: readRebuildWarning(),
               debug:
@@ -471,6 +477,11 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                   : Promise.resolve(null),
               ]);
               const memoryValue = memory?.outcome === "not-registered" ? null : memory?.value;
+              diagnosticProvider = memoryValue?.provider;
+              diagnosticOutcome =
+                memory?.outcome === "ok" || memory?.outcome === "partial"
+                  ? memory.outcome
+                  : "unavailable";
               if (searchesMemory && !searchesWiki && memory?.outcome === "unavailable") {
                 return jsonResult(
                   memoryValue?.unavailableResult ??
@@ -574,18 +585,6 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                     outsideSearchMs: Math.max(0, elapsed - memoryValue.debug.searchMs),
                   }
                 : undefined;
-              if (memory) {
-                emitMemorySearchDiagnostic({
-                  toolCallId,
-                  provider: memoryValue?.provider,
-                  outcome:
-                    memory.outcome === "ok" || memory.outcome === "partial"
-                      ? memory.outcome
-                      : "unavailable",
-                  durationMs: elapsed,
-                  timing: memoryValue?.timing,
-                });
-              }
               return jsonResult({
                 results: results.map((result) => presentation.get(result) ?? result),
                 ...(sourceReads.length > 0 ? { sourceReads } : {}),
@@ -604,14 +603,7 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
             },
           });
         } catch (error) {
-          if (searchesMemory) {
-            emitMemorySearchDiagnostic({
-              toolCallId,
-              provider: undefined,
-              outcome: "error",
-              durationMs: Math.max(0, Date.now() - toolStartedAt),
-            });
-          }
+          diagnosticOutcome = "error";
           if (callerSignal?.aborted) {
             throw resolveMemorySearchAbortError(callerSignal);
           }
@@ -628,6 +620,17 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
             }),
           );
         } finally {
+          // Emitted before the tool settles, so the exporter sees it ahead of the
+          // tool.execution lifecycle event of the same call.
+          if (searchesMemory) {
+            emitMemorySearchDiagnostic({
+              toolCallId,
+              provider: diagnosticProvider,
+              outcome: diagnosticOutcome,
+              durationMs: Math.max(0, Date.now() - toolStartedAt),
+              timing: readSearchTiming?.(),
+            });
+          }
           cleanupStarted = true;
           if (searchSignal?.aborted) {
             // Admitted searches retain their leases until they settle; teardown

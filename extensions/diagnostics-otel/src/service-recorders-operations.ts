@@ -137,13 +137,21 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
     ] as const;
     for (const [phase, ms] of phases) {
       if (typeof ms === "number") {
-        memorySearchDurationHistogram.record(ms, { ...attrs, "openclaw.memory_search.phase": phase });
+        memorySearchDurationHistogram.record(ms, {
+          ...attrs,
+          "openclaw.memory_search.phase": phase,
+        });
       }
     }
-    if (evt.toolCallId) {
-      // The phase that dominated the call; "search" when no timed phase did.
+    const timedMs = (evt.indexReadMs ?? 0) + (evt.embedQueryMs ?? 0) + (evt.syncWaitMs ?? 0);
+    const reachedSearch =
+      evt.indexReadMs !== undefined || evt.embedQueryMs !== undefined || evt.syncWaitMs !== undefined;
+    if (evt.toolCallId && reachedSearch) {
+      // The phase that dominated the call. "search" is the untimed remainder: manager
+      // acquisition, retrieval, ranking and source reads. A call that never reached a
+      // manager search (cooldown, setup failure) carries no phase.
       let dominant = "search";
-      let dominantMs = 0;
+      let dominantMs = evt.durationMs - timedMs;
       for (const [phase, ms] of phases) {
         if (phase !== "total" && typeof ms === "number" && ms > dominantMs) {
           dominant = phase;

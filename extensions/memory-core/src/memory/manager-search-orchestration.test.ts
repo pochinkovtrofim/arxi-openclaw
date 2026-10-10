@@ -3,7 +3,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
-import { encodeMemoryEmbedding } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
+import {
+  encodeMemoryEmbedding,
+  type MemorySearchPhaseTiming,
+} from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import { resolveRuntimeWorkerUrl, WorkerTaskPool } from "openclaw/plugin-sdk/process-runtime";
 import { openOpenClawAgentDatabase } from "openclaw/plugin-sdk/sqlite-runtime-testing";
 import { describe, expect, it, vi } from "vitest";
@@ -49,33 +52,53 @@ describe("memory index", () => {
     expect(await manager.search("unpublished maintenance marker")).toEqual([]);
   });
 
-  it("reports content-free phase timing once per search, including a skipped query embed", async () => {
+  it("reads content-free phase timing live, counting a phase that is still running", async () => {
     const manager = await getPersistentManager(createCfg({ minScore: 0 }));
     await manager.sync({ reason: "test" });
     const fields = manager as unknown as { provider: EmbeddingProvider };
     const originalEmbed = fields.provider.embed.bind(fields.provider);
+    const embedStarted = createDeferred<void>();
+    const releaseEmbed = createDeferred<void>();
     const embedSpy = vi
       .spyOn(fields.provider, "embed")
       .mockImplementation(async (input, options) => {
-        await new Promise((resolve) => setTimeout(resolve, 25));
+        embedStarted.resolve();
+        await releaseEmbed.promise;
         return await originalEmbed(input, options);
       });
     try {
-      const timings: Array<{ indexReadMs: number; embedQueryMs: number; syncWaitMs: number }> = [];
-      await manager.search("zebra", { minScore: 0, onTiming: (timing) => timings.push(timing) });
-      expect(timings).toHaveLength(1);
-      expect(timings[0]?.embedQueryMs).toBeGreaterThanOrEqual(20);
-      expect(timings[0]?.indexReadMs).toBeGreaterThanOrEqual(0);
-      expect(timings[0]?.syncWaitMs).toBe(0);
+      const readers: Array<() => MemorySearchPhaseTiming> = [];
+      const search = manager.search("zebra", {
+        minScore: 0,
+        onTiming: (read) => readers.push(read),
+      });
+      await embedStarted.promise;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      expect(readers).toHaveLength(1);
+      // A caller giving up at its deadline still sees the query embedding it waited on.
+      const inFlight = readers[0]!();
+      expect(inFlight.embedQueryMs).toBeGreaterThanOrEqual(20);
+      expect(inFlight.syncWaitMs).toBe(0);
+      releaseEmbed.resolve();
+      await search;
+      const settled = readers[0]!();
+      expect(settled.embedQueryMs).toBeGreaterThanOrEqual(inFlight.embedQueryMs);
+      expect(settled.indexReadMs).toBeGreaterThanOrEqual(0);
+      // Settled phases stop counting.
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      expect(readers[0]!()).toEqual(settled);
 
-      const lexical: Array<{ embedQueryMs: number }> = [];
+      const lexical: Array<() => MemorySearchPhaseTiming> = [];
       await manager.search("zebra", {
         minScore: 0,
         lexicalOnly: true,
-        onTiming: (timing) => lexical.push(timing),
+        onTiming: (read) => lexical.push(read),
       });
-      expect(lexical).toEqual([expect.objectContaining({ embedQueryMs: 0 })]);
+      expect(lexical.map((read) => read())).toEqual([
+        expect.objectContaining({ embedQueryMs: 0 }),
+      ]);
     } finally {
+      releaseEmbed.resolve();
       embedSpy.mockRestore();
     }
   });
