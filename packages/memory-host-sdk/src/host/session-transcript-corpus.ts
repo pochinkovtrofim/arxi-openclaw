@@ -174,6 +174,17 @@ function readParentSessionKeys(entry: SessionEntry | undefined): string[] {
   return [...keys];
 }
 
+// A persistent cron target (`sessionTarget: "session:<id>"`) keeps one
+// ordinary-looking key across runs, so the cron-run key shape cannot identify
+// it. Its row carries the write-once creation stamp instead. Background
+// automation transcripts are not conversation memory; what such a job delivers
+// is mirrored into the recipient conversation and stays recallable there. The
+// agent main session is never reclassified, even if a job created it first.
+const AGENT_MAIN_SESSION_KEY_RE = /^agent:[^:]+:main$/u;
+function isCronTargetSessionEntry(sessionKey: string, entry: SessionEntry | undefined): boolean {
+  return entry?.createdVia === "cron" && !AGENT_MAIN_SESSION_KEY_RE.test(sessionKey);
+}
+
 function collectCronGeneratedSessionKeys(
   summaries: readonly SessionEntrySummary[],
 ): ReadonlySet<string> {
@@ -185,7 +196,7 @@ function collectCronGeneratedSessionKeys(
   const resolving = new Set<string>();
 
   const isCronGenerated = (sessionKey: string, entry: SessionEntry | undefined): boolean => {
-    if (isCronRunSessionKey(sessionKey)) {
+    if (isCronRunSessionKey(sessionKey) || isCronTargetSessionEntry(sessionKey, entry)) {
       cache.set(sessionKey, true);
       cronGeneratedKeys.add(sessionKey);
       return true;
