@@ -11,6 +11,7 @@ import type { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import { onDiagnosticEvent } from "./diagnostic-events.js";
 import { resolveRuntimeWorkerArgv, resolveRuntimeWorkerUrl } from "./runtime-worker-url.js";
 import { getTrackedWorkerCpuSources, getTrackedWorkerPoolSnapshot } from "./worker-cpu.js";
 import { workerTaskPoolEntrypoints } from "./worker-task-pool-runtime.test-support.js";
@@ -435,6 +436,52 @@ describe("worker task pool", () => {
     expect(census.workerPoolCount).toBe(initial.workerPoolCount + 3);
     expect(census.workerCount).toBe(initial.workerCount + limit + 2);
     expect(census.workerPools.map((pool) => pool.workerCount)).toEqual([limit, 1, 1]);
+  });
+
+  it("resumes an interactive pool before an earlier batch waiter and reports each permit wait", async () => {
+    // availableParallelism is 4 here: no reserved permit, only admission order changes.
+    const limit = Math.max(1, availableParallelism() - 1);
+    const lanes: Array<{ lane: string; waitMs: number }> = [];
+    const stop = onDiagnosticEvent((event) => {
+      if (event.type === "queue.lane.dequeue" && event.lane.startsWith("compute.")) {
+        lanes.push({ lane: event.lane, waitMs: event.waitMs });
+      }
+    });
+    const batch = createPool({ workerUrl, sharedCompute: true, maxWorkers: limit });
+    const waitingBatch = createPool({ workerUrl, sharedCompute: true });
+    const interactive = createPool({ workerUrl, sharedCompute: "interactive" });
+    const gates = Array.from({ length: limit }, () => createDeferredCore<PoolFixtureInput>());
+    const running = gates.map((gate) => batch.run(() => gate.promise, {}));
+    const started: string[] = [];
+    const queuedBatch = waitingBatch.run(() => {
+      started.push("batch");
+      return { label: "batch" };
+    }, {});
+    const queuedInteractive = interactive.run(() => {
+      started.push("interactive");
+      return { label: "interactive" };
+    }, {});
+    const settled = Promise.allSettled([...running, queuedBatch, queuedInteractive]);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(started).toEqual([]);
+      gates[0]!.resolve({ label: "first batch" });
+      expect(await queuedInteractive).toMatchObject({ label: "interactive" });
+      expect(started[0]).toBe("interactive");
+    } finally {
+      for (const gate of gates) {
+        gate.resolve({ label: "batch owner" });
+      }
+      await settled;
+      stop();
+    }
+    expect(await queuedBatch).toMatchObject({ label: "batch" });
+    expect(started).toEqual(["interactive", "batch"]);
+    const entry = workerUrl.pathname.split("/").at(-1)!.replace(/\.[cm]?[jt]s$/u, "");
+    const interactiveWaits = lanes.filter(({ lane }) => lane === `compute.interactive.${entry}`);
+    expect(interactiveWaits).toHaveLength(1);
+    expect(interactiveWaits[0]!.waitMs).toBeGreaterThanOrEqual(15);
+    expect(lanes.filter(({ lane }) => lane === `compute.batch.${entry}`)).toHaveLength(limit + 1);
   });
 
   it.each(["before", "during"] as const)(
