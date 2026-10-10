@@ -1,9 +1,6 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_SESSION_SYNC_DEBOUNCE_MS,
-  resolveSessionSyncDebounceMs,
-} from "./session-sync-config.js";
+import { resolveSessionSyncDebounceMs } from "./session-sync-config.js";
 
 function withDebounce(debounceMs: unknown): OpenClawConfig {
   return {
@@ -13,7 +10,6 @@ function withDebounce(debounceMs: unknown): OpenClawConfig {
 
 describe("memory-core session index delay", () => {
   it("keeps the five-second default when unset", () => {
-    expect(DEFAULT_SESSION_SYNC_DEBOUNCE_MS).toBe(5_000);
     expect(resolveSessionSyncDebounceMs({} as OpenClawConfig)).toBe(5_000);
     expect(
       resolveSessionSyncDebounceMs({

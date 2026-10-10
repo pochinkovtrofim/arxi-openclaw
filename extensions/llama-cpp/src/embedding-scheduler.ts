@@ -10,7 +10,7 @@ import type { EmbeddingInput } from "openclaw/plugin-sdk/embedding-providers";
 // schedule is keyed by the server base URL rather than by provider instance.
 
 /** Inputs per index sub-request; a waiting query is delayed by at most this many chunks. */
-export const LOCAL_INDEX_REQUEST_INPUTS = 2;
+const LOCAL_INDEX_REQUEST_INPUTS = 2;
 
 type QueryDrain = { promise: Promise<void>; resolve: () => void };
 

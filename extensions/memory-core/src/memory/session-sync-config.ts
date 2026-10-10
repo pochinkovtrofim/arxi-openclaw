@@ -2,7 +2,7 @@ import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { asNullableRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 
 /** Default delay between the first transcript change and the session re-index it triggers. */
-export const DEFAULT_SESSION_SYNC_DEBOUNCE_MS = 5_000;
+const DEFAULT_SESSION_SYNC_DEBOUNCE_MS = 5_000;
 
 /**
  * The memory-core `sessionSync.debounceMs` plugin setting: how long committed transcript

@@ -1,10 +1,7 @@
 import type { EmbeddingInput } from "openclaw/plugin-sdk/embedding-providers";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { describe, expect, it } from "vitest";
-import {
-  LOCAL_INDEX_REQUEST_INPUTS,
-  resolveLocalEmbeddingSchedule,
-} from "./embedding-scheduler.js";
+import { resolveLocalEmbeddingSchedule } from "./embedding-scheduler.js";
 
 type SentRequest = { slice: string[]; release: () => void; released: boolean };
 
@@ -71,7 +68,6 @@ describe("local embedding schedule", () => {
       ["zz"],
     ]);
     expect(recorder.maxActive).toBe(1);
-    expect(LOCAL_INDEX_REQUEST_INPUTS).toBe(2);
   });
 
   it("serves a waiting query before the next index sub-request", async () => {
