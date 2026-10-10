@@ -37,12 +37,11 @@ export function createDiagnosticsEventHandler(params: {
     try {
       switch (evt.type) {
         case "diagnostic.child_process.spawn":
-          // Child-launch counts currently export through Prometheus.
-          return;
         case "headless.run.started":
         case "headless.run.completed":
-          // Headless run lifecycle has no OpenTelemetry mapping yet.
-          return;
+          // Child-launch counts export through Prometheus; headless run lifecycle
+          // has no OpenTelemetry mapping yet.
+          break;
         case "diagnostic.gc":
           return recorders.recordGcDuration(evt, metadata);
         case "gateway.event_loop.sample":

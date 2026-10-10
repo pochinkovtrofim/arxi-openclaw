@@ -1,6 +1,7 @@
 // Memory Core tests cover manager search orchestration behavior.
 import fs from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { DatabaseSync } from "node:sqlite";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import {
@@ -73,10 +74,7 @@ describe("memory index", () => {
         onTiming: (read) => readers.push(read),
       });
       await embedStarted.promise;
-      await new Promise((resolve) => {
-        setTimeout(resolve, 25);
-      });
-      expect(readers).toHaveLength(1);
+      await sleep(25);
       // A caller giving up at its deadline still sees the query embedding it waited on.
       const inFlight = readers[0]!();
       expect(inFlight.embedQueryMs).toBeGreaterThanOrEqual(20);
@@ -86,10 +84,7 @@ describe("memory index", () => {
       const settled = readers[0]!();
       expect(settled.embedQueryMs).toBeGreaterThanOrEqual(inFlight.embedQueryMs);
       expect(settled.indexReadMs).toBeGreaterThanOrEqual(0);
-      // Settled phases stop counting.
-      await new Promise((resolve) => {
-        setTimeout(resolve, 10);
-      });
+      await sleep(10);
       expect(readers[0]!()).toEqual(settled);
 
       const lexical: Array<() => MemorySearchPhaseTiming> = [];
