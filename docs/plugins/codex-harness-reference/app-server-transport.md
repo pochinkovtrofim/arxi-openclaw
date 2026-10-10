@@ -121,9 +121,11 @@ Managed stdio connections reach the model provider through OpenClaw's private
 inference relay. Native Codex opens that route over a WebSocket by default and
 sends only incremental input with `previous_response_id` while the socket lives;
 after any reconnect it resends the full input without a continuation, and the
-provider then reports no cached prompt tokens. Idle relay sockets close after
-60 seconds, so a run that starts a few minutes after the previous one usually
-pays a cold prefill of the whole context.
+provider then reports no cached prompt tokens. The relay keeps a completed idle
+socket for up to 60 minutes, reclaiming the oldest one only when it needs room,
+so later turns can continue it. Anything that ends the socket sooner (a host
+tunnel deadline, a paused VM, a provider-side close) still makes the next run
+pay a cold prefill of the whole context.
 
 `appServer.inferenceTransport: "http"` makes the relay answer every WebSocket
 upgrade with HTTP 426 Upgrade Required before any admission or upstream work.

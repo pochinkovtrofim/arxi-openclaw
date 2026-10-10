@@ -251,8 +251,10 @@ response does not block a seventeenth chat or native child from starting.
 The relay allows up to 80 combined HTTP operations and WebSocket connections,
 with room for 16 pending or closing admissions. It retains up to 64 usable
 WebSockets and reclaims the oldest completed idle connection when either
-transport needs room. Active responses and newly opened connections awaiting
-their first request are not evicted. HTTP connections close after each response;
+transport needs room; otherwise a completed idle connection stays open for up
+to 60 minutes so native can continue it on the next turn. Active responses and
+newly opened connections awaiting their first request are not evicted; a new
+connection that sends no request within 60 seconds is closed. HTTP connections close after each response;
 native WebSocket reuse remains intact. With `appServer.inferenceTransport: "http"`
 the relay refuses every WebSocket upgrade with 426 and the whole 80-operation
 envelope serves HTTP model calls, which may stream for minutes. The separate

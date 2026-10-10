@@ -48,7 +48,11 @@ const MAX_WEBSOCKETS = 64;
 const MAX_RESIDENTS = MAX_WEBSOCKETS + MAX_UPLOADS;
 const REQUEST_TIMEOUT_MS = 30_000;
 const HANDSHAKE_TIMEOUT_MS = 10_000;
-const IDLE_WEBSOCKET_MS = 60_000;
+// A proven-idle socket stays until native closes it or pressure reclaims it, so the
+// next turn continues with previous_response_id instead of a cold full resend; the
+// ceiling is above the 30 min live-thread idle. An unused fresh 101 keeps 60 s.
+const IDLE_WEBSOCKET_MS = 60 * 60_000;
+const FIRST_FRAME_MS = 60_000;
 // Native Codex treats a 426 handshake answer as "use HTTP Responses for this session".
 const HTTP_ONLY_BODY = { contentType: "text/plain", text: "Codex relay serves HTTP only." };
 
@@ -569,7 +573,7 @@ export async function createCodexInferenceProxy(params: {
                   idleConnections.add(close);
                 }
                 clearTimeout(idleTimer);
-                idleTimer = setTimeout(close, IDLE_WEBSOCKET_MS);
+                idleTimer = setTimeout(close, reclaimable ? IDLE_WEBSOCKET_MS : FIRST_FRAME_MS);
                 idleTimer.unref();
                 reclaimIdle();
               };
