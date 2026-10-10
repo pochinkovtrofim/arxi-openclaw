@@ -33,7 +33,7 @@ export async function observeUpstreamConnection<T>(
 export function createObservedOriginDispatcher(origin: string | URL, options: object): Dispatcher {
   const { Client, Pool } = loadUndiciModule(["Client", "Pool"]);
   const createClient = (clientOrigin: string | URL, clientOptions: object): Dispatcher => {
-    // Pool always hands its clients a connector function.
+    // SAFETY: undici Pool normalizes `connect` to a connector before calling its factory.
     const connect = Reflect.get(clientOptions, "connect") as buildConnector.connector;
     let socket: Socket | undefined;
     let waiting: UpstreamConnection | undefined;
@@ -61,6 +61,7 @@ export function createObservedOriginDispatcher(origin: string | URL, options: ob
       new Client(clientOrigin, {
         ...clientOptions,
         connect: observedConnect,
+        // SAFETY: Pool passes its own validated Client options; only `connect` is replaced.
       } as ConstructorParameters<typeof Client>[1]),
     );
     const dispatch = client.dispatch.bind(client);
@@ -82,6 +83,7 @@ export function createObservedOriginDispatcher(origin: string | URL, options: ob
     new Pool(origin, {
       ...options,
       factory: createClient,
+      // SAFETY: Agent passes its own validated Pool options; only `factory` is replaced.
     } as ConstructorParameters<typeof Pool>[1]),
   );
 }
