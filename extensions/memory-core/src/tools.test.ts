@@ -1,9 +1,11 @@
-import {
-  onInternalDiagnosticEvent,
-  waitForDiagnosticEventsDrained,
-} from "openclaw/plugin-sdk/diagnostic-runtime";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import "./tools.session-catalog.test-mocks.js";
+
+const diagnosticMocks = vi.hoisted(() => ({ emitTrusted: vi.fn() }));
+vi.mock("openclaw/plugin-sdk/diagnostic-runtime", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("openclaw/plugin-sdk/diagnostic-runtime")>()),
+  emitTrustedDiagnosticEvent: diagnosticMocks.emitTrusted,
+}));
 import type { MemorySearchRuntimeDebug } from "openclaw/plugin-sdk/memory-core-host-runtime-files";
 // Memory Core tests cover tools plugin behavior.
 import { clearMemoryPluginState } from "openclaw/plugin-sdk/memory-host-core";
@@ -1398,35 +1400,28 @@ describe("memory_search diagnostics", () => {
         },
       ];
     });
-    const events: Array<Record<string, unknown>> = [];
-    const unsubscribe = onInternalDiagnosticEvent((event) => {
-      if (event.type === "memory.search.completed") {
-        events.push({ ...event });
-      }
+    diagnosticMocks.emitTrusted.mockClear();
+    const tool = createMemorySearchToolOrThrow({
+      config: { agents: { list: [{ id: "main", default: true }] } },
     });
-    try {
-      const tool = createMemorySearchToolOrThrow({
-        config: { agents: { list: [{ id: "main", default: true }] } },
-      });
-      const result = await tool.execute("diagnostic-timing", { query: "favorite food" });
-      await waitForDiagnosticEventsDrained();
-      expect(events).toEqual([
-        expect.objectContaining({
-          type: "memory.search.completed",
-          toolCallId: "diagnostic-timing",
-          provider: "builtin",
-          outcome: "ok",
-          durationMs: expect.any(Number),
-          indexReadMs: 3,
-          embedQueryMs: 41,
-          syncWaitMs: 0,
-        }),
-      ]);
-      expect(JSON.stringify(result.details)).not.toContain("embedQueryMs");
-      expect(JSON.stringify(result.details)).not.toContain("timing");
-    } finally {
-      unsubscribe();
-    }
+    const result = await tool.execute("diagnostic-timing", { query: "favorite food" });
+    const events = diagnosticMocks.emitTrusted.mock.calls
+      .map((call) => call[0] as { type?: string })
+      .filter((event) => event.type === "memory.search.completed");
+    expect(events).toEqual([
+      {
+        type: "memory.search.completed",
+        toolCallId: "diagnostic-timing",
+        provider: "builtin",
+        outcome: "ok",
+        durationMs: expect.any(Number),
+        indexReadMs: 3,
+        embedQueryMs: 41,
+        syncWaitMs: 0,
+      },
+    ]);
+    expect(JSON.stringify(result.details)).not.toContain("embedQueryMs");
+    expect(JSON.stringify(result.details)).not.toContain("timing");
   });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

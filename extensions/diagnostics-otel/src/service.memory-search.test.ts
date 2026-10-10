@@ -95,27 +95,29 @@ test("exports memory_search phase timing as a histogram and span from trusted ev
       "openclaw.memory_search.provider": "local",
       "openclaw.memory_search.outcome": "ok",
     };
+    // Both successful searches share one attribute set per phase, so the SDK
+    // aggregates them into one data point each.
     expect(samples).toEqual(
       expect.arrayContaining([
         {
           attributes: { ...okAttrs, "openclaw.memory_search.phase": "total" },
-          sum: 1200,
-          count: 1,
+          sum: 1280,
+          count: 2,
         },
         {
           attributes: { ...okAttrs, "openclaw.memory_search.phase": "index_read" },
           sum: 30,
-          count: 1,
+          count: 2,
         },
         {
           attributes: { ...okAttrs, "openclaw.memory_search.phase": "embed_query" },
           sum: 900,
-          count: 1,
+          count: 2,
         },
         {
           attributes: { ...okAttrs, "openclaw.memory_search.phase": "sync_wait" },
           sum: 0,
-          count: 1,
+          count: 2,
         },
         {
           attributes: {
@@ -128,9 +130,9 @@ test("exports memory_search phase timing as a histogram and span from trusted ev
         },
       ]),
     );
-    // Two full searches (4 phases each), one error (total only); the untrusted
-    // copy and the error event's absent phases never become samples.
-    expect(samples).toHaveLength(9);
+    // Four aggregated ok phases plus the error total; the untrusted copy and the
+    // error event's absent phases never become samples.
+    expect(samples).toHaveLength(5);
 
     const spans = sdk.exporter
       .getFinishedSpans()

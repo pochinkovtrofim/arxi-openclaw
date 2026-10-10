@@ -142,10 +142,15 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
     }
     if (evt.toolCallId) {
       // The phase that dominated the call; "search" when no timed phase did.
-      const dominant = phases
-        .filter(([phase, ms]) => phase !== "total" && typeof ms === "number" && ms > 0)
-        .toSorted(([, left], [, right]) => (right as number) - (left as number))[0]?.[0];
-      runtime.rememberMemorySearchPhase(evt.toolCallId, dominant ?? "search");
+      let dominant = "search";
+      let dominantMs = 0;
+      for (const [phase, ms] of phases) {
+        if (phase !== "total" && typeof ms === "number" && ms > dominantMs) {
+          dominant = phase;
+          dominantMs = ms;
+        }
+      }
+      runtime.rememberMemorySearchPhase(evt.toolCallId, dominant);
     }
     if (!tracesEnabled) {
       return;
