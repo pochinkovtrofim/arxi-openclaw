@@ -10,7 +10,9 @@ export const DEFAULT_SESSION_SYNC_DEBOUNCE_MS = 5_000;
  * guard only keeps a hand-built config from arming a zero or runaway timer.
  */
 export function resolveSessionSyncDebounceMs(cfg: OpenClawConfig): number {
-  const pluginConfig = asNullableRecord(asNullableRecord(cfg.plugins?.entries?.["memory-core"])?.config);
+  const pluginConfig = asNullableRecord(
+    asNullableRecord(cfg.plugins?.entries?.["memory-core"])?.config,
+  );
   const configured = asNullableRecord(pluginConfig?.sessionSync)?.debounceMs;
   return typeof configured === "number" &&
     Number.isInteger(configured) &&

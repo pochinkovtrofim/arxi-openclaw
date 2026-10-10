@@ -94,9 +94,7 @@ describe("memory index", () => {
         lexicalOnly: true,
         onTiming: (read) => lexical.push(read),
       });
-      expect(lexical.map((read) => read())).toEqual([
-        expect.objectContaining({ embedQueryMs: 0 }),
-      ]);
+      expect(lexical.map((read) => read())).toEqual([expect.objectContaining({ embedQueryMs: 0 })]);
     } finally {
       releaseEmbed.resolve();
       embedSpy.mockRestore();

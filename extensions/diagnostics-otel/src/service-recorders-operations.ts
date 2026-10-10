@@ -145,7 +145,9 @@ export function createOperationsRecorders(runtime: DiagnosticsRecorderRuntime) {
     }
     const timedMs = (evt.indexReadMs ?? 0) + (evt.embedQueryMs ?? 0) + (evt.syncWaitMs ?? 0);
     const reachedSearch =
-      evt.indexReadMs !== undefined || evt.embedQueryMs !== undefined || evt.syncWaitMs !== undefined;
+      evt.indexReadMs !== undefined ||
+      evt.embedQueryMs !== undefined ||
+      evt.syncWaitMs !== undefined;
     if (evt.toolCallId && reachedSearch) {
       // The phase that dominated the call. "search" is the untimed remainder: manager
       // acquisition, retrieval, ranking and source reads. A call that never reached a
