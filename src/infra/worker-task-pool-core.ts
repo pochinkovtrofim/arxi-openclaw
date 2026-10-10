@@ -6,6 +6,7 @@ import { toErrorObject } from "@openclaw/normalization-core/error-coercion";
 import { resolveTimerTimeoutMs } from "@openclaw/normalization-core/number-coercion";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { createDeferredCore } from "../shared/deferred.js";
+import { emitInternalDiagnosticEvent } from "./diagnostic-events.js";
 import { resolveRuntimeWorkerThreadExecArgv } from "./runtime-worker-url.js";
 import {
   attributeWorkerToPool,
@@ -17,6 +18,7 @@ import {
   DEFAULT_WORKER_PENDING_BYTES,
   DEFAULT_WORKER_PENDING_TASKS,
   getWorkerComputeCapacity,
+  type WorkerComputeClass,
 } from "./worker-task-capacity.js";
 import {
   createWorkerNativeSectionState,
@@ -106,6 +108,9 @@ export class WorkerTaskPoolCore<Input, Output> {
   private workersCreated = 0;
   private activeTasks = 0;
   private readonly computeCapacity: ReturnType<typeof getWorkerComputeCapacity> | undefined;
+  private readonly computeClass: WorkerComputeClass;
+  /** Shared-compute wait diagnostics group by class and worker entry, e.g. compute.batch.x.worker. */
+  private readonly computeLane: string;
   private readonly resumeCompute = () => this.dispatch();
   private closedError?: Error;
   private rotation?: Promise<void>;
@@ -130,6 +135,12 @@ export class WorkerTaskPoolCore<Input, Output> {
       }
     }
     this.computeCapacity = options.sharedCompute ? getWorkerComputeCapacity() : undefined;
+    this.computeClass = options.sharedCompute === "interactive" ? "interactive" : "batch";
+    const entry = (options.workerUrl.pathname.split("/").at(-1) ?? "")
+      .replace(/\.[cm]?[jt]s$/u, "")
+      .replace(/[^A-Za-z0-9_.-]/gu, "_")
+      .slice(0, 80);
+    this.computeLane = `compute.${this.computeClass}.${entry || "unknown"}`;
     this.retirement = createWorkerTaskPoolRetirement({
       slots: this.slots,
       options,
@@ -199,7 +210,7 @@ export class WorkerTaskPoolCore<Input, Output> {
     if (
       this.pendingTasks >= this.maxPendingTasks ||
       this.pendingBytes + inputBytes > this.maxPendingBytes ||
-      (this.computeCapacity && !this.computeCapacity.admit(inputBytes))
+      (this.computeCapacity && !this.computeCapacity.admit(inputBytes, this.computeClass))
     ) {
       this.finish(task, new WorkerTaskError("worker task capacity reached", "overloaded"));
       return task;
@@ -333,17 +344,23 @@ export class WorkerTaskPoolCore<Input, Output> {
       }
       const nextTask = this.queue[0]!;
       if (this.computeCapacity) {
-        const permit = this.computeCapacity.acquire(this.resumeCompute, () => {
-          if (nextTask.exchange && !nextTask.exchange.sent) {
-            nextTask.runInContext(() => nextTask.exchange?.pressure.abort());
-            return true;
-          }
-          return false;
-        });
+        const permit = this.computeCapacity.acquire(
+          this.resumeCompute,
+          () => {
+            if (nextTask.exchange && !nextTask.exchange.sent) {
+              nextTask.runInContext(() => nextTask.exchange?.pressure.abort());
+              return true;
+            }
+            return false;
+          },
+          this.computeClass,
+        );
         if (!permit) {
+          nextTask.computeWaitStartedAt ??= performance.now();
           return;
         }
         nextTask.computePermit = permit;
+        this.reportComputeWait(nextTask);
       }
       if (!slot) {
         slot = { nativeSections: createWorkerNativeSectionState() };
@@ -358,6 +375,18 @@ export class WorkerTaskPoolCore<Input, Output> {
       slot.worker?.ref();
       void task.runInContext(() => this.start(slot, task));
     }
+  }
+
+  // Content-free: the lane names the worker entry, never task input or caller identity.
+  private reportComputeWait(task: Task<Input, Output>): void {
+    const waitStartedAt = task.computeWaitStartedAt;
+    task.computeWaitStartedAt = undefined;
+    emitInternalDiagnosticEvent({
+      type: "queue.lane.dequeue",
+      lane: this.computeLane,
+      queueSize: this.queue.length - 1,
+      waitMs: waitStartedAt === undefined ? 0 : Math.round(performance.now() - waitStartedAt),
+    });
   }
 
   // Worker listeners outlive tasks; their creation scope must not retain an async task frame.
@@ -731,7 +760,7 @@ export class WorkerTaskPoolCore<Input, Output> {
       task.admitted = false;
       this.pendingTasks--;
       this.pendingBytes -= task.inputBytes;
-      this.computeCapacity?.finish(task.inputBytes);
+      this.computeCapacity?.finish(task.inputBytes, this.computeClass);
     }
   }
 

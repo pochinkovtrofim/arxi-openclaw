@@ -15,8 +15,11 @@ export type WorkerTaskPoolOptions<Output> = {
     releaseResources?: () => Promise<void>;
   };
   maxWorkers?: number;
-  /** Share CPU admission with other stateless compute pools in this isolate. */
-  sharedCompute?: boolean;
+  /**
+   * Share CPU admission with other stateless compute pools in this isolate. "interactive"
+   * pools serve a waiting caller: they resume before batch pools and may use a reserved permit.
+   */
+  sharedCompute?: boolean | "interactive";
   /** Include queued, preparing, and running tasks until execution has settled. */
   maxPendingTasks?: number;
   maxPendingBytes?: number;
@@ -105,6 +108,8 @@ export type Task<Input, Output> = Deferred<Output> & {
   owner?: TaskOwner;
   inputBytes: number;
   computePermit?: WorkerComputePermit;
+  /** First refused shared-compute admission; cleared when the permit is granted. */
+  computeWaitStartedAt?: number;
   enqueuedAt: number;
   startedAt?: number;
   preparedAt?: number;
