@@ -3103,6 +3103,35 @@ describe("diagnostics-otel service", () => {
     expect(Object.hasOwn(toolDuration?.[1] ?? {}, "openclaw.tool.exec_class")).toBe(false);
   });
 
+  test("puts the content-free relay inference transport on model call spans", async () => {
+    await startServiceFixture(["traces", "metrics"]);
+
+    await emitTrustedEventAndFlush("model.call.completed", {
+      ...MODEL_CALL_FIXTURE,
+      durationMs: 80,
+      inferenceTransport: {
+        kind: "http",
+        httpRequests: 4,
+        webSocketRequests: 0,
+        upgradeAttempts: 1,
+        upgradeRefusals: 1,
+      },
+      trace: createTestTrace(MODEL_CALL_SPAN_ID, CHILD_SPAN_ID),
+    });
+
+    expect(firstSpanAttributes("openclaw.model.call")).toMatchObject({
+      "openclaw.model_call.inference_transport": "http",
+      "openclaw.model_call.inference.http_requests": 4,
+      "openclaw.model_call.inference.websocket_requests": 0,
+      "openclaw.model_call.inference.upgrade_attempts": 1,
+      "openclaw.model_call.inference.upgrade_refusals": 1,
+    });
+    const duration = lastHistogramRecord("openclaw.model_call.duration_ms");
+    expect(Object.hasOwn(duration?.[1] ?? {}, "openclaw.model_call.inference_transport")).toBe(
+      false,
+    );
+  });
+
   test("uses authoritative source timestamps for terminal-only tool spans", async () => {
     await startServiceFixture(["traces", "metrics"]);
 

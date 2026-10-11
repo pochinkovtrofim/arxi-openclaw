@@ -252,6 +252,7 @@ export async function createCodexInferenceProxy(params: {
         if (req.method !== "POST") {
           throw new Error(FAILURE);
         }
+        upstreamTransport.count("http");
         resident = reserveResident(socket, signal, deadlineAtMs);
         const admitted = resident && (await resident.ready);
         signal.throwIfAborted();
@@ -364,7 +365,9 @@ export async function createCodexInferenceProxy(params: {
   server.requestTimeout = REQUEST_TIMEOUT_MS;
   server.headersTimeout = HANDSHAKE_TIMEOUT_MS;
   server.on("upgrade", (req, socket, head) => {
+    upstreamTransport.count("upgrades");
     if (params.inferenceTransport === "http") {
+      upstreamTransport.count("refusals");
       // Answer before any route, admission or upstream work: the handshake consumes
       // no resident slot, and the same request proceeds over HTTP in native's call.
       socket.once("error", () => {});
@@ -620,6 +623,7 @@ export async function createCodexInferenceProxy(params: {
                   return;
                 }
                 framePending = true;
+                upstreamTransport.count("websocket");
                 clearTimeout(idleTimer);
                 idleConnections.delete(close);
                 releaseFrame();
@@ -731,6 +735,7 @@ export async function createCodexInferenceProxy(params: {
     return {
       context,
       upstream: upstream.toString(),
+      transportCounts: upstreamTransport.counts,
       baseUrl: "http://127.0.0.1:" + address.port + pathPrefix,
       assertCurrent,
       close,

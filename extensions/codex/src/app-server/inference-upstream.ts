@@ -12,6 +12,18 @@ const upstreamLog = createSubsystemLogger("codex/inference");
 
 type GuardedUpstream = Awaited<ReturnType<typeof fetchWithSsrFGuard>>;
 
+/**
+ * Content-free counts of how native Codex reached this relay: model requests over
+ * HTTP, response.create frames over WebSocket, WebSocket upgrade attempts, and the
+ * attempts the HTTP-only relay refused with 426.
+ */
+export type CodexRelayTransportCounts = {
+  http: number;
+  websocket: number;
+  upgrades: number;
+  refusals: number;
+};
+
 /** The relay's guarded upstream fetch, with a tunnel pool private to one relay. */
 export function createCodexUpstreamTransport() {
   const pool = createEnvProxyTunnelPool({
@@ -20,7 +32,12 @@ export function createCodexUpstreamTransport() {
     maxAgeMs: UPSTREAM_MAX_REUSE_AGE_MS,
     maxActiveLeases: UPSTREAM_POOLED_CONNECTIONS,
   });
+  const counts: CodexRelayTransportCounts = { http: 0, websocket: 0, upgrades: 0, refusals: 0 };
   return {
+    counts: (): CodexRelayTransportCounts => ({ ...counts }),
+    count(kind: keyof CodexRelayTransportCounts): void {
+      counts[kind] += 1;
+    },
     async fetch(
       target: URL,
       init: RequestInit & { duplex: "half" },

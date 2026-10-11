@@ -4,6 +4,7 @@ import {
   type DiagnosticModelCallContent,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import type { CodexAppServerRuntimeOptions, resolveCodexPluginsPolicy } from "./config.js";
+import type { CodexRelayTransportCounts } from "./inference-upstream.js";
 
 type TrustedDiagnosticEventInput = Parameters<typeof emitTrustedDiagnosticEventWithPrivateData>[0];
 
@@ -140,6 +141,35 @@ export function createCodexModelCallDiagnosticEmitter(params: {
   let started = false;
   let terminalEmitted = false;
   let requestPayloadBytes: number | undefined;
+  let readRelayCounts: (() => CodexRelayTransportCounts) | undefined;
+  let relayCountsAtStart: CodexRelayTransportCounts | undefined;
+  // Relay counts are per owner route; concurrent turns on one route share them.
+  const inferenceTransport = () => {
+    const start = relayCountsAtStart;
+    if (!readRelayCounts || !start) {
+      return {};
+    }
+    const current = readRelayCounts();
+    const delta = (key: keyof CodexRelayTransportCounts) => Math.max(0, current[key] - start[key]);
+    const httpRequests = delta("http");
+    const webSocketRequests = delta("websocket");
+    return {
+      inferenceTransport: {
+        kind:
+          httpRequests > 0
+            ? webSocketRequests > 0
+              ? "mixed"
+              : "http"
+            : webSocketRequests > 0
+              ? "websocket"
+              : "none",
+        httpRequests,
+        webSocketRequests,
+        upgradeAttempts: delta("upgrades"),
+        upgradeRefusals: delta("refusals"),
+      },
+    };
+  };
 
   const privateData = (modelContent: DiagnosticModelCallContent | undefined) =>
     modelContent && Object.keys(modelContent).length > 0 ? { modelContent } : undefined;
@@ -165,6 +195,7 @@ export function createCodexModelCallDiagnosticEmitter(params: {
         promptStats,
         ...fields,
         ...(requestPayloadBytes !== undefined ? { requestPayloadBytes } : {}),
+        ...inferenceTransport(),
       } as TrustedDiagnosticEventInput,
       privateData({
         ...buildContent(),
@@ -177,6 +208,11 @@ export function createCodexModelCallDiagnosticEmitter(params: {
   return {
     setRequestPayloadBytes(bytes: number | undefined): void {
       requestPayloadBytes = bytes;
+    },
+    /** Count how native Codex reaches the relay from now until this call ends. */
+    observeInferenceTransport(read: (() => CodexRelayTransportCounts) | undefined): void {
+      readRelayCounts = read;
+      relayCountsAtStart = read?.();
     },
     emitStarted(): void {
       startedAt = now();

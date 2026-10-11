@@ -763,8 +763,22 @@ export type DiagnosticModelCallStartedEvent = DiagnosticModelCallBaseEvent & {
   type: "model.call.started";
 };
 
+/**
+ * Content-free counts of how a native harness reached its local inference relay
+ * during one model call: requests over HTTP, request frames over WebSocket,
+ * WebSocket upgrade attempts, and upgrades an HTTP-only relay refused (426).
+ */
+type DiagnosticInferenceTransport = Readonly<{
+  kind: "http" | "websocket" | "mixed" | "none";
+  httpRequests: number;
+  webSocketRequests: number;
+  upgradeAttempts: number;
+  upgradeRefusals: number;
+}>;
+
 export type DiagnosticModelCallCompletedEvent = DiagnosticModelCallBaseEvent & {
   type: "model.call.completed";
+  inferenceTransport?: DiagnosticInferenceTransport;
   durationMs?: number;
   requestPayloadBytes?: number;
   responseStreamBytes?: number;
@@ -774,6 +788,7 @@ export type DiagnosticModelCallCompletedEvent = DiagnosticModelCallBaseEvent & {
 
 export type DiagnosticModelCallErrorEvent = DiagnosticModelCallBaseEvent & {
   type: "model.call.error";
+  inferenceTransport?: DiagnosticInferenceTransport;
   durationMs: number;
   errorCategory: string;
   failureKind?: "aborted" | "connection_closed" | "connection_reset" | "terminated" | "timeout";

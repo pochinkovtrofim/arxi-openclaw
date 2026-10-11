@@ -21,6 +21,30 @@ import type { OtelModelCallContent } from "./service-genai-content.js";
 import type { DiagnosticsRecorderRuntime } from "./service-recorder-runtime.js";
 import type { ModelCallLifecycleDiagnosticEvent } from "./service-types.js";
 
+const INFERENCE_TRANSPORT_KINDS = new Set(["http", "websocket", "mixed", "none"]);
+
+/** Content-free relay transport facts: a closed kind and four counts. */
+function assignInferenceTransportAttrs(
+  attrs: Record<string, string | number | boolean>,
+  evt: ModelCallLifecycleDiagnosticEvent,
+): void {
+  const transport = evt.inferenceTransport;
+  if (!transport || !INFERENCE_TRANSPORT_KINDS.has(transport.kind)) {
+    return;
+  }
+  attrs["openclaw.model_call.inference_transport"] = transport.kind;
+  for (const [key, value] of [
+    ["http_requests", transport.httpRequests],
+    ["websocket_requests", transport.webSocketRequests],
+    ["upgrade_attempts", transport.upgradeAttempts],
+    ["upgrade_refusals", transport.upgradeRefusals],
+  ] as const) {
+    if (Number.isSafeInteger(value) && value >= 0) {
+      attrs[`openclaw.model_call.inference.${key}`] = value;
+    }
+  }
+}
+
 export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
   const {
     genAiOperationDurationHistogram,
@@ -150,6 +174,7 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
       spanAttrs["openclaw.transport"] = evt.transport;
     }
     assignModelCallSizeTimingAttrs(spanAttrs, evt);
+    assignInferenceTransportAttrs(spanAttrs, evt);
     assignModelCallPromptStatsAttrs(spanAttrs, evt);
     assignModelCallUsageAttrs(spanAttrs, evt);
     assignOtelModelContentAttributes(spanAttrs, modelContent, contentCapturePolicy);
