@@ -32,13 +32,13 @@ import {
   rejectBusyUpgrade,
   relayHeaders,
 } from "./inference-proxy-http.js";
-import { createCodexUpstreamTransport } from "./inference-upstream.js";
 import {
   createUploadAdmission,
   MAX_BODY_BYTES,
   MAX_PENDING_REQUESTS,
   MAX_UPLOADS,
 } from "./inference-upload.js";
+import { createCodexUpstreamTransport } from "./inference-upstream.js";
 import type { CodexResponsesOAuth } from "./responses-oauth.js";
 
 export { CodexInferenceAuthorizationError } from "./inference-dispatch.js";
