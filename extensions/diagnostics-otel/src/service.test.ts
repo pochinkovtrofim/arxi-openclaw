@@ -3087,16 +3087,18 @@ describe("diagnostics-otel service", () => {
       "openclaw.toolName": "exec",
       "openclaw.tool.exec_class": "python3",
     });
-    const execSpan = spanByName("openclaw.tool.execution");
+    const [execSpan, readSpan] = telemetryState.spans.filter(
+      (span) => span.name === "openclaw.tool.execution",
+    );
     expect(execSpan?.setAttributes).toHaveBeenCalledWith(
       expect.objectContaining({ "openclaw.tool.exec_class": "python3" }),
     );
-    const readCall = telemetryState.tracer.startSpan.mock.calls.find(
-      (call) =>
-        call[0] === "openclaw.tool.execution" &&
-        call[1]?.attributes?.["openclaw.toolName"] === "read",
+    expect(readSpan?.setAttributes).toHaveBeenCalledWith(
+      expect.objectContaining({ "openclaw.toolName": "read" }),
     );
-    expect(Object.hasOwn(readCall?.[1]?.attributes ?? {}, "openclaw.tool.exec_class")).toBe(false);
+    expect(readSpan?.setAttributes).not.toHaveBeenCalledWith(
+      expect.objectContaining({ "openclaw.tool.exec_class": expect.anything() }),
+    );
     const toolDuration = lastHistogramRecord("openclaw.tool.execution.duration_ms");
     expect(Object.hasOwn(toolDuration?.[1] ?? {}, "openclaw.tool.exec_class")).toBe(false);
   });

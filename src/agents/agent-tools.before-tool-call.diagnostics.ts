@@ -18,6 +18,7 @@ import {
   type DiagnosticToolSource,
   type DiagnosticToolTerminalReason,
 } from "../infra/diagnostic-events.js";
+import { resolveDiagnosticExecClass } from "../infra/diagnostic-exec-class.js";
 import {
   cloneDiagnosticContentValue,
   type DiagnosticModelContentCapturePolicy,
@@ -538,6 +539,12 @@ export function buildToolContentPrivateData(
     toolContent.toolOutput = cloneDiagnosticContentValue(args.output);
   }
   return Object.keys(toolContent).length > 0 ? { toolContent } : undefined;
+}
+
+/** Content-free params summary plus, for `exec`, its allowlisted command class. */
+export function summarizeToolCallParams(toolName: string, params: unknown) {
+  const execClass = resolveDiagnosticExecClass(toolName, params);
+  return { paramsSummary: summarizeToolParams(params), ...(execClass ? { execClass } : {}) };
 }
 
 export function summarizeToolParams(params: unknown): DiagnosticToolParamsSummary {
