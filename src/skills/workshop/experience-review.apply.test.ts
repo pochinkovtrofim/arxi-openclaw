@@ -36,7 +36,10 @@ import {
 import { createTrackedTempDirs } from "../../test-utils/tracked-temp-dirs.js";
 import { readSkillCuratorReviewStatus } from "./collection-review-state.test-support.js";
 import type { ExperienceReviewCandidate } from "./experience-review-scheduler.js";
-import { runSkillExperienceReview as runCapturedExperienceReview } from "./experience-review.js";
+import {
+  EXPERIENCE_REVIEW_CONTEXT_LIMITS,
+  runSkillExperienceReview as runCapturedExperienceReview,
+} from "./experience-review.js";
 import { inspectSkillProposal, listSkillProposals, proposeCreateSkill } from "./service.js";
 import { resolveWorkshopSkillsDir } from "./skills-root.js";
 
@@ -52,6 +55,7 @@ type ExperienceReviewFixture = Omit<ExperienceReviewCandidate, "ctx" | "source">
 
 async function captureReviewFixture(
   fixture: ExperienceReviewFixture,
+  history: readonly string[] = [],
 ): Promise<ExperienceReviewCandidate> {
   const { sessionId, sessionKey, ...ctx } = fixture.ctx;
   const agentId = fixture.ctx.foregroundPromptContext.agentId;
@@ -77,10 +81,11 @@ async function captureReviewFixture(
   if (!created.ok) {
     throw new Error(`Could not create review source: ${created.error}`);
   }
-  const terminal = SessionManager.open(
-    source,
-    fixture.ctx.workspaceDir,
-  ).appendMessageWithTranscriptAnchor({
+  const transcript = SessionManager.open(source, fixture.ctx.workspaceDir);
+  for (const content of history) {
+    transcript.appendMessage({ role: "user", content, timestamp: Date.now() });
+  }
+  const terminal = transcript.appendMessageWithTranscriptAnchor({
     role: "user",
     content: "Review the completed fixture.",
     timestamp: Date.now(),
@@ -224,6 +229,43 @@ describe("experience review maintenance", () => {
     } finally {
       registration.mockRestore();
     }
+  });
+
+  it("reviews only the bounded recent suffix of a long source session", async () => {
+    const workspaceDir = await tempDirs.make("openclaw-experience-bounded-context-");
+    // About 1 MiB of older history: far beyond the review budget, as in a
+    // natively compacted harness mirror.
+    const history = Array.from(
+      { length: 64 },
+      (_, index) => `older turn ${index} ${"x".repeat(16 * 1024)}`,
+    );
+    const candidate = await captureReviewFixture(
+      reviewFixture(
+        workspaceDir,
+        { skills: { workshop: { autonomous: { mode: "propose" } } } },
+        { sessionKey: "agent:main:bounded-context" },
+      ),
+      history,
+    );
+    let reviewed: unknown[] | undefined;
+    runEmbeddedAgent.mockImplementationOnce(async (params: RunEmbeddedAgentParams) => {
+      reviewed = params.sessionManager?.buildSessionContext().messages;
+      return { meta: { durationMs: 1 } };
+    });
+
+    await runCapturedExperienceReview(candidate);
+
+    expect(runEmbeddedAgent).toHaveBeenCalledOnce();
+    expect(reviewed?.at(-1)).toMatchObject({
+      role: "user",
+      content: "Review the completed fixture.",
+    });
+    expect(reviewed?.length).toBeGreaterThan(1);
+    expect(reviewed?.length).toBeLessThan(history.length + 1);
+    expect(JSON.stringify(reviewed).length).toBeLessThanOrEqual(
+      EXPERIENCE_REVIEW_CONTEXT_LIMITS.maxBytes,
+    );
+    expect(JSON.stringify(reviewed)).not.toContain("older turn 0 ");
   });
 
   it.each(["session", "transcript"] as const)(

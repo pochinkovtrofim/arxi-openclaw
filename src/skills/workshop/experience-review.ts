@@ -35,6 +35,18 @@ import { runSkillWorkshopReview } from "./review-run.js";
 import { resolveWorkshopSkillsDir } from "./skills-root.js";
 import type { SkillWorkshopProposalMutationBudget } from "./types.js";
 
+// A review judges the recent trajectory, not the whole session. Native harnesses
+// such as Codex compact their own threads, so their OpenClaw mirror can hold
+// megabytes of history; cloning all of it sent every deep-turn review through
+// chunked compaction of the entire transcript before the review could start.
+// The bounded read keeps the newest suffix without splitting tool frames and
+// omits oversized tool-result bodies from the completed turn when needed.
+export const EXPERIENCE_REVIEW_CONTEXT_LIMITS = {
+  maxBytes: 256 * 1024,
+  maxEvents: 400,
+  toolResultOverflow: "omit",
+} as const;
+
 export async function prepareSkillExperienceReviewCandidate(
   candidate: ExperienceReviewCandidate,
   config: OpenClawConfig,
@@ -165,6 +177,7 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
       cwd: executionRoot ?? workspaceDir,
       through: candidate.source,
       signal: abortSignal,
+      limits: { ...EXPERIENCE_REVIEW_CONTEXT_LIMITS },
     });
     abortSignal.throwIfAborted();
     const { listWritableWorkshopSkillSummaries } = await import("./workspace-skill-read.js");
