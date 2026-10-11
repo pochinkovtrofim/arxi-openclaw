@@ -141,6 +141,10 @@ const UNSAFE_UNQUOTED = /[$`\\*?[\]{}~#!]/u;
 
 type Word = { text: string; end: number };
 
+function isExecCommandClass(name: string): name is DiagnosticExecCommandClass {
+  return EXEC_COMMAND_CLASS_SET.has(name);
+}
+
 /**
  * Reads one shell word starting at `start`. Returns undefined when the word
  * needs expansion or escape handling to resolve, or when there is no word.
@@ -197,7 +201,7 @@ function classifyCommand(command: string, allowWrapper: boolean): DiagnosticExec
     return "other";
   }
   const name = word.text.slice(word.text.lastIndexOf("/") + 1);
-  if (!EXEC_COMMAND_CLASS_SET.has(name)) {
+  if (!isExecCommandClass(name)) {
     return "other";
   }
   if (SHELL_WRAPPERS.has(name)) {
@@ -214,7 +218,7 @@ function classifyCommand(command: string, allowWrapper: boolean): DiagnosticExec
       return "other";
     }
   }
-  return name as DiagnosticExecCommandClass;
+  return name;
 }
 
 /** Classifies a shell command string; anything that is not a non-empty string is "other". */
@@ -234,8 +238,8 @@ export function resolveDiagnosticExecClass(
     return undefined;
   }
   const command =
-    params && typeof params === "object" && !Array.isArray(params)
-      ? (params as { command?: unknown }).command
+    typeof params === "object" && params !== null && !Array.isArray(params) && "command" in params
+      ? params.command
       : undefined;
   return classifyExecCommand(command);
 }
