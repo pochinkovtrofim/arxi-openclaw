@@ -40,11 +40,15 @@ import type { SkillWorkshopProposalMutationBudget } from "./types.js";
 // megabytes of history; cloning all of it sent every deep-turn review through
 // chunked compaction of the entire transcript before the review could start.
 // The bounded read keeps the newest suffix without splitting tool frames and
-// omits oversized tool-result bodies from the completed turn when needed.
+// omits oversized tool-result bodies from the completed turn when needed. The
+// mirror's provider context totals describe the whole thread, so the bounded
+// view drops them instead of letting them trigger compaction of the suffix.
 export const EXPERIENCE_REVIEW_CONTEXT_LIMITS = {
   maxBytes: 256 * 1024,
   maxEvents: 400,
   toolResultOverflow: "omit",
+  latestTurn: "required",
+  measuredContextUsage: "drop-when-bounded",
 } as const;
 
 export async function prepareSkillExperienceReviewCandidate(

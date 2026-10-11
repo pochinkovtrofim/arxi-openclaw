@@ -602,3 +602,90 @@ it("retains a displaced repeated-ID owner when omitting an oversized result body
     });
   });
 });
+
+function appendLatestTurnWithOversizedResult(source: SessionManager) {
+  source.appendMessage(makeUserMessage("older request", 0));
+  source.appendMessage(makeUserMessage("newest request: read both files", 1));
+  appendCall(source, "large");
+  appendResult(source, "large", "x".repeat(32_768));
+  appendCall(source, "small");
+  appendResult(source, "small", "small receipt");
+  source.appendMessage(
+    makeAgentAssistantMessage({ content: [{ type: "text", text: "both files read" }] }),
+  );
+}
+
+it("keeps the newest request when an oversized result sits inside the latest turn", async () => {
+  await withHistory("context-latest-turn", async ({ scope, source, verifyRead }) => {
+    appendLatestTurnWithOversizedResult(source);
+    const full = source.buildSessionContext().messages;
+    await verifyRead(() => {
+      const limits = { maxBytes: 4096, maxEvents: 16, toolResultOverflow: "omit" as const };
+      const suffix = SessionManager.openModelContext(scope, { limits }).buildSessionContext();
+      expect(suffix.messages.some((message) => message.role === "user")).toBe(false);
+
+      const selected = SessionManager.openModelContext(scope, {
+        limits: { ...limits, latestTurn: "required" },
+      }).buildSessionContext().messages;
+      expect(selected.map((message) => message.role)).toEqual([
+        "user",
+        "assistant",
+        "toolResult",
+        "assistant",
+        "toolResult",
+        "assistant",
+      ]);
+      expect(selected[0]).toEqual(full[1]);
+      expect(selected[2]).toMatchObject({
+        toolCallId: "large",
+        content: [{ type: "text", text: expect.stringContaining("body omitted") }],
+      });
+      expect(selected.slice(3)).toEqual(full.slice(4));
+      expect(Buffer.byteLength(JSON.stringify(selected))).toBeLessThanOrEqual(limits.maxBytes);
+
+      expect(() =>
+        SessionManager.openModelContext(scope, {
+          limits: { maxBytes: 4096, maxEvents: 16, latestTurn: "required" },
+        }),
+      ).toThrow(/Newest session turn cannot fit/u);
+    });
+  });
+});
+
+it("drops whole-session context measurements only from a bounded suffix", async () => {
+  await withHistory("context-measured-usage", async ({ scope, source, verifyRead }) => {
+    const measured = {
+      ...makeAgentAssistantMessage({ content: [{ type: "text", text: "x" }] }).usage,
+      input: 190_000,
+      totalTokens: 190_000,
+      contextUsage: { state: "available" as const, promptTokens: 190_000, totalTokens: 190_000 },
+    };
+    for (let index = 0; index < 6; index++) {
+      source.appendMessage(makeUserMessage(`request ${index}:` + "x".repeat(1024), index));
+      source.appendMessage(
+        makeAgentAssistantMessage({
+          content: [{ type: "text", text: `reply ${index}` }],
+          usage: measured,
+        }),
+      );
+    }
+    await verifyRead(() => {
+      const limits = { maxEvents: 64, measuredContextUsage: "drop-when-bounded" as const };
+      const assistants = (maxBytes: number) =>
+        SessionManager.openModelContext(scope, { limits: { ...limits, maxBytes } })
+          .buildSessionContext()
+          .messages.filter((message) => message.role === "assistant");
+
+      const bounded = assistants(4096);
+      expect(bounded.length).toBeGreaterThan(0);
+      expect(bounded.length).toBeLessThan(6);
+      for (const message of bounded) {
+        expect(message.usage).toMatchObject({ totalTokens: 0 });
+        expect(message.usage).not.toHaveProperty("contextUsage");
+      }
+      expect(assistants(1024 * 1024).map((message) => message.usage)).toEqual(
+        Array.from({ length: 6 }, () => measured),
+      );
+    });
+  });
+});
