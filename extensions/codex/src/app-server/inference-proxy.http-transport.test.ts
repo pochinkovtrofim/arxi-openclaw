@@ -247,6 +247,13 @@ describe("HTTP-only inference transport", () => {
     expect(response.complete).toBe(true);
     expect(transport.fetch).toHaveBeenCalledOnce();
     await upload.closed;
+    // Content-free evidence of which transport native Codex used.
+    expect(proxy.transportCounts()).toEqual({
+      http: 1,
+      websocket: 0,
+      upgrades: 101,
+      refusals: 101,
+    });
   });
 
   it("keeps relaying native WebSockets when the transport is not configured", async () => {
@@ -275,6 +282,12 @@ describe("HTTP-only inference transport", () => {
       const received = once(upstream, "message");
       client.send(JSON.stringify(child));
       expect(JSON.parse(String((await received)[0]))).toEqual(child);
+      expect(proxy.transportCounts()).toEqual({
+        http: 0,
+        websocket: 1,
+        upgrades: 1,
+        refusals: 0,
+      });
     } finally {
       client.terminate();
       for (const socket of wss.clients) {

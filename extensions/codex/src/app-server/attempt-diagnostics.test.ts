@@ -13,6 +13,104 @@ import { resolveCodexPluginsPolicy } from "./config.js";
 import { buildCodexPluginAppCacheKey } from "./plugin-app-cache-key.js";
 
 describe("Codex app-server attempt diagnostics", () => {
+  it("reports how native Codex reached the relay during the model call", async () => {
+    const events: DiagnosticEventPayload[] = [];
+    const unsubscribe = onInternalDiagnosticEvent((event) => events.push(event));
+    const counts = { http: 3, websocket: 2, upgrades: 4, refusals: 4 };
+    try {
+      for (const [http, websocket] of [
+        [2, 0],
+        [0, 1],
+        [1, 1],
+        [0, 0],
+      ] as const) {
+        const emitter = createCodexModelCallDiagnosticEmitter({
+          baseFields: {
+            runId: "run-transport",
+            callId: `call-transport-${http}-${websocket}`,
+            provider: "openai",
+            model: "gpt-5.6-sol",
+          },
+          capture: {},
+          tools: [],
+          buildInputMessages: () => [],
+          buildSystemPrompt: () => undefined,
+        });
+        emitter.observeInferenceTransport(() => ({ ...counts }));
+        emitter.emitStarted();
+        counts.http += http;
+        counts.websocket += websocket;
+        counts.upgrades += 1;
+        counts.refusals += websocket > 0 ? 0 : 1;
+        emitter.emitCompleted({ assistantTexts: [] });
+      }
+      await waitForDiagnosticEventsDrained();
+    } finally {
+      unsubscribe();
+    }
+    const completed = events.filter(
+      (event): event is Extract<DiagnosticEventPayload, { type: "model.call.completed" }> =>
+        event.type === "model.call.completed",
+    );
+    expect(completed.map((event) => event.inferenceTransport)).toEqual([
+      {
+        kind: "http",
+        httpRequests: 2,
+        webSocketRequests: 0,
+        upgradeAttempts: 1,
+        upgradeRefusals: 1,
+      },
+      {
+        kind: "websocket",
+        httpRequests: 0,
+        webSocketRequests: 1,
+        upgradeAttempts: 1,
+        upgradeRefusals: 0,
+      },
+      {
+        kind: "mixed",
+        httpRequests: 1,
+        webSocketRequests: 1,
+        upgradeAttempts: 1,
+        upgradeRefusals: 0,
+      },
+      {
+        kind: "none",
+        httpRequests: 0,
+        webSocketRequests: 0,
+        upgradeAttempts: 1,
+        upgradeRefusals: 1,
+      },
+    ]);
+  });
+
+  it("omits the relay transport when the call has no relay route", async () => {
+    const events: DiagnosticEventPayload[] = [];
+    const unsubscribe = onInternalDiagnosticEvent((event) => events.push(event));
+    try {
+      const emitter = createCodexModelCallDiagnosticEmitter({
+        baseFields: {
+          runId: "run-no-route",
+          callId: "call-no-route",
+          provider: "openai",
+          model: "m",
+        },
+        capture: {},
+        tools: [],
+        buildInputMessages: () => [],
+        buildSystemPrompt: () => undefined,
+      });
+      emitter.observeInferenceTransport(undefined);
+      emitter.emitStarted();
+      emitter.emitError(new Error("synthetic"));
+      await waitForDiagnosticEventsDrained();
+    } finally {
+      unsubscribe();
+    }
+    const terminal = events.find((event) => event.type === "model.call.error");
+    expect(terminal && "inferenceTransport" in terminal).toBe(false);
+  });
+
   it("emits content-free prompt size attribution on model-call lifecycle events", async () => {
     const inputMessages = [{ role: "user", content: "sensitive user prompt" }];
     const systemPrompt = "sensitive system prompt";

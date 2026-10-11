@@ -245,6 +245,7 @@ export async function prepareCodexAttemptTurnRequest(
           }
         : undefined;
     if (inferenceRoute) {
+      codexModelCallDiagnostics.observeInferenceTransport(inferenceRoute.transportCounts);
       if (!usesSupervisionConnection) {
         prompt.setParentLocalEgress();
       }
