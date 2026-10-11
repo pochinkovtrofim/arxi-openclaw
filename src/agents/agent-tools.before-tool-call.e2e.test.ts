@@ -1201,7 +1201,7 @@ describe("before_tool_call loop detection behavior", () => {
     await withToolExecutionEvents(async (emitted, flush) => {
       await tool.execute(
         "tool-call-1",
-        { command: "pwd", token: "sk-1234567890abcdef1234567890abcdef" },
+        { command: "ls /private-dir", token: "sk-1234567890abcdef1234567890abcdef" },
         undefined,
         undefined,
       );
@@ -1221,6 +1221,7 @@ describe("before_tool_call loop detection behavior", () => {
         paramsSummary: {
           kind: "object",
         },
+        execClass: "ls",
       });
       const startedTrace = requireRecord(started.trace, "started trace");
       expect(startedTrace.traceId).toBe(trace.traceId);
@@ -1231,10 +1232,11 @@ describe("before_tool_call loop detection behavior", () => {
       expect(Object.isFrozen(emitted[0]?.trace)).toBe(true);
       const completed = expectEventFields(emitted[1], {
         type: "tool.execution.completed",
+        execClass: "ls",
       });
       expect(typeof completed.durationMs).toBe("number");
       expect(JSON.stringify(emitted)).not.toContain("sk-1234567890abcdef1234567890abcdef");
-      expect(JSON.stringify(emitted)).not.toContain("pwd");
+      expect(JSON.stringify(emitted)).not.toContain("private-dir");
     });
   });
 
@@ -1279,6 +1281,7 @@ describe("before_tool_call loop detection behavior", () => {
           toolName: "exec",
           toolCallId: "tool-call-hook-failure",
           paramsSummary: { kind: "object" },
+          execClass: "other",
           errorCategory: "before_tool_call",
           terminalReason: testCase.terminalReason,
         });

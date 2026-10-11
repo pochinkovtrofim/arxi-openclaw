@@ -38,7 +38,7 @@ import {
   resolveToolDiagnosticIdentity,
   resolveToolErrorDiagnostic,
   resolveToolResultTerminalDiagnostic,
-  summarizeToolParams,
+  summarizeToolCallParams,
   startToolExecutionLiveness,
 } from "./agent-tools.before-tool-call.diagnostics.js";
 import {
@@ -319,7 +319,7 @@ export function wrapToolWithBeforeToolCallHook(
         toolName: normalizedToolName,
         ...diagnosticIdentity,
         ...(toolCallId && { toolCallId }),
-        paramsSummary: summarizeToolParams(toolParams),
+        ...summarizeToolCallParams(normalizedToolName, toolParams),
         mutatingAction: buildToolMutationState(normalizedToolName, toolParams).mutatingAction,
       });
       const recordPreExecutionError = (
