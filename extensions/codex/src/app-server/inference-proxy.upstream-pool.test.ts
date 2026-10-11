@@ -69,7 +69,10 @@ let originRequests: number;
 const sockets = new Set<Socket>();
 
 // Lets loopback close and response-release events settle before the next request.
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+const settle = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 50);
+  });
 
 function track(socket: Socket) {
   sockets.add(socket);
@@ -152,7 +155,10 @@ afterEach(async () => {
   }
   await Promise.all(
     [origin, tunnelServer].map(
-      (server) => new Promise<void>((resolve) => server.close(() => resolve())),
+      (server) =>
+        new Promise<void>((resolve) => {
+          server.close(() => resolve());
+        }),
     ),
   );
   vi.unstubAllEnvs();
@@ -188,7 +194,7 @@ describe("inference relay upstream connection reuse", () => {
     );
     const [first, ...rest] = observed.requests.map((entry) => entry.connection);
     expect(first).toEqual({ reused: false, connectMs: expect.any(Number) });
-    expect(rest).toEqual(Array(3).fill({ reused: true }));
+    expect(rest).toEqual(Array.from({ length: 3 }, () => ({ reused: true })));
   });
 
   it("keeps the pool private to one relay", async () => {

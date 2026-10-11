@@ -2,10 +2,8 @@ import { createServer, type IncomingMessage } from "node:http";
 import { Writable, type Duplex } from "node:stream";
 import { createPermitPool } from "openclaw/plugin-sdk/concurrency-runtime";
 import { createNodeProxyAgent } from "openclaw/plugin-sdk/fetch-runtime";
-import { createSubsystemLogger } from "openclaw/plugin-sdk/logging-core";
 import { generateSecureToken } from "openclaw/plugin-sdk/secure-random-runtime";
 import {
-  createEnvProxyTunnelPool,
   fetchWithSsrFGuard,
   isBlockedHostnameOrIp,
   resolvePinnedHostnameWithPolicy,
@@ -34,6 +32,7 @@ import {
   rejectBusyUpgrade,
   relayHeaders,
 } from "./inference-proxy-http.js";
+import { createCodexUpstreamTransport } from "./inference-upstream.js";
 import {
   createUploadAdmission,
   MAX_BODY_BYTES,
@@ -57,14 +56,6 @@ const IDLE_WEBSOCKET_MS = 60 * 60_000;
 const FIRST_FRAME_MS = 60_000;
 // Native Codex treats a 426 handshake answer as "use HTTP Responses for this session".
 const HTTP_ONLY_BODY = { contentType: "text/plain", text: "Codex relay serves HTTP only." };
-// One upstream tunnel and TLS session serves sequential model requests. Egress closes a
-// tunnel 10 min after it opens, so a pooled socket takes new requests for its first
-// 2 min only, leaving each stream at least 8 min. A busy pool falls back to a fresh
-// tunnel per request rather than queueing behind a stream.
-const UPSTREAM_IDLE_MS = 60_000;
-const UPSTREAM_MAX_REUSE_AGE_MS = 120_000;
-const UPSTREAM_POOLED_CONNECTIONS = 4;
-const upstreamLog = createSubsystemLogger("codex/inference");
 
 type ResidentTicket = {
   signal: AbortSignal;
@@ -100,13 +91,7 @@ export async function createCodexInferenceProxy(params: {
     params.assertCurrent();
   };
   const context = createCodexInferenceContext(assertCurrent);
-  // Private to this relay's upstream fetches; never shared with other guarded fetches.
-  const upstreamPool = createEnvProxyTunnelPool({
-    maxEntries: 2,
-    idleTtlMs: UPSTREAM_IDLE_MS,
-    maxAgeMs: UPSTREAM_MAX_REUSE_AGE_MS,
-    maxActiveLeases: UPSTREAM_POOLED_CONNECTIONS,
-  });
+  const upstreamTransport = createCodexUpstreamTransport();
   const upstreamPath = upstream.pathname.replace(/\/+$/, "");
   // Preserve native Azure feature detection and the Guardian backend suffix through loopback.
   const pathPrefix =
@@ -323,21 +308,8 @@ export async function createCodexInferenceProxy(params: {
             signal: upload.signal,
             duplex: "half",
           };
-          const startedAt = performance.now();
-          guarded = await fetchWithSsrFGuard({
-            url: target.toString(),
-            init,
-            signal: upload.signal,
-            // Refresh and DNS/proxy preparation await; revalidate both owners at physical I/O.
-            beforeRequest: assertAuthorized,
-            requireHttps: true,
-            maxRedirects: 0,
-            capture: false,
-            mode: "trusted_env_proxy",
-            auditContext: "codex-parent-local-inference",
-            dispatcherPool: upstreamPool,
-          });
-          logUpstreamRequest(guarded, performance.now() - startedAt);
+          // Refresh and DNS/proxy preparation await; revalidate both owners at physical I/O.
+          guarded = await upstreamTransport.fetch(target, init, upload.signal, assertAuthorized);
           assertAuthorized();
           if (!upload.retry || guarded.response.status !== 401 || attempt === 1) {
             upload.commit?.();
@@ -734,7 +706,7 @@ export async function createCodexInferenceProxy(params: {
   const close = () => {
     lifetime.abort();
     context.close();
-    void upstreamPool.closeAll();
+    upstreamTransport.close();
     for (const closeConnection of connections) {
       closeConnection();
     }
@@ -770,19 +742,3 @@ export async function createCodexInferenceProxy(params: {
 }
 
 export type CodexInferenceProxy = Awaited<ReturnType<typeof createCodexInferenceProxy>>;
-
-/** Content-free upstream transport timing: no URL, headers, identity or body. */
-function logUpstreamRequest(
-  guarded: Awaited<ReturnType<typeof fetchWithSsrFGuard>>,
-  ttfbMs: number,
-): void {
-  const connection = guarded.connection;
-  upstreamLog.debug("upstream request", {
-    // An unpooled request (no proxy, or a busy pool) opened its own connection.
-    pooled: connection !== undefined,
-    reused: connection?.reused ?? false,
-    ...(connection?.connectMs !== undefined ? { connect_ms: connection.connectMs } : {}),
-    ttfb_ms: Math.round(ttfbMs),
-    status_class: `${Math.floor(guarded.response.status / 100)}xx`,
-  });
-}
