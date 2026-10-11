@@ -7,6 +7,7 @@ import {
   projectSessionEntryMessage,
 } from "../../../packages/agent-core/src/harness/session/session.js";
 import { classifyToolUseResultPairing } from "../../../packages/agent-core/src/harness/session/tool-result-pairing.js";
+import { makeZeroUsageSnapshot } from "../../agents/usage.js";
 import {
   executeSqliteQueryTakeFirstSync,
   iterateSqliteQuerySync,
@@ -54,6 +55,10 @@ export type SessionModelContextLimits = {
   maxEvents: number;
   /** Detached model views may omit result bodies; evidence and fork readers remain strict. */
   toolResultOverflow?: "omit";
+  /** Views that judge the newest turn keep its request and tool frames or fail explicitly. */
+  latestTurn?: "required";
+  /** Provider context totals measure the whole session, not a suffix cut from it. */
+  measuredContextUsage?: "drop-when-bounded";
 };
 type ModelContextRequest = {
   entry: ContextEntry;
@@ -217,12 +222,16 @@ function selectBoundedModelRequests(
     }
   }
   let selected = candidates.slice(cut);
-  if (selected.length === 0 && limits.toolResultOverflow === "omit") {
+  const latestUser = candidates.findLastIndex(
+    ({ entry }) => entry.type === "message" && entry.message.role === "user",
+  );
+  // A cut inside the newest turn keeps its reply but loses the request and evidence.
+  const missesLatestTurn = limits.latestTurn === "required" && latestUser >= 0 && cut > latestUser;
+  let recoveredLatestTurn = false;
+  if ((selected.length === 0 || missesLatestTurn) && limits.toolResultOverflow === "omit") {
     // Retain the newest historical request and close its suffix over displaced results.
     // The currently admitted user is supplied separately by native runtime callers.
-    let start = candidates.findLastIndex(
-      ({ entry }) => entry.type === "message" && entry.message.role === "user",
-    );
+    let start = latestUser;
     if (start < 0) {
       start = candidates.length - 1;
     }
@@ -271,8 +280,12 @@ function selectBoundedModelRequests(
       }
       if (requiredBytes <= limits.maxBytes) {
         selected = required.map((request) => replacements.get(request.entry) ?? request);
+        recoveredLatestTurn = true;
       }
     }
+  }
+  if (missesLatestTurn && !recoveredLatestTurn) {
+    throw new RangeError("Newest session turn cannot fit the model-context limit");
   }
   if (selected.length === 0) {
     throw new RangeError(
@@ -297,6 +310,13 @@ function selectBoundedModelRequests(
     }
   }
   return boundary ? [boundary, ...selected] : selected;
+}
+
+// Zeroed like usage before a compaction, so size checks estimate the retained suffix.
+function withoutMeasuredUsage<T extends SessionTreeEntry>(entry: T): T {
+  return entry.type === "message" && entry.message.role === "assistant" && entry.message.usage
+    ? { ...entry, message: { ...entry.message, usage: makeZeroUsageSnapshot() } }
+    : entry;
 }
 
 function modelToolResultOmissionSql(requests: readonly ModelContextRequest[]) {
@@ -348,6 +368,8 @@ export function readSessionTranscriptModelContext(
         : requests;
       const payloads = readModelEntries(selected);
       if (limits) {
+        const dropMeasuredUsage =
+          limits.measuredContextUsage === "drop-when-bounded" && selected !== requests;
         const model = entries.findLast(
           (entry) =>
             entry.type === "model_change" ||
@@ -357,7 +379,7 @@ export function readSessionTranscriptModelContext(
         const detached = entries.flatMap((entry) => {
           const payload = payloads.get(entry);
           if (payload) {
-            return [payload];
+            return [dropMeasuredUsage ? withoutMeasuredUsage(payload) : payload];
           }
           if (entry === thinking || (entry === model && entry.type === "model_change")) {
             return [entry];
