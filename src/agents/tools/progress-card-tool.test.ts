@@ -61,7 +61,7 @@ describe("progress_card tool", () => {
     expect(planned.details).toEqual({ revision: 3, steps: { completed: 1, total: 3 } });
     expect(planned.content[0]).toEqual({
       type: "text",
-      text: "Progress card updated (rev 3, 1/3 done)",
+      text: 'Progress card updated (rev 3, 1/3 done). Now: "Patch". Next: "Verify".',
     });
 
     const note = await tool.execute("call-2", { markdown: "A note" });
@@ -79,6 +79,46 @@ describe("progress_card tool", () => {
     callGateway.mockRejectedValueOnce(new Error("save rejected"));
     await expect(tool.execute("call-failed", { plan: steps })).rejects.toThrow("save rejected");
     expect(savedPlans).toEqual([true, false, false]);
+  });
+
+  it.each([
+    {
+      name: "names the first pending step when none is active",
+      steps: [
+        { step: "Find the thread", status: "pending" as const },
+        { step: "Send the reminder", status: "pending" as const },
+      ],
+      text: 'Progress card updated (rev 1, 0/2 done). Now: "Find the thread". Next: "Send the reminder".',
+    },
+    {
+      name: "marks the last remaining step",
+      steps: [
+        { step: "Find the thread", status: "completed" as const },
+        { step: "Send the reminder", status: "in_progress" as const },
+      ],
+      text: 'Progress card updated (rev 1, 1/2 done). Now: "Send the reminder". This is the last step.',
+    },
+    {
+      name: "turns a finished checklist into a stop signal",
+      steps: [
+        { step: "Find the thread", status: "completed" as const },
+        { step: "Send the reminder", status: "completed" as const },
+      ],
+      text: "Progress card updated (rev 1, 2/2 done). All steps are done: send the result now; recheck a step only if new evidence contradicts it.",
+    },
+    {
+      name: "shortens a long step",
+      steps: [{ step: "a".repeat(200), status: "in_progress" as const }],
+      text: `Progress card updated (rev 1, 0/1 done). Now: "${"a".repeat(119)}…". This is the last step.`,
+    },
+  ])("digest $name", async ({ steps, text }) => {
+    const callGateway = vi.fn().mockResolvedValueOnce({
+      card: { sessionKey: "agent:main:main", steps, revision: 1, updatedAt: 1 },
+    });
+    const tool = createProgressCardTool({ agentSessionKey: "agent:main:main", callGateway });
+
+    const result = await tool.execute("call-digest", { plan: steps });
+    expect(result.content[0]).toEqual({ type: "text", text });
   });
 
   it.each([

@@ -22,6 +22,31 @@ const ProgressCardToolSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const DIGEST_STEP_CHARS = 120;
+
+function digestStep(step: string): string {
+  const chars = Array.from(step.trim());
+  return chars.length > DIGEST_STEP_CHARS
+    ? `${chars.slice(0, DIGEST_STEP_CHARS - 1).join("")}…`
+    : chars.join("");
+}
+
+// The receipt is the model's only per-update view of its plan, so it names the
+// step to work on and turns a finished checklist into a stop signal instead of
+// another verification pass.
+function planDigest(steps: readonly { step: string; status: string }[]): string {
+  const pending = steps.filter((step) => step.status === "pending");
+  const current = steps.find((step) => step.status === "in_progress") ?? pending.shift();
+  if (!current) {
+    return "All steps are done: send the result now; recheck a step only if new evidence contradicts it.";
+  }
+  const next = pending[0];
+  return [
+    `Now: "${digestStep(current.step)}".`,
+    next ? `Next: "${digestStep(next.step)}".` : "This is the last step.",
+  ].join(" ");
+}
+
 type ProgressCardToolOptions = {
   agentSessionKey?: string;
   agentId?: string;
@@ -81,7 +106,7 @@ export function createProgressCardTool(options: ProgressCardToolOptions = {}): A
               text: !result.card
                 ? "Progress card cleared"
                 : total > 0
-                  ? `Progress card updated (rev ${result.card.revision}, ${completed}/${total} done)`
+                  ? `Progress card updated (rev ${result.card.revision}, ${completed}/${total} done). ${planDigest(result.card.steps ?? [])}`
                   : `Progress card updated (rev ${result.card.revision})`,
             },
             ...json.content,
