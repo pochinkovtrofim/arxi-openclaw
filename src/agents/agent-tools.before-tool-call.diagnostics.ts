@@ -547,7 +547,7 @@ export function summarizeToolCallParams(toolName: string, params: unknown) {
   return { paramsSummary: summarizeToolParams(params), ...(execClass ? { execClass } : {}) };
 }
 
-export function summarizeToolParams(params: unknown): DiagnosticToolParamsSummary {
+function summarizeToolParams(params: unknown): DiagnosticToolParamsSummary {
   if (params === null) {
     return { kind: "null" };
   }

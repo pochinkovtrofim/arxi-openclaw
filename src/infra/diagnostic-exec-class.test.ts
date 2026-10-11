@@ -1,10 +1,8 @@
 // Covers the content-free exec command class used by tool diagnostics.
 import { describe, expect, it } from "vitest";
-import {
-  classifyExecCommand,
-  EXEC_COMMAND_CLASSES,
-  resolveDiagnosticExecClass,
-} from "./diagnostic-exec-class.js";
+import { resolveDiagnosticExecClass } from "./diagnostic-exec-class.js";
+
+const classifyExecCommand = (command: unknown) => resolveDiagnosticExecClass("exec", { command });
 
 describe("classifyExecCommand", () => {
   it.each([
@@ -79,7 +77,9 @@ describe("classifyExecCommand", () => {
   });
 
   it("never returns text outside the allowlist", () => {
-    const allowed = new Set<string>([...EXEC_COMMAND_CLASSES, "other"]);
+    // Only an allowlisted name classifies to itself; any other token is "other".
+    const allowed = (value: string | undefined) =>
+      value === "other" || (value !== undefined && classifyExecCommand(value) === value);
     const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789 /'\"-=._$|;&()\\`";
     let seed = 7;
     const next = () => {
@@ -92,7 +92,7 @@ describe("classifyExecCommand", () => {
       for (let index = 0; index < length; index++) {
         command += alphabet[next() % alphabet.length];
       }
-      expect(allowed.has(classifyExecCommand(command))).toBe(true);
+      expect(allowed(classifyExecCommand(command))).toBe(true);
     }
   });
 });

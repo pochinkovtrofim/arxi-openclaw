@@ -16,7 +16,7 @@
  * internal/guestdiagnostics/exec_class.go) accepts exactly this set and maps
  * anything else to "other"; extend both lists together.
  */
-export const EXEC_COMMAND_CLASSES = [
+const EXEC_COMMAND_CLASSES = [
   "awk",
   "base64",
   "bash",
@@ -222,7 +222,7 @@ function classifyCommand(command: string, allowWrapper: boolean): DiagnosticExec
 }
 
 /** Classifies a shell command string; anything that is not a non-empty string is "other". */
-export function classifyExecCommand(command: unknown): DiagnosticExecCommandClass {
+function classifyExecCommand(command: unknown): DiagnosticExecCommandClass {
   return typeof command === "string" ? classifyCommand(command, true) : "other";
 }
 
