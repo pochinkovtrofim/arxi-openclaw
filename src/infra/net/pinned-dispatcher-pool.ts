@@ -17,6 +17,7 @@ type PinnedDispatcherPoolEntry = {
   groupKey: string;
   dispatcher: Dispatcher;
   activeLeases: number;
+  createdAtMs: number;
   idleTimer?: ReturnType<typeof setTimeout>;
   closePromise?: Promise<void>;
 };
@@ -24,24 +25,43 @@ type PinnedDispatcherPoolEntry = {
 type PinnedDispatcherPoolOptions = {
   maxEntries: number;
   idleTtlMs: number;
+  /** New requests stop reusing an entry this old; it drains and is replaced. */
+  maxAgeMs?: number;
+  /**
+   * In-flight requests one entry may carry. A further request gets no lease and
+   * uses a one-shot dispatcher, so a pooled request never queues behind a stream.
+   */
+  maxActiveLeases?: number;
+  /**
+   * Also reuse trusted env-proxy dispatchers. A proxy tunnel can have its own
+   * lifetime, so an owner opting in sets maxAgeMs below it.
+   */
+  envProxyTunnels?: boolean;
 };
 
 /**
- * Bounded cache of reusable DNS-pinned dispatchers.
+ * Bounded cache of reusable DNS-pinned (or opted-in env-proxy) dispatchers.
  *
  * Callers must perform fresh DNS and SSRF validation before every acquisition
- * and include the resulting origin, address set, and connection policy in the key.
+ * and include the resulting origin, address set or proxy route, and connection
+ * policy in the key.
  */
 export class PinnedDispatcherPool {
   private readonly entries = new Map<string, PinnedDispatcherPoolEntry>();
   private readonly ownedEntries = new Set<PinnedDispatcherPoolEntry>();
   private readonly maxEntries: number;
-  private readonly idleTtlMs: number;
+  readonly idleTtlMs: number;
+  readonly maxActiveLeases: number | undefined;
+  readonly envProxyTunnels: boolean;
+  private readonly maxAgeMs: number | undefined;
   private closed = false;
 
   constructor(options: PinnedDispatcherPoolOptions) {
     this.maxEntries = options.maxEntries;
     this.idleTtlMs = options.idleTtlMs;
+    this.maxAgeMs = options.maxAgeMs;
+    this.maxActiveLeases = options.maxActiveLeases;
+    this.envProxyTunnels = options.envProxyTunnels === true;
   }
 
   acquire(params: {
@@ -54,7 +74,17 @@ export class PinnedDispatcherPool {
     }
 
     const existing = this.entries.get(params.key);
-    if (existing) {
+    if (
+      existing &&
+      this.maxAgeMs !== undefined &&
+      Date.now() - existing.createdAtMs >= this.maxAgeMs
+    ) {
+      // Active leases keep their transport; only new requests move to the replacement.
+      this.retireEntry(existing);
+    } else if (existing) {
+      if (this.maxActiveLeases !== undefined && existing.activeLeases >= this.maxActiveLeases) {
+        return undefined;
+      }
       if (existing.idleTimer) {
         clearTimeout(existing.idleTimer);
         existing.idleTimer = undefined;
@@ -90,6 +120,7 @@ export class PinnedDispatcherPool {
       groupKey: params.groupKey,
       dispatcher: params.createDispatcher(),
       activeLeases: 1,
+      createdAtMs: Date.now(),
     };
     this.ownedEntries.add(entry);
     this.entries.set(entry.key, entry);
@@ -160,4 +191,17 @@ export class PinnedDispatcherPool {
     );
     return entry.closePromise;
   }
+}
+
+/**
+ * Caller-owned pool that reuses one trusted env-proxy tunnel per origin across its
+ * own guarded fetches. Pass it only on those fetches and close it with its owner.
+ */
+export function createEnvProxyTunnelPool(options: {
+  maxEntries: number;
+  idleTtlMs: number;
+  maxAgeMs: number;
+  maxActiveLeases: number;
+}): PinnedDispatcherPool {
+  return new PinnedDispatcherPool({ ...options, envProxyTunnels: true });
 }

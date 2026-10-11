@@ -38,6 +38,7 @@ import {
   MAX_PENDING_REQUESTS,
   MAX_UPLOADS,
 } from "./inference-upload.js";
+import { createCodexUpstreamTransport } from "./inference-upstream.js";
 import type { CodexResponsesOAuth } from "./responses-oauth.js";
 
 export { CodexInferenceAuthorizationError } from "./inference-dispatch.js";
@@ -90,6 +91,7 @@ export async function createCodexInferenceProxy(params: {
     params.assertCurrent();
   };
   const context = createCodexInferenceContext(assertCurrent);
+  const upstreamTransport = createCodexUpstreamTransport();
   const upstreamPath = upstream.pathname.replace(/\/+$/, "");
   // Preserve native Azure feature detection and the Guardian backend suffix through loopback.
   const pathPrefix =
@@ -306,18 +308,8 @@ export async function createCodexInferenceProxy(params: {
             signal: upload.signal,
             duplex: "half",
           };
-          guarded = await fetchWithSsrFGuard({
-            url: target.toString(),
-            init,
-            signal: upload.signal,
-            // Refresh and DNS/proxy preparation await; revalidate both owners at physical I/O.
-            beforeRequest: assertAuthorized,
-            requireHttps: true,
-            maxRedirects: 0,
-            capture: false,
-            mode: "trusted_env_proxy",
-            auditContext: "codex-parent-local-inference",
-          });
+          // Refresh and DNS/proxy preparation await; revalidate both owners at physical I/O.
+          guarded = await upstreamTransport.fetch(target, init, upload.signal, assertAuthorized);
           assertAuthorized();
           if (!upload.retry || guarded.response.status !== 401 || attempt === 1) {
             upload.commit?.();
@@ -714,6 +706,7 @@ export async function createCodexInferenceProxy(params: {
   const close = () => {
     lifetime.abort();
     context.close();
+    upstreamTransport.close();
     for (const closeConnection of connections) {
       closeConnection();
     }

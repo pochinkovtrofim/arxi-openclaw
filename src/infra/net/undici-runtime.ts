@@ -128,6 +128,17 @@ function completeProxyLifecycle(
   }
 }
 
+/** Proxy URIs an env dispatcher created now would route through, by request protocol. */
+export function resolveHttp1EnvProxyUris(options?: UndiciEnvHttpProxyAgentOptions): {
+  httpProxy: string | undefined;
+  httpsProxy: string | undefined;
+} {
+  const httpProxy = options?.httpProxy ?? process.env.http_proxy ?? process.env.HTTP_PROXY;
+  const httpsProxy =
+    (options?.httpsProxy ?? process.env.https_proxy ?? process.env.HTTPS_PROXY) || httpProxy;
+  return { httpProxy, httpsProxy };
+}
+
 /** Creates an env dispatcher with per-hop connectors and the existing dynamic bypass policy. */
 export function createHttp1EnvHttpProxyAgent(
   options?: UndiciEnvHttpProxyAgentOptions,
@@ -135,9 +146,7 @@ export function createHttp1EnvHttpProxyAgent(
   managedTlsEnv?: NodeJS.ProcessEnv,
 ): import("undici").EnvHttpProxyAgent {
   const { EnvHttpProxyAgent } = loadUndiciRuntimeDeps();
-  const httpProxy = options?.httpProxy ?? process.env.http_proxy ?? process.env.HTTP_PROXY;
-  const httpsProxy =
-    (options?.httpsProxy ?? process.env.https_proxy ?? process.env.HTTPS_PROXY) || httpProxy;
+  const { httpProxy, httpsProxy } = resolveHttp1EnvProxyUris(options);
   const proxies = new Map<string, import("undici").Dispatcher>();
   for (const uri of [httpProxy, httpsProxy]) {
     if (uri && !proxies.has(uri)) {

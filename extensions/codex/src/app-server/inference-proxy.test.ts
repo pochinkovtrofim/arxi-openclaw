@@ -27,6 +27,7 @@ vi.mock("openclaw/plugin-sdk/fetch-runtime", () => ({
 vi.mock("openclaw/plugin-sdk/ssrf-runtime", async (original) => {
   const actual = await original<typeof import("openclaw/plugin-sdk/ssrf-runtime")>();
   return {
+    createEnvProxyTunnelPool: actual.createEnvProxyTunnelPool,
     fetchWithSsrFGuard: transport.fetch,
     isBlockedHostnameOrIp: actual.isBlockedHostnameOrIp,
     resolvePinnedHostnameWithPolicy: transport.resolve,
