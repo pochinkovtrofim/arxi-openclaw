@@ -17,6 +17,8 @@ import {
   DEFAULT_WORKER_PENDING_BYTES,
   DEFAULT_WORKER_PENDING_TASKS,
   getWorkerComputeCapacity,
+  workerComputeLane,
+  type WorkerComputeLane,
 } from "./worker-task-capacity.js";
 import {
   createWorkerNativeSectionState,
@@ -106,6 +108,7 @@ export class WorkerTaskPoolCore<Input, Output> {
   private workersCreated = 0;
   private activeTasks = 0;
   private readonly computeCapacity: ReturnType<typeof getWorkerComputeCapacity> | undefined;
+  private readonly compute: WorkerComputeLane;
   private readonly resumeCompute = () => this.dispatch();
   private closedError?: Error;
   private rotation?: Promise<void>;
@@ -130,6 +133,7 @@ export class WorkerTaskPoolCore<Input, Output> {
       }
     }
     this.computeCapacity = options.sharedCompute ? getWorkerComputeCapacity() : undefined;
+    this.compute = workerComputeLane(options.workerUrl, options.sharedCompute);
     this.retirement = createWorkerTaskPoolRetirement({
       slots: this.slots,
       options,
@@ -199,7 +203,7 @@ export class WorkerTaskPoolCore<Input, Output> {
     if (
       this.pendingTasks >= this.maxPendingTasks ||
       this.pendingBytes + inputBytes > this.maxPendingBytes ||
-      (this.computeCapacity && !this.computeCapacity.admit(inputBytes))
+      (this.computeCapacity && !this.computeCapacity.admit(inputBytes, this.compute.computeClass))
     ) {
       this.finish(task, new WorkerTaskError("worker task capacity reached", "overloaded"));
       return task;
@@ -333,13 +337,14 @@ export class WorkerTaskPoolCore<Input, Output> {
       }
       const nextTask = this.queue[0]!;
       if (this.computeCapacity) {
-        const permit = this.computeCapacity.acquire(this.resumeCompute, () => {
+        const checkpoint = () => {
           if (nextTask.exchange && !nextTask.exchange.sent) {
             nextTask.runInContext(() => nextTask.exchange?.pressure.abort());
             return true;
           }
           return false;
-        });
+        };
+        const permit = this.computeCapacity.acquire(this.resumeCompute, checkpoint, this.compute);
         if (!permit) {
           return;
         }
@@ -731,7 +736,7 @@ export class WorkerTaskPoolCore<Input, Output> {
       task.admitted = false;
       this.pendingTasks--;
       this.pendingBytes -= task.inputBytes;
-      this.computeCapacity?.finish(task.inputBytes);
+      this.computeCapacity?.finish(task.inputBytes, this.compute.computeClass);
     }
   }
 
