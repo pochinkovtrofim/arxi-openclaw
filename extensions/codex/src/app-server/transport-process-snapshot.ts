@@ -20,6 +20,7 @@ const PROCESS_COLUMNS = "pid=,ppid=,pgid=,stat=,lstart=";
 const MAX_PROCESS_CONTAINMENT_MS = 2_000;
 const PROCESS_INSPECTION_MAX_BYTES = 8 * 1024 * 1024;
 const PROCFS_COMMAND_PERMISSION_EXIT = 77;
+const LINUX_PF_KTHREAD = 0x00200000;
 // cmdline can wait on target memory. Keep those kernel waits outside the Gateway.
 const PROCFS_COMMAND_READER = `
 const fs = require("node:fs");
@@ -366,7 +367,18 @@ function parseLinuxProcess(
     .split(/\s+/);
   const ppid = Number(fields[1]);
   const pgid = Number(fields[2]);
+  const flags = Number(fields[6]);
   const startTicks = fields[19];
+  // VM snapshot clones keep the golden boot id, so a registered PID can return
+  // as a kernel thread. Kernel threads are never Codex processes or signal targets.
+  if (
+    commEnd >= 0 &&
+    /^\d+$/.test(fields[6] ?? "") &&
+    Number.isSafeInteger(flags) &&
+    (flags & LINUX_PF_KTHREAD) !== 0
+  ) {
+    return undefined;
+  }
   if (
     commEnd < 0 ||
     ![ppid, pgid].every(Number.isSafeInteger) ||

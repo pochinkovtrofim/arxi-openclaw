@@ -383,6 +383,28 @@ describe("Codex procfs process inspector", () => {
       }
     },
   );
+  it("treats a selected kernel thread as a different process, not missing evidence", async (ctx) => {
+    ctx.onTestFinished(() => {
+      procfs.readFile.mockReset();
+      vi.restoreAllMocks();
+    });
+    vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+    const kernelPid = process.pid + 1;
+    procfs.readFile.mockImplementation((file) => {
+      if (file === "/proc/sys/kernel/random/boot_id") {
+        return "00000000-0000-0000-0000-000000000001";
+      }
+      if (file === `/proc/${kernelPid}/stat`) {
+        // PF_KTHREAD with the kernel's pgid=0; a snapshot clone can reuse a registered PID.
+        return `${kernelPid} (jbd2/vdb-8) S 2 0 0 0 -1 2129984${" 0".repeat(10)} 1 0 1773\n`;
+      }
+      expect(file).toBe(`/proc/${process.pid}/stat`);
+      return `${process.pid} (worker) S ${process.ppid} ${process.pid}${" 0".repeat(14)} 1 0 12345\n`;
+    });
+    await expect(readCodexAppServerProcessSnapshot(undefined, [kernelPid])).resolves.toEqual([
+      observedProcess,
+    ]);
+  });
 });
 
 describe.skipIf(process.platform === "win32" || process.platform === "linux")(

@@ -340,12 +340,20 @@ describe("Codex registration procfs boundary", () => {
     },
   );
 
-  it.for(["ENOENT", "ESRCH", "replaced", "dead"])(
+  it.for(["ENOENT", "ESRCH", "replaced", "dead", "kernel thread"])(
     "retires a verified %s identity despite an unreadable unrelated process",
     async (mode) => {
       store.register("orphan", { parent, child: { ...child, commandFingerprint } });
       procfs.files.delete(`/proc/${parent.pid}/stat`);
-      if (mode === "replaced") {
+      if (mode === "kernel thread") {
+        // A snapshot clone keeps the boot id; both recorded PIDs now name kernel workers.
+        for (const pid of [parent.pid, child.pid]) {
+          procfs.files.set(
+            `/proc/${pid}/stat`,
+            `${pid} (kworker/u4:2) I 2 0 0 0 -1 69238880${" 0".repeat(10)} 1 0 67890\n`,
+          );
+        }
+      } else if (mode === "replaced") {
         procfs.files.set(
           `/proc/${child.pid}/stat`,
           `${child.pid} (replacement) S 1 ${child.pid}${" 0".repeat(14)} 1 0 67890\n`,
