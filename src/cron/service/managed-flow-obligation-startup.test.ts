@@ -141,23 +141,16 @@ describe("durable Automation obligation scheduler startup", () => {
     expect((await stored()).state.nextRunAtMs).toBeUndefined();
   });
 
-  it("keeps the wake snapshot incomplete for paced jobs its repair pass did not read", async () => {
+  it("skips paced jobs its repair pass did not read at their current schedule", async () => {
     const state = createCronServiceState(deps());
     state.store = await loadCronStore(storePath);
     await repairManagedFlowAutomationObligations(state);
     expect(earliestManagedFlowObligationAtMs(state, [job])).toBe(due);
 
     const added = { ...job, id: randomUUID() };
-    expect(() => earliestManagedFlowObligationAtMs(state, [job, added])).toThrow(
-      "have not been observed",
-    );
+    expect(earliestManagedFlowObligationAtMs(state, [job, added])).toBe(due);
     const rescheduled = { ...job, schedule: { ...job.schedule, everyMs: 3_600_000 } } as CronJob;
-    expect(() => earliestManagedFlowObligationAtMs(state, [rescheduled])).toThrow(
-      "have not been observed",
-    );
-    expect(earliestManagedFlowObligationAtMs(state, [{ ...added, enabled: false }])).toBe(
-      undefined,
-    );
+    expect(earliestManagedFlowObligationAtMs(state, [rescheduled])).toBeUndefined();
   });
 
   it("keeps the wake snapshot incomplete for invalid receipts until a clean pass", async () => {

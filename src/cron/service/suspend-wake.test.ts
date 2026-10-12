@@ -178,6 +178,64 @@ describe("cron suspend wake policy", () => {
     }
   });
 
+  it("keeps the snapshot complete when a paced never job is added after startup", async () => {
+    const { storePath } = await makeStorePath();
+    const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
+    const due = clock.now + 2 * HOUR_MS;
+    const steward = watchJob({
+      now: clock.now,
+      nextRunAtMs: clock.now + EVERY_MS,
+      id: "steward",
+      suspendWake: "never",
+      pacing: { min: "5m", max: "5m" },
+    });
+    await writeCronStoreSnapshot({ storePath, jobs: [steward] });
+    const flow = createManagedTaskFlow({
+      ownerKey: "agent:main:main",
+      controllerId: "tests/suspend-wake",
+      goal: "exact reminder",
+      status: "waiting",
+    });
+    const identity = tryCronScheduleIdentity(steward);
+    if (!flow || !identity) {
+      throw new Error("expected a managed Flow and a schedule identity");
+    }
+    runOpenClawStateWriteTransaction(({ db }) => {
+      upsertTaskFlowAutomationObligationInStateTransaction(db, {
+        flowId: flow.flowId,
+        expectedFlowRevision: flow.revision,
+        controllerId: "tests/suspend-wake",
+        cronStoreKey: cronStoreKey(storePath),
+        cronJobId: steward.id,
+        cronScheduleIdentity: identity,
+        sourceRunId: "paced-run",
+        triggerAtMs: due,
+        scheduledAtMs: due,
+        triggerKind: "check",
+        triggerDigest: "a".repeat(64),
+      });
+    });
+    const service = await startedService(storePath, clock);
+    try {
+      // A plugin reconciles its paced automation after cron start; the next
+      // timer tick may be hours away, so the snapshot must not wait for it.
+      await service.add({
+        agentId: "main",
+        name: "late paced automation",
+        enabled: true,
+        schedule: { kind: "every", everyMs: EVERY_MS, anchorMs: clock.now },
+        pacing: { min: "10m", max: "10m" },
+        suspendWake: "never",
+        sessionTarget: "isolated",
+        wakeMode: "now",
+        payload: { kind: "agentTurn", message: "check the condition" },
+      });
+      expect(service.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: due });
+    } finally {
+      service.stop();
+    }
+  });
+
   it("runs an overdue never job once at the first tick after resume", async () => {
     const { storePath } = await makeStorePath();
     const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
