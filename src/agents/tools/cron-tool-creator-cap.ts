@@ -350,10 +350,13 @@ function capCronJobToolsAllow(params: {
     // A default agent turn gets what its owner conversation gets, like operator jobs.
     // Scripts reach MCP only through servers their list names, and Codex app
     // authority is bound to the captured list, so those keep the creator's tools.
+    // Arxi background MCP grants are bound to exact captured bindings; `*` would
+    // bind none, so a creator surface with MCP tools keeps the concrete list too.
     if (
       params.payload.kind === "agentTurn" &&
       !hasCronTriggerScript(params.trigger) &&
-      !params.creatorHoldsRuntimeAuthority
+      !params.creatorHoldsRuntimeAuthority &&
+      resolveCronCreatorMcpToolBindings(params.creatorToolAllowlist).length === 0
     ) {
       params.payload.toolsAllow = ["*"];
       delete params.payload.toolsAllowIsDefault;

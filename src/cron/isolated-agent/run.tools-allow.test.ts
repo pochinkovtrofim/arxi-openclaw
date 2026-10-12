@@ -134,6 +134,20 @@ describe("runCronIsolatedAgentTurn toolsAllow", () => {
       job: { trigger: { script: "return { fire: true }" } },
       expected: ["message", "read"],
     },
+    {
+      label: "keeps its list when bound to background MCP grants",
+      job: {
+        toolsAllowProvenance: {
+          version: 1 as const,
+          source: "final-executable-surface" as const,
+          callerOrigin: { kind: "external" as const, channel: "whatsapp" },
+          mcpToolBindings: [
+            { name: "notes__read", serverName: "notes", operation: "tool" as const, toolName: "read" },
+          ],
+        },
+      },
+      expected: ["message", "read"],
+    },
   ])("an automatic creator snapshot $label", options, async ({ job, expected }) => {
     // Older builds saved this snapshot without the creator's native shell.
     await runCronIsolatedAgentTurn(

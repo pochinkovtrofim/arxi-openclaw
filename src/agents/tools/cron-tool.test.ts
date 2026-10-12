@@ -761,7 +761,7 @@ describe("cron tool", () => {
     expect(params?.payload?.toolsAllow).toEqual(["read"]);
   });
 
-  it("stores the creator tool surface on agentTurn adds without explicit toolsAllow", async () => {
+  it("stores the owner wildcard on default agentTurn adds without MCP-bound creator tools", async () => {
     const tool = createTestCronTool({
       agentSessionKey: "agent:main:telegram:group:restricted-room",
       creatorToolAllowlist: ["read", "cron"],
@@ -775,7 +775,7 @@ describe("cron tool", () => {
     const params = expectSingleGatewayCallMethod("cron.add") as
       | { payload?: { toolsAllow?: string[] } }
       | undefined;
-    expect(params?.payload?.toolsAllow).toEqual(["read", "automations"]);
+    expect(params?.payload?.toolsAllow).toEqual(["*"]);
   });
 
   it("lazily snapshots configured MCP authority for a default agentTurn add", async () => {

@@ -392,7 +392,7 @@ describe("runHeartbeatOnce heartbeat response tool", () => {
         }
         replySpy.mockImplementationOnce(async (_ctx, options) => {
           setHeartbeatAgentTurnStatus(options, "failed");
-          return { text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT, isError: true };
+          return { text: renderExternalRunFailureText(), isError: true };
         });
         expect(
           await run({
@@ -403,7 +403,7 @@ describe("runHeartbeatOnce heartbeat response tool", () => {
           }),
         ).toEqual({ status: "failed", reason: "agent-runner-failure" });
         expectSend(
-          heartbeatCopy ? HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT : GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+          heartbeatCopy ? renderHeartbeatFailureText() : renderExternalRunFailureText(),
         );
         expect(replySpy.mock.calls[0]?.[1]).toMatchObject({
           isHeartbeat: true,
@@ -426,7 +426,7 @@ describe("runHeartbeatOnce heartbeat response tool", () => {
           status: "failed",
           reason: "agent-runner-failure",
         });
-        expectSend(GENERIC_EXTERNAL_RUN_FAILURE_TEXT);
+        expectSend(renderExternalRunFailureText());
         expect(replySpy.mock.calls[0]?.[1]?.useHeartbeatFailureCopy).toBe(false);
         expect(peekSystemEventEntries(sessionKey)).toEqual(inspectedEvents);
         expect(readSessionStoreForTest(storePath)[sessionKey]).toMatchObject(previousHeartbeat);

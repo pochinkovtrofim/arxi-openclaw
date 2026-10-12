@@ -1,5 +1,5 @@
 import { resolveCronScheduledToolPolicy } from "./scheduled-tool-policy.js";
-import type { CronJob, CronStoredJob } from "./types.js";
+import type { CronJob, CronStoredJob, CronToolsAllowProvenance } from "./types.js";
 
 type CronToolRuntimeSpec = Pick<CronJob, "payload" | "trigger">;
 
@@ -24,7 +24,8 @@ export function applyDefaultCronToolsAllow(job: CronToolRuntimeSpec): void {
  * tools the creator had. Such an agent turn runs like a `*` job, with its owner
  * conversation's tools. Condition triggers keep their list (scripts reach MCP only
  * through named servers), as do jobs without a valid owner policy or whose Codex app
- * authority is bound to the captured list.
+ * authority is bound to the captured list. Arxi background MCP grants are bound to
+ * the exact captured MCP bindings, so jobs carrying them keep their list as well.
  */
 export function resolveCronRunToolsAllow(
   job: Pick<
@@ -35,13 +36,14 @@ export function resolveCronRunToolsAllow(
     | "scheduledToolPolicy"
     | "runtimeAuthority"
     | "runtimeAuthorityRecoveryRequired"
-  >,
+  > & { toolsAllowProvenance?: CronToolsAllowProvenance },
 ): string[] | undefined {
   return job.payload.kind === "agentTurn" &&
     job.payload.toolsAllowIsDefault === true &&
     !job.trigger?.script.trim() &&
     !job.runtimeAuthority &&
     !job.runtimeAuthorityRecoveryRequired &&
+    !job.toolsAllowProvenance?.mcpToolBindings?.length &&
     resolveCronScheduledToolPolicy({
       toolsAllow: job.payload.toolsAllow,
       scheduledToolPolicy: job.scheduledToolPolicy,
