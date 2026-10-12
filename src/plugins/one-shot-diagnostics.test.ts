@@ -286,6 +286,9 @@ describe("startOneShotDiagnosticsExporters", () => {
         expect(stopped).toBe(true);
         if (internalDiagnostics) {
           expect(internalDiagnostics.getRuntimeIdentity).toThrow("no longer active");
+          if (internalDiagnostics.createSpanBindingEmitter) {
+            expect(internalDiagnostics.createSpanBindingEmitter).toThrow("no longer active");
+          }
         }
       } finally {
         drain.resolve();

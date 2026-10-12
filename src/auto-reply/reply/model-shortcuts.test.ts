@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getCommandDetection, listNativeCommandSpecs } from "../commands-registry.js";
+import { listNativeCommandSpecs, maybeResolveTextAlias } from "../commands-registry.js";
 import { isDirectiveOnly } from "./directive-handling.directive-only.js";
 import { parseInlineSessionDirectives } from "./directive-handling.parse.js";
 
@@ -25,7 +25,7 @@ describe("model shortcuts", () => {
         isGroup: false,
       }),
     ).toBe(true);
-    expect(getCommandDetection().exact.has(command)).toBe(true);
+    expect(maybeResolveTextAlias(command)).toBe(command);
     expect(listNativeCommandSpecs().some((spec) => spec.name === command.slice(1))).toBe(false);
   });
 

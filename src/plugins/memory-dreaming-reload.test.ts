@@ -102,6 +102,9 @@ it("keeps successor sweeps and diary publication owned after another registratio
         update: async () => ({}),
         remove: async () => ({ removed: false }),
         removeStaleJobFamily: async () => 0,
+        getJob: () => undefined,
+        run: (async () => ({})) as never,
+        mutateTriggerState: (async () => ({})) as never,
       }),
     };
     const stop = async () => {

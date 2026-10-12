@@ -425,7 +425,7 @@ describe("startPluginServices", () => {
       );
       registry.services[0]!.trustedOfficialInstall = trusted;
       await start(registry);
-      return context?.internalDiagnostics;
+      return context?.internalDiagnostics as TrustedExporterInternalDiagnostics | undefined;
     };
     const diagnostics = await startExporter("diagnostics-otel", "bundled");
     for (const [internal, spanBindings] of [
