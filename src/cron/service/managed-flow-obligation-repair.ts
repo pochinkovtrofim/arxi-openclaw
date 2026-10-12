@@ -113,8 +113,11 @@ export async function repairManagedFlowAutomationObligations(
  * work bound to a job whose own cadence never wakes a suspended host must still
  * become that host's wake deadline; a far receipt never shows in the job's slot
  * because repair only pulls a slot earlier. Throws until a repair pass has
- * observed the receipts committed since the last consumed run, and for any paced
- * job that pass did not read at its current schedule or could not read cleanly.
+ * observed the receipts committed since the last consumed run, and for a paced
+ * job whose receipts that pass could not read cleanly. A job the pass did not
+ * read at its current schedule (created or rescheduled since) is skipped: its
+ * receipts join the next pass, and refusing it would keep a host awake until a
+ * timer tick that may be hours away.
  */
 export function earliestManagedFlowObligationAtMs(
   state: CronServiceState,
@@ -131,7 +134,7 @@ export function earliestManagedFlowObligationAtMs(
       continue;
     }
     if (receipts.observed.get(job.id) !== scheduleIdentity) {
-      throw new Error(`managed Flow receipts for cron job ${job.id} have not been observed`);
+      continue;
     }
     if (receipts.invalidJobIds.has(job.id)) {
       throw new Error(`managed Flow receipts for cron job ${job.id} are invalid`);
