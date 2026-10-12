@@ -22,8 +22,8 @@ import { resolveExecSafeBinRuntimePolicy } from "../infra/exec-safe-bin-runtime-
 import { logInfo } from "../logger.js";
 import { parseAgentSessionKey, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { isSecretEgressProxyActive } from "../secrets/egress-proxy/registry.js";
-import type { SecretStoreExecEnvironment } from "../secrets/store/secret-store.js";
 import { resolveSecretStoreDatabase } from "../secrets/store/secret-store-database.js";
+import type { SecretStoreExecEnvironment } from "../secrets/store/secret-store.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { captureOpenClawStateReadWorkerContext } from "../state/openclaw-state-worker-context.js";
 import { captureAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";

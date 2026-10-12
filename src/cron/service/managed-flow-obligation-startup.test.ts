@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
+import * as stateWorkerStore from "../../state/openclaw-state-worker-store.js";
 import { upsertTaskFlowAutomationObligationInStateTransaction } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { createManagedTaskFlow } from "../../tasks/task-flow-registry.js";
 import { resetTaskFlowRegistryForTests } from "../../tasks/task-runtime.test-helpers.js";
@@ -12,7 +13,6 @@ import { CronService } from "../service.js";
 import { loadCronStore, saveCronJobsStore } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
 import type { CronJob } from "../types.js";
-import * as stateWorkerStore from "../../state/openclaw-state-worker-store.js";
 import {
   earliestManagedFlowObligationAtMs,
   repairManagedFlowAutomationObligations,
