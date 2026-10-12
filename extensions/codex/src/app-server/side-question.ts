@@ -18,7 +18,6 @@ import {
 } from "openclaw/plugin-sdk/codex-mcp-projection";
 import { loadExecApprovals } from "openclaw/plugin-sdk/exec-approvals-runtime";
 import { registerNativeHookRelayForBundledRuntime } from "openclaw/plugin-sdk/native-hook-relay-runtime";
-import type { PluginRuntime } from "openclaw/plugin-sdk/plugin-runtime";
 import {
   asOptionalRecord,
   readStringField as readString,

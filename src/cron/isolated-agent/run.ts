@@ -19,7 +19,6 @@ import {
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import {
   createDiagnosticTraceContext,
-  createDiagnosticTraceContextFromActiveScope,
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import { isFastTestRuntimeEnv } from "../../infra/env.js";
@@ -79,14 +78,6 @@ async function disposeCronRunContext(params: {
 }
 
 /** Runs one isolated cron agent turn, including setup, execution, delivery, and persistence. */
-async function runCronIsolatedAgentTurnInTrace(
-  params: RunCronAgentTurnParams,
-): Promise<RunCronAgentTurnResult> {
-  return await runWithDiagnosticTraceContext(createDiagnosticTraceContextFromActiveScope(), () =>
-    runCronIsolatedAgentTurnInTrace(params),
-  );
-}
-
 async function runCronIsolatedAgentTurnInTrace(
   params: RunCronAgentTurnParams,
 ): Promise<RunCronAgentTurnResult> {

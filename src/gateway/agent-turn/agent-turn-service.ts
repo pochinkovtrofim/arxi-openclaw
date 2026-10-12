@@ -9,7 +9,6 @@ import {
 import { mergeSessionEntry, type SessionEntry } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
-import { getAgentRunContext } from "../../infra/agent-run-registry.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import { discardPreparedInboundMedia, type OffloadedRef } from "../chat-attachments.js";

@@ -1,5 +1,5 @@
 import { parseDateFirstTimestampMs } from "@openclaw/normalization-core/number-coercion";
-import { asOptionalRecord, isRecord } from "@openclaw/normalization-core/record-coerce";
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { sql, type Expression } from "kysely";
 import {
   executeSqliteQuerySync,

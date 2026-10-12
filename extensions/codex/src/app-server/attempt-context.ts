@@ -182,8 +182,8 @@ export function buildCodexSystemPromptReport(params: {
         },
         {
           name: "memory_routing",
-          chars: (params.workspaceBootstrapContext.memoryCollaborationInstructions ?? "").length,
-          hash: sha256Text(params.workspaceBootstrapContext.memoryCollaborationInstructions ?? ""),
+          chars: (params.workspaceBootstrapContext.memoryInstructions ?? "").length,
+          hash: sha256Text(params.workspaceBootstrapContext.memoryInstructions ?? ""),
         },
         { name: "skills", chars: skillsPrompt.length, hash: sha256Text(skillsPrompt) },
         { name: "eager_tool_schemas", chars: schemaChars },

@@ -40,6 +40,8 @@ export function makeBaseParams(overrides: {
   const runStartedAt = overrides.runStartedAt ?? Date.now();
   return {
     deliveryAttemptFence: null,
+    runId: "test-session-id",
+    cfg: {} as never,
     cfgWithAgentDefaults: {} as never,
     deps: {} as never,
     job: {

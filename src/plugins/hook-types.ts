@@ -15,7 +15,6 @@ import type { PrepareAssistantTranscriptMessage } from "../config/sessions/trans
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { TtsAutoMode } from "../config/types.tts.js";
 import type { DiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
-import type { InputProvenance } from "../sessions/input-provenance.js";
 import type { UserMessageEvent } from "../shared/user-message.types.js";
 import type {
   PluginHookAgentContext,
