@@ -588,14 +588,10 @@ describe("sessions_search tool", () => {
     const targetSessionKey = "agent:main:shared";
     const expectedSessionId = "shared-incarnation";
     const storePath = path.join(tempDirs.make("openclaw-search-context-"), "sessions.sqlite");
-    await applySessionStoreProjection({
-      storePath,
-      skipMaintenance: true,
-      update: (store) => {
-        store[targetSessionKey] = { sessionId: expectedSessionId, updatedAt: 1 };
-        return { persist: true, result: undefined };
-      },
-    });
+    replaceSessionEntrySync(
+      { storePath, sessionKey: targetSessionKey },
+      { sessionId: expectedSessionId, updatedAt: 1 },
+    );
     let granted = true;
     const requests: CallGatewayRequest[] = [];
     const unregister = createSessionVisibilityChecker.registerScopedAccessProvider((request) =>

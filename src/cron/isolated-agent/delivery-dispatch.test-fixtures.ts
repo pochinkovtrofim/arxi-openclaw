@@ -47,6 +47,7 @@ export function makeBaseParams(overrides: {
     job: {
       id: "test-job",
       name: "Test Job",
+      schedule: { kind: "cron", expr: "0 9 * * *", tz: "UTC" },
       sessionTarget: overrides.sessionTarget ?? "isolated",
       sessionKey:
         overrides.sessionTarget === "current" ? "agent:main:webchat:direct:owner" : undefined,
