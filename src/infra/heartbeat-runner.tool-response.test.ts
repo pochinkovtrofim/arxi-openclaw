@@ -402,9 +402,7 @@ describe("runHeartbeatOnce heartbeat response tool", () => {
               : {}),
           }),
         ).toEqual({ status: "failed", reason: "agent-runner-failure" });
-        expectSend(
-          heartbeatCopy ? renderHeartbeatFailureText() : renderExternalRunFailureText(),
-        );
+        expectSend(heartbeatCopy ? renderHeartbeatFailureText() : renderExternalRunFailureText());
         expect(replySpy.mock.calls[0]?.[1]).toMatchObject({
           isHeartbeat: true,
           useHeartbeatFailureCopy: heartbeatCopy,

@@ -142,7 +142,12 @@ describe("runCronIsolatedAgentTurn toolsAllow", () => {
           source: "final-executable-surface" as const,
           callerOrigin: { kind: "external" as const, channel: "whatsapp" },
           mcpToolBindings: [
-            { name: "notes__read", serverName: "notes", operation: "tool" as const, toolName: "read" },
+            {
+              name: "notes__read",
+              serverName: "notes",
+              operation: "tool" as const,
+              toolName: "read",
+            },
           ],
         },
       },
