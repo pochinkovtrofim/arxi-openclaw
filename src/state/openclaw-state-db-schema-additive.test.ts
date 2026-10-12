@@ -28,13 +28,11 @@ vi.mock("./openclaw-state-schema.js", async (importOriginal) => {
   };
 });
 
-import { OPENCLAW_STATE_SCHEMA_VERSION } from "./openclaw-state-db-contract.js";
 import {
   ensureSecretStoreSchema,
   ensureTaskFlowAutomationObligationSchema,
   ensureTaskFlowHistorySchema,
 } from "./openclaw-state-db-schema-additive.js";
-import { getOpenClawStateRuntimeSchema } from "./openclaw-state-schema-compatibility.js";
 
 const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
   afterEach(async () => {
