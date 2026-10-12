@@ -228,47 +228,6 @@ function createMissedIsolatedJob(now: number): CronJob {
     enabled: true,
     createdAtMs: now - 86_400_000,
     updatedAtMs: now - 30 * 60_000,
-
-    const exactBound = await add(
-      state,
-      {
-        ...base,
-        name: "exact-bound",
-        payload: {
-          kind: "agentTurn",
-          message: "run",
-          toolsAllow: ["notes__read"],
-        },
-      },
-      {
-        toolsAllowProvenance: {
-          version: 1,
-          source: "final-executable-surface",
-          mcpToolBindings: [
-            {
-              name: "notes__read",
-              serverName: "notes",
-              operation: "tool",
-              toolName: "read",
-            },
-            {
-              name: "notes__write",
-              serverName: "notes",
-              operation: "tool",
-              toolName: "write",
-            },
-          ],
-        },
-      },
-    );
-    expect(exactBound.toolsAllowProvenance?.mcpToolBindings).toEqual([
-      {
-        name: "notes__read",
-        serverName: "notes",
-        operation: "tool",
-        toolName: "read",
-      },
-    ]);
     schedule: { kind: "cron", expr: "0 * * * *", tz: "UTC" },
     sessionTarget: "isolated",
     wakeMode: "next-heartbeat",

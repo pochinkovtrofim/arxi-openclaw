@@ -202,10 +202,10 @@ export async function prepareDirectCompactionAttempt(
           modelId,
           config: params.config,
           workspaceDir: resolvedWorkspace,
-      agentRuntimeId: selectedPreparedHarness.id,
           metadataSnapshot: preparedModelRuntime.metadataSnapshot,
           resolveModel: ({ config, authProfileId: profileId, authProfileMode }) =>
             resolveModelAsync(runtimeProvider, modelId, agentDir, config, {
+              agentRuntimeId: preparedHarnessRuntime,
               abortSignal: params.abortSignal,
               authStorage,
               modelRegistry,

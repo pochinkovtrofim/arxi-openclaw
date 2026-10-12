@@ -115,6 +115,20 @@ describe("sendCronAnnouncePayloadStrict", () => {
     },
   );
 
+  it("keeps ordinary announcements free of native scheduler provenance", async () => {
+    await send();
+    expect(mocks.deliverOutboundPayloads.mock.calls[0]?.[0]).not.toHaveProperty(
+      "nativeDeliveryPurpose",
+    );
+  });
+
+  it("forwards native scheduler failure-alert provenance to channel delivery", async () => {
+    await send({ nativeDeliveryPurpose: "cron_failure_alert" });
+    expect(mocks.deliverOutboundPayloads.mock.calls[0]?.[0]).toMatchObject({
+      nativeDeliveryPurpose: "cron_failure_alert",
+    });
+  });
+
   it.each(["route", "transcript"] as const)(
     "preserves confirmed delivery when the optional %s lookup rejects",
     async (boundary) => {
@@ -132,27 +146,6 @@ describe("sendCronAnnouncePayloadStrict", () => {
       });
       const result = await send({
         jobId: job.id,
-    expect(mocks.deliverOutboundPayloads.mock.calls[0]?.[0]).not.toHaveProperty(
-      "nativeDeliveryPurpose",
-    );
-  });
-
-  it("forwards native scheduler failure-alert provenance to channel delivery", async () => {
-    await sendCronAnnouncePayloadStrict({
-      deps: {} as never,
-      cfg: {} as never,
-      agentId: "main",
-      jobId: "job-1",
-      target: { channel: "telegram", to: "123" },
-      payload: { text: "Automation failed" },
-      nativeDeliveryPurpose: "cron_failure_alert",
-      abortSignal: new AbortController().signal,
-    });
-
-    expect(mocks.deliverOutboundPayloads).toHaveBeenCalledWith(
-      expect.objectContaining({ nativeDeliveryPurpose: "cron_failure_alert" }),
-      undefined,
-    );
         payload: { text: "report" },
         completion: { job, runStartedAt: 1000, deliveryAttemptFence: null },
       });

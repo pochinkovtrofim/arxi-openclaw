@@ -2449,6 +2449,49 @@ describe("requester-scoped MCP connection resolution", () => {
     await manager.disposeAll();
   });
 
+  it("skips connection resolve on requester cache hits", async () => {
+    const resolverRegistry = createMcpProofPluginRegistry();
+    await withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {
+      let resolveCalls = 0;
+
+      const resolverApi = resolverRegistry.apiFor("mail-plugin");
+      resolverApi.registerMcpServerConnectionResolver({
+        serverName: "user-mail",
+        resolve: async (ctx) => {
+          resolveCalls += 1;
+          return {
+            url: `https://mcp.example.test/${ctx.requesterSenderId}`,
+            headers: { Authorization: `Bearer ${ctx.requesterSenderId}` },
+          };
+        },
+      });
+
+      const createRuntime: RuntimeFactory = makeManagedRuntime;
+      const manager = createSessionMcpRuntimeManager({ createRuntime });
+      const cfg = {
+        mcp: {
+          servers: {
+            "user-mail": { transport: "streamable-http" },
+          },
+        },
+      };
+
+      const params = {
+        ...makeRequesterParams("session-resolve-once", cfg as never, "sender-a"),
+        traceId: "11111111111111111111111111111111",
+      };
+      await manager.getOrCreate(params);
+      await manager.getOrCreate(params);
+
+      expect(resolveCalls).toBe(1);
+      await manager.getOrCreate({ ...params, traceId: "22222222222222222222222222222222" });
+      expect(resolveCalls).toBe(2);
+      expect(manager.listRuntimeKeys().filter((key) => key.startsWith("{"))).toHaveLength(1);
+      await manager.disposeAll();
+    });
+  });
+
+
   it("keys requester-scoped runtimes per sender while sharing static servers", async () => {
     const resolverRegistry = createMcpProofPluginRegistry();
     await withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {
@@ -2737,48 +2780,6 @@ describe("requester-scoped MCP connection resolution", () => {
       });
 
       const makeCatalog = (serverName: string, toolName: string) => ({
-  it("skips connection resolve on requester cache hits", async () => {
-    const resolverRegistry = createMcpProofPluginRegistry();
-    await withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {
-      let resolveCalls = 0;
-
-      const resolverApi = resolverRegistry.apiFor("mail-plugin");
-      resolverApi.registerMcpServerConnectionResolver({
-        serverName: "user-mail",
-        resolve: async (ctx) => {
-          resolveCalls += 1;
-          return {
-            url: `https://mcp.example.test/${ctx.requesterSenderId}`,
-            headers: { Authorization: `Bearer ${ctx.requesterSenderId}` },
-          };
-        },
-      });
-
-      const createRuntime: RuntimeFactory = makeManagedRuntime;
-      const manager = createSessionMcpRuntimeManager({ createRuntime });
-      const cfg = {
-        mcp: {
-          servers: {
-            "user-mail": { transport: "streamable-http" },
-          },
-        },
-      };
-
-      const params = {
-        ...makeRequesterParams("session-resolve-once", cfg as never, "sender-a"),
-        traceId: "11111111111111111111111111111111",
-      };
-      await manager.getOrCreate(params);
-      await manager.getOrCreate(params);
-
-      expect(resolveCalls).toBe(1);
-      await manager.getOrCreate({ ...params, traceId: "22222222222222222222222222222222" });
-      expect(resolveCalls).toBe(2);
-      expect(manager.listRuntimeKeys().filter((key) => key.startsWith("{"))).toHaveLength(1);
-      await manager.disposeAll();
-    });
-  });
-
         version: 1,
         generatedAt: 0,
         servers: {

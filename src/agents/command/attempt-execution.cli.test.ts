@@ -321,6 +321,21 @@ describe("CLI attempt execution", () => {
     });
   });
 
+  it("forwards a retained ingress trace to detached embedded execution", async () => {
+    const diagnosticTrace = {
+      traceId: "11111111111111111111111111111111",
+      spanId: "2222222222222222",
+      traceFlags: "01",
+    } as const;
+
+    const params = await runOpenClawEmbeddedAttemptForTest({
+      runId: "run-retained-ingress-trace",
+      opts: { diagnosticTrace },
+    });
+
+    expect(params.diagnosticTrace).toEqual(diagnosticTrace);
+  });
+
   async function writeSessionStoreSeed(sessionStore: Record<string, SessionEntry>): Promise<void> {
     for (const [sessionKey, entry] of Object.entries(sessionStore)) {
       await replaceSessionEntry({ sessionKey, storePath }, entry);
@@ -383,7 +398,6 @@ describe("CLI attempt execution", () => {
   });
 
   it("forwards execution admission callbacks to the embedded runtime", async () => {
-    runContext?: Partial<RunAgentAttemptParams["runContext"]>;
     const onExecutionStarted = vi.fn();
     const embedded = await runOpenClawEmbeddedAttemptForTest({
       runId: "embedded-execution-started",
@@ -455,7 +469,6 @@ describe("CLI attempt execution", () => {
       expect(firstRunCliAgentArg().onExecutionStarted).toBe(onExecutionStarted);
       const observePhase = firstRunCliAgentArg().onExecutionPhase;
       if (typeof observePhase !== "function") {
-      runContext: overrides?.runContext,
         throw new Error("CLI execution phase observer is missing");
       }
       observePhase({ phase: "process_spawned" });
@@ -497,21 +510,6 @@ describe("CLI attempt execution", () => {
       try {
         const run = runCli();
         if (change !== "updated") {
-  it("forwards a retained ingress trace to detached embedded execution", async () => {
-    const diagnosticTrace = {
-      traceId: "11111111111111111111111111111111",
-      spanId: "2222222222222222",
-      traceFlags: "01",
-    } as const;
-
-    const params = await runOpenClawEmbeddedAttemptForTest({
-      runId: "run-retained-ingress-trace",
-      opts: { diagnosticTrace },
-    });
-
-    expect(params.diagnosticTrace).toEqual(diagnosticTrace);
-  });
-
           await expect(run).rejects.toMatchObject({ code: "AGENT_RUN_SUPERSEDED_ABORT" });
           expect(runCliAgentMock).not.toHaveBeenCalled();
           return;

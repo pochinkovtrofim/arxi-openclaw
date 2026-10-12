@@ -46,6 +46,27 @@ describe("hook content trust boundary", () => {
       sessionKey: "main",
       externalContentSource: "email",
       unsafe: true,
+      source: "Email",
+    },
+  ] as const)(
+    "wraps $name as untrusted content",
+    async ({ sessionKey, externalContentSource, unsafe, source }) => {
+      await withTempHome(async (home) => {
+        const { res } = await runCronTurn(home, {
+          cfgOverrides: { hooks: { gmail: { allowUnsafeExternalContent: unsafe } } },
+          jobPayload: { kind: "agentTurn", message, externalContentSource },
+          sessionKey,
+        });
+        expect(res.status).toBe("ok");
+        const prompt = vi.mocked(runEmbeddedAgent).mock.calls.at(-1)?.[0].prompt;
+        expect(prompt).toContain("EXTERNAL_UNTRUSTED_CONTENT");
+        expect(prompt).toContain(`Source: ${source}`);
+        expect(prompt).toContain(message);
+        expect(vi.mocked(runEmbeddedAgent).mock.lastCall?.[0]?.inputProvenance).toBeUndefined();
+      });
+    },
+  );
+
   it("forwards native cron provenance to the executing backend", async () => {
     await withTempHome(async (home) => {
       const { res } = await runCronTurn(home, {
@@ -70,26 +91,6 @@ describe("hook content trust boundary", () => {
     });
   });
 
-      source: "Email",
-    },
-  ] as const)(
-    "wraps $name as untrusted content",
-    async ({ sessionKey, externalContentSource, unsafe, source }) => {
-      await withTempHome(async (home) => {
-        const { res } = await runCronTurn(home, {
-          cfgOverrides: { hooks: { gmail: { allowUnsafeExternalContent: unsafe } } },
-          jobPayload: { kind: "agentTurn", message, externalContentSource },
-          sessionKey,
-        });
-        expect(res.status).toBe("ok");
-        const prompt = vi.mocked(runEmbeddedAgent).mock.calls.at(-1)?.[0].prompt;
-        expect(prompt).toContain("EXTERNAL_UNTRUSTED_CONTENT");
-        expect(prompt).toContain(`Source: ${source}`);
-        expect(prompt).toContain(message);
-      });
-    },
-  );
-
   it("honors the Gmail opt-out for normalized Gmail provenance", async () => {
     await withTempHome(async (home) => {
       const { res } = await runCronTurn(home, {
@@ -102,6 +103,5 @@ describe("hook content trust boundary", () => {
       expect(prompt).not.toContain("EXTERNAL_UNTRUSTED_CONTENT");
       expect(prompt).toContain("Hello");
     });
-      expect(vi.mocked(runEmbeddedAgent).mock.lastCall?.[0]?.inputProvenance).toBeUndefined();
   });
 });

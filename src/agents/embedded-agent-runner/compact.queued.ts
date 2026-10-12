@@ -492,8 +492,8 @@ async function compactResolvedContextEngine(
           preparedAuth?.providerUsesProfileScopedModelMetadata &&
           Boolean(runtimeAuthPlan.selectedAuthMode),
         resolveModel: async ({ config, authProfileId, authProfileMode }) => {
-        agentRuntimeId: selectedPreparedHarness.id,
           const resolved = await resolveModelAsync(ceRuntimeProvider, ceModelId, agentDir, config, {
+            agentRuntimeId: preparedHarnessRuntime,
             abortSignal: params.abortSignal,
             authStorage,
             modelRegistry,

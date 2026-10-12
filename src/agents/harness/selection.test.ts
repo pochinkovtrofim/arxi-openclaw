@@ -546,6 +546,12 @@ function registerTestCompactor(
       compact,
       ...(options.authBootstrap ? { authBootstrap: options.authBootstrap } : {}),
     },
+    { ownerPluginId: id },
+  );
+  return compact;
+}
+
+describe("runAgentHarnessAttempt", () => {
   it("inherits an explicitly retained ingress trace after detached dispatch", async () => {
     const ingressTrace: DiagnosticTraceContext = {
       traceId: "11111111111111111111111111111111",
@@ -572,12 +578,6 @@ function registerTestCompactor(
 
     expect(observedTrace?.traceId).toBe(ingressTrace.traceId);
   });
-    { ownerPluginId: id },
-  );
-  return compact;
-}
-
-describe("runAgentHarnessAttempt", () => {
   it("carries silent heartbeat outcome into the plugin host boundary exactly once per retry", async () => {
     const harnessId = "codex";
     const root = trajectoryTempDirs.make("harness-heartbeat-outcome-");

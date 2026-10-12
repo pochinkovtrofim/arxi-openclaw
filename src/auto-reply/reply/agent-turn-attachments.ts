@@ -4,6 +4,7 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { logVerbose } from "../../globals.js";
 import type { MediaAttachment } from "../../media-understanding/types.js";
 import { classifyMediaReferenceSource } from "../../media/media-reference.js";
+import { createLazyPromise } from "../../shared/lazy-promise.js";
 import type { MsgContext } from "../templating.js";
 import {
   type RecentInboundHistoryImage,

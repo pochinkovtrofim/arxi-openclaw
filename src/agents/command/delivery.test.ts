@@ -183,7 +183,6 @@ function latestJsonOutput(runtime: { writeJson: { mock: { calls: Array<Array<unk
 
 async function deliverMediaReplyForTest(
   outboundSession: DeliverParams["outboundSession"],
-  nativeDeliveryPurpose?: "cron_failure_alert" | "direct_owner_reply" | "exact_reminder";
   optsOverrides: Partial<AgentCommandOpts> = {},
 ) {
   // Media replies go through the same normalizer seam as production so relative
@@ -199,7 +198,6 @@ async function deliverMediaReplyForTest(
     payloads: [{ text: "here you go", mediaUrls: ["./out/photo.png"] }],
   });
 }
-    nativeDeliveryPurpose?: "cron_failure_alert" | "direct_owner_reply" | "exact_reminder";
 
 describe("deliverAgentCommandResult payload normalization", () => {
   beforeEach(() => {
