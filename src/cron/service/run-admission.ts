@@ -604,21 +604,17 @@ export async function executeQueuedCronRun(params: {
     };
     let outcome: TimedCronRunOutcome;
     try {
-      const execute = () =>
-        executeJobCoreWithTimeout(state, executionJob, {
-          runId: taskRunId,
-          activeJobMarker,
+      const result = await executeJobCoreWithTimeout(state, executionJob, {
+        runId: taskRunId,
+        activeJobMarker,
+        runReceipt: started.runReceipt,
+        runReceiptContext: started.runReceiptContext,
+        executionIdentity: createCronOwnerExecutionIdentityAdmission({
+          state,
           runReceipt: started.runReceipt,
-          runReceiptContext: started.runReceiptContext,
-          executionIdentity: createCronOwnerExecutionIdentityAdmission({
-            state,
-            runReceipt: started.runReceipt,
-            scheduledAutomation: true,
-          }),
-        });
-      const result = state.deps.runSchedulerOwned
-        ? await state.deps.runSchedulerOwned(execute)
-        : await execute();
+          scheduledAutomation: true,
+        }),
+      });
       outcome = { ...base, ...result, endedAt: state.deps.nowMs() };
     } catch (error) {
       const receiptSettlementDisposition =
