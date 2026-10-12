@@ -21,7 +21,7 @@ describe("gateway chat metadata runtime", () => {
   test("reads prepared owners through the gateway publication key for every agent", async () => {
     const harness = createChatMetadataHarness({
       agents: {
-        list: [{ id: "main", default: true }, { id: "managed-personal-agent" }],
+        entries: { main: {}, "managed-personal-agent": {} },
       },
     });
 

@@ -14,10 +14,6 @@ import {
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
-import {
-  runWithDiagnosticTraceContext,
-  type DiagnosticTraceContext,
-} from "../../infra/diagnostic-trace-context.js";
 import { resetDiagnosticStateForTest } from "../../logging/diagnostic.test-support.js";
 
 type EventRecord = { type: string; [key: string]: unknown };
@@ -152,7 +148,7 @@ describe("runCronIsolatedAgentTurn diagnostic events", () => {
     },
   );
 
-  it("creates a child message scope and restores the ambient parent after completion", async () => {
+  it("owns a root message scope and restores the ambient parent after completion", async () => {
     const parent = createDiagnosticTraceContext();
     const { result, events } = await runWithDiagnosticTraceContext(parent, async () => {
       const run = await runWithEvents();
@@ -161,8 +157,9 @@ describe("runCronIsolatedAgentTurn diagnostic events", () => {
     });
     const messageTrace = events.find((event) => event.type === "message.dispatch.started")?.trace;
     expect(result.status).toBe("ok");
-    expect(messageTrace).toMatchObject({ traceId: parent.traceId, parentSpanId: parent.spanId });
-    expect(messageTrace?.spanId).not.toBe(parent.spanId);
+    // Arxi: scheduled work never joins the request scope its timer inherited.
+    expect(messageTrace?.traceId).toEqual(expect.any(String));
+    expect(messageTrace?.traceId).not.toBe(parent.traceId);
     expect(getActiveDiagnosticTraceContext()).toBeUndefined();
   });
 

@@ -357,6 +357,7 @@ describe("runCronIsolatedAgentTurn session identity", () => {
         const result = await runCronIsolatedAgentTurn({
           cfg: makeCfg(home, storePath),
           deps: makeDeps(),
+          deliveryAttemptFence: null,
           job,
           message: DEFAULT_MESSAGE,
           sessionKey,

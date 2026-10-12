@@ -581,7 +581,6 @@ describe("dispatchCronDelivery", () => {
       threadId: "42",
     });
     await queueCronMessageToolDeliveryAwareness({
-      cfg: {},
       ...makeBaseParams({ runStartedAt: 1_000 }),
       resolvedDelivery: makeResolvedDelivery({ threadId: "42" }),
       sourceDeliveryOutcome: messageToolOutcome([
@@ -618,7 +617,6 @@ describe("dispatchCronDelivery", () => {
     const params = makeBaseParams({ sessionTarget: "current", runStartedAt: 1_000 });
 
     const queueSourceAwareness = await queueCronMessageToolDeliveryAwareness({
-      cfg: {},
       ...params,
       deferredTargetSessionKey: params.sourceSessionKey,
       resolvedDelivery: makeResolvedDelivery({ channel: "webchat", to: "owner" }),
@@ -665,7 +663,6 @@ describe("dispatchCronDelivery", () => {
       });
 
     await queueCronMessageToolDeliveryAwareness({
-      cfg: {},
       ...makeBaseParams({ runStartedAt: 1_000 }),
       resolvedDelivery: makeResolvedDelivery(),
       sourceDeliveryOutcome: messageToolOutcome(

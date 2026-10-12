@@ -293,7 +293,6 @@ describe("runCronIsolatedAgentTurn terminal lifecycle", () => {
           sessionKey,
           runId: runParams.runId,
         }),
-        nestedToolActivities: [],
         isReplaySafeTool: () => false,
         runAbortController: new AbortController(),
         abortRun: vi.fn(),
