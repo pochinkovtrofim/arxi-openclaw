@@ -80,7 +80,7 @@ describe("buildExternalRunFailureReply", () => {
     new SkillLibraryError("INVALID_BUNDLE", "private-skill-path-canary"),
   ])("does not expose untyped or unrelated skill failures: %s", (error) => {
     expect(buildExternalRunFailureReply({ message: error.message, error })).toEqual({
-      text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      text: renderExternalRunFailureText(),
       isGenericRunnerFailure: true,
     });
   });
@@ -99,7 +99,7 @@ describe("buildExternalRunFailureReply", () => {
     const message =
       "provider detail quoted: Codex execution node disconnected; start a fresh attempt. (execution node failed)";
     expect(buildExternalRunFailureReply({ message, error: new Error(message) })).toEqual({
-      text: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      text: renderExternalRunFailureText(),
       isGenericRunnerFailure: true,
     });
   });
@@ -317,7 +317,7 @@ describe("buildExternalRunFailureReply", () => {
       { message: "test error", error: new Error("test") },
       { isHeartbeat: true, useHeartbeatFailureCopy: false },
     );
-    expect(reply.text).toBe(GENERIC_EXTERNAL_RUN_FAILURE_TEXT);
+    expect(reply.text).toBe(renderExternalRunFailureText());
     expect(reply.isGenericRunnerFailure).toBe(false);
   });
 
@@ -326,7 +326,7 @@ describe("buildExternalRunFailureReply", () => {
       { message: "test error", error: new Error("test") },
       { isHeartbeat: true, useHeartbeatFailureCopy: true },
     );
-    expect(reply.text).toBe(HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT);
+    expect(reply.text).toBe(renderHeartbeatFailureText());
   });
 
   it("falls back to isHeartbeat when useHeartbeatFailureCopy is undefined", () => {
@@ -334,6 +334,6 @@ describe("buildExternalRunFailureReply", () => {
       { message: "test error", error: new Error("test") },
       { isHeartbeat: true },
     );
-    expect(reply.text).toBe(HEARTBEAT_EXTERNAL_RUN_FAILURE_TEXT);
+    expect(reply.text).toBe(renderHeartbeatFailureText());
   });
 });

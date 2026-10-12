@@ -255,12 +255,12 @@ describe("Codex app-server attempt context", () => {
           ringZeroActive: false,
         });
       for (let turn = 0; turn < 2; turn++) {
-        expect((await build()).turnScopedDeveloperInstructions).toContain("current shared rules");
+        expect((await build()).personaInstructions).toContain("current shared rules");
         expect(await fs.readFile(agents, "utf8")).toBe("old birth rules");
       }
       clearInternalHooks();
       const personal = await build();
-      expect(personal.turnScopedDeveloperInstructions ?? "").not.toContain("old birth rules");
+      expect(personal.personaInstructions ?? "").not.toContain("old birth rules");
     });
   });
 

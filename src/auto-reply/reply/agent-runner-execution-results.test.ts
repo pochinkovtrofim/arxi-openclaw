@@ -37,7 +37,7 @@ describe("executeAgentTurn: result and tool delivery", () => {
       stopReason: "error",
       isHeartbeat: true,
       useHeartbeatFailureCopy: false,
-      failureText: GENERIC_EXTERNAL_RUN_FAILURE_TEXT,
+      failureText: renderExternalRunFailureText(),
     },
     { stopReason: "aborted", isHeartbeat: false, failureText: undefined },
     { stopReason: "superseded", isHeartbeat: false, failureText: undefined },

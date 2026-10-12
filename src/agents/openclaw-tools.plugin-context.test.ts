@@ -13,7 +13,17 @@ import {
 } from "./openclaw-tools.plugin-context.js";
 
 vi.mock("../config/sessions/session-delivery-generation.js", async () => {
-  const { fakeSessionGenerationModule } = it("forwards trusted requester sender identity", () => {
+  const { fakeSessionGenerationModule } =
+    await import("../plugins/memory-audience.test-support.js");
+  return fakeSessionGenerationModule;
+});
+
+function resolve(options: OpenClawPluginToolOptions) {
+  return resolveOpenClawPluginToolInputs({ options: { config: {}, ...options } });
+}
+
+describe("openclaw plugin tool context", () => {
+  it("forwards trusted requester sender identity", () => {
     const result = resolveOpenClawPluginToolInputs({
       options: {
         config: {} as never,
@@ -123,15 +133,6 @@ vi.mock("../config/sessions/session-delivery-generation.js", async () => {
     expect(result.context.activeProjectKeys).toBe(activeProjectKeys);
   });
 
-  await import("../plugins/memory-audience.test-support.js");
-  return fakeSessionGenerationModule;
-});
-
-function resolve(options: OpenClawPluginToolOptions) {
-  return resolveOpenClawPluginToolInputs({ options: { config: {}, ...options } });
-}
-
-describe("openclaw plugin tool context", () => {
   it("forwards one host-minted memory audience and its currency assertion", async () => {
     const sessionId = randomUUID();
     const entry = { sessionId, updatedAt: 1, chatType: "direct" as const };

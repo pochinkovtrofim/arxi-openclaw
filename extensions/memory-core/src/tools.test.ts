@@ -514,7 +514,7 @@ describe("memory_search diagnostics", () => {
     });
     diagnosticMocks.emitTrusted.mockClear();
     const tool = createMemorySearchToolOrThrow({
-      config: { agents: { list: [{ id: "main", default: true }] } },
+      config: { agents: { entries: { main: {} } } },
     });
     const result = await tool.execute("diagnostic-timing", { query: "favorite food" });
     const events = diagnosticMocks.emitTrusted.mock.calls

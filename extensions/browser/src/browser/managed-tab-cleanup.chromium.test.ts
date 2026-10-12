@@ -64,7 +64,6 @@ it.skipIf(process.env.OPENCLAW_TEST_MANAGED_TAB_CHROMIUM !== "1")(
       proc,
       userDataDir,
       cdpPort: 0,
-      startedAt: realNow(),
       exe: { kind: "chromium", path: chromium.executablePath() },
       headless: true,
     };
