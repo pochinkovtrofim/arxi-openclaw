@@ -1,4 +1,3 @@
-import type { OtelContentCapturePolicy } from "./service-content-normalization.js";
 import type { DiagnosticsMetrics } from "./service-metrics.js";
 import type { DiagnosticsTraceRuntime } from "./service-traces.js";
 
@@ -7,18 +6,9 @@ import type { DiagnosticsTraceRuntime } from "./service-traces.js";
 // A lifecycle that never settles must not pin its entry forever.
 const MAX_PENDING_MEMORY_SEARCH_PHASES = 256;
 
-export function createDiagnosticsRecorderRuntime(params: {
-  contentCapturePolicy: OtelContentCapturePolicy;
-  metrics: DiagnosticsMetrics;
-  traces: DiagnosticsTraceRuntime;
-  tracesEnabled: boolean;
-}) {
+export function createMemorySearchPhaseTracker() {
   const pendingMemorySearchPhases = new Map<string, string>();
   return {
-    ...params.metrics,
-    ...params.traces,
-    contentCapturePolicy: params.contentCapturePolicy,
-    tracesEnabled: params.tracesEnabled,
     rememberMemorySearchPhase: (toolCallId: string, phase: string) => {
       pendingMemorySearchPhases.delete(toolCallId);
       pendingMemorySearchPhases.set(toolCallId, phase);
@@ -40,4 +30,9 @@ export function createDiagnosticsRecorderRuntime(params: {
   };
 }
 
-export type DiagnosticsRecorderRuntime = ReturnType<typeof createDiagnosticsRecorderRuntime>;
+export type DiagnosticsRecorderRuntime = DiagnosticsMetrics &
+  DiagnosticsTraceRuntime &
+  ReturnType<typeof createMemorySearchPhaseTracker> & {
+    captureContent: boolean;
+    tracesEnabled: boolean;
+  };

@@ -2,6 +2,7 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { readControlPlaneUpdateSentinelMeta } from "../../infra/update-control-plane-sentinel.js";
 import { resolveUpdateInstallRoot } from "../../infra/update-install-root.js";
+import type { ManagedCommandProcessAuthority } from "../../infra/update-managed-command-custody.js";
 import type {
   ManagedHandoffLease,
   ManagedHandoffParent,
@@ -30,7 +31,10 @@ export async function withDelegatedUpdateCommandExecutor<T>(
   grant: UpdateCommandChildGrant,
   runId: string,
   root: string,
-  operation: (fence: UpdateRecoveryFence) => Promise<T>,
+  operation: (
+    fence: UpdateRecoveryFence,
+    commandAuthority: ManagedCommandProcessAuthority | undefined,
+  ) => Promise<T>,
   options?: { activationTimeoutMs: number },
 ): Promise<T> {
   const activation = createUpdateOperationDeadline();
@@ -56,11 +60,21 @@ export async function withDelegatedUpdateCommandExecutor<T>(
       let active = true;
       const isLive = (identity: ManagedHandoffLease["executor"]) =>
         store.isProcessIdentityCurrent(identity);
+      const receivers = [
+        originalChild,
+        child,
+        ...(slotChild ? [slotChild] : []),
+        ...(retainedChild ? [retainedChild] : []),
+      ];
+      // Windows launcher ancestry can differ from the recorded spawner. The live
+      // lease must still bind this PID and start identity; only an immediate
+      // parent may supply the existing fallback for an unreadable self identity.
       if (
-        !store.acceptParentBoundExecutor(originalChild) ||
-        !store.acceptParentBoundExecutor(child) ||
-        (slotChild && !store.acceptParentBoundExecutor(slotChild)) ||
-        (retainedChild && !store.acceptParentBoundExecutor(retainedChild))
+        !receivers.every(
+          (lease) =>
+            (process.platform === "win32" && store.owns(lease, "executor")) ||
+            store.acceptParentBoundExecutor(lease),
+        )
       ) {
         throw new UpdateCommandRecoveryPendingError(
           "The update process no longer has permission to continue.",
@@ -192,7 +206,23 @@ export async function withDelegatedUpdateCommandExecutor<T>(
                 options.activationTimeoutMs,
               );
             }
-            outcome = { result: await operation(fence) };
+            outcome = {
+              result: await operation(
+                fence,
+                databaseIdentity
+                  ? {
+                      runId,
+                      databaseIdentity,
+                      parents: [
+                        originalChild,
+                        child,
+                        ...(retainedChild ? [retainedChild] : []),
+                        ...(slotChild ? [slotChild] : []),
+                      ],
+                    }
+                  : undefined,
+              ),
+            };
           } catch (error) {
             outcome = { error };
           }

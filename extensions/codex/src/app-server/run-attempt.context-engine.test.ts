@@ -19,6 +19,7 @@ import { readStringValue } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { withEnvAsync } from "openclaw/plugin-sdk/test-env";
 // Codex tests cover run attempt.context engine plugin behavior.
 import { createSolidPngBuffer } from "openclaw/plugin-sdk/test-fixtures";
+import { awaitGateBeforeSettlement } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it, vi } from "vitest";
 import { seedRunSessionOwnerForTest } from "./run-attempt-session-owners.test-support.js";
 import {
@@ -438,7 +439,7 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       );
       const sessionFile = path.join(tempDir, "session-current-request.jsonl");
       const workspaceDir = path.join(tempDir, "workspace-current-request");
-      const { harness, params, currentUserMessageId } = createCurrentInputContinuityHarness(
+      const { harness, params, currentUserMessageId } = await createCurrentInputContinuityHarness(
         sessionFile,
         workspaceDir,
         scenario,
@@ -1079,7 +1080,8 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
   it("persists the admitted user prompt before an async item buffered during turn startup", async () => {
     const workspaceDir = path.join(tempDir, "workspace-early-async");
     const params = await createSqliteParams(workspaceDir, "early-async-order");
-    params.onBlockReply = vi.fn();
+    const delivered = Promise.withResolvers<void>();
+    params.onBlockReply = vi.fn(() => delivered.resolve());
     params.sandboxSessionKey = "agent:main:policy";
     params.contextEngine = createContextEngine();
     const beforeMessageWrite = vi.fn();
@@ -1117,7 +1119,12 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
 
     const run = runCodexAppServerAttempt(params);
     await harness.waitForMethod("turn/start");
-    await vi.waitFor(() => expect(params.onBlockReply).toHaveBeenCalledOnce());
+    await awaitGateBeforeSettlement(
+      delivered.promise,
+      run,
+      "Codex attempt completed before delivering its buffered async item",
+    );
+    expect(params.onBlockReply).toHaveBeenCalledOnce();
     expect(recorder.markSentToProvider).not.toHaveBeenCalled();
     expect(recorder.markRuntimePersisted).toHaveBeenCalledOnce();
     expect(beforeMessageWrite).toHaveBeenCalledWith(

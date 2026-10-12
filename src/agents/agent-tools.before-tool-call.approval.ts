@@ -38,6 +38,7 @@ import type {
   HookOutcome,
   PendingApprovedPluginToolExecution,
 } from "./agent-tools.before-tool-call.types.js";
+import { registerActiveEmbeddedRunHumanInputWaitForRun } from "./embedded-agent-runner/run-state.js";
 import { withGatewayToolApprovalOwner } from "./tools/gateway-caller-context.js";
 import { callGatewayTool } from "./tools/gateway.js";
 
@@ -85,22 +86,6 @@ export function mergeParamsWithApprovalOverrides(
     return approvalParams;
   }
   return originalParams;
-}
-
-const warnedDeprecatedTimeoutBehaviorPluginIds = new Set<string>();
-
-function warnDeprecatedApprovalTimeoutBehavior(approval: PluginApprovalRequest): void {
-  if (approval.timeoutBehavior !== "allow") {
-    return;
-  }
-  const pluginId = approval.pluginId ?? "unknown-plugin";
-  if (warnedDeprecatedTimeoutBehaviorPluginIds.has(pluginId)) {
-    return;
-  }
-  warnedDeprecatedTimeoutBehaviorPluginIds.add(pluginId);
-  log.warn(
-    `plugin '${pluginId}' sets deprecated requireApproval.timeoutBehavior:"allow"; the field is ignored and approvals fail closed on timeout (see docs/plugins/plugin-permission-requests.md)`,
-  );
 }
 
 function notifyPluginApprovalResolution(
@@ -268,7 +253,7 @@ function resolveUnavailablePluginApprovalSurfaceReason(ctx?: HookContext): strin
   return undefined;
 }
 
-async function requestPluginToolApproval(params: {
+type PluginToolApprovalParams = {
   approval: PluginApprovalRequest;
   toolName: string;
   toolCallId?: string;
@@ -276,7 +261,40 @@ async function requestPluginToolApproval(params: {
   signal?: AbortSignal;
   baseParams: unknown;
   overrideParams?: unknown;
-}): Promise<HookOutcome> {
+};
+
+/**
+ * A pending plugin approval is the owning run's human-input wait, like an agent
+ * question: stuck-session recovery must not abort the turn while the approver
+ * can still answer. The approval's own timeout plus the gateway grace bounds it.
+ */
+async function requestPluginToolApproval(params: PluginToolApprovalParams): Promise<HookOutcome> {
+  const deadlineAtMs =
+    Date.now() +
+    (addTimerTimeoutGraceMs(resolvePluginToolApprovalTimeoutMs(params.approval), 10_000) ??
+      DEFAULT_PLUGIN_APPROVAL_TIMEOUT_MS + 10_000);
+  let pending = true;
+  let resolved = false;
+  const release = params.ctx?.runId
+    ? registerActiveEmbeddedRunHumanInputWaitForRun(
+        params.ctx.runId,
+        () => pending && params.signal?.aborted !== true && Date.now() < deadlineAtMs,
+      )
+    : undefined;
+  try {
+    return await requestPluginToolApprovalDecision(params, () => {
+      resolved = true;
+    });
+  } finally {
+    pending = false;
+    release?.(resolved);
+  }
+}
+
+async function requestPluginToolApprovalDecision(
+  params: PluginToolApprovalParams,
+  markHumanDecision: () => void,
+): Promise<HookOutcome> {
   const approval = params.approval;
   const pluginData = normalizePluginApprovalData(approval.pluginData);
   const policySubject = params.ctx?.toolOwnerPluginId
@@ -288,6 +306,13 @@ async function requestPluginToolApproval(params: {
   const resolveDecision = (decision: unknown, approvalId: string): HookOutcome | undefined => {
     const resolution = resolvePermittedPluginApprovalResolution(decision, allowedDecisions);
     notifyPluginApprovalResolution(approval, resolution);
+    if (
+      resolution === PluginApprovalResolutions.ALLOW_ONCE ||
+      resolution === PluginApprovalResolutions.ALLOW_ALWAYS ||
+      resolution === PluginApprovalResolutions.DENY
+    ) {
+      markHumanDecision();
+    }
     if (
       resolution === PluginApprovalResolutions.ALLOW_ONCE ||
       resolution === PluginApprovalResolutions.ALLOW_ALWAYS
@@ -581,7 +606,6 @@ export async function resolveBeforeToolCallApprovalOutcome(params: {
     params.result?.params === undefined
       ? undefined
       : cloneHookIsolationValue("before_tool_call", params.result.params);
-  warnDeprecatedApprovalTimeoutBehavior(approval);
   if (params.approvalMode === "defer") {
     return {
       blocked: false,

@@ -17,7 +17,7 @@ import {
 } from "./client.js";
 import { assertCodexThreadResumeResponse } from "./protocol-validators.js";
 import type { CodexThreadResumeParams, CodexThreadResumeResponse, RpcRequest } from "./protocol.js";
-import { CodexAppServerScopedRequestRejectedError } from "./request.js";
+import { CodexAppServerScopedRequestRejectedError } from "./rpc-error.js";
 import { isCodexAppServerStartSelectionChangedError } from "./shared-client.js";
 
 /** Resumes one thread, releasing or isolating every possible native subscription. */
@@ -29,23 +29,12 @@ export async function resumeCodexAppServerThread(params: {
   signal?: AbortSignal;
   assertCurrent?: () => void;
   trace?: RpcRequest["trace"];
+  withCurrent?: (write: () => void) => Promise<void>;
   onSubscriptionReleased?: () => void;
   requestResume?: (request: CodexThreadResumeParams) => Promise<unknown>;
 }): Promise<CodexThreadResumeResponse> {
   const threadId = params.request.threadId;
   let response: CodexThreadResumeResponse;
-  let ownershipRejected = false;
-  const assertCurrent =
-    params.assertCurrent &&
-    (() => {
-      try {
-        params.assertCurrent?.();
-      } catch (error) {
-        // Only this physical pre-write callback proves no subscription was acquired.
-        ownershipRejected = true;
-        throw error;
-      }
-    });
   try {
     response = assertCodexThreadResumeResponse(
       await (params.requestResume
@@ -53,7 +42,8 @@ export async function resumeCodexAppServerThread(params: {
         : params.client.request("thread/resume", params.request, {
             ...(params.timeoutMs !== undefined ? { timeoutMs: params.timeoutMs } : {}),
             ...(params.signal ? { signal: params.signal } : {}),
-            assertCurrent,
+            assertCurrent: params.assertCurrent,
+            withCurrent: params.withCurrent,
             ...(params.trace ? { trace: params.trace } : {}),
           })),
     );
@@ -61,7 +51,6 @@ export async function resumeCodexAppServerThread(params: {
     forgetCodexWorkspaceReferences(params.client, threadId);
   } catch (error) {
     if (
-      ownershipRejected ||
       isCodexAppServerStartSelectionChangedError(error) ||
       isCodexAppServerStartupError(error) ||
       error instanceof CodexAppServerScopedRequestRejectedError ||
@@ -77,6 +66,7 @@ export async function resumeCodexAppServerThread(params: {
         threadId,
         timeoutMs: CODEX_APP_SERVER_UNSUBSCRIBE_TIMEOUT_MS,
         assertCurrent: params.assertCurrent,
+        withCurrent: params.withCurrent,
       }).catch(() => false);
       if (subscriptionReleased) {
         params.onSubscriptionReleased?.();

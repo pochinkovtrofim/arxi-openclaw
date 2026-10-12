@@ -4,6 +4,7 @@ import {
   normalizeOptionalString,
   readNonBlankString,
 } from "@openclaw/normalization-core/string-coerce";
+import type { FailoverReason } from "../agents/failover/signal.js";
 /** Reply payload contracts and metadata helpers shared by dispatch and channel renderers. */
 import type { ProgressContinuationCapability } from "../channels/progress-continuation.js";
 import type { HarnessCompletionRecovery } from "../config/sessions/restart-recovery-types.js";
@@ -22,7 +23,11 @@ export type {
   ReplyPayloadTtsSupplement,
 } from "../shared/reply-payload.types.js";
 
-export type ReplyMediaFailureCode = "file-not-found" | "unsupported-format" | "delivery-failed";
+export type ReplyMediaFailureCode =
+  | "file-not-found"
+  | "unsupported-format"
+  | "delivery-failed"
+  | "invalid-reference";
 
 /** Adds the BTW question banner for channels that only accept plain text bodies. */
 export function formatBtwTextForExternalDelivery(payload: ReplyPayload): string | undefined {
@@ -35,7 +40,7 @@ export function formatBtwTextForExternalDelivery(payload: ReplyPayload): string 
     return payload.text;
   }
   const formatted = `BTW\nQuestion: ${question}\n\n${text}`;
-  return text === formatted || text.startsWith("BTW\nQuestion:") ? text : formatted;
+  return text.startsWith("BTW\nQuestion:") ? text : formatted;
 }
 
 /** True when a payload has visible or playable content for delivery. */
@@ -119,6 +124,11 @@ const REPLY_MEDIA_FAILURE_MESSAGES: Record<ReplyMediaFailureCode, () => string> 
     renderUserMessage(
       { code: "media_delivery_failed" },
       "Delivery failed. Try sending this file again.",
+    ),
+  "invalid-reference": () =>
+    renderUserMessage(
+      { code: "media_invalid_reference" },
+      "Use a public HTTPS URL without credentials or attach a local file by a safe path.",
     ),
 };
 
@@ -246,6 +256,8 @@ export type ReplyPayloadMetadata = {
   /** The model failed after a committed recovery compaction in the same turn. */
   postCompactionModelFailure?: true;
   assistantMessageIndex?: number;
+  /** First index of this block's physical assistant message; each content item advances the index. */
+  assistantMessageStartIndex?: number;
   /** Answer to a preceding user input in the same run. */
   precedingInputAnswer?: true;
   /** Visible source represented by this block, excluding synthetic chunk wrappers. */
@@ -341,6 +353,8 @@ export type ReplyPayloadMetadata = {
   beforeAgentRunBlocked?: boolean;
   /** Payload preparation generated this provider error; it is not an authored answer. */
   terminalProviderError?: true;
+  /** Model fallback uses observed failure facts, never the displayed wording. */
+  providerFailure?: { reason: FailoverReason | null; rawError?: string };
   /** The warning owner observed this tool failure; presentation text is not evidence. */
   toolErrorWarning?: { toolName: string };
   /** Warning synthesized from an observed tool error after the run produced assistant output. */
@@ -372,6 +386,22 @@ export function setReplyPayloadMetadata<T extends object>(
 /** Reads internal metadata attached to a reply payload object. */
 export function getReplyPayloadMetadata(payload: object): ReplyPayloadMetadata | undefined {
   return replyPayloadMetadata.get(payload);
+}
+
+/** Records attachment failures after the ones the payload already carries. */
+export function addReplyPayloadMediaFailures<T extends object>(
+  payload: T,
+  failures: readonly ReplyMediaFailure[] | undefined,
+): T {
+  if (!failures?.length) {
+    return payload;
+  }
+  return setReplyPayloadMetadata(payload, {
+    assistantMediaFailures: [
+      ...(getReplyPayloadMetadata(payload)?.assistantMediaFailures ?? []),
+      ...failures,
+    ],
+  });
 }
 
 /** Exact source occurrence represented by one emitted block reply. */

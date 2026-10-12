@@ -1,12 +1,3 @@
-/**
- * Provider-agnostic reply router.
- *
- * Routes replies to the originating channel based on OriginatingChannel/OriginatingTo
- * instead of using the session's lastChannel. This ensures replies go back to the
- * provider where the message originated, even when the main session is shared
- * across multiple providers.
- */
-
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { resolveEffectiveMessagesConfig } from "../../agents/identity.js";
@@ -32,17 +23,15 @@ import type { SilentReplyConversationType } from "../../shared/silent-reply-poli
 import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../utils/message-channel.js";
 import {
   copyReplyPayloadMetadata,
+  formatBtwTextForExternalDelivery,
   getReplyPayloadMetadata,
+  shouldSuppressReasoningPayload,
   type ReplyDeliveryContext,
 } from "../reply-payload.js";
 import type { OriginatingChannelType } from "../templating.js";
 import type { ReplyPayload } from "../types.js";
 import { normalizeReplyPayloadOutcome } from "./normalize-reply.js";
 import type { ReplyDispatchKind, ReplyDispatchOperation } from "./reply-dispatcher.types.js";
-import {
-  formatBtwTextForExternalDelivery,
-  shouldSuppressReasoningPayload,
-} from "./reply-payloads.js";
 import type { ResponsePrefixContext } from "./response-prefix-template.js";
 
 const messageRuntimeLoader = createLazyImportLoader(
@@ -78,11 +67,8 @@ function replyDeliverySourceMatchesRoute(params: {
 }
 
 type RouteReplyParams = {
-  /** The reply payload to send. */
   payload: ReplyPayload;
-  /** The originating channel type. */
   channel: OriginatingChannelType;
-  /** The destination chat/channel/user ID. */
   to: string;
   /** Session key for deriving agent identity defaults (multi-agent). */
   sessionKey?: string;
@@ -92,7 +78,6 @@ type RouteReplyParams = {
   policySessionKey?: string;
   /** Explicit conversation type for policy resolution when the policy key is generic. */
   policyConversationType?: SilentReplyConversationType;
-  /** Provider account id (multi-account). */
   accountId?: string;
   /** Originating sender id for sender-scoped outbound media policy. */
   requesterSenderId?: string;
@@ -108,19 +93,15 @@ type RouteReplyParams = {
   currentMessageId?: string;
   /** Reply policy fallback for delivery kinds that do not carry payload metadata. */
   replyDelivery?: ReplyDeliveryContext;
-  /** Config for provider-specific settings. */
   cfg: OpenClawConfig;
-  /** Optional abort signal for cooperative cancellation. */
   abortSignal?: AbortSignal;
   /** Mirror reply into session transcript (default: true when sessionKey is set). */
   mirror?: boolean;
-  /** Whether this message is being sent in a group/channel context */
   isGroup?: boolean;
   /** Group or channel identifier for correlation with received events */
   groupId?: string;
   /** Reply lane for reply_payload_sending hooks. */
   replyKind: ReplyDispatchKind;
-  /** Agent run id for hook context. */
   runId?: string;
   /** @internal Stable producer-owned block delivery intent. */
   deliveryIntentId?: string;
@@ -131,7 +112,6 @@ type RouteReplyParams = {
 };
 
 type RouteReplyResult = {
-  /** Whether the reply was sent successfully. */
   ok: boolean;
   /** Whether a recipient-visible send completed or may already have completed. */
   delivered: boolean;
@@ -150,9 +130,7 @@ type RouteReplyResult = {
     | "cancelled_by_reply_payload_sending_hook"
     | "empty_after_message_sending_hook"
     | "empty_after_reply_payload_sending_hook";
-  /** Optional message ID from the provider. */
   messageId?: string;
-  /** Error message if the send failed. */
   error?: string;
   /** Original failure retains the delivery owner's no-send proof. */
   cause?: unknown;
@@ -191,14 +169,7 @@ function summarizeVisibleRouteReplyDelivery(
   };
 }
 
-/**
- * Routes a reply payload to the specified channel.
- *
- * This function provides a unified interface for sending messages to any
- * supported provider. It's used by the followup queue to route replies
- * back to the originating channel when OriginatingChannel/OriginatingTo
- * are set.
- */
+/** Routes to the originating channel; shared sessions may have a different last channel. */
 export async function routeReply(params: RouteReplyParams): Promise<RouteReplyResult> {
   const { payload, ...route } = params;
   return await routeReplyOperation(route, { kind: "raw", payload });
@@ -267,12 +238,7 @@ async function routeReplyOperation(
   };
 
   const text = externalPayload.text ?? "";
-  let mediaUrls: string[] = [];
-  for (const url of externalPayload.mediaUrls ?? []) {
-    if (url) {
-      mediaUrls.push(url);
-    }
-  }
+  let mediaUrls = externalPayload.mediaUrls?.filter(Boolean) ?? [];
   if (mediaUrls.length === 0 && externalPayload.mediaUrl) {
     mediaUrls = [externalPayload.mediaUrl];
   }
@@ -281,7 +247,6 @@ async function routeReplyOperation(
     payload: externalPayload,
   });
 
-  // Skip empty replies.
   if (
     !hasReplyPayloadContent(
       {
@@ -356,8 +321,7 @@ async function routeReplyOperation(
   });
 
   try {
-    // Provider docking: this is an execution boundary (we're about to send).
-    // Keep the module cheap to import by loading outbound plumbing lazily.
+    // Keep outbound plumbing off the import path until a send is needed.
     const {
       durableMessageBatchMayHaveReachedRecipient,
       sendDurableMessageBatchCore,
@@ -495,12 +459,6 @@ async function routeReplyOperation(
   }
 }
 
-/**
- * Checks if a channel type is routable via routeReply.
- *
- * Some channels (webchat) require special handling and cannot be routed through
- * this generic interface.
- */
 export function isRoutableChannel(
   channel: OriginatingChannelType | undefined,
 ): channel is Exclude<OriginatingChannelType, typeof INTERNAL_MESSAGE_CHANNEL> {

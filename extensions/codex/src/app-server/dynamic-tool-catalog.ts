@@ -86,22 +86,17 @@ export function createCodexDynamicToolSpecs(params: {
     }
     namespaceTools.push({ ...functionSpec, deferLoading: true });
   }
-  if (namespaceTools.length > 0) {
-    specs.push({
-      type: "namespace",
-      name: CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE,
-      description: "",
-      tools: namespaceTools,
-    });
-  }
-  if (directOnlyNamespaceTools.length > 0) {
-    specs.push({
-      type: "namespace",
-      name: CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
-      description:
-        "Call these tools directly, outside exec and tools.*. Their results enter model context automatically; image results must remain structured images.",
-      tools: directOnlyNamespaceTools,
-    });
+  for (const [name, tools, description] of [
+    [CODEX_OPENCLAW_DYNAMIC_TOOL_NAMESPACE, namespaceTools, ""],
+    [
+      CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
+      directOnlyNamespaceTools,
+      "Call these tools directly, outside exec and tools.*. Their results enter model context automatically; image results must remain structured images.",
+    ],
+  ] as const) {
+    if (tools.length > 0) {
+      specs.push({ type: "namespace", name, description, tools });
+    }
   }
   return specs;
 }

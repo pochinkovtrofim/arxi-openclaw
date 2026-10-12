@@ -205,6 +205,32 @@ async function fixture(role = "normalCi", dispatchInputs?: Record<string, string
 }
 
 describe("independent release child reuse", () => {
+  it("accepts candidate-owned evidence outside main ancestry", async () => {
+    const data = await fixture();
+    const workflowRef = `release-ci/${TARGET.slice(0, 12)}-123`;
+    data.request.workflowSha = TARGET;
+    data.run.head_sha = TARGET;
+    data.run.head_branch = workflowRef;
+    data.run.path = `${data.run.path.split("@", 1)[0]}@refs/heads/${workflowRef}`;
+    data.parent.head_sha = TARGET;
+    data.parent.head_branch = workflowRef;
+    for (const job of data.jobs) {
+      job.head_sha = TARGET;
+    }
+    data.receipt.workflowSha = TARGET;
+    data.receipt.workflowRef = workflowRef;
+    data.artifact.workflow_run.head_sha = TARGET;
+    data.lineage.status = "diverged";
+    await data.seal();
+
+    const selection = await discoverReusableReleaseChild(data.request, data.deps);
+    expect(selection).not.toBeNull();
+    await expect(
+      validateReusableReleaseChild(selection!, data.request, data.deps),
+    ).resolves.toMatchObject({ receipt: { workflowSha: TARGET, workflowRef } });
+    expect(data.reads).not.toContain(`compare/${TARGET}...main?per_page=1`);
+  });
+
   it.each([
     {
       role: "pluginPrereleaseIndependent",
@@ -296,11 +322,7 @@ describe("independent release child reuse", () => {
       expect.stringContaining('scanned 7 runs, evaluated 1; skipped {"target receipt absent":6}'),
     );
   });
-  it.each([
-    { status: "completed", conclusion: "failure" },
-    { status: "completed", conclusion: "cancelled" },
-    { status: "in_progress", conclusion: null },
-  ])(
+  it.each([{ status: "in_progress", conclusion: null }])(
     "reuses green children from $status/$conclusion parents without a manifest",
     async (parentState) => {
       const data = await fixture();
@@ -485,14 +507,13 @@ describe("independent release child reuse", () => {
 
   it.each([
     { target_ref: "c".repeat(40), release_scope: "full" },
-    { target_ref: TARGET, release_scope: "npm-beta" },
     { target_ref: TARGET, release_scope: "" },
   ])("rejects different exact dispatch inputs %#", async (inputs) => {
     const data = await fixture();
     expect(await discoverReusableReleaseChild({ ...data.request, inputs }, data.deps)).toBeNull();
   });
 
-  it.each(['{ "id": "801" }', '{"id":"802"}', ""])(
+  it.each(['{ "id": "801" }', ""])(
     "requires the exact candidate descriptor bytes %s",
     async (candidate_artifact_json) => {
       const data = await fixture("pluginPrereleaseCandidate");

@@ -52,10 +52,6 @@ import {
 import { formatScheduledMcpIdentityMismatch } from "./scheduled-mcp-identity.js";
 import { releaseLeasedSharedCodexAppServerClient } from "./shared-client.js";
 
-function isAuthorityResolutionOperationAbort(error: unknown, signal: AbortSignal | undefined) {
-  return signal?.aborted === true && error === signal.reason;
-}
-
 export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   const {
     connection,
@@ -262,7 +258,8 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
               // same live turn. Substantive discovery/auth/policy failures stay cached.
               if (
                 creatorAuthorityPromise === pending &&
-                isAuthorityResolutionOperationAbort(error, options?.signal)
+                options?.signal?.aborted === true &&
+                error === options.signal.reason
               ) {
                 creatorAuthorityPromise = undefined;
               }
@@ -277,7 +274,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     runAbortController.signal.throwIfAborted();
     connection.assertCurrent();
     const client = await connection.attemptClientFactory({
-      assertCurrent: connection.assertCurrent,
+      assertCurrent: connection.assertLegacyCurrent,
       startOptions: connection.appServer.start,
       authProfileId: connection.startupClientAuthProfileId,
       agentDir,
@@ -287,6 +284,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     try {
       nativeSpecs = await loadCodexNativeToolCatalog({
         client,
+        authority: connection.authority,
         binding: mutable.startupBinding,
         appServer: connection.appServer,
         agentDir,
@@ -475,7 +473,9 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     const missingScheduledAccountCap =
       scheduledAccountMcp && hasRequesterScopedMcp && !hasFiniteScheduledAccountCap;
     scopedMcpTools =
-      authenticatedScheduledMode && !mayResolveBackgroundMcp
+      params.requireWorkspaceOnly === true
+        ? undefined
+        : authenticatedScheduledMode && !mayResolveBackgroundMcp
         ? missingScheduledAccountCap
           ? {
               tools: [],
@@ -544,7 +544,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     // all: an unreserved collision could otherwise transfer a persisted tool name
     // (and its finite authority) between unrelated canonical tools across runs.
     configuredMcp =
-      configuredMcpSurface && !resolverAllocationIncomplete
+      params.requireWorkspaceOnly !== true && configuredMcpSurface && !resolverAllocationIncomplete
         ? await materializeStaticMcpToolsForHarnessRun({
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,

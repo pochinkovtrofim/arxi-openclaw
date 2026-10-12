@@ -116,6 +116,7 @@ describe("cron CLI delivery suppression readback", () => {
         const runIsolatedAgentJob: CronServiceDeps["runIsolatedAgentJob"] = async ({
           job,
           abortSignal,
+          deliveryAttemptFence,
         }) => {
           if (phase === "execution-error") {
             throw new Error("fixture agent execution failed");
@@ -124,9 +125,10 @@ describe("cron CLI delivery suppression readback", () => {
           const sessionId = randomUUID();
           const sessionKey = `agent:main:cron:${job.id}:run:${sessionId}`;
           const now = Date.now();
-          const dispatch = await dispatchCronDelivery({
             runId: "suppression-occurrence",
             cfg: {},
+          const dispatch = await dispatchCronDelivery({
+            deliveryAttemptFence,
             cfgWithAgentDefaults: {},
             deps: {},
             job,

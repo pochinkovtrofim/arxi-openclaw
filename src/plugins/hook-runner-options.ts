@@ -1,28 +1,10 @@
 import type { PluginHookName } from "./hook-types.js";
 
-export type HookRunnerLogger = {
-  debug?: (message: string) => void;
-  warn: (message: string) => void;
-  error: (message: string) => void;
-};
-
-export type HookFailurePolicy = "fail-open" | "fail-closed";
-
-export type VoidHookRunOptions = {
-  unrefTimeout?: boolean;
-};
-
-export type HookRunnerOptions = {
-  logger?: HookRunnerLogger;
-  /** If true, errors in hooks will be caught and logged instead of thrown. */
-  catchErrors?: boolean;
-  /** Optional per-hook failure policy; omitted hooks default to fail-open. */
-  failurePolicyByHook?: Partial<Record<PluginHookName, HookFailurePolicy>>;
-  /** Optional timeout for void hooks; timeout logs and continues. */
-  voidHookTimeoutMsByHook?: Partial<Record<PluginHookName, number>>;
-  /** Optional timeout for modifying hooks; timeout logs and skips the handler. */
-  modifyingHookTimeoutMsByHook?: Partial<Record<PluginHookName, number>>;
-};
+export type {
+  HookFailurePolicy,
+  HookRunnerOptions,
+  VoidHookRunOptions,
+} from "./hook-runner-types.js";
 
 export const DEFAULT_VOID_HOOK_TIMEOUT_MS_BY_HOOK: Partial<Record<PluginHookName, number>> = {
   agent_end: 30_000,

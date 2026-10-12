@@ -19,9 +19,14 @@ import {
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import {
   createDiagnosticTraceContext,
+  createDiagnosticTraceContextFromActiveScope,
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import { isFastTestRuntimeEnv } from "../../infra/env.js";
+import {
+  logMessageDispatchCompleted,
+  logMessageDispatchStarted,
+} from "../../logging/diagnostic.js";
 import { createDiagnosticMessageLifecycle } from "../../logging/message-lifecycle.js";
 import { withPluginRuntimeGenerationScope } from "../../plugins/runtime/generation-scope.js";
 import { isCommandLaneTaskTimeoutError } from "../../process/command-queue.js";
@@ -74,6 +79,14 @@ async function disposeCronRunContext(params: {
 }
 
 /** Runs one isolated cron agent turn, including setup, execution, delivery, and persistence. */
+async function runCronIsolatedAgentTurnInTrace(
+  params: RunCronAgentTurnParams,
+): Promise<RunCronAgentTurnResult> {
+  return await runWithDiagnosticTraceContext(createDiagnosticTraceContextFromActiveScope(), () =>
+    runCronIsolatedAgentTurnInTrace(params),
+  );
+}
+
 async function runCronIsolatedAgentTurnInTrace(
   params: RunCronAgentTurnParams,
 ): Promise<RunCronAgentTurnResult> {
@@ -145,6 +158,7 @@ async function runCronIsolatedAgentTurnInTrace(
               agentId: prepared.context.agentId,
               sessionId: prepared.context.currentRunSessionId(),
               sessionKey: prepared.context.runSessionKey,
+              runId,
               ...(info?.isFallback === true ? { isFallback: true } : {}),
               phase: "runner_entered",
               provider: info?.provider ?? prepared.context.liveSelection.provider,
@@ -167,10 +181,11 @@ async function runCronIsolatedAgentTurnInTrace(
           };
 
           const turnStartedAtMs = Date.now();
+          const diagnosticsEnabled = isDiagnosticsEnabled(params.cfg);
           const messageLifecycle = (() => {
             try {
               const lifecycle = createDiagnosticMessageLifecycle({
-                enabled: isDiagnosticsEnabled(params.cfg),
+                enabled: diagnosticsEnabled,
                 sessionId: prepared.context.runSessionId,
                 sessionKey: prepared.context.runSessionKey,
                 agentId: prepared.context.agentId,
@@ -180,6 +195,14 @@ async function runCronIsolatedAgentTurnInTrace(
                 trackSessionState: true,
               });
               lifecycle.markProcessing();
+              if (diagnosticsEnabled) {
+                logMessageDispatchStarted({
+                  sessionId: prepared.context.runSessionId,
+                  sessionKey: prepared.context.runSessionKey,
+                  channel: "cron",
+                  source: "cron-isolated",
+                });
+              }
               return lifecycle;
             } catch (error) {
               prepared.context.sessionWorkAdmission.release();
@@ -224,6 +247,7 @@ async function runCronIsolatedAgentTurnInTrace(
               {
                 sessionKey: prepared.context.runSessionKey,
                 sessionId: initialSessionId,
+                agentId: prepared.context.agentId,
                 lifecycleGeneration: runLifecycleGeneration,
                 cronRunsByJobId: new Map([
                   [
@@ -248,6 +272,7 @@ async function runCronIsolatedAgentTurnInTrace(
               runId,
               cfg: params.cfg,
               job: params.job,
+              deliveryAttemptFence: params.deliveryAttemptFence,
               lane: params.lane,
               agentVerboseDefault: prepared.context.agentCfg?.verboseDefault,
               persistRunContinuationSession: prepared.context.runContinuationSession?.sync,
@@ -365,6 +390,16 @@ async function runCronIsolatedAgentTurnInTrace(
               sessionKey: prepared.context.runSessionKey,
             };
             try {
+              if (diagnosticsEnabled) {
+                logMessageDispatchCompleted({
+                  ...finalSessionRef,
+                  channel: "cron",
+                  source: "cron-isolated",
+                  durationMs: Date.now() - turnStartedAtMs,
+                  outcome,
+                  error: outcomeError,
+                });
+              }
               messageLifecycle.markIdle(undefined, finalSessionRef);
               messageLifecycle.markProcessed(outcome, {
                 ...finalSessionRef,

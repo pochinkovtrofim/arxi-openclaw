@@ -1,7 +1,3 @@
-/**
- * Snapshot, navigation, viewport, close, and PDF helpers for Playwright-backed
- * browser tools.
- */
 import { resolveIntegerOption } from "openclaw/plugin-sdk/number-runtime";
 import type { SsrFPolicy } from "openclaw/plugin-sdk/security-runtime";
 import {
@@ -389,7 +385,6 @@ export async function navigateViaPlaywright(opts: {
   };
 }
 
-/** Resizes the target page viewport within the browser action policy bounds. */
 export async function resizeViewportViaPlaywright(
   opts: InteractionTargetOptions & {
     width: number;
@@ -419,7 +414,6 @@ export async function resizeViewportViaPlaywright(
   });
 }
 
-/** Closes the target Playwright page. */
 export async function closePageViaPlaywright(opts: InteractionTargetOptions): Promise<void> {
   const page = await getPageForTargetId(opts);
   await closeResolvedPageViaPlaywright(page, {
@@ -428,7 +422,6 @@ export async function closePageViaPlaywright(opts: InteractionTargetOptions): Pr
   });
 }
 
-/** Renders the target page to a PDF buffer. */
 export async function pdfViaPlaywright(opts: {
   cdpUrl: string;
   targetId?: string;

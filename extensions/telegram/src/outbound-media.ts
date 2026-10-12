@@ -8,7 +8,6 @@ import { formatErrorMessage } from "openclaw/plugin-sdk/ssrf-runtime";
 import type { loadWebMedia } from "openclaw/plugin-sdk/web-media";
 import { isTelegramEmptyContentError, isTelegramHtmlParseError } from "./rich-plain-fallback.js";
 import type { TelegramApi } from "./send-context.js";
-import { isTelegramPhotoLimitError } from "./send-error-predicates.js";
 import {
   planTelegramCaption,
   resolveTelegramOutboundMediaFilename,
@@ -130,11 +129,7 @@ export function resolveTelegramOutboundMediaSenders(params: {
   let label: TelegramOutboundMediaKind = "document";
   if (params.plan.isGif && params.plan.deliveryKind !== "document") {
     label = "animation";
-  } else if (
-    params.plan.deliveryKind === "image" &&
-    !params.plan.isGif &&
-    params.sendImageAsPhoto !== false
-  ) {
+  } else if (params.plan.deliveryKind === "image" && params.sendImageAsPhoto !== false) {
     label = "photo";
   } else if (params.plan.deliveryKind === "video") {
     label = params.plan.isVideoNote ? "video_note" : "video";
@@ -218,25 +213,5 @@ export async function sendTelegramCaptionedMediaWithFallback<T>(params: {
       }
       return await sendCaptionless();
     }
-  }
-}
-
-export async function sendTelegramOutboundMediaWithPhotoFallback<T>(params: {
-  sender: TelegramOutboundMediaSender;
-  documentSender: TelegramOutboundMediaSender;
-  send: (sender: TelegramOutboundMediaSender) => Promise<T>;
-}): Promise<{ result: T; sender: TelegramOutboundMediaSender }> {
-  try {
-    return { result: await params.send(params.sender), sender: params.sender };
-  } catch (error) {
-    if (params.sender.label !== "photo" || !isTelegramPhotoLimitError(error)) {
-      throw error;
-    }
-    // Telegram is authoritative for photo limits; preserve the same bytes and
-    // accepted caption/topic/quote/keyboard when retrying as a document.
-    logVerbose(
-      `telegram sendPhoto exceeded photo limits; retrying as document: ${formatErrorMessage(error)}`,
-    );
-    return { result: await params.send(params.documentSender), sender: params.documentSender };
   }
 }
