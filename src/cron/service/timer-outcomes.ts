@@ -1,8 +1,8 @@
 import { resolveCronTriggerMinIntervalMs } from "../../config/cron-limits.js";
 import type { CronActiveJobMarker } from "../active-jobs.js";
 import { resolveAdmittedCronCompletionStatus } from "../completion-status.js";
-import { resolvePacedNextRunWithObligationAtMs } from "../pacing.js";
 import { resolveCronDeliveryPlan } from "../delivery-plan.js";
+import { resolvePacedNextRunWithObligationAtMs } from "../pacing.js";
 import { resolvePacedNextRunAtMs } from "../pacing.js";
 import { normalizeCronRunDiagnostics, summarizeCronRunDiagnostics } from "../run-diagnostics.js";
 import { resolveCronRunErrorReason } from "../run-error-reason.js";

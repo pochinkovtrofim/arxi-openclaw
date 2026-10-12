@@ -137,7 +137,8 @@ const FAILOVER_REASON_BASE_COPY = {
   auth: () => renderInvalidTokenText(),
   auth_permanent: () => renderInvalidTokenText(),
   format: (context) => renderFormatErrorCopy(context.raw ?? ""),
-  rate_limit: (context) => renderRateLimitOrOverloadedCopy({ reason: "rate_limit", raw: context.raw }),
+  rate_limit: (context) =>
+    renderRateLimitOrOverloadedCopy({ reason: "rate_limit", raw: context.raw }),
   overloaded: (context) =>
     renderRateLimitOrOverloadedCopy({ reason: "overloaded", raw: context.raw }),
   billing: (context) =>

@@ -67,8 +67,8 @@ import {
   type CodexDynamicToolSchemaQuarantine,
   type CodexToolDescriptor,
 } from "./dynamic-tool-catalog.js";
-import { readDynamicToolErrorCode } from "./dynamic-tool-diagnostics.js";
 import { convertToolContents, enforceWholeSkillResult } from "./dynamic-tool-content.js";
+import { readDynamicToolErrorCode } from "./dynamic-tool-diagnostics.js";
 import {
   type CodexDynamicToolHookContextBase,
   projectCodexExecutableDynamicToolSurface,

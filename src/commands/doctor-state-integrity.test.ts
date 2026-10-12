@@ -260,7 +260,7 @@ describe("doctor state integrity", () => {
       const relocated = roster === "entries";
       if (relocated) {
         writeConfigMachineState("auth.sharedStore", { location: "state-db" });
-    setTestEnvValue("ARXI_AUTH_AGENT_DIR", path.join(tempHome, "runtime-auth"));
+        setTestEnvValue("ARXI_AUTH_AGENT_DIR", path.join(tempHome, "runtime-auth"));
         setTestEnvValue("OPENCLAW_AGENT_DIR", path.join(stateDir, "agents", "legacy", "agent"));
       }
       const researchReachable = fs.existsSync(path.join(stateDir, "agents", "research", "agent"));

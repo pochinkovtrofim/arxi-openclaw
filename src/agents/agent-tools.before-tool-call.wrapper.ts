@@ -13,8 +13,8 @@ import {
   freezeDiagnosticTraceContext,
 } from "../infra/diagnostic-trace-context.js";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
-import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { captureDiagnosticToolProgress } from "../logging/diagnostic-run-activity.js";
+import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
 import { recordRunSkillUsage } from "../skills/runtime/run-usage.js";
 import { copyBeforeToolCallWrapperMetadata } from "./agent-tool-metadata.js";

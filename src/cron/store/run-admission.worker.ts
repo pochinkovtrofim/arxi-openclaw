@@ -9,6 +9,7 @@ import { resolveCronJobConfigRevision } from "../config-revision.js";
 import { recomputeJobNextRunAtMs } from "../service/jobs-scheduling.js";
 import { retainManualOneShotOccurrence } from "../service/one-shot-schedule.js";
 import type { CronJobPolicyContext } from "../service/state.js";
+import { suspendConsumedManagedFlowObligationsInDatabase } from "./managed-flow-obligations.kernel.js";
 import {
   deleteCronJobRowInDatabase,
   deleteStaleCronJobFamilyRows,
@@ -43,7 +44,6 @@ import {
 } from "./runtime-mutation.worker.js";
 import type { CronRuntimeWorkerOperations } from "./runtime-worker.types.js";
 import { releaseSchedulerReservationsInWorker } from "./scheduler-reservation.worker.js";
-import { suspendConsumedManagedFlowObligationsInDatabase } from "./managed-flow-obligations.kernel.js";
 
 function loadRuntimeRows(db: DatabaseSync, storeKey: string, jobIds: Iterable<string>) {
   const rows = loadCronRows(db, storeKey, new Set(jobIds), {

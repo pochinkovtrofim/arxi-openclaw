@@ -2491,7 +2491,6 @@ describe("requester-scoped MCP connection resolution", () => {
     });
   });
 
-
   it("keys requester-scoped runtimes per sender while sharing static servers", async () => {
     const resolverRegistry = createMcpProofPluginRegistry();
     await withPluginRuntimeRegistryScope(resolverRegistry.registry, async () => {

@@ -13,8 +13,7 @@ import {
 } from "./openclaw-tools.plugin-context.js";
 
 vi.mock("../config/sessions/session-delivery-generation.js", async () => {
-  const { fakeSessionGenerationModule } =
-  it("forwards trusted requester sender identity", () => {
+  const { fakeSessionGenerationModule } = it("forwards trusted requester sender identity", () => {
     const result = resolveOpenClawPluginToolInputs({
       options: {
         config: {} as never,
@@ -124,7 +123,7 @@ vi.mock("../config/sessions/session-delivery-generation.js", async () => {
     expect(result.context.activeProjectKeys).toBe(activeProjectKeys);
   });
 
-    await import("../plugins/memory-audience.test-support.js");
+  await import("../plugins/memory-audience.test-support.js");
   return fakeSessionGenerationModule;
 });
 

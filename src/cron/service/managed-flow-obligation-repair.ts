@@ -3,11 +3,11 @@ import { createSqliteWorkerWriteAdmission } from "../../infra/sqlite-worker-stor
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { runOpenClawStateWorkerOperation } from "../../state/openclaw-state-worker-store.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
+import { cronStoreKey } from "../store/key.js";
 import type {
   CronManagedFlowConsumedRun,
   CronManagedFlowRepairOutput,
 } from "../store/managed-flow-obligations.kernel.js";
-import { cronStoreKey } from "../store/key.js";
 import type { CronJob } from "../types.js";
 import type { CronServiceState } from "./state.js";
 import type { TimedCronRunOutcome } from "./timer-execution-timeout.js";
@@ -44,7 +44,10 @@ export async function repairManagedFlowAutomationObligations(
   const generation = state.lifecycleGeneration;
   const assertCurrent = () => {
     context.admission.assertCurrent();
-    if (cronStoreKey(state.deps.storePath) !== storeKey || state.lifecycleGeneration !== generation) {
+    if (
+      cronStoreKey(state.deps.storePath) !== storeKey ||
+      state.lifecycleGeneration !== generation
+    ) {
       throw new Error("Cron managed-Flow repair source changed before commit");
     }
   };

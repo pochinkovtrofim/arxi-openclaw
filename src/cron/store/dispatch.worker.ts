@@ -34,7 +34,9 @@ const loadScheduler = createLazyRuntimeModule(() => import("./scheduler-state.wo
 let scheduler: typeof import("./scheduler-state.worker.js") | undefined;
 const loadStartup = createLazyRuntimeModule(() => import("./startup-plan.worker.js"));
 let startup: typeof import("./startup-plan.worker.js") | undefined;
-const loadManagedFlow = createLazyRuntimeModule(() => import("./managed-flow-obligations.kernel.js"));
+const loadManagedFlow = createLazyRuntimeModule(
+  () => import("./managed-flow-obligations.kernel.js"),
+);
 let managedFlow: typeof import("./managed-flow-obligations.kernel.js") | undefined;
 
 export function prepareCronStateWorkerCommand(type: PropertyKey): Promise<void> | undefined {

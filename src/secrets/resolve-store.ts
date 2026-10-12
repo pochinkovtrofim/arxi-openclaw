@@ -3,8 +3,8 @@ import type { OpenClawStateDatabaseOptions } from "../state/openclaw-state-db.js
 import { captureOpenClawStateReadWorkerContext } from "../state/openclaw-state-worker-context.js";
 import { providerResolutionError, refResolutionError } from "./resolve-errors.js";
 import type { SecretRefErrorHandler } from "./resolve-types.js";
-import { readSecretStoreValue, SECRET_STORE_VALUE_MAX_BYTES } from "./store/secret-store.js";
 import { resolveSecretStoreDatabase } from "./store/secret-store-database.js";
+import { readSecretStoreValue, SECRET_STORE_VALUE_MAX_BYTES } from "./store/secret-store.js";
 
 // Store values intentionally support large PEM/JSON payloads, so this batch cap is
 // independent from the 256 KiB request cap used by file and exec providers.
@@ -16,7 +16,9 @@ export async function resolveStoreRefs(params: {
   onRefError: SecretRefErrorHandler;
   database?: OpenClawStateDatabaseOptions;
 }): Promise<Map<string, unknown>> {
-  const context = captureOpenClawStateReadWorkerContext(resolveSecretStoreDatabase(params.database));
+  const context = captureOpenClawStateReadWorkerContext(
+    resolveSecretStoreDatabase(params.database),
+  );
   const resolved = new Map<string, unknown>();
   let resolvedBytes = 0;
   for (const ref of params.refs) {

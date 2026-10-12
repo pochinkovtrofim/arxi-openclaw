@@ -4,12 +4,12 @@ import { registerSecretValueForRedaction } from "../../logging/secret-redaction-
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import type { OpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.types.js";
 import { runOpenClawStateWorkerOperation } from "../../state/openclaw-state-worker-store.js";
+import { resolveSecretStoreDatabase } from "./secret-store-database.js";
 import type {
   SecretStoreBatchWriteParams as KernelBatchParams,
   SecretStoreWriteParams as KernelWriteParams,
   SecretStoreWriteSnapshot,
 } from "./secret-store-write.js";
-import { resolveSecretStoreDatabase } from "./secret-store-database.js";
 
 export type { SecretStoreWriteEntry } from "./secret-store-write.js";
 type WorkerWriteOptions = {

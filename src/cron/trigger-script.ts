@@ -85,8 +85,8 @@ import {
   MAX_CRON_SCRIPT_TOOL_BUDGET,
 } from "./script-payload.js";
 import type { CronServiceDeps } from "./service/state.js";
-import { createCronTriggerDiagnosticLifecycle } from "./trigger-script-diagnostics.js";
 import { resolveCronAuthenticatedChannelRequester } from "./tools-allow-provenance.js";
+import { createCronTriggerDiagnosticLifecycle } from "./trigger-script-diagnostics.js";
 import { acquireCronScriptMcpTools, type CronScriptMcpTools } from "./trigger-script-mcp.js";
 import {
   parseScriptPayloadResult,

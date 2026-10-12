@@ -129,7 +129,9 @@ export async function listSecretStoreEntries(
     assertCurrent?: () => void;
   },
 ): Promise<SecretStoreEntryMetadata[]> {
-  const context = captureOpenClawStateReadWorkerContext(resolveSecretStoreDatabase(params.database));
+  const context = captureOpenClawStateReadWorkerContext(
+    resolveSecretStoreDatabase(params.database),
+  );
   params.assertCurrent?.();
   const reply = await executeExistingOpenClawStateRead(
     { path: context.admission.databasePath, env: context.environment },
@@ -216,7 +218,9 @@ export async function readSecretStoreExecEnvironment(params: {
   database?: Pick<OpenClawStateDatabaseOptions, "path" | "env">;
   context?: OpenClawStateWorkerContext;
 }): Promise<SecretStoreExecEnvironment> {
-  const context = params.context ?? captureOpenClawStateReadWorkerContext(resolveSecretStoreDatabase(params.database));
+  const context =
+    params.context ??
+    captureOpenClawStateReadWorkerContext(resolveSecretStoreDatabase(params.database));
   const includeSecretSentinels = params.includeSecretSentinels;
   const reply = await executeExistingOpenClawStateRead(
     { path: context.admission.databasePath, env: context.environment },
@@ -276,7 +280,9 @@ export async function readSecretStoreValue(params: {
   try {
     const name = params.name;
     assertSecretStoreEnvName(name);
-    const context = params.context ?? captureOpenClawStateReadWorkerContext(resolveSecretStoreDatabase(params.database));
+    const context =
+      params.context ??
+      captureOpenClawStateReadWorkerContext(resolveSecretStoreDatabase(params.database));
     params.assertCurrent?.();
     const reply = await executeExistingOpenClawStateRead(
       { path: context.admission.databasePath, env: context.environment },

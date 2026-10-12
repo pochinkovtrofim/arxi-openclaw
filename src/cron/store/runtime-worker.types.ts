@@ -1,4 +1,3 @@
-import type { CronManagedFlowConsumedRun } from "./managed-flow-obligations.kernel.js";
 import type { CronJobScratchWriteInput } from "../scratch-contract.js";
 import type {
   CronFailureNotificationDelivery,
@@ -7,6 +6,7 @@ import type {
   CronRunStatus,
   CronStoreFile,
 } from "../types.js";
+import type { CronManagedFlowConsumedRun } from "./managed-flow-obligations.kernel.js";
 import type { CronJobFamilyIdentity } from "./row-codec.js";
 import type {
   CronRunReceipt,
