@@ -9,6 +9,7 @@ export {
   type WorkerComputeClass,
   type WorkerComputeDequeue,
   type WorkerComputeLane,
+  type WorkerComputePermit,
 } from "./worker-task-capacity.js";
 export { joinOwnedWorkerTasks } from "./worker-task-pool-owned.js";
 export type {

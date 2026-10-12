@@ -9,6 +9,7 @@ export {
   workerComputeLane,
   type WorkerComputeClass,
   type WorkerComputeLane,
+  type WorkerComputePermit,
 } from "@openclaw/worker-runtime";
 
 /** Hosts at or below this parallelism keep one permit that only interactive pools may occupy. */
