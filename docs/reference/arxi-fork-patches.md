@@ -11,10 +11,11 @@ title: "Arxi fork patch ledger"
 
 ## Selected upstream
 
-The selected stable base is OpenClaw `v2026.9.8`, exact upstream commit
-`fc23bc864e4553c2d215e479eeec47b67a0bf943`. This integration starts from Arxi
-`ce509fd14a3dc54bee4216fcdfaeb1ae4ab9e7f8`; its previous stable base was
-`v2026.9.5` (`ec9c1a13db8938e5a3eaa51fca2e981cde2395a9`).
+The selected stable base is OpenClaw `v2026.10.2`, exact upstream commit
+`b8952d477f0c932d8ddc6da5c89cab5a169b6ff1`. This integration starts from Arxi
+`4bef05fec4a150af34dd466d33e28da0e7d12f7e`; its previous stable base was
+`v2026.9.8` (`fc23bc864e4553c2d215e479eeec47b67a0bf943`). Dispositions recorded
+at `v2026.9.8` below still hold unless the `v2026.10.2` section revises them.
 
 The managed Codex app-server remains pinned to `@openai/codex@0.159.3`.
 The release's older `0.158.0` pin does not replace the already deployed managed
@@ -77,6 +78,23 @@ or runtime layers merely because they existed in the previous history.
 - Generated SDK surface budgets and protocol consumers were rebased to the
   released upstream surface; they do not introduce a parallel API layer.
 
+## Redesigned for v2026.10.2
+
+- Managed Flow Automation obligations follow upstream's SQLite cron worker.
+  Repair is the `cron.repairManagedFlowObligations` worker command, and run
+  finalization suspends consumed receipts in the same worker transaction. The
+  synchronous suspend snapshot reads the last committed repair pass and reports
+  itself incomplete after a run until the next repair pass.
+- The protected credential database override routes through upstream's
+  asynchronous secret-store worker contexts.
+- Fork hook additions (`user_message`, `tool_result_transform`, cron hook
+  invocations and conversation hook names) live on the split upstream hook
+  runner types and option defaults.
+- Plugin service OpenTelemetry span binding is part of upstream's
+  `service-diagnostics` seam.
+- Fork product-copy codes render upstream's revised failure wording; the new
+  `media_invalid_reference` code covers upstream's invalid media reference.
+
 ## Contracts rebuilt on v2026.9.8
 
 | Contract                                               | Current owner and disposition                                                                                                                                                                                                                                                                       |
@@ -109,7 +127,7 @@ keep the accepted candidate selected, and qualify a schema-compatible fallback
 before release closeout. The preceding runtime is not a compatible rollback.
 No source pin or test result by itself establishes production activation.
 
-The lifecycle inventory at `fc23bc864e4553c2d215e479eeec47b67a0bf943`
+The lifecycle inventory at `b8952d477f0c932d8ddc6da5c89cab5a169b6ff1`
 uses agent-run contexts, ACP turns, media generation, and migration/backup write
 custody in place of the retired task registry. All are included in suspension
 activity; write custody also accompanies the ready response.

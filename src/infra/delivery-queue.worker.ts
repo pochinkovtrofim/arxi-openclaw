@@ -21,6 +21,7 @@ import {
 import {
   countFailedDeliveryQueueEntriesInDatabase,
   deleteDeliveryQueueEntryInDatabase,
+  inspectPendingDeliveryQueueDeferralsInDatabase,
   pruneExpiredDeliveryQueueTombstonesInDatabase,
   prepareDeliveryQueueTerminalEntry,
   reserveDeliveryQueueEntryAttemptInDatabase,
@@ -471,6 +472,10 @@ export const deliveryQueueOperations = {
   ) => findDeliveryIntentOwnersInDatabase(open(), input),
   "deliveryQueue.countFailed": (_input: undefined, { open }) =>
     countFailedDeliveryQueueEntriesInDatabase(open()),
+  "deliveryQueue.inspectPendingDeferrals": (
+    input: Parameters<typeof inspectPendingDeliveryQueueDeferralsInDatabase>[1],
+    { open },
+  ) => inspectPendingDeliveryQueueDeferralsInDatabase(open(), input),
   "deliveryQueue.pruneTombstones": (_input: undefined, { open }) =>
     pruneExpiredDeliveryQueueTombstonesInDatabase(open()),
   "deliveryQueue.createMediaRetention": writeOperation(
