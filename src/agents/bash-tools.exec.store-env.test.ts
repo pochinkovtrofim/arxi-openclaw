@@ -268,6 +268,17 @@ describe("exec store environment", () => {
     expect(mocks.gatewayParams.at(-1)?.env.AWS_REGION).toBe("eu-west-1");
   });
 
+  it("reads the protected credential lease store", async () => {
+    await writeEntries([{ name: "AWS_REGION", value: "state-region", kind: "env" }]);
+    vi.stubEnv("ARXI_AUTH_AGENT_DIR", tempDirs.make("exec-store-env-lease-"));
+    await writeEntries([{ name: "AWS_REGION", value: "lease-region", kind: "env" }]);
+    const tool = createLazyExecTool({ host: "gateway", security: "full", ask: "off" });
+
+    await tool.execute("lease-store", { command: "echo ok", yieldMs: 120_000 });
+
+    expect(mocks.gatewayParams.at(-1)?.env.AWS_REGION).toBe("lease-region");
+  });
+
   it("runs worker placement exec without reading or projecting its scratch secret store", async () => {
     await writeEntries([
       { name: "AWS_REGION", value: "synthetic-worker-store-value", kind: "env" },

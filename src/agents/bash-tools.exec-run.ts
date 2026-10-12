@@ -23,6 +23,7 @@ import { logInfo } from "../logger.js";
 import { parseAgentSessionKey, resolveAgentIdFromSessionKey } from "../routing/session-key.js";
 import { isSecretEgressProxyActive } from "../secrets/egress-proxy/registry.js";
 import type { SecretStoreExecEnvironment } from "../secrets/store/secret-store.js";
+import { resolveSecretStoreDatabase } from "../secrets/store/secret-store-database.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { captureOpenClawStateReadWorkerContext } from "../state/openclaw-state-worker-context.js";
 import { captureAgentToolSourceExecutionGuard } from "./agent-tool-source-execution-guard.js";
@@ -102,7 +103,7 @@ export function createExecTool(
       : Promise.resolve(defaults.preparedStoreEnvironment);
   const resolveStoreEnv = () => {
     if (storeEnvPromise === undefined) {
-      const context = captureOpenClawStateReadWorkerContext();
+      const context = captureOpenClawStateReadWorkerContext(resolveSecretStoreDatabase());
       storeEnvPromise = import("../secrets/store/secret-store.js").then((store) =>
         store.readSecretStoreExecEnvironment({
           includeSecretSentinels: secretEgressEnabled,

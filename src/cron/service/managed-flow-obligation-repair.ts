@@ -12,10 +12,19 @@ import type { CronJob } from "../types.js";
 import type { CronServiceState } from "./state.js";
 import type { TimedCronRunOutcome } from "./timer-execution-timeout.js";
 
-type EarliestReceipts = Map<string, { scheduleIdentity: string; scheduledAtMs: number }>;
+type ObservedReceipts = {
+  /** Schedule identity of every paced job the repair pass read, valid or not. */
+  observed: Map<string, string>;
+  invalidJobIds: Set<string>;
+  earliest: Map<string, { scheduleIdentity: string; scheduledAtMs: number }>;
+};
 
 // The suspend-wake snapshot is synchronous; it reads the last committed repair pass.
-const earliestReceiptsByState = new WeakMap<CronServiceState, EarliestReceipts>();
+const earliestReceiptsByState = new WeakMap<CronServiceState, ObservedReceipts>();
+
+function pacedScheduleIdentity(job: CronJob): string | undefined {
+  return job.enabled && job.pacing !== undefined ? tryCronScheduleIdentity(job) : undefined;
+}
 
 function isEligible(state: CronServiceState): boolean {
   return !state.stopped && !state.schedulingPaused && state.deps.cronEnabled;
@@ -33,11 +42,20 @@ export async function repairManagedFlowAutomationObligations(
     return false;
   }
   const storeKey = cronStoreKey(state.deps.storePath);
-  const jobIds = state.store.jobs
-    .filter((job) => job.enabled && job.pacing !== undefined && tryCronScheduleIdentity(job))
-    .map((job) => job.id);
+  const observed = new Map<string, string>();
+  for (const job of state.store.jobs) {
+    const scheduleIdentity = pacedScheduleIdentity(job);
+    if (scheduleIdentity) {
+      observed.set(job.id, scheduleIdentity);
+    }
+  }
+  const jobIds = [...observed.keys()];
   if (jobIds.length === 0) {
-    earliestReceiptsByState.set(state, new Map());
+    earliestReceiptsByState.set(state, {
+      observed,
+      invalidJobIds: new Set(),
+      earliest: new Map(),
+    });
     return false;
   }
   const context = captureOpenClawStateWorkerContext();
@@ -77,15 +95,16 @@ export async function repairManagedFlowAutomationObligations(
       "cron: managed Flow Automation receipt was invalid and was not scheduled",
     );
   }
-  earliestReceiptsByState.set(
-    state,
-    new Map(
+  earliestReceiptsByState.set(state, {
+    observed,
+    invalidJobIds: new Set(result.invalidJobIds),
+    earliest: new Map(
       result.earliest.map((entry) => [
         entry.jobId,
         { scheduleIdentity: entry.scheduleIdentity, scheduledAtMs: entry.scheduledAtMs },
       ]),
     ),
-  );
+  });
   return result.changed;
 }
 
@@ -94,7 +113,8 @@ export async function repairManagedFlowAutomationObligations(
  * work bound to a job whose own cadence never wakes a suspended host must still
  * become that host's wake deadline; a far receipt never shows in the job's slot
  * because repair only pulls a slot earlier. Throws until a repair pass has
- * observed the receipts committed since the last consumed run.
+ * observed the receipts committed since the last consumed run, and for any paced
+ * job that pass did not read at its current schedule or could not read cleanly.
  */
 export function earliestManagedFlowObligationAtMs(
   state: CronServiceState,
@@ -106,15 +126,18 @@ export function earliestManagedFlowObligationAtMs(
   }
   let earliest: number | undefined;
   for (const job of jobs) {
-    const scheduleIdentity = tryCronScheduleIdentity(job);
-    const receipt = receipts.get(job.id);
-    if (
-      !job.enabled ||
-      job.pacing === undefined ||
-      !scheduleIdentity ||
-      !receipt ||
-      receipt.scheduleIdentity !== scheduleIdentity
-    ) {
+    const scheduleIdentity = pacedScheduleIdentity(job);
+    if (!scheduleIdentity) {
+      continue;
+    }
+    if (receipts.observed.get(job.id) !== scheduleIdentity) {
+      throw new Error(`managed Flow receipts for cron job ${job.id} have not been observed`);
+    }
+    if (receipts.invalidJobIds.has(job.id)) {
+      throw new Error(`managed Flow receipts for cron job ${job.id} are invalid`);
+    }
+    const receipt = receipts.earliest.get(job.id);
+    if (!receipt || receipt.scheduleIdentity !== scheduleIdentity) {
       continue;
     }
     if (earliest === undefined || receipt.scheduledAtMs < earliest) {
