@@ -22,7 +22,6 @@ import {
   createCodexInferenceDispatch,
   isTerminalResponse,
   readProxyBody,
-  readProxyWebSocketBody,
   type CodexInferenceModelExecution,
   type CodexInferenceModelRequest,
 } from "./inference-dispatch.js";
@@ -40,8 +39,7 @@ import {
 } from "./inference-upload.js";
 import { createCodexUpstreamTransport } from "./inference-upstream.js";
 import type { CodexResponsesOAuth } from "./responses-oauth.js";
-
-export { CodexInferenceAuthorizationError } from "./inference-dispatch.js";
+import { codexWebSocketDataToBuffer } from "./websocket-data.js";
 
 const MAX_ERROR_BODY_BYTES = 1024 * 1024;
 const MAX_WEBSOCKETS = 64;
@@ -634,7 +632,7 @@ export async function createCodexInferenceProxy(params: {
                       throw new Error(FAILURE);
                     }
                     prepared = await prepare(
-                      readProxyWebSocketBody(data),
+                      codexWebSocketDataToBuffer(data),
                       sampling,
                       path,
                       req.headers,
@@ -672,14 +670,14 @@ export async function createCodexInferenceProxy(params: {
               remote!.on("message", (data: RawData, binary: boolean) => {
                 if (
                   accepted.readyState !== WebSocket.OPEN ||
-                  accepted.bufferedAmount + readProxyWebSocketBody(data).length > MAX_BODY_BYTES
+                  accepted.bufferedAmount + codexWebSocketDataToBuffer(data).length > MAX_BODY_BYTES
                 ) {
                   close();
                   return;
                 }
                 // Upload completion does not prove response quiescence. Only a
                 // delivered terminal event makes this retained transport reclaimable.
-                const terminal = !binary && isTerminalResponse(readProxyWebSocketBody(data));
+                const terminal = !binary && isTerminalResponse(codexWebSocketDataToBuffer(data));
                 const releaseCompletedFrame = terminal ? settleFrame : undefined;
                 accepted.send(data, { binary }, (error) => {
                   if (error) {

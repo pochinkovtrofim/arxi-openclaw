@@ -13,6 +13,7 @@ import {
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import { resolveBootstrapFilesForPreparation } from "openclaw/plugin-sdk/codex-mcp-projection";
 import { root as fileRoot } from "openclaw/plugin-sdk/file-access-runtime";
+import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { isMessageOnlyCodexSourceReply } from "./dynamic-tool-profile.js";
 import { flattenCodexDynamicToolFunctions, type CodexDynamicToolSpec } from "./protocol.js";
 
@@ -30,23 +31,22 @@ const CODEX_BOOTSTRAP_CONTEXT_ORDER = new Map<string, number>([
 export type CodexBootstrapFile = Awaited<
   ReturnType<typeof prepareAgentWorkspaceContext>
 >["bootstrapFiles"][number];
-type CodexBootstrapContext = {
+export type CodexWorkspaceBootstrapContext = {
   bootstrapFiles: CodexBootstrapFile[];
   contextFiles: EmbeddedContextFile[];
-};
-export type CodexWorkspaceBootstrapContext = CodexBootstrapContext & {
   inheritsAgentWorkspace: boolean;
   promptContextFiles?: EmbeddedContextFile[];
   threadDeveloperInstructionFiles?: EmbeddedContextFile[];
-  turnScopedDeveloperInstructionFiles?: EmbeddedContextFile[];
+  personaFiles?: EmbeddedContextFile[];
   memoryReferenceFiles?: EmbeddedContextFile[];
   memoryToolRoutedBootstrapFiles?: CodexBootstrapFile[];
   memoryToolNames?: string[];
   memoryToolRouted?: boolean;
   promptContext?: string;
   threadDeveloperInstructions?: string;
-  turnScopedDeveloperInstructions?: string;
-  memoryCollaborationInstructions?: string;
+  personaInstructions?: string;
+  sharedPersonaInstructions?: string;
+  memoryInstructions?: string;
 };
 
 /** A child baseline reads the bounded workspace snapshot without invoking admission hooks. */
@@ -58,7 +58,7 @@ export async function prepareCodexWorkspaceDeveloperInstructions(params: {
   workspaceDir: string;
   cwd: string;
 }): Promise<string | undefined> {
-  if (isSameCodexWorkspacePath(params.workspaceDir, params.cwd)) {
+  if (path.resolve(params.workspaceDir) === path.resolve(params.cwd)) {
     return undefined;
   }
   const files = await resolveBootstrapFilesForPreparation(params);
@@ -83,7 +83,7 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
 }): Promise<CodexWorkspaceBootstrapContext> {
   const availableToolNames = new Set(
     flattenCodexDynamicToolFunctions(params.tools).map((tool) =>
-      normalizeCodexDynamicToolName(tool.name),
+      normalizeLowercaseStringOrEmpty(tool.name),
     ),
   );
   const executionWorkspace = params.executionWorkspace ?? params.resolvedWorkspace;
@@ -185,7 +185,12 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
       effectiveAgentFiles,
       promptWorkspace,
     ).instructions;
-    const turnScopedDeveloperInstructionFiles = injectOpenClawContext
+    const effectiveAgentSection = effectiveAgentInstructions
+      ? `This effective agent workspace snapshot supersedes the older native copy of the same file for this turn; preserve other scoped project instructions.\n${effectiveAgentInstructions}`
+      : undefined;
+    const joinPersona = (base: string | undefined) =>
+      [base, effectiveAgentSection].filter(Boolean).join("\n\n") || undefined;
+    const personaFiles = injectOpenClawContext
       ? [...prepared.personaFiles, ...effectiveAgentFiles]
       : [];
     return {
@@ -194,7 +199,7 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
       inheritsAgentWorkspace,
       promptContextFiles,
       threadDeveloperInstructionFiles,
-      turnScopedDeveloperInstructionFiles,
+      personaFiles,
       memoryReferenceFiles,
       memoryToolRoutedBootstrapFiles,
       memoryToolNames,
@@ -204,18 +209,14 @@ export async function buildCodexWorkspaceBootstrapContext(params: {
       threadDeveloperInstructions: includeAgentWorkspaceInstructions
         ? (params.agentWorkspaceDeveloperInstructions ?? prepared.instructionSnapshot.instructions)
         : undefined,
-      turnScopedDeveloperInstructions: injectOpenClawContext
-        ? [
-            prepared.personaInstructions,
-            effectiveAgentInstructions
-              ? `This effective agent workspace snapshot supersedes the older native copy of the same file for this turn; preserve other scoped project instructions.\n${effectiveAgentInstructions}`
-              : undefined,
-          ]
-            .filter(Boolean)
-            .join("\n\n") || undefined
+      personaInstructions: injectOpenClawContext
+        ? joinPersona(prepared.personaInstructions)
         : undefined,
-      memoryCollaborationInstructions: injectOpenClawContext
-        ? renderCodexWorkspaceMemoryCollaborationInstructions({
+      sharedPersonaInstructions: injectOpenClawContext
+        ? joinPersona(prepared.sharedPersonaInstructions)
+        : undefined,
+      memoryInstructions: injectOpenClawContext
+        ? renderCodexWorkspaceMemoryInstructions({
             files: memoryReferenceFiles,
             toolNames: memoryToolNames,
             memoryRecallInstructions: prepared.memoryRecallInstructions,
@@ -277,7 +278,7 @@ function renderCodexWorkspaceMemoryReference(params: {
   return lines.join("\n").trim();
 }
 
-function renderCodexWorkspaceMemoryCollaborationInstructions(params: {
+function renderCodexWorkspaceMemoryInstructions(params: {
   files: EmbeddedContextFile[];
   toolNames: readonly string[];
   memoryRecallInstructions?: string;
@@ -295,17 +296,13 @@ function renderCodexWorkspaceMemoryCollaborationInstructions(params: {
 
 function renderCodexMemoryToolSearchBridge(toolNames: readonly string[]): string | undefined {
   const memoryToolNames = toolNames
-    .map((name) => normalizeCodexDynamicToolName(name))
+    .map(normalizeLowercaseStringOrEmpty)
     .filter((name) => CODEX_MEMORY_TOOL_NAMES.has(name))
     .toSorted();
   if (memoryToolNames.length === 0) {
     return undefined;
   }
   return `Codex may expose ${memoryToolNames.join(" and ")} as deferred tools. When the memory guidance above calls for memory recall, use an already-loaded memory tool directly. If the needed memory tool is deferred and not currently callable, use \`tool_search\` to load it, then call that memory tool.`;
-}
-
-function isSameCodexWorkspacePath(left: string, right: string): boolean {
-  return path.resolve(left) === path.resolve(right);
 }
 
 /**
@@ -347,10 +344,6 @@ export function getCodexContextFileDisplayBasename(filePath: string): string {
 
 export function getCodexContextFileBasename(filePath: string): string {
   return normalizeCodexContextFilePath(filePath).split("/").pop() ?? "";
-}
-
-export function normalizeCodexDynamicToolName(name: string): string {
-  return name.trim().toLowerCase();
 }
 
 export function isNonEmptyString(value: unknown): value is string {

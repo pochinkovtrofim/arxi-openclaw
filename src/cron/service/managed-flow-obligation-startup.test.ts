@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
+import * as stateWorkerStore from "../../state/openclaw-state-worker-store.js";
 import { upsertTaskFlowAutomationObligationInStateTransaction } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { createManagedTaskFlow } from "../../tasks/task-flow-registry.js";
 import { resetTaskFlowRegistryForTests } from "../../tasks/task-runtime.test-helpers.js";
@@ -12,7 +13,10 @@ import { CronService } from "../service.js";
 import { loadCronStore, saveCronJobsStore } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
 import type { CronJob } from "../types.js";
-import { repairManagedFlowAutomationObligations } from "./managed-flow-obligation-repair.js";
+import {
+  earliestManagedFlowObligationAtMs,
+  repairManagedFlowAutomationObligations,
+} from "./managed-flow-obligation-repair.js";
 import { createCronServiceState } from "./state.js";
 
 let storePath: string;
@@ -122,18 +126,57 @@ describe("durable Automation obligation scheduler startup", () => {
     });
     const state = createCronServiceState(deps());
     state.store = await loadCronStore(storePath);
-    expect(repairManagedFlowAutomationObligations(state)).toBe(false);
+    expect(await repairManagedFlowAutomationObligations(state)).toBe(false);
     expect((await stored()).state.nextRunAtMs).toBe(earlier);
     await saveCronJobsStore(storePath, { version: 1, jobs: [job] });
     state.store = await loadCronStore(storePath);
     state.schedulingPaused = true;
-    expect(repairManagedFlowAutomationObligations(state)).toBe(false);
+    expect(await repairManagedFlowAutomationObligations(state)).toBe(false);
     expect((await stored()).state.nextRunAtMs).toBeUndefined();
     state.schedulingPaused = false;
     await saveCronJobsStore(storePath, { version: 1, jobs: [{ ...job, enabled: false }] });
     state.store = await loadCronStore(storePath);
-    expect(repairManagedFlowAutomationObligations(state)).toBe(false);
+    expect(await repairManagedFlowAutomationObligations(state)).toBe(false);
     expect((await stored()).enabled).toBe(false);
     expect((await stored()).state.nextRunAtMs).toBeUndefined();
+  });
+
+  it("keeps the wake snapshot incomplete for paced jobs its repair pass did not read", async () => {
+    const state = createCronServiceState(deps());
+    state.store = await loadCronStore(storePath);
+    await repairManagedFlowAutomationObligations(state);
+    expect(earliestManagedFlowObligationAtMs(state, [job])).toBe(due);
+
+    const added = { ...job, id: randomUUID() };
+    expect(() => earliestManagedFlowObligationAtMs(state, [job, added])).toThrow(
+      "have not been observed",
+    );
+    const rescheduled = { ...job, schedule: { ...job.schedule, everyMs: 3_600_000 } } as CronJob;
+    expect(() => earliestManagedFlowObligationAtMs(state, [rescheduled])).toThrow(
+      "have not been observed",
+    );
+    expect(earliestManagedFlowObligationAtMs(state, [{ ...added, enabled: false }])).toBe(
+      undefined,
+    );
+  });
+
+  it("keeps the wake snapshot incomplete for invalid receipts until a clean pass", async () => {
+    const state = createCronServiceState(deps());
+    state.store = await loadCronStore(storePath);
+    const operation = vi
+      .spyOn(stateWorkerStore, "runOpenClawStateWorkerOperation")
+      .mockResolvedValueOnce({ changed: false, earliest: [], invalidJobIds: [job.id] });
+    try {
+      await repairManagedFlowAutomationObligations(state);
+      expect(log.warn).toHaveBeenCalledWith(
+        { jobId: job.id },
+        "cron: managed Flow Automation receipt was invalid and was not scheduled",
+      );
+      expect(() => earliestManagedFlowObligationAtMs(state, [job])).toThrow("are invalid");
+    } finally {
+      operation.mockRestore();
+    }
+    await repairManagedFlowAutomationObligations(state);
+    expect(earliestManagedFlowObligationAtMs(state, [job])).toBe(due);
   });
 });

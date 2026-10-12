@@ -1,9 +1,9 @@
 import { getFileWatchCapacityCode } from "openclaw/plugin-sdk/file-access-runtime";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
+import type { MemorySyncParams } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
 import { resolveTimerTimeoutMs } from "openclaw/plugin-sdk/number-runtime";
-import { MemoryFileWatcher } from "./file-watcher.js";
+import { MemoryFileWatcher, type MemoryWatchUnavailableReason } from "./file-watcher.js";
 import { MemoryManagerSyncBase } from "./manager-sync-base.js";
-import type { MemoryWatchUnavailableReason } from "./manager-watch-resources.js";
 
 const log = createSubsystemLogger("memory");
 
@@ -28,12 +28,6 @@ function classifyWatchStartFailure(error: unknown): MemoryWatchUnavailableReason
   return code ? "emfile" : "start_failed";
 }
 
-function runDetachedMemorySync(sync: () => Promise<void>, reason: "interval" | "watch") {
-  void sync().catch((err: unknown) => {
-    log.warn(`memory sync failed (${reason}): ${String(err)}`);
-  });
-}
-
 export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
   private fileWatcher: MemoryFileWatcher | undefined;
   protected memoryWatcherReady: Promise<void> = Promise.resolve();
@@ -45,8 +39,14 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
   private memoryWatchRebuilding = false;
   private degradedWatchSyncTimer: NodeJS.Timeout | null = null;
   private lastDegradedWatchSyncAt = Number.NEGATIVE_INFINITY;
+  private remoteWatchRetirement: Promise<void> | undefined;
+  private remoteWatchCloseFailure: { error: unknown } | undefined;
   protected get memoryWatchCapacityDegraded(): boolean {
     return this.fileWatcher?.capacityDegraded ?? false;
+  }
+
+  protected get memoryWatcherHealth() {
+    return this.fileWatcher?.health();
   }
 
   /** True while no watcher observes memory edits. */
@@ -104,7 +104,7 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
       }
       this.lastDegradedWatchSyncAt = Date.now();
       this.dirty = true;
-      runDetachedMemorySync(() => this.sync({ reason: "watch" }), "watch");
+      this.syncInBackground({ reason: "watch" });
     }, DEGRADED_WATCH_PERIODIC_SYNC_MS);
     this.degradedWatchSyncTimer.unref?.();
   }
@@ -166,7 +166,7 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
     log.info("memory workspace watcher recovered");
     // Edits made while no watcher ran are picked up once, now.
     this.dirty = true;
-    runDetachedMemorySync(() => this.sync({ reason: "watch" }), "watch");
+    this.syncInBackground({ reason: "watch" });
   }
 
   /** Closes the failed watcher and creates its replacement; ensureWatcher waits meanwhile. */
@@ -186,6 +186,7 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
 
   private createMemoryFileWatcher(): MemoryFileWatcher {
     const watcher: MemoryFileWatcher = new MemoryFileWatcher({
+      runInBackgroundContext: this.runInBackgroundContext,
       workspaceDir: this.workspaceDir,
       agentId: this.agentId,
       settings: this.settings,
@@ -225,9 +226,9 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
           this.markMemoryWatchUnavailable("start_failed");
         }
         // Remote notifications have already passed native file settling on the host.
-        runDetachedMemorySync(() => this.sync({ reason: "watch" }), "watch");
+        this.syncInBackground({ reason: "watch" });
       };
-      void this.memoryFiles
+      this.remoteWatchRetirement = this.memoryFiles
         .watch(
           {
             agentId: this.agentId,
@@ -246,6 +247,10 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
             markDirty("unavailable");
             if (!subscription.signal.aborted) {
               log.warn(`memory workspace watcher unavailable: ${String(error)}`);
+            } else if (error !== subscription.signal.reason) {
+              // Cancellation is expected; a distinct transport retirement failure
+              // must survive shutdown instead of being mistaken for a joined worker.
+              this.remoteWatchCloseFailure = { error };
             }
           },
         );
@@ -280,11 +285,47 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
     this.stopDegradedWatchSync();
     this.memoryWatchSubscription?.abort();
     this.memoryWatchSubscription = undefined;
-    await this.fileWatcher?.close();
-    this.fileWatcher = undefined;
-    if (this.sessionUnsubscribe) {
-      this.sessionUnsubscribe();
-      this.sessionUnsubscribe = null;
+    const results = await Promise.allSettled([
+      (async () => {
+        // Abort only requests remote cancellation. Its transport owns and joins
+        // the worker; retain the subscription until that physical join settles.
+        await this.remoteWatchRetirement;
+        if (this.remoteWatchCloseFailure) {
+          throw this.remoteWatchCloseFailure.error;
+        }
+        this.remoteWatchRetirement = undefined;
+      })(),
+      (async () => {
+        await this.fileWatcher?.close();
+        // A failed observer retains its rejected retirement join.
+        this.fileWatcher = undefined;
+      })(),
+      (async () => {
+        this.sessionUnsubscribe?.();
+        this.sessionUnsubscribe = null;
+      })(),
+    ]);
+    const errors = results.flatMap((result) =>
+      result.status === "rejected" ? [result.reason] : [],
+    );
+    if (errors.length === 1) {
+      throw errors[0];
+    }
+    if (errors.length > 1) {
+      throw new AggregateError(errors, "Memory watch resources cleanup failed");
+    }
+  }
+
+  protected syncInBackground(params: MemorySyncParams, failureReason = params.reason): void {
+    const failed = (err: unknown) => {
+      log.warn(`memory sync failed (${failureReason}): ${String(err)}`);
+    };
+    try {
+      this.runInBackgroundContext(() => {
+        void this.runInBackgroundContext(() => this.sync(params)).catch(failed);
+      });
+    } catch (err) {
+      failed(err);
     }
   }
 
@@ -298,7 +339,7 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
       return;
     }
     this.intervalTimer = setInterval(() => {
-      runDetachedMemorySync(() => this.sync({ reason: "interval" }), "interval");
+      this.syncInBackground({ reason: "interval" });
     }, ms);
   }
 }

@@ -6,6 +6,7 @@ import {
   type SpanKind,
   type Tracer,
 } from "@opentelemetry/api";
+import { pruneMapToMaxSize } from "openclaw/plugin-sdk/collection-runtime";
 import {
   normalizeDiagnosticValue,
   type DiagnosticSpanBindingEmitter,
@@ -322,44 +323,31 @@ export function createDiagnosticsTraceRuntime(
       spanContext,
       ...(owner ? { owner } : {}),
     });
-    // Map iteration is insertion-ordered, so this removes the oldest mapping first.
-    while (retainedTrustedSpanContexts.size > MAX_RETAINED_TRUSTED_SPAN_CONTEXTS) {
-      const oldestKey = retainedTrustedSpanContexts.keys().next().value;
-      if (!oldestKey) {
-        break;
-      }
-      retainedTrustedSpanContexts.delete(oldestKey);
-    }
+    pruneMapToMaxSize(retainedTrustedSpanContexts, MAX_RETAINED_TRUSTED_SPAN_CONTEXTS);
   };
   // Retention keys on the diagnostic ids the event carries. Taking the whole context
   // (not a bare trace id) makes an OTel SpanContext a type error here; keying by OTel
   // ids instead would silently split every late child into its own trace.
   const completeTrackedLifecycleSpan = (
-    traceContext: DiagnosticTraceContext,
+    traceContext: DiagnosticTraceContext | undefined,
     span: ReturnType<typeof tracer.startSpan>,
     endTimeMs: number,
   ) => {
-    const spanId = traceContext.spanId;
-    if (!spanId) {
+    if (!traceContext?.spanId) {
       span.end(endTimeMs);
       return;
     }
+    const spanId = traceContext.spanId;
     const spanContext = span.spanContext();
     const retainedKeys: Array<{ spanId: string; owner?: TrustedSpanAliasOwner }> = [{ spanId }];
-    const retainedAliasKeys: string[] = [];
     for (const [aliasKey, alias] of activeTrustedSpanAliases) {
       if (alias.span === span) {
         retainedKeys.push({ spanId: alias.spanId, owner: alias.owner });
-        retainedAliasKeys.push(aliasKey);
+        activeTrustedSpanAliases.delete(aliasKey);
       }
     }
     if (activeTrustedSpans.get(spanId) === span) {
       activeTrustedSpans.delete(spanId);
-    }
-    for (const aliasKey of retainedAliasKeys) {
-      if (activeTrustedSpanAliases.get(aliasKey)?.span === span) {
-        activeTrustedSpanAliases.delete(aliasKey);
-      }
     }
     span.end(endTimeMs);
     for (const retainedKey of retainedKeys) {
@@ -418,12 +406,10 @@ export function createDiagnosticsTraceRuntime(
     activeTrustedSpans,
     activeTrustedSpanAliases,
     trustedSpanAliasKey,
-    trustedSpanAliasOwner,
     spanWithDuration,
     trustedTraceContext,
     bindTrustedSpan,
     internalOrTrustedTraceContext,
-    internalOrTrustedParentContext,
     internalOrTrustedExplicitParentContext,
     activeTrustedParentContext,
     activeInternalOrTrustedContext,

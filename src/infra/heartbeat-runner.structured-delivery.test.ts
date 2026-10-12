@@ -112,6 +112,7 @@ describe("runHeartbeatOnce structured heartbeat delivery", () => {
         agentRunFailed: false,
         replyPayload: { text: "A verified result." },
       },
+      useHeartbeatFailureCopy: false,
       hasRelayableExecCompletion: false,
       suppressUnmarkedSourceReplies: false,
       responsePrefix: undefined,

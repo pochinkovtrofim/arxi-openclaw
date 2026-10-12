@@ -41,7 +41,6 @@ function diagnosticToolIdentity(params: DynamicToolDiagnosticContext) {
   };
 }
 
-/** Emits a start event for one Codex dynamic tool call. */
 export function emitDynamicToolStartedDiagnostic(params: DynamicToolDiagnosticContext): void {
   emitTrustedDiagnosticEvent({
     type: "tool.execution.started",
@@ -49,7 +48,6 @@ export function emitDynamicToolStartedDiagnostic(params: DynamicToolDiagnosticCo
   });
 }
 
-/** Emits an error event for one Codex dynamic tool call. */
 export function emitDynamicToolErrorDiagnostic(
   params: DynamicToolDiagnosticContext & {
     durationMs: number;

@@ -20,6 +20,7 @@ import {
   resolveConversationAccessAllowed,
   resolvePromptInjectionAllowed,
 } from "./hook-policy-decisions.js";
+import { getPluginInstance } from "./plugin-instance-scope.js";
 import {
   resolveTypedHookTimeoutMs,
   type PluginRegistryState,
@@ -260,6 +261,7 @@ export function createToolHookRegistrars(state: PluginRegistryState) {
     if (normalized.length > 0) {
       record.toolNames.push(...normalized);
     }
+    getPluginInstance(record)?.admitFactory(factory);
     registry.tools.push({
       ...createRegistration(record, {
         factory,
@@ -381,10 +383,8 @@ export function createToolHookRegistrars(state: PluginRegistryState) {
       );
       return;
     }
-    if (
-      isConversationHookName(hookName) &&
-      !resolveConversationAccessAllowed(record.origin, policy)
-    ) {
+    const conversationAccessAllowed = resolveConversationAccessAllowed(record.origin, policy);
+    if (isConversationHookName(hookName) && !conversationAccessAllowed) {
       if (record.origin !== "bundled") {
         reportRegistrationWarning(
           record,
@@ -435,6 +435,9 @@ export function createToolHookRegistrars(state: PluginRegistryState) {
       ...(eligibleDispatchKinds ? { eligibleDispatchKinds } : {}),
       ...(hookName === "before_prompt_build" && opts?.requiresToolAuthority === true
         ? { requiresToolAuthority: true }
+        : {}),
+      ...(hookName === "session_end" && conversationAccessAllowed
+        ? { conversationAccessAllowed: true }
         : {}),
       source: record.source,
     } as TypedPluginHookRegistration);

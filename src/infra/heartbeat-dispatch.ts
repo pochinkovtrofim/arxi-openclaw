@@ -218,6 +218,7 @@ async function prepareHeartbeatDispatchReply(
       heartbeatTerminalToolFailure: failure,
       replyPayload: selected,
     },
+    useHeartbeatFailureCopy: prepared.useHeartbeatFailureCopy,
     hasRelayableExecCompletion: prepared.hasRelayableExecCompletion,
     suppressUnmarkedSourceReplies:
       resolveSourceReplyDeliveryMode({
@@ -236,12 +237,22 @@ async function prepareHeartbeatDispatchReply(
       log.warn("heartbeat: scratch update ignored because no monitor job exists");
     } else {
       try {
-        const written = writeCronJobScratch({
-          storePath: resolveCronJobsStorePathFromConfig(cfg),
-          jobId: preflight.scratchJobId,
-          content: scratch,
-          expectedRevision: preflight.scratchRevision ?? 0,
-        });
+        const owner = runState.agentTurnOwner;
+        const written = await writeCronJobScratch(
+          {
+            storePath: resolveCronJobsStorePathFromConfig(cfg),
+            jobId: preflight.scratchJobId,
+            content: scratch,
+            expectedRevision: preflight.scratchRevision ?? 0,
+          },
+          {
+            assertCurrent() {
+              if (runState.agentTurnOwner !== owner || resolveReplyOperationAbortReason(owner)) {
+                throw new Error("Heartbeat scratch writer is no longer current");
+              }
+            },
+          },
+        );
         if (!written.ok) {
           log.warn("heartbeat: scratch update lost a concurrent revision race");
         }
@@ -268,10 +279,10 @@ async function prepareHeartbeatDispatchReply(
       accountId: delivery.accountId,
     });
     if (consume && preflight.shouldInspectPendingEvents) {
-      consumeSelectedSystemEventEntries(
-        resolveSystemEventQueueKey(sessionKey, agentId),
-        prepared.inspectedSystemEventsToConsume,
-      );
+      consumeSelectedSystemEventEntries(resolveSystemEventQueueKey(sessionKey, agentId), [
+        ...prepared.inspectedSystemEventsToConsume,
+        ...prepared.deferredGenericEvents,
+      ]);
       if (prepared.hasExecCompletion && prepared.hasCronEvents) {
         // Coalesced waiters share this turn, but exec and cron retain separate prompt/delivery policy.
         requestHeartbeat({
@@ -572,7 +583,12 @@ export async function deliverHeartbeatDispatch(
       if (!internalProjection || policy.projectTarget === false) {
         return { visibleReplySent: false };
       }
-      const occurrenceIds = policy.prepared.inspectedSystemEventsToConsume.map((event) => event.id);
+      // Restart continuations are admitted as generic prompt text, so their queue
+      // identities join the publication key alongside inspected completions.
+      const occurrenceIds = [
+        ...policy.prepared.inspectedSystemEventsToConsume,
+        ...policy.prepared.deferredGenericEvents,
+      ].map((event) => event.id);
       if (!occurrenceIds.every((id): id is string => typeof id === "string" && id.length > 0)) {
         policy.deliveryReason = "exec completion occurrence identity unavailable";
         return { visibleReplySent: false };

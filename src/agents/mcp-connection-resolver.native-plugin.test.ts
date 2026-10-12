@@ -60,7 +60,7 @@ it("keeps a native plugin MCP server requester-scoped when the plugin registers 
     },
   };
 
-  const runtimeRegistry = loadAndActivateRootPluginRegistry({
+  const runtimeRegistry = await loadAndActivateRootPluginRegistry({
     workspaceDir,
     config,
     cache: false,
@@ -153,7 +153,7 @@ it("does not borrow a full-runtime MCP resolver into a discovery generation", as
     },
   };
 
-  const runtimeRegistry = loadAndActivateRootPluginRegistry({
+  const runtimeRegistry = await loadAndActivateRootPluginRegistry({
     workspaceDir,
     config,
     cache: false,

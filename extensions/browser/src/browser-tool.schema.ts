@@ -1,9 +1,3 @@
-/**
- * JSON schema for the Browser agent tool.
- *
- * The schema stays intentionally flat because provider function-tool validators
- * reject several nested union shapes that TypeBox can otherwise emit.
- */
 import {
   optionalFiniteNumberSchema,
   optionalNonNegativeIntegerSchema,
@@ -141,7 +135,6 @@ export function resolveBrowserToolCapabilities(params?: {
 function createBrowserActProperties(capabilities: BrowserToolCapabilities) {
   const supportsBatch = capabilities.actKinds.includes("batch");
   return {
-    // Common fields
     targetId: Type.Optional(Type.String({ description: TAB_REFERENCE_DESCRIPTION })),
     ref: Type.Optional(Type.String({ description: "snapshot ref." })),
     // batch - permissive children keep the provider schema flat; runtime validates each action.
@@ -154,40 +147,32 @@ function createBrowserActProperties(capabilities: BrowserToolCapabilities) {
     stopOnError: Type.Optional(
       Type.Boolean(supportsBatch ? { description: "Stop on error; default true." } : {}),
     ),
-    // click
     doubleClick: Type.Optional(Type.Boolean({ description: "Double-click/clickCoords." })),
     button: Type.Optional(Type.String()),
     modifiers: Type.Optional(Type.Array(Type.String())),
     ...(capabilities.actKinds.includes("clickCoords")
       ? { x: optionalFiniteNumberSchema(), y: optionalFiniteNumberSchema() }
       : {}),
-    // type
     text: Type.Optional(Type.String()),
     submit: Type.Optional(Type.Boolean()),
     slowly: Type.Optional(Type.Boolean()),
-    // press
     key: Type.Optional(
       Type.String({
         description: "Escape, Enter, Control+Shift+T; aliases Esc, Return, Del, Ctrl, Cmd.",
       }),
     ),
     delayMs: optionalNonNegativeIntegerSchema(),
-    // drag
     ...(capabilities.actKinds.includes("drag")
       ? { startRef: Type.Optional(Type.String()), endRef: Type.Optional(Type.String()) }
       : {}),
-    // select
     values: Type.Optional(Type.Array(Type.String())),
-    // fill - use permissive array of objects
     fields: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))),
-    // resize
     ...(capabilities.actKinds.includes("resize")
       ? {
           width: optionalPositiveIntegerSchema({ maximum: ACT_MAX_VIEWPORT_DIMENSION }),
           height: optionalPositiveIntegerSchema({ maximum: ACT_MAX_VIEWPORT_DIMENSION }),
         }
       : {}),
-    // wait
     timeMs: optionalNonNegativeIntegerSchema(),
     ...(capabilities.supportsNativeSnapshots !== false
       ? { selector: Type.Optional(Type.String()) }
@@ -196,7 +181,6 @@ function createBrowserActProperties(capabilities: BrowserToolCapabilities) {
     loadState: Type.Optional(Type.String()),
     textGone: Type.Optional(Type.String()),
     timeoutMs: optionalPositiveIntegerSchema(),
-    // evaluate
     ...(capabilities.actKinds.includes("evaluate") ? { fn: Type.Optional(Type.String()) } : {}),
   };
 }
@@ -204,7 +188,6 @@ function createBrowserActProperties(capabilities: BrowserToolCapabilities) {
 // IMPORTANT: OpenAI function tool schemas must have a top-level `type: "object"`.
 // A root-level `Type.Union([...])` compiles to `{ anyOf: [...] }` (no `type`),
 // which OpenAI rejects ("Invalid schema ... type: None"). Keep this schema an object.
-/** Provider-compatible Browser tool argument schema. */
 export function createBrowserToolSchema(capabilities: BrowserToolCapabilities) {
   const actProperties = createBrowserActProperties(capabilities);
   const actKindDescription = capabilities.actKinds.includes("batch")
@@ -320,7 +303,6 @@ const BrowserBatchAbortSchema = Type.Object(
   { additionalProperties: false },
 );
 
-/** Common structured result fields returned across Browser tool actions. */
 export const BrowserToolOutputSchema = Type.Object(
   {
     ok: Type.Optional(Type.Boolean()),

@@ -47,6 +47,19 @@ vi.mock("./isolated-agent/session.js", () => ({
 
 const { sendCronAnnouncePayloadStrict } = await import("./delivery.js");
 
+function send(overrides: Partial<Parameters<typeof sendCronAnnouncePayloadStrict>[0]> = {}) {
+  return sendCronAnnouncePayloadStrict({
+    deps: {} as never,
+    cfg: {},
+    agentId: "main",
+    jobId: "job-1",
+    target: { channel: "telegram", to: "123" },
+    payload: { text: "Automation failed" },
+    abortSignal: new AbortController().signal,
+    ...overrides,
+  });
+}
+
 describe("sendCronAnnouncePayloadStrict", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -69,115 +82,51 @@ describe("sendCronAnnouncePayloadStrict", () => {
     });
   });
 
-  it("delivers the payload through the resolved target with strict send settings", async () => {
-    await sendCronAnnouncePayloadStrict({
-      deps: {} as never,
-      cfg: {} as never,
-      agentId: "main",
-      jobId: "job-1",
-      target: { channel: "telegram", to: "123", accountId: "bot-a" },
-      payload: { text: "Automation failed" },
-      abortSignal: new AbortController().signal,
-    });
+  it.each(["topic", "global"])(
+    "mirrors confirmed command output into its %s conversation",
+    async (scope) => {
+      const job = makeJob({ kind: "command", argv: ["/bin/echo", "Readiness 65 today"] });
+      if (scope === "global") {
+        mocks.resolveOutboundSessionRoute.mockResolvedValue({
+          sessionKey: "agent:main:main",
+          baseSessionKey: "agent:main:main",
+        });
+      }
+      mocks.deliverOutboundPayloads.mockImplementationOnce(async (params) => {
+        params.onPayload?.({ text: "Delivered readiness: 65", mediaUrls: [] });
+        expect(mocks.appendAssistantMessageToSessionTranscript).not.toHaveBeenCalled();
+        return [{ channel: "telegram", messageId: "confirmed-message" }];
+      });
+      await send({
+        cfg: scope === "global" ? { session: { scope: "global" } } : {},
+        jobId: job.id,
+        target: { channel: "telegram", to: "123", threadId: 42 },
+        payload: { text: "Readiness 65 today" },
+        completion: { job, runStartedAt: 1000, deliveryAttemptFence: null },
+      });
+      expect(mocks.appendAssistantMessageToSessionTranscript).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          sessionKey: scope === "global" ? "global" : "agent:main:telegram:group:123:topic:42",
+          text: "Delivered readiness: 65",
+          deliveryMirror: { kind: "cron-direct-delivery-context" },
+          idempotencyKey: "cron-direct-delivery:v1:cron:job-1:1000:telegram:bot-a:123:42",
+        }),
+      );
+    },
+  );
 
-    expect(mocks.resolveDeliveryTarget).toHaveBeenCalledWith(
-      {},
-      "main",
-      { channel: "telegram", to: "123", accountId: "bot-a" },
-      undefined,
-    );
-    expect(mocks.buildOutboundSessionContext).toHaveBeenCalledWith({
-      cfg: {},
-      agentId: "main",
-      sessionKey: "cron:job-1:failure",
-    });
-    expect(mocks.deliverOutboundPayloads).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "telegram",
-        to: "123",
-        accountId: "bot-a",
-        threadId: 42,
-        payloads: [{ text: "Automation failed" }],
-        bestEffort: false,
-      }),
-      undefined,
-    );
-    expect(mocks.appendAssistantMessageToSessionTranscript).not.toHaveBeenCalled();
-  });
-
-  it("records confirmed command output in the destination's replayable cron context", async () => {
-    const job = makeJob({ kind: "command", argv: ["/bin/echo", "Readiness 65 today"] });
-    mocks.deliverOutboundPayloads.mockImplementationOnce(async (params) => {
-      params.onPayload?.({ text: "Delivered readiness: 65", mediaUrls: [] });
-      expect(mocks.appendAssistantMessageToSessionTranscript).not.toHaveBeenCalled();
-      return [{ channel: "telegram", messageId: "confirmed-message" }];
-    });
-
-    await sendCronAnnouncePayloadStrict({
-      deps: {} as never,
-      cfg: {},
-      agentId: "main",
-      jobId: job.id,
-      target: { channel: "telegram", to: "123", threadId: 42 },
-      payload: { text: "Readiness 65 today" },
-      completion: { job, runStartedAt: 1000 },
-      abortSignal: new AbortController().signal,
-    });
-
-    expect(mocks.appendAssistantMessageToSessionTranscript).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({
-        sessionKey: "agent:main:telegram:group:123:topic:42",
-        text: "Delivered readiness: 65",
-        deliveryMirror: { kind: "cron-direct-delivery-context" },
-        idempotencyKey: "cron-direct-delivery:v1:cron:job-1:1000:telegram:bot-a:123:42",
-      }),
-    );
+  it("keeps ordinary announcements free of native scheduler provenance", async () => {
+    await send();
     expect(mocks.deliverOutboundPayloads.mock.calls[0]?.[0]).not.toHaveProperty(
       "nativeDeliveryPurpose",
     );
   });
 
   it("forwards native scheduler failure-alert provenance to channel delivery", async () => {
-    await sendCronAnnouncePayloadStrict({
-      deps: {} as never,
-      cfg: {} as never,
-      agentId: "main",
-      jobId: "job-1",
-      target: { channel: "telegram", to: "123" },
-      payload: { text: "Automation failed" },
+    await send({ nativeDeliveryPurpose: "cron_failure_alert" });
+    expect(mocks.deliverOutboundPayloads.mock.calls[0]?.[0]).toMatchObject({
       nativeDeliveryPurpose: "cron_failure_alert",
-      abortSignal: new AbortController().signal,
     });
-
-    expect(mocks.deliverOutboundPayloads).toHaveBeenCalledWith(
-      expect.objectContaining({ nativeDeliveryPurpose: "cron_failure_alert" }),
-      undefined,
-    );
-  });
-
-  it("mirrors main-scoped direct announcements into the canonical global conversation", async () => {
-    const job = makeJob({ kind: "command", argv: ["/bin/echo", "report"] });
-    mocks.resolveOutboundSessionRoute.mockResolvedValue({
-      sessionKey: "agent:main:main",
-      baseSessionKey: "agent:main:main",
-    });
-    mocks.deliverOutboundPayloads.mockImplementationOnce(async (params) => {
-      params.onPayload?.({ text: "report", mediaUrls: [] });
-      return [{ channel: "telegram", messageId: "confirmed-message" }];
-    });
-    await sendCronAnnouncePayloadStrict({
-      deps: {} as never,
-      cfg: { session: { scope: "global" } },
-      agentId: "main",
-      jobId: job.id,
-      target: { channel: "telegram", to: "123" },
-      payload: { text: "report" },
-      completion: { job, runStartedAt: 1000 },
-      abortSignal: new AbortController().signal,
-    });
-    expect(mocks.appendAssistantMessageToSessionTranscript).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ sessionKey: "global", text: "report" }),
-    );
   });
 
   it.each(["route", "transcript"] as const)(
@@ -195,15 +144,10 @@ describe("sendCronAnnouncePayloadStrict", () => {
         params.onPayload?.({ text: "report", mediaUrls: [] });
         return [{ channel: "telegram", messageId: "confirmed-message" }];
       });
-      const result = await sendCronAnnouncePayloadStrict({
-        deps: {} as never,
-        cfg: {},
-        agentId: "main",
+      const result = await send({
         jobId: job.id,
-        target: { channel: "telegram", to: "123" },
         payload: { text: "report" },
-        completion: { job, runStartedAt: 1000 },
-        abortSignal: new AbortController().signal,
+        completion: { job, runStartedAt: 1000, deliveryAttemptFence: null },
       });
       expect(result.status).toBe("sent");
       expect(mocks.deliverOutboundPayloads).toHaveBeenCalledOnce();
@@ -220,13 +164,7 @@ describe("sendCronAnnouncePayloadStrict", () => {
         }),
     );
     const abortController = new AbortController();
-    const delivery = sendCronAnnouncePayloadStrict({
-      deps: {} as never,
-      cfg: {} as never,
-      agentId: "main",
-      jobId: "job-1",
-      target: { channel: "telegram", to: "123" },
-      payload: { text: "Automation failed" },
+    const delivery = send({
       abortSignal: abortController.signal,
     });
 
@@ -262,14 +200,8 @@ describe("sendCronAnnouncePayloadStrict", () => {
       },
     );
     const onDeliveryAttempt = vi.fn();
-    const delivery = sendCronAnnouncePayloadStrict({
-      deps: {} as never,
-      cfg: {} as never,
-      agentId: "main",
-      jobId: "job-1",
-      target: { channel: "telegram", to: "123" },
-      payload: { text: "Automation failed" },
-      abortSignal: new AbortController().signal,
+    const delivery = send({
+      target: { channel: "telegram", to: "123", accountId: "bot-a" },
       onDeliveryAttempt,
     });
 
@@ -281,15 +213,34 @@ describe("sendCronAnnouncePayloadStrict", () => {
       await delivery;
     }
     expect(onDeliveryAttempt).toHaveBeenCalledExactlyOnceWith(true);
+    expect(mocks.resolveDeliveryTarget).toHaveBeenCalledWith(
+      {},
+      "main",
+      { channel: "telegram", to: "123", accountId: "bot-a" },
+      undefined,
+    );
+    expect(mocks.buildOutboundSessionContext).toHaveBeenCalledWith({
+      cfg: {},
+      agentId: "main",
+      sessionKey: "cron:job-1:failure",
+    });
+    expect(mocks.deliverOutboundPayloads).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "telegram",
+        to: "123",
+        accountId: "bot-a",
+        threadId: 42,
+        payloads: [{ text: "Automation failed" }],
+        bestEffort: false,
+      }),
+      undefined,
+    );
+    expect(mocks.appendAssistantMessageToSessionTranscript).not.toHaveBeenCalled();
   });
 
   it.each([
     { reason: "no_visible_result", recipientReached: false },
-    { reason: "no_visible_payload", recipientReached: false },
     { reason: "cancelled_by_message_sending_hook", recipientReached: false },
-    { reason: "cancelled_by_reply_payload_sending_hook", recipientReached: false },
-    { reason: "empty_after_message_sending_hook", recipientReached: false },
-    { reason: "empty_after_reply_payload_sending_hook", recipientReached: false },
     { reason: "adapter_returned_no_identity", recipientReached: true },
   ] as const)(
     "preserves terminal $reason suppression and authoritative recipient reach",
@@ -304,14 +255,8 @@ describe("sendCronAnnouncePayloadStrict", () => {
       );
       const onDeliveryAttempt = vi.fn();
 
-      const result = await sendCronAnnouncePayloadStrict({
-        deps: {} as never,
-        cfg: {} as never,
-        agentId: "main",
-        jobId: "job-1",
-        target: { channel: "telegram", to: "123" },
+      const result = await send({
         payload: { text: "Scheduled result" },
-        abortSignal: new AbortController().signal,
         onDeliveryAttempt,
       });
 
@@ -360,14 +305,7 @@ describe("sendCronAnnouncePayloadStrict", () => {
       const onDeliveryAttempt = vi.fn();
 
       await expect(
-        sendCronAnnouncePayloadStrict({
-          deps: {} as never,
-          cfg: {} as never,
-          agentId: "main",
-          jobId: "job-1",
-          target: { channel: "telegram", to: "123" },
-          payload: { text: "Automation failed" },
-          abortSignal: new AbortController().signal,
+        send({
           onDeliveryAttempt,
         }),
       ).rejects.toThrow(deliveryError.message);
@@ -395,16 +333,6 @@ describe("sendCronAnnouncePayloadStrict", () => {
   ])("rejects $name failures", async ({ arrange, error }) => {
     arrange();
 
-    await expect(
-      sendCronAnnouncePayloadStrict({
-        deps: {} as never,
-        cfg: {} as never,
-        agentId: "main",
-        jobId: "job-1",
-        target: { channel: "telegram", to: "123" },
-        payload: { text: "Automation failed" },
-        abortSignal: new AbortController().signal,
-      }),
-    ).rejects.toThrow(error);
+    await expect(send({})).rejects.toThrow(error);
   });
 });

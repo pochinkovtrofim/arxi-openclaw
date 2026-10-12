@@ -26,6 +26,7 @@ export type UserMessageEvent =
         | "heartbeat_failure"
         | "media_delivery_failed"
         | "media_file_not_found"
+        | "media_invalid_reference"
         | "media_unsupported"
         | "message_order"
         | "missing_credentials"

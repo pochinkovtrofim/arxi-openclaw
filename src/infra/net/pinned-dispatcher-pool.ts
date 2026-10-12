@@ -133,10 +133,8 @@ export class PinnedDispatcherPool {
     this.entries.clear();
     await Promise.all(
       entries.map((entry) => {
-        if (entry.idleTimer) {
-          clearTimeout(entry.idleTimer);
-          entry.idleTimer = undefined;
-        }
+        clearTimeout(entry.idleTimer);
+        entry.idleTimer = undefined;
         // Explicit lifecycle shutdown is bounded by closeDispatcher and must not
         // wait indefinitely for an abandoned response-body finalizer.
         return this.startClose(entry);
@@ -174,10 +172,8 @@ export class PinnedDispatcherPool {
     if (this.entries.get(entry.key) === entry) {
       this.entries.delete(entry.key);
     }
-    if (entry.idleTimer) {
-      clearTimeout(entry.idleTimer);
-      entry.idleTimer = undefined;
-    }
+    clearTimeout(entry.idleTimer);
+    entry.idleTimer = undefined;
     if (entry.activeLeases === 0) {
       void this.startClose(entry);
     }

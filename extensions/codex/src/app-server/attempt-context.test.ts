@@ -15,7 +15,7 @@ import { useAutoCleanupTempDirTracker, withTempDir } from "openclaw/plugin-sdk/t
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   buildCodexOpenClawPromptContext,
-  buildCodexWatchedSessionsContext,
+  prepareCodexWatchedSessionsContext,
   buildCodexSystemPromptReport,
   readContextEngineThreadBootstrapProjection,
   readMirroredSessionHistoryMessages,
@@ -208,7 +208,7 @@ describe("Codex app-server attempt context", () => {
       });
       expect(context.memoryToolRouted).toBe(false);
       expect(context.memoryToolNames).toEqual([]);
-      expect(context.memoryCollaborationInstructions).toBe(
+      expect(context.memoryInstructions).toBe(
         enabled && !lightweight ? "Recall using knowledge_lookup." : undefined,
       );
       if (lightweight) {
@@ -255,12 +255,12 @@ describe("Codex app-server attempt context", () => {
           ringZeroActive: false,
         });
       for (let turn = 0; turn < 2; turn++) {
-        expect((await build()).turnScopedDeveloperInstructions).toContain("current shared rules");
+        expect((await build()).personaInstructions).toContain("current shared rules");
         expect(await fs.readFile(agents, "utf8")).toBe("old birth rules");
       }
       clearInternalHooks();
       const personal = await build();
-      expect(personal.turnScopedDeveloperInstructions ?? "").not.toContain("old birth rules");
+      expect(personal.personaInstructions ?? "").not.toContain("old birth rules");
     });
   });
 
@@ -303,8 +303,8 @@ describe("Codex app-server attempt context", () => {
       expect(context.threadDeveloperInstructions).not.toContain(
         path.join(executionDir, "AGENTS.md"),
       );
-      expect(context.turnScopedDeveloperInstructions).toContain("Canonical agent soul");
-      expect(context.turnScopedDeveloperInstructions).not.toContain("Canonical agent instructions");
+      expect(context.personaInstructions).toContain("Canonical agent soul");
+      expect(context.personaInstructions).not.toContain("Canonical agent instructions");
       expect(context.memoryToolRouted).toBe(true);
       expect(context.promptContext).toBeUndefined();
     } finally {
@@ -466,7 +466,7 @@ describe("Codex app-server attempt context", () => {
     });
   });
 
-  it("stitches watched-session context into the per-turn OpenClaw prompt context", () => {
+  it("stitches watched-session context into the per-turn OpenClaw prompt context", async () => {
     const attempt = { config: {} } as EmbeddedRunAttemptParams;
 
     expect(
@@ -481,7 +481,7 @@ describe("Codex app-server attempt context", () => {
 
     // No ambient watches (and no state) must render nothing, not an empty section.
     expect(
-      buildCodexWatchedSessionsContext({
+      await prepareCodexWatchedSessionsContext({
         attempt,
         dynamicTools: [
           {
@@ -492,6 +492,7 @@ describe("Codex app-server attempt context", () => {
           },
         ],
         sessionKey: "agent:codex-test:main",
+        assertCurrent: () => {},
       }),
     ).toBe(undefined);
   });

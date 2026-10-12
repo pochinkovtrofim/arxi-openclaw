@@ -90,7 +90,6 @@ export function mockLaunchedChrome(
     exe: { kind: "chromium", path: "/usr/bin/chromium" },
     userDataDir: "/tmp/openclaw-test",
     cdpPort: 18800,
-    startedAt: Date.now(),
     proc,
   };
   launchOpenClawChrome.mockResolvedValue(running);

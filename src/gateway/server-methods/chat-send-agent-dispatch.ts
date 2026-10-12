@@ -6,6 +6,7 @@ import {
 } from "../../../packages/gateway-protocol/src/client-info.js";
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import { classifyAgentRunTerminalOutcome } from "../../agents/agent-run-terminal-outcome.js";
+import { resolveWebchatPromptCacheKey } from "../../agents/embedded-agent-runner/run/session-boundary-prompt-cache-key.js";
 import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
 import { dispatchInboundMessageWithProjectedDispatcher } from "../../auto-reply/dispatch.js";
 import type { ReplyDispatchRun } from "../../auto-reply/get-reply-options.types.js";
@@ -25,10 +26,7 @@ import { tryResolveSessionCompatibilityOwnerAgentId } from "../session-request-a
 import { buildAbortedChatSendPayload } from "./chat-abort-authorization.js";
 import { broadcastChatDelta, broadcastChatError, broadcastChatFinal } from "./chat-broadcast.js";
 import type { StartChatDispatchParams } from "./chat-send-agent-dispatch.types.js";
-import {
-  resolveWebchatPromptCacheKey,
-  scheduleChatDashboardSessionTitle,
-} from "./chat-send-background.js";
+import { scheduleChatDashboardSessionTitle } from "./chat-send-background.js";
 import { readChatSendReplyPayload } from "./chat-send-command-replies.js";
 import {
   createChatSendDispatchErrorLifecycle,
@@ -122,14 +120,16 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
   let { messageInjectionAttempt } = injection;
   const { chatSendAckedAtMs, chatSendTiming } = timing;
 
-  const titleReady = createDeferredCore();
+  // The first release wins: true when reply progress frees naming while the turn still runs.
+  const titleReady = createDeferredCore<boolean>();
+  const turnSettled = createDeferredCore();
   let titleWaiting = true;
   let stopTitleWait: (() => void) | undefined;
-  const releaseTitle = () => {
+  const releaseTitle = (duringTurn: boolean) => {
     stopTitleWait?.();
     stopTitleWait = undefined;
     titleWaiting = false;
-    titleReady.resolve();
+    titleReady.resolve(duringTurn);
   };
 
   const jobSessionBinding = admission.sessionBinding;
@@ -182,6 +182,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
     session,
     hasCronCreatorAuthority: cronCreatorAuthority !== undefined,
     suppressReplies: progressRefresh,
+    releaseSourceWorkAdmission: admission.releaseSourceWorkAdmission,
     retainWorkAdmission: retainGatewayWorkAdmission,
     armOperatorRunCancellation: admission.armOperatorRunCancellation,
     retireOperatorRunCancellation: admission.retireOperatorRunCancellation,
@@ -401,7 +402,7 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
                         event.stream === "thinking" ||
                         event.stream === "approval"
                       ) {
-                        releaseTitle();
+                        releaseTitle(true);
                       }
                     });
                   }
@@ -693,7 +694,8 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
       await dispatch;
     } finally {
       // Empty, rejected, and interrupted turns still receive an independent title.
-      releaseTitle();
+      releaseTitle(false);
+      turnSettled.resolve();
       await dispatchErrorLifecycle.finalize();
       // Terminal lifecycle can precede owner release; publish exact liveness after cleanup.
       emitSessionsChanged(
@@ -712,6 +714,6 @@ export function startChatDispatch(params: StartChatDispatchParams): void {
   })();
   scheduleChatDashboardSessionTitle(
     { admittedSessionId, agentId, cfg, context, request, sessionKey, storePath },
-    titleReady.promise,
+    { released: titleReady.promise, settled: turnSettled.promise },
   );
 }

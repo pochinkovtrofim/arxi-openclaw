@@ -52,10 +52,6 @@ import {
 import { formatScheduledMcpIdentityMismatch } from "./scheduled-mcp-identity.js";
 import { releaseLeasedSharedCodexAppServerClient } from "./shared-client.js";
 
-function isAuthorityResolutionOperationAbort(error: unknown, signal: AbortSignal | undefined) {
-  return signal?.aborted === true && error === signal.reason;
-}
-
 export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   const {
     connection,
@@ -262,7 +258,8 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
               // same live turn. Substantive discovery/auth/policy failures stay cached.
               if (
                 creatorAuthorityPromise === pending &&
-                isAuthorityResolutionOperationAbort(error, options?.signal)
+                options?.signal?.aborted === true &&
+                error === options.signal.reason
               ) {
                 creatorAuthorityPromise = undefined;
               }
@@ -277,7 +274,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     runAbortController.signal.throwIfAborted();
     connection.assertCurrent();
     const client = await connection.attemptClientFactory({
-      assertCurrent: connection.assertCurrent,
+      assertCurrent: connection.assertLegacyCurrent,
       startOptions: connection.appServer.start,
       authProfileId: connection.startupClientAuthProfileId,
       agentDir,
@@ -287,6 +284,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     try {
       nativeSpecs = await loadCodexNativeToolCatalog({
         client,
+        authority: connection.authority,
         binding: mutable.startupBinding,
         appServer: connection.appServer,
         agentDir,
@@ -475,52 +473,54 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     const missingScheduledAccountCap =
       scheduledAccountMcp && hasRequesterScopedMcp && !hasFiniteScheduledAccountCap;
     scopedMcpTools =
-      authenticatedScheduledMode && !mayResolveBackgroundMcp
-        ? missingScheduledAccountCap
-          ? {
-              tools: [],
-              advertisedTools: [],
-              allocatedToolNames: [],
-              diagnosticNotice:
-                "Configured MCP is incomplete for this scheduled run: the account automation has no explicit finite toolsAllow. Do not claim MCP-backed work succeeded; report this blocker to the operator.",
-              dispose: async () => undefined,
-            }
-          : undefined
-        : await materializeRequesterScopedMcpToolsForHarnessRun({
-            sessionId: params.sessionId,
-            sessionKey: params.sessionKey,
-            workspaceDir: effectiveWorkspace,
-            agentDir: policyContext.agentDir,
-            cfg: params.config,
-            manifestRegistry: bundleManifestRegistry,
-            toolOverrides: codexMcpToolOverrides,
-            // Authenticated scheduled runs may resolve only providers that explicitly
-            // accept canonical agent + session identity without a live requester.
-            // Never replay the creator's sender, account, channel, or conversation:
-            // per-requester OAuth and requester-required resolvers must stay closed.
-            ...(mayResolveBackgroundMcp
-              ? {}
-              : {
-                  requesterSenderId: params.senderId,
-                  agentAccountId: params.agentAccountId,
-                  messageChannel: params.messageChannel ?? params.messageProvider,
-                  chatType: params.chatType,
-                  conversationId: params.chatId ?? params.groupId ?? params.messageTo,
-                }),
-            agentId: sessionAgentId,
-            runtimeGeneration: params.lifecycleGeneration,
-            traceId: params.diagnosticTrace?.traceId,
-            reservedToolNames,
-            toolsAllow: params.toolsAllow,
-            policyContext,
-            ...(mayResolveBackgroundMcp
-              ? { scheduledCodexApproval: { autoApprove: autoApproveScheduledMcp } }
-              : {
-                  autoApproveCodexAppServerApprovals: autoApproveScheduledMcp,
-                  requestInteractiveCodexApproval: requestRequesterMcpApproval,
-                }),
-            warn: (message) => embeddedAgentLog.warn(message),
-          });
+      params.requireWorkspaceOnly === true
+        ? undefined
+        : authenticatedScheduledMode && !mayResolveBackgroundMcp
+          ? missingScheduledAccountCap
+            ? {
+                tools: [],
+                advertisedTools: [],
+                allocatedToolNames: [],
+                diagnosticNotice:
+                  "Configured MCP is incomplete for this scheduled run: the account automation has no explicit finite toolsAllow. Do not claim MCP-backed work succeeded; report this blocker to the operator.",
+                dispose: async () => undefined,
+              }
+            : undefined
+          : await materializeRequesterScopedMcpToolsForHarnessRun({
+              sessionId: params.sessionId,
+              sessionKey: params.sessionKey,
+              workspaceDir: effectiveWorkspace,
+              agentDir: policyContext.agentDir,
+              cfg: params.config,
+              manifestRegistry: bundleManifestRegistry,
+              toolOverrides: codexMcpToolOverrides,
+              // Authenticated scheduled runs may resolve only providers that explicitly
+              // accept canonical agent + session identity without a live requester.
+              // Never replay the creator's sender, account, channel, or conversation:
+              // per-requester OAuth and requester-required resolvers must stay closed.
+              ...(mayResolveBackgroundMcp
+                ? {}
+                : {
+                    requesterSenderId: params.senderId,
+                    agentAccountId: params.agentAccountId,
+                    messageChannel: params.messageChannel ?? params.messageProvider,
+                    chatType: params.chatType,
+                    conversationId: params.chatId ?? params.groupId ?? params.messageTo,
+                  }),
+              agentId: sessionAgentId,
+              runtimeGeneration: params.lifecycleGeneration,
+              traceId: params.diagnosticTrace?.traceId,
+              reservedToolNames,
+              toolsAllow: params.toolsAllow,
+              policyContext,
+              ...(mayResolveBackgroundMcp
+                ? { scheduledCodexApproval: { autoApprove: autoApproveScheduledMcp } }
+                : {
+                    autoApproveCodexAppServerApprovals: autoApproveScheduledMcp,
+                    requestInteractiveCodexApproval: requestRequesterMcpApproval,
+                  }),
+              warn: (message) => embeddedAgentLog.warn(message),
+            });
     if (mayResolveBackgroundMcp && !scopedMcpTools) {
       scopedMcpTools = {
         tools: [],
@@ -544,7 +544,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     // all: an unreserved collision could otherwise transfer a persisted tool name
     // (and its finite authority) between unrelated canonical tools across runs.
     configuredMcp =
-      configuredMcpSurface && !resolverAllocationIncomplete
+      params.requireWorkspaceOnly !== true && configuredMcpSurface && !resolverAllocationIncomplete
         ? await materializeStaticMcpToolsForHarnessRun({
             sessionId: params.sessionId,
             sessionKey: params.sessionKey,

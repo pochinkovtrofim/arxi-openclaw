@@ -3,7 +3,9 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
+import { quoteCliArg } from "../cli/quote-cli-arg.js";
 import { captureUpdateCommandExecutorAuthority } from "../cli/update-cli/update-command-executor.js";
+import { resolveBunRuntimeInfo } from "../daemon/runtime-paths.js";
 import { requireDirectorySync, syncDirectory } from "./directory-durability.js";
 import { retainMutationAuthority } from "./mutation-authority.js";
 import {
@@ -23,7 +25,13 @@ import {
   resolvePackageActivationAnchor,
   encodePackageActivationLauncher,
 } from "./package-update-activation-journal.js";
+import { packageActivationRuntimeIdentity } from "./package-update-activation-paths.js";
 import { packageActivationRuntimeEntrypoint } from "./package-update-activation-runtime-assets.js";
+import {
+  packageActivationSqliteEnvironment,
+  readPackageActivationSqliteLibrary,
+  sealPackageActivationSqliteLibrary,
+} from "./package-update-activation-sqlite.js";
 import {
   createPackageIntegrityReader,
   type PackageIntegrityFingerprint,
@@ -58,9 +66,10 @@ function packageActivationRecoveryCommand(
   anchor: string,
   operationId: string,
   helper = resolvePackageActivationHelper(anchor),
+  sqliteLibrary?: string,
 ): string {
-  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
-  return `${quote(node)} ${quote(helper)} --anchor ${quote(anchor)} --operation ${quote(operationId)}`;
+  const prefix = sqliteLibrary ? `${packageActivationSqliteEnvironment(sqliteLibrary)} ` : "";
+  return `${prefix}${quoteCliArg(node)} ${quoteCliArg(helper)} --anchor ${quoteCliArg(anchor)} --operation ${quoteCliArg(operationId)}`;
 }
 
 export function resolvePackageActivationRecoveryCommand(record: PackageActivationRecord): string {
@@ -78,7 +87,17 @@ export function resolvePackageActivationRecoveryCommand(record: PackageActivatio
     helper = custody.moved ? custody.destination : custody.source;
   }
   const node = record.descriptor.recoveryNodePath;
-  return packageActivationRecoveryCommand(node, anchor, record.descriptor.operationId, helper);
+  const bytes = fs.readFileSync(helper);
+  if (createHash("sha256").update(bytes).digest("hex") !== record.descriptor.helperDigest) {
+    throw new Error("Package recovery helper digest changed.");
+  }
+  return packageActivationRecoveryCommand(
+    node,
+    anchor,
+    record.descriptor.operationId,
+    helper,
+    readPackageActivationSqliteLibrary(bytes),
+  );
 }
 
 export async function preparePackageActivationJournal(
@@ -104,21 +123,41 @@ export async function preparePackageActivationJournal(
   const previousLauncherRoot = params.previousLauncherRoot
     ? resolveUpdateInstallRoot(params.previousLauncherRoot)
     : undefined;
-  const node = fs.realpathSync(params.options.nodeRunner);
+  const runtime = params.options.runtime;
+  const node = fs.realpathSync(runtime.path);
+  const assertRuntime = () => {
+    if (node !== runtime.path || packageActivationRuntimeIdentity(node) !== runtime.identity) {
+      throw new Error("The selected package recovery executable changed after runtime preflight.");
+    }
+  };
+  assertRuntime();
   for (const root of [liveRoot, stageRoot, anchor]) {
     if (node === root || node.startsWith(`${root}${path.sep}`)) {
       throw new Error("Recovery requires an external Node executable.");
     }
   }
-  const version = spawnSync(node, ["--version"], {
-    env: {},
-    encoding: "utf8",
-    timeout: 5000,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (version.status !== 0 || !isSupportedNodeVersion(version.stdout.trim().replace(/^v/u, ""))) {
-    throw new Error("Recovery requires a supported external Node executable.");
+  let sqliteLibrary: string | undefined;
+  if (runtime.kind === "bun") {
+    const info = await resolveBunRuntimeInfo(node, undefined, runtime.env ?? process.env);
+    if (info.status !== "supported") {
+      throw new Error("Recovery requires a supported external Bun executable.", {
+        cause: info.status === "probe-failed" ? info.error : undefined,
+      });
+    }
+    sqliteLibrary = info.sqliteLibraryPath;
+  } else {
+    const version = spawnSync(node, ["--version"], {
+      env: {},
+      encoding: "utf8",
+      timeout: 5000,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    if (version.status !== 0 || !isSupportedNodeVersion(version.stdout.trim().replace(/^v/u, ""))) {
+      throw new Error("Recovery requires a supported external Node executable.");
+    }
   }
+  assertCurrent();
+  assertRuntime();
   const reader = createPackageIntegrityReader();
   const candidate = await reader.tree(stageRoot);
   const launchers = [];
@@ -142,7 +181,7 @@ export async function preparePackageActivationJournal(
     throw new Error("Package publication recovery requires same-filesystem directories.");
   }
   // A completed receipt may be replaced only by this new, genuinely admitted
-  // operation in the same original store. Legacy/incomplete artifacts refuse.
+  // operation under its current fence. Legacy/incomplete artifacts refuse.
   assertPackageActivationLayout(anchor);
   const priorJournal = fs.lstatSync(resolvePackageActivationControl(anchor), {
     throwIfNoEntry: false,
@@ -176,8 +215,12 @@ export async function preparePackageActivationJournal(
     sourceParentIdentity: packageActivationIdentity(path.dirname(entry.source), true),
   }));
   // Preflight the sealed helper before creating any blocking recovery artifact.
-  const helperBytes = readPackageActivationRuntime();
+  const helperBytes = sealPackageActivationSqliteLibrary(
+    readPackageActivationRuntime(),
+    sqliteLibrary,
+  );
   assertCurrent();
+  assertRuntime();
   // These objects remain inside the existing stage cleanup owner's prefix
   // until the stable slot records their exact identities. A failed replacement
   // cannot create blocking artifacts over the prior completion receipt.
@@ -190,7 +233,13 @@ export async function preparePackageActivationJournal(
     ? path.join(stagedControl, "recovery.mjs")
     : `${stagedAnchor}.recovery.mjs`;
   assertCurrent();
-  fs.writeFileSync(stagedHelper, helperBytes, { flag: "wx", mode: 0o600, flush: true });
+  const helperFd = fs.openSync(stagedHelper, "wx", 0o600);
+  try {
+    fs.writeFileSync(helperFd, helperBytes);
+    fs.fsyncSync(helperFd);
+  } finally {
+    fs.closeSync(helperFd);
+  }
   // The durable journal may refer to these staged objects immediately after
   // its CAS. Persist their contents and names before handing cleanup custody off.
   for (const directory of new Set([
@@ -274,17 +323,27 @@ export async function preparePackageActivationJournal(
       throw error;
     }
   }
-  const command = packageActivationRecoveryCommand(node, anchor, descriptor.operationId);
+  const command = packageActivationRecoveryCommand(
+    node,
+    anchor,
+    descriptor.operationId,
+    undefined,
+    sqliteLibrary,
+  );
   assertCurrent();
   // A replacement's bootstrap command is valid only while that recorded helper
   // remains staged. Never advertise the stable name before its inode is present.
   if (prior) {
     params.options.onPrepared(
-      `${packageActivationRecoveryCommand(node, anchor, descriptor.operationId, stagedHelper)} status`,
+      `${packageActivationRecoveryCommand(node, anchor, descriptor.operationId, stagedHelper, sqliteLibrary)} status`,
     );
   }
   await completePackageActivationCustody(anchor, journal, assertCurrent, () =>
     params.options.onPrepared(`${command} status`),
   );
-  return { anchor, journal, command };
+  const initial = journal.read();
+  // Carry in-process entry observations without expanding the durable journal.
+  initial.descriptor.previous = params.previous;
+  initial.descriptor.candidate = candidate;
+  return { anchor, journal, command, initial };
 }

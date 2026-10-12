@@ -130,31 +130,6 @@ function resolveThinkingCatalogEntry(
   );
 }
 
-function resolveThinkingPolicyContext(params: ThinkingProfileParams) {
-  const providerRaw = normalizeOptionalString(params.provider);
-  const modelId = normalizeOptionalString(params.model) ?? "";
-  const modelKey = normalizeOptionalLowercaseString(params.model) ?? "";
-  const candidate = resolveThinkingCatalogEntry(params);
-  const thinkingPolicyProvider = normalizeOptionalString(candidate?.thinkingPolicyProvider);
-  // Prepared catalogs keep the logical model identity but record the concrete
-  // runtime policy owner so every session and directive surface stays aligned.
-  const normalizedProvider = providerRaw
-    ? normalizeProviderId(thinkingPolicyProvider ?? providerRaw)
-    : "";
-  return {
-    catalogEntry: candidate,
-    normalizedProvider,
-    modelId,
-    modelKey,
-    api: candidate?.api,
-    baseUrl: candidate?.baseUrl,
-    reasoning: params.configuredReasoning ?? candidate?.configuredReasoning ?? candidate?.reasoning,
-    thinkingLevelMap: candidate?.thinkingLevelMap,
-    ...(candidate?.params ? { params: candidate.params } : {}),
-    compat: candidate?.compat,
-  };
-}
-
 function normalizeProfileLevel(
   level: ProviderThinkingProfile["levels"][number],
 ): RankedThinkingLevelOption | undefined {
@@ -200,14 +175,14 @@ function normalizeThinkingProfile(
   return normalized;
 }
 
-function buildBaseThinkingProfile(defaultLevel?: ThinkLevel | null): ResolvedThinkingProfile {
+function buildBaseThinkingProfile(): ResolvedThinkingProfile {
   return {
     levels: BASE_THINKING_LEVELS.map((id) => ({
       id,
       label: id,
       rank: THINKING_LEVEL_RANKS[id],
     })),
-    defaultLevel,
+    defaultLevel: undefined,
   };
 }
 
@@ -251,13 +226,30 @@ function appendCatalogAdvancedThinkingLevels(
 
 /** Resolve only provider-owned effort choices, before adding harness modes. */
 function resolveModelThinkingProfile(params: ThinkingProfileParams): ResolvedThinkingProfile {
-  const context = resolveThinkingPolicyContext(params);
-  if (!context.normalizedProvider) {
+  const providerRaw = normalizeOptionalString(params.provider);
+  const candidate = resolveThinkingCatalogEntry(params);
+  // Prepared catalogs retain the logical model identity and name its runtime policy owner.
+  const provider = providerRaw
+    ? normalizeProviderId(normalizeOptionalString(candidate?.thinkingPolicyProvider) ?? providerRaw)
+    : "";
+  if (!provider) {
     return buildBaseThinkingProfile();
   }
+  const context = {
+    provider,
+    modelId: normalizeOptionalString(params.model) ?? "",
+    agentRuntime: params.agentRuntime,
+    api: candidate?.api,
+    baseUrl: candidate?.baseUrl,
+    reasoning: params.configuredReasoning ?? candidate?.configuredReasoning ?? candidate?.reasoning,
+    thinkingLevelMap: candidate?.thinkingLevelMap,
+    ...(candidate?.params ? { params: candidate.params } : {}),
+    compat: candidate?.compat,
+  };
+  // Native harness catalogs own their exact effort list for that runtime.
   if (
-    context.catalogEntry?.nativeRuntime &&
-    context.catalogEntry.nativeRuntime === params.agentRuntime &&
+    candidate?.nativeRuntime &&
+    candidate.nativeRuntime === params.agentRuntime &&
     context.compat?.supportedReasoningEfforts
   ) {
     if (context.reasoning === false || context.compat.supportedReasoningEfforts.length === 0) {
@@ -273,21 +265,10 @@ function resolveModelThinkingProfile(params: ThinkingProfileParams): ResolvedThi
       context.thinkingLevelMap,
     );
   }
-  const providerContext = {
-    provider: context.normalizedProvider,
-    modelId: context.modelId,
-    agentRuntime: params.agentRuntime,
-    api: context.api,
-    baseUrl: context.baseUrl,
-    reasoning: context.reasoning,
-    thinkingLevelMap: context.thinkingLevelMap,
-    ...(context.params ? { params: context.params } : {}),
-    compat: context.compat,
-  };
   const providerProfileParams = {
-    provider: context.normalizedProvider,
-    context: providerContext,
-    ...(context.catalogEntry ? { catalogEntry: context.catalogEntry } : {}),
+    provider,
+    context,
+    ...(candidate ? { catalogEntry: candidate } : {}),
   };
   const providerProfile =
     typeof params.providerPolicySource === "object"
@@ -325,7 +306,10 @@ function resolveModelThinkingProfile(params: ThinkingProfileParams): ResolvedThi
     return normalizeThinkingProfile(pluginProfile, context.thinkingLevelMap, mappedLevels);
   }
   if (context.reasoning === false) {
-    return buildOffOnlyThinkingProfile();
+    return {
+      levels: [{ id: "off", label: "off", rank: THINKING_LEVEL_RANKS.off }],
+      defaultLevel: "off",
+    };
   }
 
   const profile = buildBaseThinkingProfile();

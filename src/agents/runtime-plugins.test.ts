@@ -5,7 +5,6 @@ const hoisted = vi.hoisted(() => ({
   loadPluginMetadataSnapshot: vi.fn(),
   getActivePluginRegistry: vi.fn(),
   getActivePluginRegistryWorkspaceDir: vi.fn(),
-  getActivePluginRuntimeSubagentMode: vi.fn(),
   loadPluginRegistryHandle: vi.fn(),
   adoptRuntimeContextEngineRegistrations: vi.fn((target: unknown) => target),
   adoptRuntimeWidgetPresenterRegistrations: vi.fn((target: unknown) => target),
@@ -24,7 +23,6 @@ vi.mock("../context-engine/registry.js", () => ({
 vi.mock("../plugins/runtime.js", () => ({
   getActivePluginRegistry: hoisted.getActivePluginRegistry,
   getActivePluginRegistryWorkspaceDir: hoisted.getActivePluginRegistryWorkspaceDir,
-  getActivePluginRuntimeSubagentMode: hoisted.getActivePluginRuntimeSubagentMode,
 }));
 
 vi.mock("../plugins/widget-presenters.js", () => ({
@@ -77,6 +75,7 @@ import {
 import { bindPluginRuntimeArtifactSelection } from "../plugins/plugin-runtime-artifact-binding.js";
 import { resolvePluginRuntimeArtifactSelection } from "../plugins/plugin-runtime-artifact-selection.js";
 import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
+import { bindPluginRegistryGatewayOwner } from "../plugins/registry-lifecycle.js";
 import {
   getPluginRuntimeGatewayRequestScope,
   withPluginRuntimeRegistryScope,
@@ -157,7 +156,7 @@ function createGatewayRegistryFixture() {
   setPluginRuntimeLoadContext(activeRegistry, activationContext);
   hoisted.getActivePluginRegistry.mockReturnValue(activeRegistry);
   hoisted.getActivePluginRegistryWorkspaceDir.mockReturnValue(workspaceDir);
-  hoisted.getActivePluginRuntimeSubagentMode.mockReturnValue("gateway-bindable");
+  bindPluginRegistryGatewayOwner(activeRegistry, { current: () => activeRegistry });
   return { config, workspaceDir, metadataSnapshot, activeRegistry, activationContext };
 }
 
@@ -171,7 +170,6 @@ describe("agent runtime plugin registries", () => {
       }));
     hoisted.getActivePluginRegistry.mockReset().mockReturnValue(undefined);
     hoisted.getActivePluginRegistryWorkspaceDir.mockReset().mockReturnValue(undefined);
-    hoisted.getActivePluginRuntimeSubagentMode.mockReset().mockReturnValue("default");
     hoisted.loadPluginRegistryHandle
       .mockReset()
       .mockImplementation(() => createEmptyPluginRegistry());
@@ -454,18 +452,20 @@ describe("agent runtime plugin registries", () => {
       pluginIds: [...(basePluginIds ?? []), "selected-provider"],
     }));
 
-    const prepared = await prepareWorkspacePluginRegistries(
-      {
-        agentDir: "/tmp/agent",
-        allowGatewaySubagentBinding: true,
-        config,
-        runtimePluginSelections: [{ provider: "selected", modelId: "model" }],
-        workspaceDir,
-      },
-      metadataSnapshot as never,
-      vi.fn(),
-      createPreparedInboundRegistryLoader(),
-      true,
+    const prepared = await withPluginRuntimeRegistryScope(activeRegistry, () =>
+      prepareWorkspacePluginRegistries(
+        {
+          agentDir: "/tmp/agent",
+          allowGatewaySubagentBinding: true,
+          config,
+          runtimePluginSelections: [{ provider: "selected", modelId: "model" }],
+          workspaceDir,
+        },
+        metadataSnapshot as never,
+        vi.fn(),
+        createPreparedInboundRegistryLoader(),
+        true,
+      ),
     );
 
     expect(prepared.inboundPluginRegistry === activeRegistry).toBe(true);
@@ -496,9 +496,11 @@ describe("agent runtime plugin registries", () => {
         ).toBe(metadataSnapshot);
         expect(getCurrentPluginMetadataSnapshot(readParams)).toBeUndefined();
 
-        const inbound = createPreparedInboundRegistryLoader()(
-          { allowGatewaySubagentBinding: true, config, workspaceDir },
-          metadataSnapshot,
+        const inbound = withPluginRuntimeRegistryScope(activeRegistry, () =>
+          createPreparedInboundRegistryLoader()(
+            { allowGatewaySubagentBinding: true, config, workspaceDir },
+            metadataSnapshot,
+          ),
         );
 
         expect(inbound === activeRegistry).toBe(true);
@@ -531,10 +533,13 @@ describe("agent runtime plugin registries", () => {
         input.env = { OPENCLAW_STATE_DIR: "/tmp/custom-state" };
         break;
       case "non-bindable mode":
-        hoisted.getActivePluginRuntimeSubagentMode.mockReturnValue("default");
+        input.allowGatewaySubagentBinding = false;
         break;
       case "different workspace":
-        hoisted.getActivePluginRegistryWorkspaceDir.mockReturnValue("/tmp/other");
+        setPluginRuntimeLoadContext(activeRegistry, {
+          ...activationContext,
+          workspaceDir: "/tmp/other",
+        });
         break;
       case "stale metadata generation":
         fixture.metadataSnapshot = { ...fixture.metadataSnapshot };
@@ -553,7 +558,9 @@ describe("agent runtime plugin registries", () => {
         break;
     }
 
-    const inbound = createPreparedInboundRegistryLoader()(input, fixture.metadataSnapshot);
+    const inbound = withPluginRuntimeRegistryScope(activeRegistry, () =>
+      createPreparedInboundRegistryLoader()(input, fixture.metadataSnapshot),
+    );
 
     expect(inbound === activeRegistry).toBe(false);
     expect(hoisted.loadPluginRegistryHandle).toHaveBeenCalledOnce();

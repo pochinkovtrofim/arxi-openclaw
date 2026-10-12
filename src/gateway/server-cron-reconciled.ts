@@ -27,11 +27,9 @@ export function createGatewayCronReconciliation(params: {
     ctx: PluginCoreCronReconciledContext,
   ) => Promise<void>;
 }): GatewayCronReconciliation {
-  let lifecycleGeneration = 0;
   let activeAbortController: AbortController | undefined;
 
   const supersedeActive = () => {
-    lifecycleGeneration += 1;
     activeAbortController?.abort();
     activeAbortController = undefined;
   };
@@ -39,7 +37,6 @@ export function createGatewayCronReconciliation(params: {
   return {
     arm: ({ reason, config, cronState }) => {
       supersedeActive();
-      const generation = lifecycleGeneration;
       const abortController = new AbortController();
       activeAbortController = abortController;
       const cron = cronState.cron;
@@ -56,12 +53,8 @@ export function createGatewayCronReconciliation(params: {
           }
           completed = true;
           // Each signal owns one exact scheduler snapshot. Do not serialize
-          // generations: a stuck stale observer must not hide the current state.
-          if (
-            params.isClosing() ||
-            generation !== lifecycleGeneration ||
-            abortController.signal.aborted
-          ) {
+          // snapshots: a stuck stale observer must not hide the current state.
+          if (params.isClosing() || abortController.signal.aborted) {
             return;
           }
           await params.runHook(event, {

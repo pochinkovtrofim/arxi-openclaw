@@ -37,6 +37,18 @@ const registrationSchema = z.object({ parent: processIdentity, child: childIdent
 type ProcessRegistration = z.infer<typeof registrationSchema>;
 const registrationCleanup = new WeakMap<object, Promise<void>>();
 const linuxStartIdentity = /^([a-f0-9-]{36}):\d+$/;
+type RegisteredTransportIdentity = Readonly<
+  Pick<ProcessRegistration["child"], "pid" | "startedAt">
+>;
+const registeredTransportIdentities = new WeakMap<object, RegisteredTransportIdentity>();
+
+/** Registration-time direct transport identity, not descendant identity or current liveness. */
+export function getCodexAppServerRegisteredTransportIdentity(
+  child: object,
+): RegisteredTransportIdentity | undefined {
+  return registeredTransportIdentities.get(child);
+}
+
 // Source and dist copies must not stop or resume the same orphan concurrently.
 const processReaper = resolveGlobalSingleton(
   Symbol.for("openclaw.codexAppServerProcessReaper"),
@@ -239,5 +251,9 @@ export async function prepareCodexAppServerProcessRegistration(): Promise<
         "Cannot register the Codex child process: the child exited during registration. Retry.",
       );
     }
+    registeredTransportIdentities.set(
+      child,
+      Object.freeze({ pid: value.child.pid, startedAt: value.child.startedAt }),
+    );
   };
 }

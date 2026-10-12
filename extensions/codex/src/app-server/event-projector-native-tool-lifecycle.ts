@@ -10,7 +10,6 @@ import {
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { asDateTimestampMs } from "openclaw/plugin-sdk/number-runtime";
 import { readStringField as readString } from "openclaw/plugin-sdk/string-coerce-runtime";
-import { resolveCodexToolAbortTerminalReason } from "./dynamic-tool-execution.js";
 import {
   auditNativeToolName,
   auditNativeToolTerminalStatus,
@@ -35,6 +34,7 @@ import {
   type JsonObject,
   type JsonValue,
 } from "./protocol.js";
+import { resolveCodexToolAbortTerminalReason } from "./tool-abort-terminal-reason.js";
 
 type CodexNativeToolLifecycleContext = Pick<
   EmbeddedRunAttemptParams,
@@ -70,12 +70,12 @@ function isMcpToolCallItemNotification(method: string, params: JsonObject): bool
 export class CodexNativeToolLifecycleProjector {
   private readonly terminalPresentationClearedItemIds = new Set<string>();
   private readonly nativeToolOutcomeOrdinals = new Map<string, number>();
-  private readonly startedAtByItem = new Map<string, number>();
   private readonly traceByItem = new Map<string, DiagnosticTraceContext>();
   private readonly activeItems = new Map<
     string,
     {
       toolName: string;
+      startedAt: number;
       unfinishedStatus: CodexNativeToolUnfinishedStatus;
       mcpToolCall?: CodexThreadItem;
       commandProcessId?: string | null;
@@ -359,10 +359,9 @@ export class CodexNativeToolLifecycleProjector {
     const approvalFailureDisposition = this.approvalFailureDispositionByItem.get(toolCallId);
     this.approvalFailureDispositionByItem.delete(toolCallId);
     this.completedItemIds.add(toolCallId);
+    const startedAt = this.activeItems.get(toolCallId)?.startedAt;
     this.activeItems.delete(toolCallId);
     this.webSearchCompletionByItem.delete(toolCallId);
-    const startedAt = this.startedAtByItem.get(toolCallId);
-    this.startedAtByItem.delete(toolCallId);
     const trace = this.traceByItem.get(toolCallId);
     this.traceByItem.delete(toolCallId);
     const endedAt = options.sourceTimestampMs ?? Date.now();
@@ -507,8 +506,13 @@ export class CodexNativeToolLifecycleProjector {
     if (this.activeItems.has(toolCallId)) {
       return;
     }
-    this.startedAtByItem.set(toolCallId, sourceTimestampMs ?? Date.now());
-    this.activeItems.set(toolCallId, { toolName, unfinishedStatus, mcpToolCall, commandProcessId });
+    this.activeItems.set(toolCallId, {
+      toolName,
+      startedAt: sourceTimestampMs ?? Date.now(),
+      unfinishedStatus,
+      mcpToolCall,
+      commandProcessId,
+    });
     const trace = this.options.modelCallTrace
       ? freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(this.options.modelCallTrace))
       : undefined;

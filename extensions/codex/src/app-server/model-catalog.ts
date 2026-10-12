@@ -4,6 +4,7 @@ import {
   resolveCodexAppServerAuthProfileId,
   resolveCodexAppServerAuthProfileStore,
 } from "./auth-profile.js";
+import { isCodexAppServerIndeterminateRequestCancellationError } from "./client.js";
 import { readCodexPluginConfig } from "./config-parsing.js";
 import { resolveCodexAppServerRuntimeOptions } from "./config-runtime.js";
 import { isCodexAppServerProxyLaunch } from "./launch-args.js";
@@ -17,7 +18,10 @@ import { probeCodexNativeAuth } from "./native-auth.js";
 import type { CodexGetAccountResponse } from "./protocol.js";
 import { withCodexAppServerJsonClient } from "./request.js";
 import { isCodexResponsesOAuthCredential } from "./responses-oauth.js";
-import { captureSharedCodexAppServerCatalogLifetime } from "./shared-client.js";
+import {
+  captureSharedCodexAppServerCatalogLifetime,
+  retireSharedCodexAppServerClientIfCurrent,
+} from "./shared-client.js";
 
 type ModelInputType = NonNullable<ModelCatalogEntry["input"]>[number];
 const INPUT_TYPES: ReadonlySet<string> = new Set(["text", "image", "audio", "video", "document"]);
@@ -166,13 +170,21 @@ export function createCodexAppServerModelCatalog(runtime: string) {
               : undefined;
             return { models, isCurrent, accountType } as const;
           };
-          let snapshot = await readSnapshot();
-          // Login can publish its generation while model/list is in flight.
-          // Retry once on that same observation; replaced catalogs still fail closed.
-          if (!snapshot.isCurrent() && !disposed && observations.get(key) === observation) {
-            snapshot = await readSnapshot();
+          try {
+            let snapshot = await readSnapshot();
+            // Login can publish its generation while model/list is in flight.
+            // Retry once on that same observation; replaced catalogs still fail closed.
+            if (!snapshot.isCurrent() && !disposed && observations.get(key) === observation) {
+              snapshot = await readSnapshot();
+            }
+            return snapshot;
+          } catch (error) {
+            // Discovery owns its deadline; retire unanswered work without aborting sibling leases.
+            if (isCodexAppServerIndeterminateRequestCancellationError(error)) {
+              retireSharedCodexAppServerClientIfCurrent(client);
+            }
+            throw error;
           }
-          return snapshot;
         },
       );
       // Publish only after the bounded operation settles; a late timed-out callback cannot publish.

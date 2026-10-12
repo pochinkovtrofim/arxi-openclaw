@@ -3,9 +3,10 @@
  * Resolved url/headers are credentials — never log, fingerprint, or persist them.
  */
 import crypto from "node:crypto";
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { filterStringRecord, isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { resolveOpenClawMcpTransportAlias } from "../config/mcp-config-normalize.js";
+import { raceWithTimeout } from "@openclaw/retry";
+import { resolveConfiguredMcpTransport } from "../config/mcp-config-normalize.js";
 import { logWarn } from "../logger.js";
 import { registerSecretValueForRedaction } from "../logging/secret-redaction-registry.js";
 import { getActivePluginRegistry } from "../plugins/runtime.js";
@@ -76,11 +77,6 @@ export function resolveMcpConnectionRevalidateMs(): number {
  */
 let connectionDigestKey: Buffer | undefined;
 
-function getConnectionDigestKey(): Buffer {
-  connectionDigestKey ??= crypto.randomBytes(32);
-  return connectionDigestKey;
-}
-
 /**
  * Ephemeral keyed digest of resolved connection material for rotation detection.
  * HMAC-SHA256 with a process-local random key — not a plain hash of credentials.
@@ -98,7 +94,7 @@ export function hashMcpResolvedConnections(
       return [serverName, connection.url, headers] as const;
     });
   return crypto
-    .createHmac("sha256", getConnectionDigestKey())
+    .createHmac("sha256", (connectionDigestKey ??= crypto.randomBytes(32)))
     .update(JSON.stringify(tuples))
     .digest("hex");
 }
@@ -108,25 +104,6 @@ class McpResolverTimeoutError extends Error {
     super("mcp connection resolver timed out");
     this.name = "McpResolverTimeoutError";
   }
-}
-
-function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new McpResolverTimeoutError());
-    }, timeoutMs);
-    timer.unref?.();
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      },
-    );
-  });
 }
 
 /** Returns registered connection resolvers keyed by server name (deterministic order). */
@@ -254,33 +231,42 @@ export async function resolveRequesterScopedMcpConnections(params: {
   if (params.serverNames.length === 0) {
     return resolved;
   }
+  const resolvers = listMcpServerConnectionResolversByServerName();
+  const agentAccountId = normalizeOptionalString(params.agentAccountId);
+  const messageChannel = normalizeOptionalString(params.messageChannel);
   const agentId = normalizeOptionalString(params.agentId);
   const sessionKey = normalizeOptionalString(params.sessionKey);
-  const resolvers = listMcpServerConnectionResolversByServerName();
+  const chatType = normalizeOptionalString(params.chatType);
+  const conversationId = normalizeOptionalString(params.conversationId);
+  const runtimeGeneration = normalizeOptionalString(params.runtimeGeneration);
+  const traceId = normalizeOptionalString(params.traceId);
   const ctx: McpServerConnectionResolveContext = {
     ...(requesterSenderId ? { requesterSenderId } : {}),
-    ...(normalizeOptionalString(params.agentAccountId)
-      ? { agentAccountId: normalizeOptionalString(params.agentAccountId) }
-      : {}),
-    ...(normalizeOptionalString(params.messageChannel)
-      ? { messageChannel: normalizeOptionalString(params.messageChannel) }
-      : {}),
+    ...(agentAccountId ? { agentAccountId } : {}),
+    ...(messageChannel ? { messageChannel } : {}),
     ...(agentId ? { agentId } : {}),
     ...(sessionKey ? { sessionKey } : {}),
-    ...(normalizeOptionalString(params.chatType)
-      ? { chatType: normalizeOptionalString(params.chatType) }
-      : {}),
-    ...(normalizeOptionalString(params.conversationId)
-      ? { conversationId: normalizeOptionalString(params.conversationId) }
-      : {}),
-    ...(normalizeOptionalString(params.runtimeGeneration)
-      ? { runtimeGeneration: normalizeOptionalString(params.runtimeGeneration) }
-      : {}),
-    ...(normalizeOptionalString(params.traceId)
-      ? { traceId: normalizeOptionalString(params.traceId) }
-      : {}),
+    ...(chatType ? { chatType } : {}),
+    ...(conversationId ? { conversationId } : {}),
+    ...(runtimeGeneration ? { runtimeGeneration } : {}),
+    ...(traceId ? { traceId } : {}),
   };
   const timeoutMs = resolveConnectionResolverTimeoutMs();
+  const resolveEntry = (entry: McpServerConnectionResolverEntry) =>
+    raceWithTimeout(
+      Promise.resolve(entry.resolve(ctx)),
+      timeoutMs,
+      () => {
+        throw new McpResolverTimeoutError();
+      },
+      { ref: false },
+    );
+  const sortHeaders = (value: unknown) => {
+    const filtered = filterStringRecord(value);
+    return filtered
+      ? Object.fromEntries(Object.entries(filtered).toSorted(([a], [b]) => a.localeCompare(b)))
+      : undefined;
+  };
   const sortedNames = [...params.serverNames].toSorted((a, b) => a.localeCompare(b));
   const settled = await Promise.all(
     sortedNames.map(async (serverName) => {
@@ -302,22 +288,12 @@ export async function resolveRequesterScopedMcpConnections(params: {
         return null;
       }
       try {
-        const result = await raceWithTimeout(Promise.resolve(entry.resolve(ctx)), timeoutMs);
+        const result = await resolveEntry(entry);
         if (!result || typeof result.url !== "string" || result.url.trim().length === 0) {
           params.onUnavailable?.({ serverName, reason: "unavailable" });
           return null;
         }
-        const headers =
-          result.headers && isRecord(result.headers)
-            ? Object.fromEntries(
-                Object.entries(result.headers)
-                  .filter(
-                    (headerEntry): headerEntry is [string, string] =>
-                      typeof headerEntry[1] === "string",
-                  )
-                  .toSorted(([a], [b]) => a.localeCompare(b)),
-              )
-            : undefined;
+        const headers = sortHeaders(result.headers);
         const connection: McpServerConnectionResolved = {
           url: result.url.trim(),
           ...(headers && Object.keys(headers).length > 0 ? { headers } : {}),
@@ -342,18 +318,11 @@ export async function resolveRequesterScopedMcpConnections(params: {
               return currentHeaders;
             }
             pending ??= (async () => {
-              const next = await raceWithTimeout(Promise.resolve(entry.resolve(ctx)), timeoutMs);
-              if (!next || next.url.trim() !== connection.url || !next.headers) {
+              const next = await resolveEntry(entry);
+              const nextHeaders = next ? sortHeaders(next.headers) : undefined;
+              if (!next || next.url.trim() !== connection.url || !nextHeaders) {
                 throw new Error("MCP connection renewal unavailable");
               }
-              const nextHeaders = Object.fromEntries(
-                Object.entries(next.headers)
-                  .filter(
-                    (headerEntry): headerEntry is [string, string] =>
-                      typeof headerEntry[1] === "string",
-                  )
-                  .toSorted(([a], [b]) => a.localeCompare(b)),
-              );
               const nextKeys = Object.keys(nextHeaders)
                 .map((key) => key.toLowerCase())
                 .toSorted();
@@ -411,14 +380,8 @@ export function applyMcpConnectionOverride(
   } else {
     delete base.headers;
   }
-  // Resolve effective transport with the same alias mapping as config canonicalize
-  // BEFORE stripping `type`, so SSE-only servers keep sse (including case variants).
-  const fromTransport =
-    typeof base.transport === "string"
-      ? resolveOpenClawMcpTransportAlias(base.transport)
-      : undefined;
-  const fromType = resolveOpenClawMcpTransportAlias(base.type);
-  base.transport = fromTransport ?? fromType ?? "streamable-http";
+  const transport = resolveConfiguredMcpTransport(base);
+  base.transport = !transport || transport === "stdio" ? "streamable-http" : transport;
   // Resolver-supplied headers are the auth surface; strip static OAuth so the
   // transport layer does not drop Authorization from overrides.
   delete base.auth;

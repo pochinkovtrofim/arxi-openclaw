@@ -1,6 +1,6 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
-import { normalizeChatType, type ChatType } from "../../channels/chat-type.js";
+import { normalizeChatType } from "../../channels/chat-type.js";
 import { resolveAgentIdFromSessionKey, type SessionEntry } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import {
@@ -24,20 +24,9 @@ import type { GatewayRequestHandlerOptions } from "../server-methods/types.js";
 import { tryResolveSessionCompatibilityOwnerAgentId } from "../session-request-agent.js";
 import type { AgentTurnContext, AgentTurnPrincipal } from "./types.js";
 
-type DeliveryPlan = Awaited<ReturnType<typeof resolveAgentDeliveryPlanWithSessionRoute>>;
-
-export type AgentDeliveryPhaseResult = {
-  activeSessionAgentId: string;
-  deliveryPlan: DeliveryPlan;
-  resolvedChannel: DeliveryPlan["resolvedChannel"];
-  deliveryTargetMode: DeliveryPlan["deliveryTargetMode"];
-  resolvedAccountId: DeliveryPlan["resolvedAccountId"];
-  resolvedTo: DeliveryPlan["resolvedTo"];
-  resolvedChatType?: ChatType;
-  originMessageChannel?: string;
-  deliver: boolean;
-  explicitThreadId?: string;
-};
+export type AgentDeliveryPhaseResult = NonNullable<
+  Awaited<ReturnType<typeof resolveAgentDeliveryPhase>>
+>;
 
 export async function resolveAgentDeliveryPhase(params: {
   request: AgentRunRequest;
@@ -59,7 +48,7 @@ export async function resolveAgentDeliveryPhase(params: {
   respond: GatewayRequestHandlerOptions["respond"];
   isWebchatConnect: GatewayRequestHandlerOptions["isWebchatConnect"];
   onRunObserved?: (runId: string) => void;
-}): Promise<AgentDeliveryPhaseResult | undefined> {
+}) {
   const isIncognito =
     params.sessionEntry?.incognito === true || isIncognitoSessionKey(params.resolvedSessionKey);
   const respond: typeof params.respond = (ok, payload, error) => {

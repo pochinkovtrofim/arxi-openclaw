@@ -8,9 +8,8 @@ import {
 } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import { cronStoreKey } from "../store/key.js";
+import { suspendConsumedManagedFlowObligationsInDatabase } from "../store/managed-flow-obligations.kernel.js";
 import type { CronJob } from "../types.js";
-import { suspendConsumedManagedFlowAutomationObligations } from "./managed-flow-obligation-repair.js";
-import type { TimedCronRunOutcome } from "./timer-execution-timeout.js";
 
 const databases: DatabaseSync[] = [];
 
@@ -85,11 +84,11 @@ describe("managed Flow Automation obligation repair", () => {
       from: "bound",
       to: "scheduled",
     });
-    suspendConsumedManagedFlowAutomationObligations({
+    suspendConsumedManagedFlowObligationsInDatabase({
       database: db,
-      storePath,
+      storeKey,
       jobs: new Map([[job.id, job]]),
-      outcomes: [{ jobId: job.id, startedAt: 2_000 } as TimedCronRunOutcome],
+      consumed: [{ jobId: job.id, startedAt: 2_000 }],
     });
     expect(
       listTaskFlowAutomationObligationsForCronJobFromSqlite(db, {

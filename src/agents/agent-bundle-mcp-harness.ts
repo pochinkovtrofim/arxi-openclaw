@@ -20,7 +20,7 @@ import {
 } from "./agent-bundle-mcp-materialize.js";
 import { buildSafeToolName, normalizeReservedToolNames } from "./agent-bundle-mcp-names.js";
 import { mergeMcpConnectCatalog } from "./agent-bundle-mcp-requester-connect.js";
-import type { McpToolCatalog, RequesterMcpConnect } from "./agent-bundle-mcp-types.js";
+import type { McpToolCatalog } from "./agent-bundle-mcp-types.js";
 import type { CodexMcpServersConfig } from "./codex-mcp-config.types.js";
 import {
   resolveConversationCapabilityProfile,
@@ -294,23 +294,6 @@ function bindLiveMcpExecutor(advertised: AnyAgentTool, live: AnyAgentTool): AnyA
   return bound;
 }
 
-function buildCatalogTools(
-  catalog: McpToolCatalog,
-  params: MaterializeRequesterScopedMcpToolsForHarnessRunParams,
-  requesterConnect?: RequesterMcpConnect,
-): AnyAgentTool[] {
-  return buildBundleMcpToolsFromCatalog({
-    catalog,
-    reservedToolNames: params.reservedToolNames ? Array.from(params.reservedToolNames) : undefined,
-    createExecute: (tool) => {
-      return (
-        requesterConnect?.createExecute(tool.serverName) ??
-        (async () => notConnectedToolResult(tool.serverName, tool.toolName))
-      );
-    },
-  });
-}
-
 /**
  * Materialize static configured MCP for a Codex harness turn.
  * No requester identity is accepted here, so requester resolvers stay unreachable.
@@ -320,15 +303,8 @@ export async function materializeStaticMcpToolsForHarnessRunCore(
     MaterializeRequesterScopedMcpToolsForHarnessRunParams,
     "requesterSenderId" | "agentAccountId" | "messageChannel"
   > & {
-    toolOverrides?: Pick<SessionToolOverrides, "mcpServers" | "mcpToolsDeny">;
-    /** Exact established Codex yolo predicate; no other profile bypasses approval metadata. */
-    autoApproveCodexAppServerApprovals?: boolean;
     /** Prepared native projection carries exact persisted per-tool approval grants. */
     projectedMcpServers?: CodexMcpServersConfig;
-    /** Interactive turns request approval before the original MCP executor runs. */
-    requestInteractiveCodexApproval?: (
-      params: InteractiveConfiguredMcpApprovalRequest,
-    ) => Promise<void>;
     /** Mutation-only probes retire their isolated runtime after the snapshot. */
     retireSessionRuntimeAfterDispose?: boolean;
     /** Names reserved before requester/static MCP partitions are allocated. */
@@ -529,11 +505,14 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
     const reservedToolNames = params.reservedToolNames
       ? Array.from(params.reservedToolNames)
       : undefined;
-    const advertisedTools = buildCatalogTools(
-      advertisedCatalog,
-      { ...params, reservedToolNames },
-      scopedRuntime?.requesterConnect,
-    );
+    const requesterConnect = scopedRuntime?.requesterConnect;
+    const advertisedTools = buildBundleMcpToolsFromCatalog({
+      catalog: advertisedCatalog,
+      reservedToolNames,
+      createExecute: (tool) =>
+        requesterConnect?.createExecute(tool.serverName) ??
+        (async () => notConnectedToolResult(tool.serverName, tool.toolName)),
+    });
     const liveByIdentity = new Map<string, AnyAgentTool>();
     for (const tool of liveRuntime?.tools ?? []) {
       const identity = canonicalMcpToolIdentity(tool);

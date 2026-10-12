@@ -36,6 +36,19 @@ export type CurrentTurnImages = {
   mediaImageLayout?: MediaImageLayout;
 };
 
+// Media-store references are current-turn images even before they have a local path.
+function collectCurrentImageAttachments(ctx: MsgContext) {
+  const hydrationSuppressedIndexes = new Set(
+    normalizeMediaFacts(ctx.media).flatMap((fact, index) =>
+      fact.hydrationSuppressed === true ? [index] : [],
+    ),
+  );
+  return normalizeAttachments(ctx).filter(
+    (attachment) =>
+      isImageAttachment(attachment) && !hydrationSuppressedIndexes.has(attachment.index),
+  );
+}
+
 function appendOrderedImages(params: {
   entries: OrderedTurnImage[];
   images: ImageContent[] | undefined;
@@ -109,20 +122,8 @@ export async function resolveCurrentTurnImages(params: {
     });
   }
 
-  const hydrationSuppressedIndexes = new Set(
-    normalizeMediaFacts(params.ctx.media).flatMap((fact, index) =>
-      fact.hydrationSuppressed === true ? [index] : [],
-    ),
-  );
-  const currentImageAttachments = normalizeAttachments(params.ctx).filter(
-    (attachment) =>
-      isImageAttachment(attachment) && !hydrationSuppressedIndexes.has(attachment.index),
-  );
-  if (currentImageAttachments.length === 0) {
-    return resolveMergedTurnImages(entries);
-  }
   const describedImageIndexes = collectDescribedImageAttachmentIndexes(params.ctx);
-  const undescribedImageAttachments = currentImageAttachments.filter(
+  const undescribedImageAttachments = collectCurrentImageAttachments(params.ctx).filter(
     (attachment) => !describedImageIndexes.has(attachment.index),
   );
   if (undescribedImageAttachments.length === 0) {
@@ -135,7 +136,6 @@ export async function resolveCurrentTurnImages(params: {
       ctx: params.ctx,
       cfg: params.cfg,
       includeRecentHistoryImages: false,
-      includeAttachmentIndexes: true,
     });
     const images = resolved.attachments.map((attachment): ImageContent => ({
       type: "image",

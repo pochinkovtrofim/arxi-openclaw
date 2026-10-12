@@ -61,7 +61,10 @@ describe("agent defaults schema", () => {
       cwd: "/default-repo",
     });
     expect(result.config.agents?.entries?.worker?.cwd).toBe("/agent-repo");
-    expect(result.config.agents?.list?.[0]?.cwd).toBe("/agent-repo");
+    expect(Object.getOwnPropertyDescriptor(result.config.agents, "list")).toMatchObject({
+      enumerable: false,
+      value: [{ id: "worker", cwd: "/agent-repo" }],
+    });
   });
 
   it("requires exact model refs even when disabling Code Mode", () => {
@@ -97,7 +100,7 @@ describe("agent defaults schema", () => {
       const result = validateConfigObject({
         agents: {
           defaults: { modelPolicy: { allow: [entry] } },
-          entries: { main: { default: true } },
+          entries: { main: {} },
         },
       });
       expect(result.ok, entry || "empty entry").toBe(false);
@@ -112,7 +115,7 @@ describe("agent defaults schema", () => {
   it("accepts exact refs, nested wildcards, configured aliases, and compat selectors", () => {
     const result = validateConfigObject({
       agents: {
-        entries: { main: { default: true } },
+        entries: { main: {} },
         defaults: {
           models: {
             "anthropic/claude-sonnet-4-6": { alias: "sonnet" },
@@ -137,8 +140,9 @@ describe("agent defaults schema", () => {
   it("reports keyed per-agent policy paths", () => {
     const result = validateConfigObject({
       agents: {
+        ownership: "explicit",
         entries: {
-          main: { default: true },
+          main: {},
           runner: { modelPolicy: { allow: ["not-a-model-ref"] } },
         },
       },

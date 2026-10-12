@@ -21,7 +21,7 @@ describe("gateway chat metadata runtime", () => {
   test("reads prepared owners through the gateway publication key for every agent", async () => {
     const harness = createChatMetadataHarness({
       agents: {
-        list: [{ id: "main", default: true }, { id: "managed-personal-agent" }],
+        entries: { main: {}, "managed-personal-agent": {} },
       },
     });
 
@@ -99,10 +99,7 @@ describe("gateway chat metadata runtime", () => {
       );
     }
     expect(onChanged).toHaveBeenCalledTimes(1);
-    const recovered = createChatMetadataOwner(
-      { agents: { list: [{ id: "main", default: true }] } },
-      "recovered",
-    );
+    const recovered = createChatMetadataOwner({ agents: { entries: { main: {} } } }, "recovered");
     harness.setOwner(recovered);
     harness.getPreparedOwner.mockReturnValue(recovered);
     await expect(harness.runtime.read({ agentId: "main" })).resolves.toMatchObject({
@@ -527,7 +524,7 @@ describe("gateway chat metadata runtime", () => {
     const first = await harness.runtime.read({ agentId: "main" });
 
     harness.setConfig({
-      agents: { list: [{ id: "main", default: true }] },
+      agents: { entries: { main: {} } },
     });
     await harness.runtime.refresh();
     const second = await harness.runtime.read({ agentId: "main" });
@@ -831,7 +828,7 @@ describe("gateway chat metadata runtime", () => {
     const pluginsChanged = await harness.runtime.read({ agentId: "main" });
 
     const nextConfig = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: { entries: { main: {} } },
       tools: { swarm: { enabled: true } },
     };
     harness.setConfig(nextConfig);
@@ -876,7 +873,7 @@ describe("gateway chat metadata runtime", () => {
     expect(overriddenSettled).not.toHaveBeenCalled();
 
     const nextConfig = {
-      agents: { list: [{ id: "main", default: true }] },
+      agents: { entries: { main: {} } },
       tools: { swarm: { enabled: true } },
     };
     harness.setConfig(nextConfig);
@@ -954,7 +951,7 @@ describe("gateway chat metadata runtime", () => {
     await expect(failedRead).rejects.toThrow("replacement failed");
     await expect(harness.runtime.read({ agentId: "main" })).rejects.toThrow("replacement failed");
 
-    const nextConfig = { agents: { list: [{ id: "main", default: true }] } };
+    const nextConfig = { agents: { entries: { main: {} } } };
     harness.setConfig(nextConfig);
     harness.setOwner(createChatMetadataOwner(nextConfig, "recovered"));
     harness.runtime.invalidate();
