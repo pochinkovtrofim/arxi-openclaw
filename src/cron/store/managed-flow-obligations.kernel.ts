@@ -5,7 +5,7 @@ import {
   transitionTaskFlowAutomationObligationPhaseInStateTransaction,
 } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
-import type { CronStoredJob } from "../types.js";
+import type { CronJob } from "../types.js";
 import { mutateCronRuntimeRowsInDatabase } from "./runtime-rows.kernel.js";
 
 export type CronManagedFlowRepairInput = { storeKey: string; jobIds: string[] };
@@ -108,7 +108,7 @@ export function repairManagedFlowObligationsInDatabase(
 export function suspendConsumedManagedFlowObligationsInDatabase(params: {
   database: DatabaseSync;
   storeKey: string;
-  jobs: ReadonlyMap<string, CronStoredJob>;
+  jobs: ReadonlyMap<string, CronJob>;
   consumed: readonly CronManagedFlowConsumedRun[];
 }): void {
   for (const run of params.consumed) {
