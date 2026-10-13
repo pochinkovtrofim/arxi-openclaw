@@ -20,6 +20,7 @@ import {
   SHORT_TERM_LOCK_NAMESPACE,
 } from "./dreaming-state.js";
 import {
+  publishMemoryWorkspaceWriteLock,
   withMemoryWorkspaceLock,
   withMemoryWorkspacePreparation,
 } from "./memory-workspace-lock.js";
@@ -331,5 +332,35 @@ describe("memory workspace lock orphan recovery", () => {
       release.resolve();
       await owner;
     }
+  });
+
+  it("publishes the writer lock so another plugin's curated edit waits for dreaming", async () => {
+    const workspaceDir = await makeWorkspace();
+    publishMemoryWorkspaceWriteLock();
+    // SAFETY: publishMemoryWorkspaceWriteLock stored withMemoryWorkspaceLock under this key.
+    const published = (globalThis as Record<symbol, unknown>)[
+      Symbol.for("openclaw.memory-core.workspace-write-lock")
+    ] as typeof withMemoryWorkspaceLock;
+    expect(published).toBe(withMemoryWorkspaceLock);
+
+    const release = createDeferred<void>();
+    const entered = createDeferred<void>();
+    const order: string[] = [];
+    const dreaming = withMemoryWorkspaceLock(workspaceDir, async () => {
+      order.push("dreaming:start");
+      entered.resolve();
+      await release.promise;
+      order.push("dreaming:end");
+    });
+    await entered.promise;
+    const ownerEdit = published(workspaceDir, async () => {
+      order.push("owner-edit");
+    });
+    await nextTurn();
+    await nextTurn();
+    expect(order).toEqual(["dreaming:start"]);
+    release.resolve();
+    await Promise.all([dreaming, ownerEdit]);
+    expect(order).toEqual(["dreaming:start", "dreaming:end", "owner-edit"]);
   });
 });
