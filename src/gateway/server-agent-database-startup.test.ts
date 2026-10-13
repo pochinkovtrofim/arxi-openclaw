@@ -626,3 +626,68 @@ it("recovers queued agents after both inspection slots expire without refusing a
     await server?.close();
   }
 });
+
+it("re-admits a deferred agent after an in-process restart stops its pending inspection", async () => {
+  testState.agentsConfig = { ownership: "explicit", entries: { main: {}, worker: {} } };
+  testState.agentConfig = { systemAgent: { agentId: "main" } };
+  const env = { ...process.env };
+  const cfg = loadGatewayTestConfig();
+  const paths = ["main", "worker"].map(
+    (agentId) => openOpenClawAgentDatabase({ agentId, env }).path,
+  );
+  await closeOpenClawAgentDatabasesAsync();
+  closeOpenClawAgentDatabasesForTest();
+  await closeStateDatabaseForTest();
+  for (const pathname of paths) {
+    clearOpenClawAgentIntegrityVerification(pathname, env);
+    const database = new DatabaseSync(pathname);
+    try {
+      database.exec("PRAGMA journal_mode=DELETE");
+    } finally {
+      database.close();
+    }
+  }
+  const workerPath = paths[1]!;
+  const pause = pauseIntegrityInspections({
+    root: resolveStateDir(env),
+    paths: [workerPath],
+  });
+  Object.assign(env, pause.env);
+  let server: Awaited<ReturnType<typeof startTestGatewayServer>> | undefined;
+  try {
+    // Both Gateway generations share the run command's process-wide admission scope.
+    await withAgentDatabaseStartupAdmission(async () => {
+      await assertOpenClawDatabasesReady({ env, operation: "gateway-startup", config: cfg });
+      const firstClaim = await acquireTestPortBlock({ offsets: [0, 1, 2, 3, 4] });
+      server = await startTestGatewayServer(firstClaim, {
+        bind: "loopback",
+        auth: { mode: "none" },
+      });
+      await server.startupSettled;
+      await vi.waitFor(() => expect(fs.existsSync(pause.enteredPaths[0]!)).toBe(true));
+      const abandoned = readAgentDatabaseAdmissionRefusal("worker", { env });
+      expect(abandoned).toMatchObject({ code: "agent-database-inspection-pending" });
+
+      // A forced restart closes the Gateway, stopping its admission and inspection.
+      await server.close();
+      server = undefined;
+      expect(readAgentDatabaseAdmissionRefusal("worker", { env })).toBe(abandoned);
+
+      fs.writeFileSync(pause.releasePath, "resume");
+      const secondClaim = await acquireTestPortBlock({ offsets: [0, 1, 2, 3, 4] });
+      server = await startTestGatewayServer(secondClaim, {
+        bind: "loopback",
+        auth: { mode: "none" },
+      });
+      await server.startupSettled;
+      await vi.waitFor(
+        () => expect(readAgentDatabaseAdmissionRefusal("worker", { env })).toBeUndefined(),
+        { timeout: 10000 },
+      );
+      expect((await fetch(`http://127.0.0.1:${secondClaim.port}/readyz`)).status).toBe(200);
+    });
+  } finally {
+    fs.writeFileSync(pause.releasePath, "resume");
+    await server?.close();
+  }
+});

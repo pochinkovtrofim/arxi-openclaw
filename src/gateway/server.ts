@@ -97,6 +97,9 @@ async function startGatewayServerWithRuntime(
             stopDatabaseAdmission = () => admission.stop();
             const mod = await loadServerStart();
             opts.gatewayStateOwner?.assertDatabaseAccess(resolveOpenClawStateSqlitePath());
+            const { readmitAbandonedAgentDatabases } =
+              await import("./server-agent-database-startup.js");
+            await readmitAbandonedAgentDatabases();
             return mod.startGatewayServerCore(port, { ...opts, startupStartedAt });
           },
           { deferInspections: !opts.updateCanary },

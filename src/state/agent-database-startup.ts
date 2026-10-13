@@ -72,6 +72,8 @@ function matchesSchemaSourceWitness(
 
 const log = createSubsystemLogger("state/agent-admission");
 const startupAdmission = new AsyncLocalStorage<AgentDatabaseStartupAdmission>();
+// A pending decision is a promise by its admission; an in-process restart can stop that owner.
+const pendingOwners = new WeakMap<AgentDatabaseAdmissionRefusal, AgentDatabaseStartupAdmission>();
 
 /** Startup owns readers until the Gateway adopts them; only the Gateway activates agents. */
 class AgentDatabaseStartupAdmission {
@@ -220,6 +222,7 @@ class AgentDatabaseStartupAdmission {
         reason: `Agent ${agentId} has not completed startup inspection and preparation. ${params.reason}`,
       });
       this.pending.set(agentId, refusal);
+      pendingOwners.set(refusal, this);
       refusals.push(refusal);
       log.warn(refusal.reason, { agentId, paths, repairHint: refusal.repairHint });
       const witnesses = paths.map((pathname) => {
@@ -358,6 +361,15 @@ class AgentDatabaseStartupAdmission {
       }
     })());
   }
+}
+
+/** Pending refusals whose stopped owner can no longer finish inspection and preparation. */
+export function hasAbandonedAgentDatabaseInspections(env: NodeJS.ProcessEnv): boolean {
+  return listAgentDatabaseAdmissionRefusals({ env }).some(
+    (refusal) =>
+      refusal.code === "agent-database-inspection-pending" &&
+      pendingOwners.get(refusal)?.isStopped === true,
+  );
 }
 
 export function getAgentDatabaseStartupAdmission(): AgentDatabaseStartupAdmission | undefined {

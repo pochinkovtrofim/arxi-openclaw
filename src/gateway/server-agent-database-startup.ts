@@ -10,6 +10,48 @@ import { withAgentDatabasePreparationGuard } from "../state/agent-database-admis
 import type { getAgentDatabaseStartupAdmission } from "../state/agent-database-startup.js";
 import { isSameOpenClawAgentDatabasePath } from "../state/openclaw-agent-db.paths.js";
 
+/**
+ * An in-process restart keeps this boot's admission decisions, but a pending decision
+ * belongs to the stopped Gateway's admission. Re-run startup admission so the current
+ * admission owns fresh inspection and preparation instead of refusing the agent forever.
+ */
+export async function readmitAbandonedAgentDatabases(
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  const { hasAbandonedAgentDatabaseInspections } =
+    await import("../state/agent-database-startup.js");
+  if (!hasAbandonedAgentDatabaseInspections(env)) {
+    return false;
+  }
+  const [
+    { readConfigFileSnapshot },
+    { createConfigReadError, isConfigReadFailure },
+    { assertOpenClawDatabasesReady },
+    { withArtifactPreservingStateReads },
+  ] = await Promise.all([
+    import("../config/io.js"),
+    import("../config/io.invalid-config.js"),
+    import("../state/openclaw-database-preflight.js"),
+    import("../state/openclaw-state-db-readonly.js"),
+  ]);
+  await withArtifactPreservingStateReads(async () => {
+    const snapshot = await readConfigFileSnapshot({
+      observe: false,
+      isolateEnv: true,
+      pluginValidation: "core-only",
+    });
+    if (isConfigReadFailure(snapshot)) {
+      throw createConfigReadError(snapshot);
+    }
+    await assertOpenClawDatabasesReady({
+      env,
+      config: snapshot.sourceConfig ?? snapshot.config,
+      operation: "gateway-startup",
+    });
+  });
+  return true;
+}
+
 /** Finish only the deferred agent's preparation before its admission owner recovers it. */
 export function activateGatewayAgentDatabaseStartup(params: {
   admission: ReturnType<typeof getAgentDatabaseStartupAdmission>;
