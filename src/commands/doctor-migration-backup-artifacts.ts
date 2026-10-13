@@ -184,7 +184,9 @@ export function retireUnrecordedStartupMigrationBackups(params: {
     try {
       const superseded = group.every(({ backupPath, database }) => {
         const stat = fs.lstatSync(backupPath);
-        return stat.isFile() && stat.nlink === 1 && stat.mtimeMs < (supersededAt.get(database) ?? 0);
+        return (
+          stat.isFile() && stat.nlink === 1 && stat.mtimeMs < (supersededAt.get(database) ?? 0)
+        );
       });
       if (!superseded) {
         continue;
