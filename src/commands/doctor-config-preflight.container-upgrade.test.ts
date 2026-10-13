@@ -235,29 +235,54 @@ describe("container image replacement Doctor repair and startup readiness", () =
         fs.utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
         return file;
       };
-      const legacy = unrecorded(
-        "ab982637-0bcf-45bb-8641-e8b4513279f7",
-        Date.parse(earlier.startedAt) - 1000,
-      );
-      const concurrent = unrecorded("5b0e2c11-7a4d-4f63-9d0e-3c1a2b4f5e6d", completedAt + 1000);
+      const sharedPath = path.join(stateDir, "state", "openclaw.sqlite");
+      const unrecordedShared = (name: string, mtimeMs: number) => {
+        const file = `${sharedPath}.pre-startup-migration-${name}.bak`;
+        fs.writeFileSync(file, "unrecorded backup");
+        fs.utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
+        return file;
+      };
+      const beforeGroup = Date.parse(earlier.startedAt) - 1000;
+      const legacyId = "ab982637-0bcf-45bb-8641-e8b4513279f7";
+      const legacy = [unrecorded(legacyId, beforeGroup), unrecordedShared(legacyId, beforeGroup)];
+      const concurrentId = "5b0e2c11-7a4d-4f63-9d0e-3c1a2b4f5e6d";
+      const concurrent = unrecorded(concurrentId, completedAt + 1000);
+      // A member whose database had no later verified migration keeps the whole group.
+      const uncoveredId = "7c1d3e22-8b5e-4a74-8e1f-4d2b3c5a6f7e";
+      const otherAgent = path.join(stateDir, "agents", "other", "agent");
+      fs.mkdirSync(otherAgent, { recursive: true });
+      const uncovered = [
+        unrecordedShared(uncoveredId, beforeGroup),
+        path.join(otherAgent, `openclaw-agent.sqlite.pre-startup-migration-${uncoveredId}.bak`),
+      ];
+      fs.writeFileSync(uncovered[1]!, "unrecorded backup");
+      fs.utimesSync(uncovered[1]!, new Date(beforeGroup), new Date(beforeGroup));
       const assertCurrent = vi.fn();
-      expect(
-        retireUnrecordedStartupMigrationBackups({
-          env,
-          runStartedAtMs: completedAt + 5000,
-          assertCurrent,
-        }),
-      ).toEqual({ retired: [legacy], warnings: [] });
-      expect(assertCurrent).toHaveBeenCalledOnce();
+      const result = retireUnrecordedStartupMigrationBackups({
+        env,
+        runStartedAtMs: completedAt + 5000,
+        assertCurrent,
+      });
+      expect(result.warnings).toEqual([]);
+      expect(result.retired.toSorted()).toEqual(legacy.toSorted());
+      expect(assertCurrent).toHaveBeenCalledTimes(2);
       // Written after the verified group started: not proven superseded.
-      expect(fs.readFileSync(concurrent, "utf8")).toBe("unrecorded backup");
-      fs.rmSync(concurrent);
+      for (const file of [concurrent, ...uncovered]) {
+        expect(fs.readFileSync(file, "utf8")).toBe("unrecorded backup");
+        fs.rmSync(file);
+      }
+      fs.rmSync(path.join(stateDir, "agents", "other"), { recursive: true });
       expect(inspect().artifacts.map((item) => item.reason)).toEqual([
         "awaiting-later-completed-update",
         "awaiting-later-completed-update",
       ]);
-      const laterRun = (runId: string, completed: boolean) => {
+      const laterRun = (
+        runId: string,
+        completed: boolean,
+        covers: (target: (typeof earlier.targets)[number]) => boolean = () => true,
+      ) => {
         const manifest = structuredClone(earlier);
+        manifest.targets = manifest.targets.filter(covers);
         manifest.runId = runId;
         manifest.startedAt = new Date(completedAt + 1000).toISOString();
         if (completed) {
@@ -274,6 +299,13 @@ describe("container image replacement Doctor repair and startup readiness", () =
           manifestPath: path.join(path.dirname(manifestPath!), `${runId}.json`),
         });
       };
+      // A later group that covered only the shared registry cannot release the agent backup.
+      laterRun("startup-migration-shared-only", true, (target) =>
+        target.sqlitePath.endsWith(path.join("state", "openclaw.sqlite")),
+      );
+      expect(
+        inspect().artifacts.every((item) => item.reason === "awaiting-later-completed-update"),
+      ).toBe(true);
       // An unverified later migration is not proof that the earlier generation is obsolete.
       laterRun("startup-migration-unverified", false);
       expect(
