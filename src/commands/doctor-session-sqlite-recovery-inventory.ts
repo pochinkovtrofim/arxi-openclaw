@@ -119,6 +119,7 @@ export function collectRecoveryInventory(params: {
   const manifestPaths: string[] = [];
   const artifacts: RecoveryCleanupArtifact[] = [];
   let laterUpdateStartedAt = 0;
+  const supersededAt = new Map<string, number>();
   const manifestsDir = resolveSessionSqliteMigrationRunsDir(params.env);
   if (hasSymbolicLinkInDirectoryPath(manifestsDir)) {
     artifacts.push({
@@ -147,6 +148,19 @@ export function collectRecoveryInventory(params: {
         continue;
       }
       const run = { manifest, manifestPath };
+      if (
+        manifest.runId.startsWith("startup-migration-") &&
+        manifest.completedAt &&
+        manifest.targets.every((target) => target.databaseIdentity)
+      ) {
+        // A later verified startup migration supersedes earlier backups of the databases it
+        // covered, as a later successful update does; image-replacing hosts record no updates.
+        const startedAt = Date.parse(manifest.startedAt) || 0;
+        for (const target of manifest.targets) {
+          const database = canonicalMigrationFilePath(target.sqlitePath);
+          supersededAt.set(database, Math.max(supersededAt.get(database) ?? 0, startedAt));
+        }
+      }
       const consumed = collectRecordedConsumedArchives(manifest);
       for (const target of manifest.targets) {
         const expected = resolveUnsuffixedSqliteTargetFromSessionStorePath(target.storePath);
@@ -238,11 +252,21 @@ export function collectRecoveryInventory(params: {
         (ref) => ref.move.artifact?.classification === "protected",
       )!.move.artifact!.reason;
     } else if (
-      refs.some(
-        ({ target, run }) =>
-          target.databaseIdentity &&
-          !(laterUpdateStartedAt > Date.parse(run.manifest.completedAt!)),
-      )
+      refs.some(({ target, run }) => {
+        if (!target.databaseIdentity) {
+          return false;
+        }
+        const completedAt = Date.parse(run.manifest.completedAt!);
+        // The registry rolls back with its agent databases: a group is superseded only when
+        // later verified migrations covered every database it holds.
+        return (
+          !(laterUpdateStartedAt > completedAt) &&
+          !run.manifest.targets.every(
+            (member) =>
+              (supersededAt.get(canonicalMigrationFilePath(member.sqlitePath)) ?? 0) > completedAt,
+          )
+        );
+      })
     ) {
       item.outcome = "protected";
       item.reason = "awaiting-later-completed-update";

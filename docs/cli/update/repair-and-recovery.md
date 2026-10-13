@@ -143,10 +143,15 @@ copy does not replace an earlier update's originals. Standalone `doctor --fix`
 snapshots databases under its own maintenance custody with a single isolated backup worker.
 Shared database families larger than 64 MiB keep discovery copies in an isolated process
 so a slow copy does not block Doctor's main thread from processing cancellation.
-Standalone Doctor captures are retained for 30 days: the next standalone `doctor --fix`
-retires older sealed Doctor captures and reports each removal; incomplete captures
-and update captures are never retired automatically, so take a verified backup
-when you need a long-term copy.
+After a standalone `doctor --fix` verifies the repaired state, it keeps only the
+newest sealed standalone Doctor capture and retires older ones, together with
+incomplete captures left by earlier runs, which never established a rollback
+point. It also keeps only the current run's pre-repair cron backups (or the newest
+earlier one) and removes pre-migration SQLite backups that an older Doctor wrote
+without a recovery manifest once a later migration group is verified complete.
+Each removal is reported. A failed or deferred repair retires nothing. Update
+captures are never retired automatically, so take a verified backup when you need
+a long-term copy.
 
 These captures are evidence for manual recovery. Active writers can change state
 during capture; an observed change leaves the capture incomplete and produces a
@@ -765,8 +770,10 @@ forensic corrupt databases, operator backups, and unmanifested artifacts stay
 protected. Old manifests are verified offline where possible; missing evidence
 is a reason to retain an artifact. Cleanup has no automatic expiration policy.
 Doctor's `<database>.pre-startup-migration-<id>.bak` groups become eligible only
-after Doctor verifies migration completion and update history records a successful
-update that started later. Until then they appear as protected. Changed or
+after Doctor verifies migration completion and either update history records a
+successful update that started later or a later startup migration group has also
+been verified complete. The newest verified group therefore stays protected as the
+rollback point for the current schema. Until then they appear as protected. Changed or
 unrecorded backups remain protected or blocked; cleanup never infers permission
 to delete from their filenames. Keep these files with your pre-upgrade backups
 while you still need to restore the matching database generation.

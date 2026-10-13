@@ -9,6 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readWorkspaceStateSnapshot } from "../agents/workspace-state-store.js";
 import { writeOpenClawConfig } from "../config/test-helpers.js";
 import { runDoctorHealthFlow } from "../flows/doctor-health.js";
+import {
+  listSessionSqliteMigrationManifestPaths,
+  readSessionSqliteMigrationManifest,
+  writeSessionSqliteMigrationManifest,
+} from "../infra/session-sqlite-migration-manifest.js";
 import { createUpdateRun, finishUpdateRun } from "../infra/update-run-ledger.js";
 import { listAgentDatabaseAdmissionRefusals } from "../state/agent-database-admission.js";
 import { withAgentDatabaseStartupAdmission } from "../state/agent-database-startup.js";
@@ -29,6 +34,7 @@ import { withEnvAsync } from "../test-utils/env.js";
 import { cleanupSessionStateForTest } from "../test-utils/session-state-cleanup.js";
 import * as configFlow from "./doctor-config-flow.js";
 import { withDoctorConfigPreflightHome } from "./doctor-config-preflight.test-support.js";
+import { retireUnrecordedStartupMigrationBackups } from "./doctor-migration-backup-artifacts.js";
 import { inspectSessionSqliteRecovery } from "./doctor-session-sqlite-recovery-inventory.js";
 import { retireSessionSqliteRecovery } from "./doctor-session-sqlite-retirement.js";
 import { runDoctorSessionSqlite } from "./doctor-session-sqlite.js";
@@ -202,6 +208,125 @@ describe("container image replacement Doctor repair and startup readiness", () =
       expect(retired.status).toBe("complete");
       expect(retired.totals.removedFiles).toBe(3);
       expect(fs.existsSync(legacyBackup)).toBe(true);
+      expect(fs.existsSync(databasePath)).toBe(true);
+    });
+  });
+
+  it("releases a startup-migration backup group once a later startup migration completes", async () => {
+    await withContainerState(async (stateDir) => {
+      const databasePath = seedSchema19Agent(stateDir);
+      await withAgentDatabaseStartupAdmission(async () => {
+        await repairContainerState();
+      });
+      await cleanupSessionStateForTest();
+      const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+      const inspect = () => inspectSessionSqliteRecovery({ cfg: {}, env });
+      expect(inspect().artifacts.map((item) => item.reason)).toEqual([
+        "awaiting-later-completed-update",
+        "awaiting-later-completed-update",
+      ]);
+      const [manifestPath] = listSessionSqliteMigrationManifestPaths(env);
+      const earlier = readSessionSqliteMigrationManifest(manifestPath!)!;
+      const completedAt = Date.parse(earlier.completedAt!);
+      // Older Doctor builds wrote backup groups without a manifest.
+      const unrecorded = (name: string, mtimeMs: number) => {
+        const file = `${databasePath}.pre-startup-migration-${name}.bak`;
+        fs.writeFileSync(file, "unrecorded backup");
+        fs.utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
+        return file;
+      };
+      const sharedPath = path.join(stateDir, "state", "openclaw.sqlite");
+      const unrecordedShared = (name: string, mtimeMs: number) => {
+        const file = `${sharedPath}.pre-startup-migration-${name}.bak`;
+        fs.writeFileSync(file, "unrecorded backup");
+        fs.utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
+        return file;
+      };
+      const beforeGroup = Date.parse(earlier.startedAt) - 1000;
+      const legacyId = "ab982637-0bcf-45bb-8641-e8b4513279f7";
+      const legacy = [unrecorded(legacyId, beforeGroup), unrecordedShared(legacyId, beforeGroup)];
+      const concurrentId = "5b0e2c11-7a4d-4f63-9d0e-3c1a2b4f5e6d";
+      const concurrent = unrecorded(concurrentId, completedAt + 1000);
+      // A member whose database had no later verified migration keeps the whole group.
+      const uncoveredId = "7c1d3e22-8b5e-4a74-8e1f-4d2b3c5a6f7e";
+      const otherAgent = path.join(stateDir, "agents", "other", "agent");
+      fs.mkdirSync(otherAgent, { recursive: true });
+      const uncovered = [
+        unrecordedShared(uncoveredId, beforeGroup),
+        path.join(otherAgent, `openclaw-agent.sqlite.pre-startup-migration-${uncoveredId}.bak`),
+      ];
+      fs.writeFileSync(uncovered[1]!, "unrecorded backup");
+      fs.utimesSync(uncovered[1]!, new Date(beforeGroup), new Date(beforeGroup));
+      const assertCurrent = vi.fn();
+      const result = retireUnrecordedStartupMigrationBackups({
+        env,
+        runStartedAtMs: completedAt + 5000,
+        assertCurrent,
+      });
+      expect(result.warnings).toEqual([]);
+      expect(result.retired.toSorted()).toEqual(legacy.toSorted());
+      expect(assertCurrent).toHaveBeenCalledTimes(2);
+      // Written after the verified group started: not proven superseded.
+      for (const file of [concurrent, ...uncovered]) {
+        expect(fs.readFileSync(file, "utf8")).toBe("unrecorded backup");
+        fs.rmSync(file);
+      }
+      fs.rmSync(path.join(stateDir, "agents", "other"), { recursive: true });
+      expect(inspect().artifacts.map((item) => item.reason)).toEqual([
+        "awaiting-later-completed-update",
+        "awaiting-later-completed-update",
+      ]);
+      const laterRun = (
+        runId: string,
+        completed: boolean,
+        covers: (target: (typeof earlier.targets)[number]) => boolean = () => true,
+      ) => {
+        const manifest = structuredClone(earlier);
+        manifest.targets = manifest.targets.filter(covers);
+        manifest.runId = runId;
+        manifest.startedAt = new Date(completedAt + 1000).toISOString();
+        if (completed) {
+          manifest.completedAt = new Date(completedAt + 2000).toISOString();
+        } else {
+          delete manifest.completedAt;
+        }
+        for (const target of manifest.targets) {
+          target.plannedMoves = [];
+          target.completedMoves = [];
+        }
+        writeSessionSqliteMigrationManifest({
+          manifest,
+          manifestPath: path.join(path.dirname(manifestPath!), `${runId}.json`),
+        });
+      };
+      // A later group that covered only the shared registry cannot release the agent backup.
+      laterRun("startup-migration-shared-only", true, (target) =>
+        target.sqlitePath.endsWith(path.join("state", "openclaw.sqlite")),
+      );
+      expect(
+        inspect().artifacts.every((item) => item.reason === "awaiting-later-completed-update"),
+      ).toBe(true);
+      // An unverified later migration is not proof that the earlier generation is obsolete.
+      laterRun("startup-migration-unverified", false);
+      expect(
+        inspect().artifacts.every((item) => item.reason === "awaiting-later-completed-update"),
+      ).toBe(true);
+      laterRun("startup-migration-verified", true);
+      const preview = inspect();
+      expect(preview.artifacts.map((item) => item.outcome)).toEqual(["candidate", "candidate"]);
+      const retired = await retireSessionSqliteRecovery({
+        env,
+        preview,
+        readConfig: async () => ({}),
+        confirm: async () => true,
+      });
+      expect(retired.status).toBe("complete");
+      expect(retired.totals.removedFiles).toBe(2);
+      expect(
+        fs
+          .readdirSync(path.dirname(databasePath))
+          .filter((name) => name.includes(".pre-startup-migration-")),
+      ).toEqual([]);
       expect(fs.existsSync(databasePath)).toBe(true);
     });
   });

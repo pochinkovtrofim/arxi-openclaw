@@ -102,13 +102,26 @@ it("preserves original config bytes before Doctor relocates and repairs legacy s
         configPaths: [legacyConfig],
         creator: { host: "fixture", pid: 1, startIdentity: "1" },
         drivers: [],
-        createdAt: new Date(Date.now() - 31 * 24 * 60 * 60_000).toISOString(),
+        createdAt: new Date(Date.now() - 60 * 60_000).toISOString(),
         roots: [legacyConfig],
         excludedRoots: [],
         protectedPaths: [legacyConfig],
         entries: [{ kind: "missing", sourcePath: legacyConfig, sqlite: false, directory: false }],
       }),
     );
+    const earlierCronBackup = path.join(
+      legacyRoot,
+      "state",
+      `openclaw.sqlite.doctor-cron-${Date.now() - 60 * 60_000}-${randomUUID()}.bak`,
+    );
+    const newestCronBackup = path.join(
+      legacyRoot,
+      "state",
+      `openclaw.sqlite.doctor-cron-${Date.now() - 30 * 60_000}-${randomUUID()}.bak`,
+    );
+    fs.mkdirSync(path.dirname(earlierCronBackup), { recursive: true });
+    fs.writeFileSync(earlierCronBackup, "earlier cron backup");
+    fs.writeFileSync(newestCronBackup, "newest cron backup");
     vi.stubEnv("OPENCLAW_TEST_FAST", "0");
     vi.stubEnv("OPENCLAW_STATE_DIR", undefined);
     vi.stubEnv("OPENCLAW_CONFIG_PATH", undefined);
@@ -135,7 +148,11 @@ it("preserves original config bytes before Doctor relocates and repairs legacy s
         expect(resolveStateDir(process.env)).toBe(state.stateDir);
         const store = resolveUpdateCaptureRoot(legacyRoot);
         expect(fs.existsSync(store), runtime.log.mock.calls.flat().join("\n")).toBe(true);
-        const captures = fs.readdirSync(store).filter((name) => name.startsWith("doctor-"));
+        // Older captures stay until Doctor verifies the repaired state.
+        expect(fs.existsSync(expiredCapture)).toBe(true);
+        const captures = fs
+          .readdirSync(store)
+          .filter((name) => name.startsWith("doctor-") && name !== expiredRunId);
         expect(captures, runtime.log.mock.calls.flat().join("\n")).toHaveLength(1);
         expect(
           fs.existsSync(path.join(store, captures[0]!, "manifest.json")),
@@ -153,8 +170,11 @@ it("preserves original config bytes before Doctor relocates and repairs legacy s
       await runDoctorHealthFlow(runtime, { repair: true, nonInteractive: true });
       expect(repair).toHaveBeenCalledOnce();
       expect(fs.existsSync(expiredCapture)).toBe(false);
+      // Relocation keeps the same files; legacyRoot now links to the canonical state directory.
+      expect(fs.existsSync(earlierCronBackup)).toBe(false);
+      expect(fs.readFileSync(newestCronBackup, "utf8")).toBe("newest cron backup");
       expect(runtime.log).toHaveBeenCalledWith(
-        `Retired standalone Doctor capture older than 30 days: ${expiredCapture}. Take a verified backup before an upgrade when you need a long-term recovery copy.`,
+        `Retired superseded Doctor capture: ${expiredCapture}. The newest sealed capture remains for manual recovery; take a verified backup when you need a long-term copy.`,
       );
       expect(fs.realpathSync(legacyRoot)).toBe(state.stateDir);
       expect(fs.readFileSync(state.configPath, "utf8")).toContain("19102");

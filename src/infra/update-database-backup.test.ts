@@ -17,7 +17,7 @@ import * as candidateState from "./update-candidate-state.js";
 import * as databaseSizes from "./update-candidate-state.sizes.js";
 import { resolveUpdateCaptureRoot } from "./update-capture-paths.js";
 import { createUpdateDatabaseBackupInProcess } from "./update-database-backup.js";
-import { retireExpiredStandaloneDoctorCaptures } from "./update-recovery-baseline-capture.js";
+import { retireSupersededStandaloneDoctorCaptures } from "./update-recovery-baseline-capture.js";
 import type { UpdateRecoveryCaptureAcquisition } from "./update-recovery-capture-acquisition.js";
 import { getUpdateRunAsync } from "./update-run-reader.js";
 
@@ -487,7 +487,7 @@ it("rejects an already-aborted in-process size inventory", async () => {
   ).rejects.toBe(signal.reason);
 });
 
-it("retires only expired sealed standalone Doctor captures and preserves incomplete or linked copies", async () => {
+it("retires superseded and earlier incomplete Doctor captures and preserves the newest, current or linked copies", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const now = Date.parse("2026-09-30T12:00:00.000Z");
     const day = 24 * 60 * 60_000;
@@ -520,10 +520,15 @@ it("retires only expired sealed standalone Doctor captures and preserves incompl
       expect(await getUpdateRunAsync(runId)).toBeUndefined();
       return directory;
     };
-    const expired = await sealed(`doctor-${randomUUID()}`, 31);
-    const recent = await sealed(`doctor-${randomUUID()}`, 1);
+    const older = await sealed(`doctor-${randomUUID()}`, 31);
+    const superseded = await sealed(`doctor-${randomUUID()}`, 1);
+    const newest = await sealed(`doctor-${randomUUID()}`, 0);
+    const earlierIncomplete = path.join(store, `doctor-${randomUUID()}`);
+    await fs.mkdir(earlierIncomplete);
+    await fs.utimes(earlierIncomplete, new Date(now - day), new Date(now - day));
     const incomplete = path.join(store, `doctor-${randomUUID()}`);
     await fs.mkdir(incomplete);
+    await fs.utimes(incomplete, new Date(now + 1000), new Date(now + 1000));
     const update = await sealed(randomUUID(), 40);
     const linkedId = `doctor-${randomUUID()}`;
     const linkedTarget = await sealed(linkedId, 31, state.path("linked-capture"));
@@ -531,17 +536,19 @@ it("retires only expired sealed standalone Doctor captures and preserves incompl
     await fs.symlink(linkedTarget, linked, "dir");
     const assertCurrent = vi.fn();
 
-    const result = await retireExpiredStandaloneDoctorCaptures({
+    const result = await retireSupersededStandaloneDoctorCaptures({
       stateDir: state.stateDir,
-      keepRunId: path.basename(recent),
-      now,
+      runStartedAtMs: now,
       assertCurrent,
     });
 
-    expect(result).toEqual({ retired: [expired], warnings: [] });
-    expect(assertCurrent).toHaveBeenCalled();
-    await expect(fs.lstat(expired)).rejects.toMatchObject({ code: "ENOENT" });
-    for (const retained of [recent, incomplete, update, linkedTarget]) {
+    expect(result.warnings).toEqual([]);
+    expect(result.retired.toSorted()).toEqual([older, superseded, earlierIncomplete].toSorted());
+    expect(assertCurrent).toHaveBeenCalledTimes(3);
+    for (const retired of [older, superseded, earlierIncomplete]) {
+      await expect(fs.lstat(retired)).rejects.toMatchObject({ code: "ENOENT" });
+    }
+    for (const retained of [newest, incomplete, update, linkedTarget]) {
       expect((await fs.lstat(retained)).isDirectory()).toBe(true);
     }
     expect((await fs.lstat(linked)).isSymbolicLink()).toBe(true);
