@@ -159,11 +159,7 @@ export function retireUnrecordedStartupMigrationBackups(params: {
     for (const name of fs.readdirSync(directory).toSorted()) {
       const backupPath = path.join(directory, name);
       const database = STARTUP_MIGRATION_BACKUP_NAME.exec(name)?.[1];
-      if (
-        !database ||
-        !databases.has(path.join(directory, database)) ||
-        recorded.has(backupPath)
-      ) {
+      if (!database || !databases.has(path.join(directory, database)) || recorded.has(backupPath)) {
         continue;
       }
       try {
