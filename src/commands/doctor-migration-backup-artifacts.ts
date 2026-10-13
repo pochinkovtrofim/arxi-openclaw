@@ -165,7 +165,7 @@ export function retireUnrecordedStartupMigrationBackups(params: {
     ...[...supersededAt.keys(), canonicalMigrationFilePath(sharedPath)].map((file) =>
       path.dirname(file),
     ),
-    ...agentDirectories.map((directory) => canonicalMigrationFilePath(directory)),
+    ...agentDirectories.map((agentDirectory) => canonicalMigrationFilePath(agentDirectory)),
   ])) {
     if (!fs.existsSync(directory)) {
       continue;
@@ -184,11 +184,7 @@ export function retireUnrecordedStartupMigrationBackups(params: {
     try {
       const superseded = group.every(({ backupPath, database }) => {
         const stat = fs.lstatSync(backupPath);
-        return (
-          stat.isFile() &&
-          stat.nlink === 1 &&
-          stat.mtimeMs < (supersededAt.get(database) ?? 0)
-        );
+        return stat.isFile() && stat.nlink === 1 && stat.mtimeMs < (supersededAt.get(database) ?? 0);
       });
       if (!superseded) {
         continue;
