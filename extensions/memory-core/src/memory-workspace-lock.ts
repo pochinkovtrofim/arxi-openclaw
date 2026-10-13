@@ -326,3 +326,16 @@ async function acquireMemoryWorkspaceLock(
     await sleep(MEMORY_WORKSPACE_LOCK_RETRY_DELAY_MS);
   }
 }
+
+/**
+ * Process-global handle for other in-process plugins that rewrite curated
+ * memory files (the Arxi owner memory view edits USER.md and MEMORY.md). They
+ * join the same writer serialization as dreaming, promotion and forget instead
+ * of racing their read-compare-rename.
+ */
+const MEMORY_WORKSPACE_WRITE_LOCK = Symbol.for("openclaw.memory-core.workspace-write-lock");
+
+export function publishMemoryWorkspaceWriteLock(): void {
+  // SAFETY: globalThis is an ordinary extensible object; only this symbol key is written.
+  (globalThis as Record<symbol, unknown>)[MEMORY_WORKSPACE_WRITE_LOCK] = withMemoryWorkspaceLock;
+}
