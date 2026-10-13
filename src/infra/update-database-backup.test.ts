@@ -487,7 +487,7 @@ it("rejects an already-aborted in-process size inventory", async () => {
   ).rejects.toBe(signal.reason);
 });
 
-it("retires superseded sealed standalone Doctor captures and preserves the newest, incomplete or linked copies", async () => {
+it("retires superseded and earlier incomplete Doctor captures and preserves the newest, current or linked copies", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const now = Date.parse("2026-09-30T12:00:00.000Z");
     const day = 24 * 60 * 60_000;
@@ -523,8 +523,12 @@ it("retires superseded sealed standalone Doctor captures and preserves the newes
     const older = await sealed(`doctor-${randomUUID()}`, 31);
     const superseded = await sealed(`doctor-${randomUUID()}`, 1);
     const newest = await sealed(`doctor-${randomUUID()}`, 0);
+    const earlierIncomplete = path.join(store, `doctor-${randomUUID()}`);
+    await fs.mkdir(earlierIncomplete);
+    await fs.utimes(earlierIncomplete, new Date(now - day), new Date(now - day));
     const incomplete = path.join(store, `doctor-${randomUUID()}`);
     await fs.mkdir(incomplete);
+    await fs.utimes(incomplete, new Date(now + 1000), new Date(now + 1000));
     const update = await sealed(randomUUID(), 40);
     const linkedId = `doctor-${randomUUID()}`;
     const linkedTarget = await sealed(linkedId, 31, state.path("linked-capture"));
@@ -534,13 +538,14 @@ it("retires superseded sealed standalone Doctor captures and preserves the newes
 
     const result = await retireSupersededStandaloneDoctorCaptures({
       stateDir: state.stateDir,
+      runStartedAtMs: now,
       assertCurrent,
     });
 
     expect(result.warnings).toEqual([]);
-    expect(result.retired.toSorted()).toEqual([older, superseded].toSorted());
-    expect(assertCurrent).toHaveBeenCalledTimes(2);
-    for (const retired of [older, superseded]) {
+    expect(result.retired.toSorted()).toEqual([older, superseded, earlierIncomplete].toSorted());
+    expect(assertCurrent).toHaveBeenCalledTimes(3);
+    for (const retired of [older, superseded, earlierIncomplete]) {
       await expect(fs.lstat(retired)).rejects.toMatchObject({ code: "ENOENT" });
     }
     for (const retained of [newest, incomplete, update, linkedTarget]) {

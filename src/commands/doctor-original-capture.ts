@@ -20,6 +20,8 @@ export async function preserveDoctorOriginalState(params: {
   signal: AbortSignal;
   assertCurrent: () => void;
   writeAuthority?: UpdateDoctorWriteAuthority;
+  /** Receives the state directory whose capture root holds this run's capture. */
+  onStandaloneCapture?: (stateDir: string) => void;
 }): Promise<void> {
   const original = params.writeAuthority?.originalRecoveryCapture;
   const runId = original?.runId ?? params.env[UPDATE_RUN_ID_ENV]?.trim();
@@ -77,6 +79,8 @@ export async function preserveDoctorOriginalState(params: {
       await import("../infra/update-recovery-baseline-capture.js");
     assertCurrent();
     const standaloneRunId = `doctor-${randomUUID()}`;
+    // Relocation can change the resolved state directory before Doctor completes.
+    params.onStandaloneCapture?.(resolvePathViaExistingAncestorSync(resolveStateDir(params.env)));
     const captured = await captureUpdateRecoveryBaseline({
       runId: standaloneRunId,
       installRoot,
@@ -121,6 +125,8 @@ export async function retireSupersededDoctorRecoveryCopies(params: {
   env: NodeJS.ProcessEnv;
   runtime: RuntimeEnv;
   runStartedAtMs: number;
+  /** State directories whose capture roots this run used, beside the current one. */
+  captureStateDirs?: readonly string[];
 }): Promise<void> {
   try {
     const [{ retireSupersededStandaloneDoctorCaptures }, { getOpenClawDatabaseMaintenanceScope }] =
@@ -132,13 +138,22 @@ export async function retireSupersededDoctorRecoveryCopies(params: {
     if (!scope) {
       throw new Error("Doctor maintenance scope is unavailable.");
     }
-    const retirement = await retireSupersededStandaloneDoctorCaptures({
-      stateDir: resolvePathViaExistingAncestorSync(resolveStateDir(params.env)),
-      assertCurrent: () => scope.assertOwnerCurrent(),
-    });
+    const retirement = { retired: [] as string[], warnings: [] as string[] };
+    for (const stateDir of new Set([
+      ...(params.captureStateDirs ?? []),
+      resolvePathViaExistingAncestorSync(resolveStateDir(params.env)),
+    ])) {
+      const result = await retireSupersededStandaloneDoctorCaptures({
+        stateDir,
+        runStartedAtMs: params.runStartedAtMs,
+        assertCurrent: () => scope.assertOwnerCurrent(),
+      });
+      retirement.retired.push(...result.retired);
+      retirement.warnings.push(...result.warnings);
+    }
     for (const directory of retirement.retired) {
       params.runtime.log(
-        `Retired superseded standalone Doctor capture: ${directory}. The newest capture remains for manual recovery; take a verified backup when you need a long-term copy.`,
+        `Retired superseded Doctor capture: ${directory}. The newest sealed capture remains for manual recovery; take a verified backup when you need a long-term copy.`,
       );
     }
     const { retireSupersededCronDoctorBackups } = await import("./doctor/cron/store-repair.js");
@@ -150,7 +165,19 @@ export async function retireSupersededDoctorRecoveryCopies(params: {
     for (const backupPath of cron.retired) {
       params.runtime.log(`Retired superseded pre-repair cron backup: ${backupPath}.`);
     }
-    for (const warning of [...retirement.warnings, ...cron.warnings]) {
+    const { retireUnrecordedStartupMigrationBackups } =
+      await import("./doctor-migration-backup-artifacts.js");
+    const migration = retireUnrecordedStartupMigrationBackups({
+      env: params.env,
+      runStartedAtMs: params.runStartedAtMs,
+      assertCurrent: () => scope.assertOwnerCurrent(),
+    });
+    for (const backupPath of migration.retired) {
+      params.runtime.log(
+        `Retired unrecorded pre-migration SQLite backup superseded by a verified migration: ${backupPath}.`,
+      );
+    }
+    for (const warning of [...retirement.warnings, ...cron.warnings, ...migration.warnings]) {
       params.runtime.log(warning);
     }
   } catch (error) {

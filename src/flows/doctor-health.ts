@@ -121,6 +121,7 @@ async function runDoctorHealthFlowWithResult(
 ) {
   // Recovery copies created from here on belong to this run and survive its completion.
   const doctorStartedAtMs = Date.now();
+  const captureStateDirs: string[] = [];
   const { prepareDoctorHealthFlow } = await import("./doctor-health-startup.js");
   const { effectiveRuntime, repairRuntime, stateDirExistedAtStart, root } =
     await prepareDoctorHealthFlow(runtime, options, intro);
@@ -195,6 +196,7 @@ async function runDoctorHealthFlowWithResult(
           writeAuthority,
           rehearsalRoot: preCaptureRehearsalRoot,
           json: options.json,
+          onStandaloneCapture: (stateDir) => captureStateDirs.push(stateDir),
         }),
       }),
     );
@@ -452,6 +454,7 @@ async function runDoctorHealthFlowWithResult(
               env: process.env,
               runtime: effectiveRuntime,
               runStartedAtMs: doctorStartedAtMs,
+              captureStateDirs,
             });
           }
           resumeCapture?.();

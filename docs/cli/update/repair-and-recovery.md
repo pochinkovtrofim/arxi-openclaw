@@ -144,10 +144,14 @@ snapshots databases under its own maintenance custody with a single isolated bac
 Shared database families larger than 64 MiB keep discovery copies in an isolated process
 so a slow copy does not block Doctor's main thread from processing cancellation.
 After a standalone `doctor --fix` verifies the repaired state, it keeps only the
-newest sealed standalone Doctor capture, retires older ones and reports each
-removal. A failed or deferred repair retires nothing. Incomplete captures and
-update captures are never retired automatically, so take a verified backup when
-you need a long-term copy.
+newest sealed standalone Doctor capture and retires older ones, together with
+incomplete captures left by earlier runs, which never established a rollback
+point. It also keeps only the current run's pre-repair cron backups (or the newest
+earlier one) and removes pre-migration SQLite backups that an older Doctor wrote
+without a recovery manifest once a later migration group is verified complete.
+Each removal is reported. A failed or deferred repair retires nothing. Update
+captures are never retired automatically, so take a verified backup when you need
+a long-term copy.
 
 These captures are evidence for manual recovery. Active writers can change state
 during capture; an observed change leaves the capture incomplete and produces a

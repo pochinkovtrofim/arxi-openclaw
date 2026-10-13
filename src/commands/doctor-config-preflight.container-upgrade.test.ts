@@ -34,6 +34,7 @@ import { withEnvAsync } from "../test-utils/env.js";
 import { cleanupSessionStateForTest } from "../test-utils/session-state-cleanup.js";
 import * as configFlow from "./doctor-config-flow.js";
 import { withDoctorConfigPreflightHome } from "./doctor-config-preflight.test-support.js";
+import { retireUnrecordedStartupMigrationBackups } from "./doctor-migration-backup-artifacts.js";
 import { inspectSessionSqliteRecovery } from "./doctor-session-sqlite-recovery-inventory.js";
 import { retireSessionSqliteRecovery } from "./doctor-session-sqlite-retirement.js";
 import { runDoctorSessionSqlite } from "./doctor-session-sqlite.js";
@@ -227,6 +228,34 @@ describe("container image replacement Doctor repair and startup readiness", () =
       const [manifestPath] = listSessionSqliteMigrationManifestPaths(env);
       const earlier = readSessionSqliteMigrationManifest(manifestPath!)!;
       const completedAt = Date.parse(earlier.completedAt!);
+      // Older Doctor builds wrote backup groups without a manifest.
+      const unrecorded = (name: string, mtimeMs: number) => {
+        const file = `${databasePath}.pre-startup-migration-${name}.bak`;
+        fs.writeFileSync(file, "unrecorded backup");
+        fs.utimesSync(file, new Date(mtimeMs), new Date(mtimeMs));
+        return file;
+      };
+      const legacy = unrecorded(
+        "ab982637-0bcf-45bb-8641-e8b4513279f7",
+        Date.parse(earlier.startedAt) - 1000,
+      );
+      const concurrent = unrecorded("5b0e2c11-7a4d-4f63-9d0e-3c1a2b4f5e6d", completedAt + 1000);
+      const assertCurrent = vi.fn();
+      expect(
+        retireUnrecordedStartupMigrationBackups({
+          env,
+          runStartedAtMs: completedAt + 5000,
+          assertCurrent,
+        }),
+      ).toEqual({ retired: [legacy], warnings: [] });
+      expect(assertCurrent).toHaveBeenCalledOnce();
+      // Written after the verified group started: not proven superseded.
+      expect(fs.readFileSync(concurrent, "utf8")).toBe("unrecorded backup");
+      fs.rmSync(concurrent);
+      expect(inspect().artifacts.map((item) => item.reason)).toEqual([
+        "awaiting-later-completed-update",
+        "awaiting-later-completed-update",
+      ]);
       const laterRun = (runId: string, completed: boolean) => {
         const manifest = structuredClone(earlier);
         manifest.runId = runId;

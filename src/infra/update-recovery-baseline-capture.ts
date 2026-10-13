@@ -602,10 +602,12 @@ const STANDALONE_DOCTOR_CAPTURE_NAME =
 
 /**
  * After Doctor verifies repaired state, the newest sealed standalone capture is the only
- * rollback point kept. Incomplete, linked, update-owned and outcome-bearing captures stay.
+ * rollback point kept. Incomplete captures left by earlier runs never established a
+ * rollback point and are retired too; linked, update-owned and outcome-bearing captures stay.
  */
 export async function retireSupersededStandaloneDoctorCaptures(params: {
   stateDir: string;
+  runStartedAtMs: number;
   assertCurrent: () => void;
 }): Promise<{ retired: string[]; warnings: string[] }> {
   const retired: string[] = [];
@@ -623,6 +625,7 @@ export async function retireSupersededStandaloneDoctorCaptures(params: {
     return { retired, warnings };
   }
   const sealed: { directory: string; createdAt: number }[] = [];
+  const incomplete: string[] = [];
   for (const name of names.toSorted()) {
     if (!STANDALONE_DOCTOR_CAPTURE_NAME.test(name)) {
       continue;
@@ -638,6 +641,9 @@ export async function retireSupersededStandaloneDoctorCaptures(params: {
         raw = await fs.readFile(path.join(directory, "manifest.json"), "utf8");
       } catch (error) {
         if (hasErrnoCode(error, "ENOENT")) {
+          if (entry.mtimeMs < params.runStartedAtMs) {
+            incomplete.push(directory);
+          }
           continue;
         }
         throw error;
@@ -668,10 +674,10 @@ export async function retireSupersededStandaloneDoctorCaptures(params: {
     (latest, capture) => (!latest || capture.createdAt >= latest.createdAt ? capture : latest),
     undefined,
   );
-  for (const { directory } of sealed) {
-    if (directory === newest?.directory) {
-      continue;
-    }
+  for (const directory of [
+    ...sealed.flatMap((capture) => (capture === newest ? [] : [capture.directory])),
+    ...incomplete,
+  ]) {
     try {
       params.assertCurrent();
       await fs.rm(directory, { recursive: true });
