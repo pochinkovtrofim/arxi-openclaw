@@ -7,7 +7,10 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import * as snapshots from "../infra/sqlite-snapshot-source.js";
 import { readAgentDatabaseAdmissionRefusal } from "./agent-database-admission.js";
-import { withAgentDatabaseStartupAdmission } from "./agent-database-startup.js";
+import {
+  hasAbandonedAgentDatabaseInspections,
+  withAgentDatabaseStartupAdmission,
+} from "./agent-database-startup.js";
 import {
   closeOpenClawAgentDatabasesForTest,
   openOpenClawAgentDatabase,
@@ -123,6 +126,63 @@ it("keeps pending startup stores fenced without inspecting or copying them again
       release.resolve();
       await Promise.allSettled([readiness]);
     }
+  });
+});
+
+it("lets the next startup admission replace a pending inspection its stopped owner abandoned", async () => {
+  const fleet = createFleet();
+  const pathname = fleet.paths[0]!;
+  const entered = createDeferred();
+  const release = createDeferred();
+  const createReader = schemaInspection.createAgentSchemaInspectionWorker;
+  let paused = false;
+  vi.spyOn(schemaInspection, "createAgentSchemaInspectionWorker").mockImplementation(() => {
+    const reader = createReader();
+    const inspect = reader.inspect;
+    return Object.assign(reader, {
+      inspect: async (...args: Parameters<typeof inspect>) => {
+        if (args[0].pathname === pathname && !paused) {
+          paused = true;
+          entered.resolve();
+          await release.promise;
+        }
+        return inspect(...args);
+      },
+    });
+  });
+  await withAgentDatabaseStartupAdmission(async (first) => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const readiness = fleet.ready();
+    let abandoned: ReturnType<typeof readAgentDatabaseAdmissionRefusal>;
+    try {
+      await entered.promise;
+      await vi.advanceTimersByTimeAsync(5_000);
+      await readiness;
+      vi.useRealTimers();
+      abandoned = readAgentDatabaseAdmissionRefusal("first", { env: fleet.env });
+      expect(abandoned?.code).toBe("agent-database-inspection-pending");
+      expect(hasAbandonedAgentDatabaseInspections(fleet.env)).toBe(false);
+      // The first Gateway becomes ready, then an in-process restart closes it.
+      const { stop } = first.adopt();
+      first.activate({ isCurrent: () => true, prepareAgent: async () => {} });
+      const stopped = stop();
+      release.resolve();
+      await stopped;
+    } finally {
+      vi.useRealTimers();
+      release.resolve();
+      await Promise.allSettled([readiness]);
+    }
+    // No owner remains to recover or fail the decision; it would refuse forever.
+    expect(readAgentDatabaseAdmissionRefusal("first", { env: fleet.env })).toBe(abandoned);
+    expect(hasAbandonedAgentDatabaseInspections(fleet.env)).toBe(true);
+
+    await withAgentDatabaseStartupAdmission(async (restarted) => {
+      expect(restarted).not.toBe(first);
+      await fleet.ready();
+      expect(readAgentDatabaseAdmissionRefusal("first", { env: fleet.env })).toBeUndefined();
+      expect(hasAbandonedAgentDatabaseInspections(fleet.env)).toBe(false);
+    });
   });
 });
 
