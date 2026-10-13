@@ -174,7 +174,7 @@ it("preserves original config bytes before Doctor relocates and repairs legacy s
       expect(fs.existsSync(earlierCronBackup)).toBe(false);
       expect(fs.readFileSync(newestCronBackup, "utf8")).toBe("newest cron backup");
       expect(runtime.log).toHaveBeenCalledWith(
-        `Retired superseded standalone Doctor capture: ${expiredCapture}. The newest capture remains for manual recovery; take a verified backup when you need a long-term copy.`,
+        `Retired superseded Doctor capture: ${expiredCapture}. The newest sealed capture remains for manual recovery; take a verified backup when you need a long-term copy.`,
       );
       expect(fs.realpathSync(legacyRoot)).toBe(state.stateDir);
       expect(fs.readFileSync(state.configPath, "utf8")).toContain("19102");
