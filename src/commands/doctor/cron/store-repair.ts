@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import { isDeepStrictEqual } from "node:util";
 import { safeParseJsonRecord } from "@openclaw/normalization-core/json-coercion";
@@ -214,6 +216,59 @@ export async function backupCronStoreForDoctor(
     afterPublish: (guard) => guard.assertTargetUnchanged(repair.assertCurrent),
   });
   return backupPath;
+}
+
+const CRON_DOCTOR_BACKUP_SUFFIX =
+  /^\.doctor-cron-(\d+)-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.bak$/u;
+
+/**
+ * Called after Doctor verified the repaired state. Backups from this run keep its staged
+ * originals; otherwise the newest earlier backup stays as the single cron rollback point.
+ */
+export function retireSupersededCronDoctorBackups(params: {
+  env: NodeJS.ProcessEnv;
+  runStartedAtMs: number;
+  assertCurrent: () => void;
+}): { retired: string[]; warnings: string[] } {
+  const sourcePath = resolveOpenClawStateSqlitePath(params.env);
+  const directory = path.dirname(sourcePath);
+  const prefix = path.basename(sourcePath);
+  const retired: string[] = [];
+  const warnings: string[] = [];
+  const backups: { path: string; createdAtMs: number }[] = [];
+  let names: string[];
+  try {
+    names = fs.readdirSync(directory);
+  } catch (error) {
+    return { retired, warnings: [`Pre-repair cron backups unavailable: ${String(error)}`] };
+  }
+  for (const name of names.toSorted()) {
+    const match = name.startsWith(prefix)
+      ? CRON_DOCTOR_BACKUP_SUFFIX.exec(name.slice(prefix.length))
+      : null;
+    const backupPath = path.join(directory, name);
+    const stat = match ? fs.lstatSync(backupPath, { throwIfNoEntry: false }) : undefined;
+    // Unrecognized names and multiply linked files are not Doctor-owned backups.
+    if (match && stat?.isFile() && stat.nlink === 1) {
+      backups.push({ path: backupPath, createdAtMs: Number(match[1]) });
+    }
+  }
+  const keepSince = backups.some(({ createdAtMs }) => createdAtMs >= params.runStartedAtMs)
+    ? params.runStartedAtMs
+    : Math.max(...backups.map(({ createdAtMs }) => createdAtMs));
+  for (const backup of backups) {
+    if (backup.createdAtMs >= keepSince) {
+      continue;
+    }
+    try {
+      params.assertCurrent();
+      fs.unlinkSync(backup.path);
+      retired.push(backup.path);
+    } catch (error) {
+      warnings.push(`Pre-repair cron backup retained at ${backup.path}: ${String(error)}`);
+    }
+  }
+  return { retired, warnings };
 }
 
 async function commitCronDoctorRepair(

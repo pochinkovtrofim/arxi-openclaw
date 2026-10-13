@@ -73,7 +73,7 @@ export async function preserveDoctorOriginalState(params: {
     if (!driver) {
       throw new Error("The Doctor process could not be identified for the pre-repair capture.");
     }
-    const { captureUpdateRecoveryBaseline, retireExpiredStandaloneDoctorCaptures } =
+    const { captureUpdateRecoveryBaseline } =
       await import("../infra/update-recovery-baseline-capture.js");
     assertCurrent();
     const standaloneRunId = `doctor-${randomUUID()}`;
@@ -90,25 +90,6 @@ export async function preserveDoctorOriginalState(params: {
     params.runtime.log(
       `Pre-repair state retained for manual recovery at ${captured.ref.manifestPath}.`,
     );
-    try {
-      const retirement = await retireExpiredStandaloneDoctorCaptures({
-        stateDir: resolvePathViaExistingAncestorSync(resolveStateDir(params.env)),
-        keepRunId: standaloneRunId,
-        assertCurrent,
-      });
-      for (const directory of retirement.retired) {
-        params.runtime.log(
-          `Retired standalone Doctor capture older than 30 days: ${directory}. Take a verified backup before an upgrade when you need a long-term recovery copy.`,
-        );
-      }
-      for (const warning of retirement.warnings) {
-        params.runtime.log(warning);
-      }
-    } catch (error) {
-      params.runtime.log(
-        `Standalone Doctor capture retirement unavailable: ${formatErrorMessage(error)}`,
-      );
-    }
     for (const warning of captured.warnings) {
       params.runtime.log(warning.message);
     }
@@ -131,6 +112,50 @@ export async function preserveDoctorOriginalState(params: {
     }
     params.runtime.log(
       `Original state capture was unavailable: ${formatErrorMessage(error)}. Doctor will continue; inspect retained evidence manually before restoring state.`,
+    );
+  }
+}
+
+/** Called only after Doctor verified the repaired state; the newest copies stay for rollback. */
+export async function retireSupersededDoctorRecoveryCopies(params: {
+  env: NodeJS.ProcessEnv;
+  runtime: RuntimeEnv;
+  runStartedAtMs: number;
+}): Promise<void> {
+  try {
+    const [{ retireSupersededStandaloneDoctorCaptures }, { getOpenClawDatabaseMaintenanceScope }] =
+      await Promise.all([
+        import("../infra/update-recovery-baseline-capture.js"),
+        import("../state/openclaw-state-db-async-lifecycle.js"),
+      ]);
+    const scope = getOpenClawDatabaseMaintenanceScope();
+    if (!scope) {
+      throw new Error("Doctor maintenance scope is unavailable.");
+    }
+    const retirement = await retireSupersededStandaloneDoctorCaptures({
+      stateDir: resolvePathViaExistingAncestorSync(resolveStateDir(params.env)),
+      assertCurrent: () => scope.assertOwnerCurrent(),
+    });
+    for (const directory of retirement.retired) {
+      params.runtime.log(
+        `Retired superseded standalone Doctor capture: ${directory}. The newest capture remains for manual recovery; take a verified backup when you need a long-term copy.`,
+      );
+    }
+    const { retireSupersededCronDoctorBackups } = await import("./doctor/cron/store-repair.js");
+    const cron = retireSupersededCronDoctorBackups({
+      env: params.env,
+      runStartedAtMs: params.runStartedAtMs,
+      assertCurrent: () => scope.assertOwnerCurrent(),
+    });
+    for (const backupPath of cron.retired) {
+      params.runtime.log(`Retired superseded pre-repair cron backup: ${backupPath}.`);
+    }
+    for (const warning of [...retirement.warnings, ...cron.warnings]) {
+      params.runtime.log(warning);
+    }
+  } catch (error) {
+    params.runtime.log(
+      `Superseded Doctor recovery copy retirement unavailable: ${formatErrorMessage(error)}`,
     );
   }
 }

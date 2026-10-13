@@ -147,6 +147,16 @@ export function collectRecoveryInventory(params: {
         continue;
       }
       const run = { manifest, manifestPath };
+      if (
+        manifest.runId.startsWith("startup-migration-") &&
+        manifest.completedAt &&
+        manifest.targets.length > 0 &&
+        manifest.targets.every((target) => target.databaseIdentity)
+      ) {
+        // A later verified startup migration supersedes earlier backup groups, as a later
+        // successful update does; hosts that replace runtimes record no update history.
+        laterUpdateStartedAt = Math.max(laterUpdateStartedAt, Date.parse(manifest.startedAt) || 0);
+      }
       const consumed = collectRecordedConsumedArchives(manifest);
       for (const target of manifest.targets) {
         const expected = resolveUnsuffixedSqliteTargetFromSessionStorePath(target.storePath);
@@ -177,7 +187,7 @@ export function collectRecoveryInventory(params: {
   if ([...references.values()].some((refs) => refs.some((ref) => ref.target.databaseIdentity))) {
     try {
       laterUpdateStartedAt = Math.max(
-        0,
+        laterUpdateStartedAt,
         ...listUpdateRuns({ limit: 100 }, { env: params.env })
           .filter((run) => run.status === "succeeded" && run.finishedAtMs !== null)
           .map((run) => run.createdAtMs),

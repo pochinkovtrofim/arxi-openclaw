@@ -9,6 +9,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readWorkspaceStateSnapshot } from "../agents/workspace-state-store.js";
 import { writeOpenClawConfig } from "../config/test-helpers.js";
 import { runDoctorHealthFlow } from "../flows/doctor-health.js";
+import {
+  listSessionSqliteMigrationManifestPaths,
+  readSessionSqliteMigrationManifest,
+  writeSessionSqliteMigrationManifest,
+} from "../infra/session-sqlite-migration-manifest.js";
 import { createUpdateRun, finishUpdateRun } from "../infra/update-run-ledger.js";
 import { listAgentDatabaseAdmissionRefusals } from "../state/agent-database-admission.js";
 import { withAgentDatabaseStartupAdmission } from "../state/agent-database-startup.js";
@@ -202,6 +207,65 @@ describe("container image replacement Doctor repair and startup readiness", () =
       expect(retired.status).toBe("complete");
       expect(retired.totals.removedFiles).toBe(3);
       expect(fs.existsSync(legacyBackup)).toBe(true);
+      expect(fs.existsSync(databasePath)).toBe(true);
+    });
+  });
+
+  it("releases a startup-migration backup group once a later startup migration completes", async () => {
+    await withContainerState(async (stateDir) => {
+      const databasePath = seedSchema19Agent(stateDir);
+      await withAgentDatabaseStartupAdmission(async () => {
+        await repairContainerState();
+      });
+      await cleanupSessionStateForTest();
+      const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+      const inspect = () => inspectSessionSqliteRecovery({ cfg: {}, env });
+      expect(inspect().artifacts.map((item) => item.reason)).toEqual([
+        "awaiting-later-completed-update",
+        "awaiting-later-completed-update",
+      ]);
+      const [manifestPath] = listSessionSqliteMigrationManifestPaths(env);
+      const earlier = readSessionSqliteMigrationManifest(manifestPath!)!;
+      const completedAt = Date.parse(earlier.completedAt!);
+      const laterRun = (runId: string, completed: boolean) => {
+        const manifest = structuredClone(earlier);
+        manifest.runId = runId;
+        manifest.startedAt = new Date(completedAt + 1000).toISOString();
+        if (completed) {
+          manifest.completedAt = new Date(completedAt + 2000).toISOString();
+        } else {
+          delete manifest.completedAt;
+        }
+        for (const target of manifest.targets) {
+          target.plannedMoves = [];
+          target.completedMoves = [];
+        }
+        writeSessionSqliteMigrationManifest({
+          manifest,
+          manifestPath: path.join(path.dirname(manifestPath!), `${runId}.json`),
+        });
+      };
+      // An unverified later migration is not proof that the earlier generation is obsolete.
+      laterRun("startup-migration-unverified", false);
+      expect(
+        inspect().artifacts.every((item) => item.reason === "awaiting-later-completed-update"),
+      ).toBe(true);
+      laterRun("startup-migration-verified", true);
+      const preview = inspect();
+      expect(preview.artifacts.map((item) => item.outcome)).toEqual(["candidate", "candidate"]);
+      const retired = await retireSessionSqliteRecovery({
+        env,
+        preview,
+        readConfig: async () => ({}),
+        confirm: async () => true,
+      });
+      expect(retired.status).toBe("complete");
+      expect(retired.totals.removedFiles).toBe(2);
+      expect(
+        fs
+          .readdirSync(path.dirname(databasePath))
+          .filter((name) => name.includes(".pre-startup-migration-")),
+      ).toEqual([]);
       expect(fs.existsSync(databasePath)).toBe(true);
     });
   });

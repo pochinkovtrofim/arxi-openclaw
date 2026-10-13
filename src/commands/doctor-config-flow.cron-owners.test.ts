@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -34,6 +35,7 @@ import {
   withDoctorConfigMaintenance,
 } from "./doctor-config-flow.test-support.js";
 import { maybeRepairLegacyCronStore } from "./doctor/cron/index.js";
+import { retireSupersededCronDoctorBackups } from "./doctor/cron/store-repair.js";
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -354,6 +356,38 @@ it("preserves a due legacy one-shot through Doctor ownership repair, then runs i
       }
     },
   );
+});
+
+it("retires cron backups superseded by a verified Doctor run", async () => {
+  await withOpenClawTestState({ label: "cron-backup-retirement" }, async () => {
+    const databasePath = openOpenClawStateDatabase().path;
+    const backup = (createdAtMs: number) =>
+      `${databasePath}.doctor-cron-${createdAtMs}-${randomUUID()}.bak`;
+    const runStartedAtMs = 1_791_900_000_000;
+    const older = [backup(runStartedAtMs - 2000), backup(runStartedAtMs - 1000)];
+    const unrelated = `${databasePath}.doctor-cron-manual.bak`;
+    const linked = backup(runStartedAtMs - 3000);
+    for (const file of [...older, unrelated]) {
+      await fs.writeFile(file, "earlier backup");
+    }
+    await fs.link(unrelated, linked);
+    const assertCurrent = vi.fn();
+
+    // Without a backup from this run, the newest earlier backup stays the rollback point.
+    expect(
+      retireSupersededCronDoctorBackups({ env: process.env, runStartedAtMs, assertCurrent }),
+    ).toEqual({ retired: [older[0]], warnings: [] });
+    const staged = [backup(runStartedAtMs), backup(runStartedAtMs + 1000)];
+    for (const file of staged) {
+      await fs.writeFile(file, "this run");
+    }
+    // This run's staged backups keep its earliest original; earlier runs are superseded.
+    expect(
+      retireSupersededCronDoctorBackups({ env: process.env, runStartedAtMs, assertCurrent }),
+    ).toEqual({ retired: [older[1]], warnings: [] });
+    expect(assertCurrent).toHaveBeenCalledTimes(2);
+    expect((await backups()).toSorted()).toEqual([unrelated, linked, ...staged].toSorted());
+  });
 });
 
 it.each([

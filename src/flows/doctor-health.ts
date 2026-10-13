@@ -119,6 +119,8 @@ async function runDoctorHealthFlowWithResult(
   resumeCapture?: () => void,
   preCaptureRehearsalRoot?: string,
 ) {
+  // Recovery copies created from here on belong to this run and survive its completion.
+  const doctorStartedAtMs = Date.now();
   const { prepareDoctorHealthFlow } = await import("./doctor-health-startup.js");
   const { effectiveRuntime, repairRuntime, stateDirExistedAtStart, root } =
     await prepareDoctorHealthFlow(runtime, options, intro);
@@ -443,6 +445,15 @@ async function runDoctorHealthFlowWithResult(
         if (!readiness.schemaPublicationDeferred) {
           sqliteReclamationAgents =
             admissionSchemas.agentDatabaseMigrationDiscovery?.discovery.targets ?? [];
+          if (maintenance) {
+            const { retireSupersededDoctorRecoveryCopies } =
+              await import("../commands/doctor-original-capture.js");
+            await retireSupersededDoctorRecoveryCopies({
+              env: process.env,
+              runtime: effectiveRuntime,
+              runStartedAtMs: doctorStartedAtMs,
+            });
+          }
           resumeCapture?.();
           if (isTruthyEnvValue(process.env.OPENCLAW_DEBUG_PROXY_ENABLED)) {
             const { initializeDebugProxyCaptureAsync } =
