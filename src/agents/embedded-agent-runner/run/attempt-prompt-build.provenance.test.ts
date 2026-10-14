@@ -177,6 +177,20 @@ describe("prompt-build hook context input provenance", () => {
     expect(events[0]?.currentUserMessage).toBe("hello again");
   });
 
+  it("gives the tool-authorized prompt-build hook the same request", async () => {
+    const { events } = await assembleWithCapturedHookCtx(
+      "current-user-message-authorized",
+      {
+        prompt: "Replied message from Nadia: see you at 8\n\nhello again",
+        transcriptPrompt: "hello again",
+        toolAuthorityFingerprint: "test-authority",
+      },
+      { requiresToolAuthority: true },
+    );
+
+    expect(events.map((event) => event.currentUserMessage)).toEqual(["hello again"]);
+  });
+
   it("uses the prompt as the user's request when the turn records no separate transcript text", async () => {
     const { events } = await assembleWithCapturedHookCtx("current-user-message-prompt", {
       prompt: "plain request",
