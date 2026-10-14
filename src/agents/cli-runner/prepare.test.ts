@@ -1903,6 +1903,7 @@ describe("prepareCliRunContext", () => {
     expect(hookRunner.runBeforePromptBuild).toHaveBeenCalledExactlyOnceWith(
       {
         prompt: "latest ask",
+        currentUserMessage: "latest ask",
         messages: [
           expect.objectContaining({ role: "user", content: "earlier context" }),
           expect.objectContaining({
