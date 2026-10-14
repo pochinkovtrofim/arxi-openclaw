@@ -136,7 +136,9 @@ describe("gateway lock namespaces", () => {
   it("reads the live host after a snapshot clone renames it under a running process", async () => {
     const env = await makeEnv();
     const namespace = mockLinuxNamespace(env.OPENCLAW_STATE_DIR);
+    // Off Linux the fixture already spied on the boot reader; count only the reads below.
     const boot = vi.spyOn(bootReader, "createManagedHandoffBootIdentityReader");
+    boot.mockClear();
     const platform = vi.spyOn(process, "platform", "get").mockReturnValue("linux");
     vi.spyOn(os, "hostname").mockReturnValue("owner-clone");
     try {
