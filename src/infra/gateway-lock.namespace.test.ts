@@ -8,6 +8,7 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { acquireDoctorGatewayMaintenanceOwner } from "../commands/doctor-maintenance-foreground.js";
 import { resolveStateDir } from "../config/paths.js";
 import {
+  classifyGatewayOwnerProcessNamespace,
   GATEWAY_OWNER_HEARTBEAT_STALE_MS,
   parseGatewayLockPayload,
   readGatewayLockProcessNamespace,
@@ -129,6 +130,38 @@ describe("gateway lock namespaces", () => {
       }
     } finally {
       await gateway.release();
+    }
+  });
+
+  it("reads the live host after a snapshot clone renames it under a running process", async () => {
+    const env = await makeEnv();
+    const namespace = mockLinuxNamespace(env.OPENCLAW_STATE_DIR);
+    const boot = vi.spyOn(bootReader, "createManagedHandoffBootIdentityReader");
+    const platform = vi.spyOn(process, "platform", "get").mockReturnValue("linux");
+    vi.spyOn(os, "hostname").mockReturnValue("owner-clone");
+    try {
+      // The clone keeps this process's boot and PID namespace; only its host is new.
+      expect(readGatewayLockProcessNamespace()).toEqual({ ...namespace, host: "owner-clone" });
+      expect(boot).not.toHaveBeenCalled();
+      // The owner's preceding Gateway ran on that host in another boot. Its fresh
+      // heartbeat must not keep it foreign: a different boot on this host is dead.
+      const previousBoot = {
+        ...namespace,
+        host: "owner-clone",
+        identity: "fedcba98-7654-3210-fedc-ba9876543210",
+      };
+      expect(
+        classifyGatewayOwnerProcessNamespace(previousBoot, { readHeartbeatAt: () => Date.now() }),
+      ).toBe("dead");
+      // A foreign host with a fresh heartbeat still cannot be proven dead.
+      expect(
+        classifyGatewayOwnerProcessNamespace(
+          { ...previousBoot, host: "another-host" },
+          { readHeartbeatAt: () => Date.now() },
+        ),
+      ).toBe("unknown");
+    } finally {
+      platform.mockRestore();
     }
   });
 
