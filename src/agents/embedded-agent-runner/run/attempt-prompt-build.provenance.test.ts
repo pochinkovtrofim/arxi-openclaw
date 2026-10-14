@@ -1,7 +1,10 @@
 // #143821: prompt-build hook context must carry the turn's typed input provenance so
 // plugins can distinguish inter-session deliveries from human messages.
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import type { PluginHookBeforePromptBuildResult } from "../../../plugins/hook-before-agent-start.types.js";
+import type {
+  PluginHookBeforePromptBuildEvent,
+  PluginHookBeforePromptBuildResult,
+} from "../../../plugins/hook-before-agent-start.types.js";
 import type { PluginHookAgentContext } from "../../../plugins/hook-types.js";
 import { createHookRunner } from "../../../plugins/hooks.js";
 import { matchesTranscriptEvent } from "../../../sessions/transcript-visible-record.js";
@@ -102,6 +105,7 @@ async function assembleWithCapturedHookCtx(
     ...attemptOverrides,
   };
   const captured: PluginHookAgentContext[] = [];
+  const events: PluginHookBeforePromptBuildEvent[] = [];
   const hookRunner = createHookRunner({
     hooks: [],
     plugins: [],
@@ -111,7 +115,8 @@ async function assembleWithCapturedHookCtx(
         hookName: "before_prompt_build",
         source: "test",
         requiresToolAuthority: promptPolicy.requiresToolAuthority,
-        handler: async (_event: unknown, ctx: PluginHookAgentContext) => {
+        handler: async (event: PluginHookBeforePromptBuildEvent, ctx: PluginHookAgentContext) => {
+          events.push(event);
           captured.push(ctx);
           return promptPolicy.hookResult;
         },
@@ -140,7 +145,7 @@ async function assembleWithCapturedHookCtx(
     setLeasedSteering,
   });
   expect(session.messages).toEqual(priorMessages);
-  return { captured, prompt, setLeasedSteering, setSystemPrompt };
+  return { captured, events, prompt, setLeasedSteering, setSystemPrompt };
 }
 
 describe("prompt-build hook context input provenance", () => {
@@ -159,6 +164,25 @@ describe("prompt-build hook context input provenance", () => {
       chatType: "direct",
       senderIsOwner: true,
     });
+  });
+
+  it("gives prompt-build hooks the user's request as the transcript records it", async () => {
+    const { events } = await assembleWithCapturedHookCtx("current-user-message", {
+      prompt: "Replied message from Nadia: see you at 8\n\nStartup instructions\n\nhello again",
+      transcriptPrompt: "hello again",
+    });
+
+    expect(events[0]?.prompt).toContain("Replied message from Nadia");
+    expect(events[0]?.currentUserMessage).toBe("hello again");
+  });
+
+  it("uses the prompt as the user's request when the turn records no separate transcript text", async () => {
+    const { events } = await assembleWithCapturedHookCtx("current-user-message-prompt", {
+      prompt: "plain request",
+      transcriptPrompt: undefined,
+    });
+
+    expect(events[0]?.currentUserMessage).toBe("plain request");
   });
 
   it("omits requester authority from background prompt enrichment", async () => {

@@ -67,6 +67,8 @@ export function forgetPromptBuildDrainCacheForRun(runId: string | undefined): vo
 export async function resolvePromptBuildHookResult(params: {
   config: OpenClawConfig;
   prompt: string;
+  /** Text the user sent this turn, as the transcript records it. */
+  currentUserMessage?: string;
   messages: unknown[];
   hookCtx: PluginHookAgentContext;
   hookRunner?: PromptBuildHookRunner | null;
@@ -127,6 +129,9 @@ export async function resolvePromptBuildHookResult(params: {
         .runBeforePromptBuild(
           {
             prompt: params.prompt,
+            ...(params.currentUserMessage !== undefined
+              ? { currentUserMessage: params.currentUserMessage }
+              : {}),
             messages: params.messages,
           },
           params.hookCtx,

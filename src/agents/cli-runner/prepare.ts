@@ -669,6 +669,7 @@ async function prepareCliRunContextWithinReadFence(
       return await resolvePromptBuildHookResult({
         config: runConfig,
         prompt: params.prompt,
+        currentUserMessage: params.transcriptPrompt ?? params.prompt,
         messages: await loadOpenClawHistoryMessages(),
         hookCtx: promptBuildHookContext,
         hookRunner: promptBuildHookRunner,

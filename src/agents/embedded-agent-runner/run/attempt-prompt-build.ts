@@ -165,12 +165,16 @@ export async function prepareEmbeddedAttemptPromptAssembly(input: {
   };
   const promptBuildMessages =
     pruneProcessedHistoryImages(input.activeSession.messages) ?? input.activeSession.messages;
-  const promptEvent = { prompt: effectivePrompt, messages: promptBuildMessages };
+  // Hooks get the user's own request as the transcript records it: the prompt of
+  // a bare session reset also carries inbound context and startup instructions.
+  const currentUserMessage = attempt.transcriptPrompt ?? effectivePrompt;
+  const promptEvent = { prompt: effectivePrompt, currentUserMessage, messages: promptBuildMessages };
   const hookResult = preserveExactPrompt
     ? undefined
     : await resolvePromptBuildHookResult({
         config: attempt.config ?? getRuntimeConfig(),
         prompt: effectivePrompt,
+        currentUserMessage,
         messages: promptBuildMessages,
         hookCtx,
         hookRunner: input.hookRunner,
