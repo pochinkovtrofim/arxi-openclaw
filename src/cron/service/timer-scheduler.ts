@@ -20,7 +20,10 @@ import {
   summarizeCronJobSchedule,
 } from "./jobs-scheduling.js";
 import { locked } from "./locked.js";
-import { repairManagedFlowAutomationObligations } from "./managed-flow-obligation-repair.js";
+import {
+  managedFlowRepairDue,
+  repairManagedFlowAutomationObligations,
+} from "./managed-flow-obligation-repair.js";
 import { releaseReservedCronRuns } from "./run-admission-mutation.js";
 import {
   cleanupQueuedCronRunReservations,
@@ -70,6 +73,10 @@ export function armTimer(state: CronServiceState) {
     // Enabled timed jobs can intentionally remain unscheduled after a failed
     // computation; the minute watchdog retries them until bounded auto-disable.
     const withNextRun = 0;
+    if (managedFlowRepairDue(state)) {
+      setCronTimer(state, MIN_REFIRE_GAP_MS);
+      return;
+    }
     if (enabledCount > 0) {
       armRunningRecheckTimer(state);
       state.deps.log.debug(
@@ -91,7 +98,11 @@ export function armTimer(state: CronServiceState) {
   const flooredDelay = delay === 0 ? MIN_REFIRE_GAP_MS : delay;
   // Wake at least once a minute to avoid schedule drift and recover quickly
   // when the process was paused or wall-clock time jumps.
-  const clampedDelay = Math.min(flooredDelay, MAX_CRON_TIMER_DELAY_MS);
+  // A pending managed-Flow repair pass completes the suspend snapshot.
+  const clampedDelay = Math.min(
+    flooredDelay,
+    managedFlowRepairDue(state) ? MIN_REFIRE_GAP_MS : MAX_CRON_TIMER_DELAY_MS,
+  );
   setCronTimer(state, clampedDelay);
   state.deps.log.debug(
     {

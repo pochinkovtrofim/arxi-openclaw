@@ -5,7 +5,10 @@ import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.
 import { upsertTaskFlowAutomationObligationInStateTransaction } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { createManagedTaskFlow } from "../../tasks/task-flow-registry.js";
 import { resetTaskFlowRegistryForTests } from "../../tasks/task-runtime.test-helpers.js";
-import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-clock.js";
+import {
+  createGatewaySchedulerClock,
+  createTestGatewayScheduler,
+} from "../../test-utils/gateway-scheduler-clock.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import { CronService } from "../service.js";
 import { setupCronServiceSuite, writeCronStoreSnapshot } from "../service.test-harness.js";
@@ -14,7 +17,9 @@ import { cronStoreKey } from "../store/key.js";
 import type { CronJob } from "../types.js";
 import { summarizeCronJobSchedule } from "./jobs-scheduling.js";
 import { pauseScheduling, resumeScheduling, start, stop } from "./ops-lifecycle.js";
+import { getSuspendWakeSnapshot } from "./ops-read.js";
 import { createCronServiceState } from "./state.js";
+import { MAX_CRON_TIMER_DELAY_MS, MIN_REFIRE_GAP_MS } from "./timer-execution-timeout.js";
 import { onTimer } from "./timer.test-support.js";
 
 const { logger, makeStorePath } = setupCronServiceSuite({ prefix: "cron-suspend-wake" });
@@ -260,6 +265,55 @@ describe("cron suspend wake policy", () => {
       expect(persisted?.state.nextRunAtMs).toBe(clock.now + EVERY_MS);
       await onTimer(state);
       expect(run).toHaveBeenCalledTimes(1);
+    } finally {
+      stop(state);
+    }
+  });
+
+  it("completes the snapshot soon after a run even when suspension prepares keep re-arming", async () => {
+    const { storePath } = await makeStorePath();
+    const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
+    await writeCronStoreSnapshot({
+      storePath,
+      jobs: [
+        watchJob({
+          now: clock.now,
+          nextRunAtMs: clock.now + EVERY_MS,
+          id: "steward",
+          suspendWake: "never",
+          pacing: { min: "5m", max: "5m" },
+        }),
+      ],
+    });
+    const host = createGatewaySchedulerClock(clock.now);
+    const { deps, run } = serviceDeps(storePath, clock);
+    const state = createCronServiceState({
+      ...deps,
+      scheduler: createTestGatewayScheduler(host.clock),
+    });
+    await start(state);
+    state.schedulerStarted = true;
+    const lastDelay = () => host.wakes.findLast((wake) => !wake.cancelled)?.delayMs;
+    try {
+      expect(getSuspendWakeSnapshot(state)).toEqual({ complete: true, nextWakeAtMs: null });
+      clock.now += EVERY_MS;
+      await onTimer(state);
+      expect(run).toHaveBeenCalledTimes(1);
+      // The run consumed the receipts; the snapshot waits for a repair pass.
+      expect(getSuspendWakeSnapshot(state)).toEqual({ complete: false });
+      expect(lastDelay()).toBe(MIN_REFIRE_GAP_MS);
+      // Each refused suspension prepare pauses and resumes scheduling.
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        pauseScheduling(state);
+        expect(getSuspendWakeSnapshot(state)).toEqual({ complete: false });
+        resumeScheduling(state);
+        expect(lastDelay()).toBe(MIN_REFIRE_GAP_MS);
+      }
+      clock.now += MIN_REFIRE_GAP_MS;
+      await onTimer(state);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(getSuspendWakeSnapshot(state)).toEqual({ complete: true, nextWakeAtMs: null });
+      expect(lastDelay()).toBe(MAX_CRON_TIMER_DELAY_MS);
     } finally {
       stop(state);
     }
