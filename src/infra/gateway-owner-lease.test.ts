@@ -1,5 +1,5 @@
 import fs, { existsSync, renameSync } from "node:fs";
-import { hostname } from "node:os";
+import os, { hostname } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
@@ -707,6 +707,75 @@ describe("Gateway owner lease", () => {
       await lock.release();
     }
   });
+
+  it.each([
+    { label: "previous boot on the clone host", host: "owner-clone", reclaimed: true },
+    { label: "fresh owner on another host", host: "another-host", reclaimed: false },
+  ])(
+    "after a snapshot clone renames the host, judges the $label without waiting",
+    async ({ host, reclaimed }) => {
+      const env = { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-gateway-owner-clone-host-") };
+      // A restored Gateway cached its namespace under the bake host before the rename.
+      const restored = mockLinuxNamespace(env.OPENCLAW_STATE_DIR);
+      const coordinator = acquireGatewayStateOwner({
+        databasePath: resolveOpenClawStateSqlitePath(env),
+        payload: {
+          pid: process.pid,
+          createdAt: new Date().toISOString(),
+          configPath: path.join(env.OPENCLAW_STATE_DIR, "openclaw.json"),
+          role: "gateway",
+        },
+      });
+      try {
+        // The owner's preceding Gateway renewed its lease moments ago in another boot.
+        seedOwner(env, {
+          pid: 2_147_483_647,
+          startedAt: 1,
+          host,
+          processNamespace: {
+            ...restored,
+            host,
+            identity: "fedcba98-7654-3210-fedc-ba9876543210",
+          },
+        });
+      } finally {
+        coordinator.release();
+      }
+      await closeOpenClawStateDatabaseAsync();
+      vi.spyOn(os, "hostname").mockReturnValue("owner-clone");
+      const onWait = vi.fn();
+      const acquiring = acquireGatewayLock({
+        env,
+        allowInTests: true,
+        port: 19483,
+        listenerMode: "foreground",
+        timeoutMs: 0,
+        onWait,
+      });
+      if (!reclaimed) {
+        await expect(acquiring).rejects.toMatchObject({
+          cause: expect.objectContaining({
+            message: expect.stringContaining("owner heartbeat is fresh"),
+          }),
+        });
+        expect(readGatewayOwnerLease({ env })?.owner).toBe("previous-generation");
+        return;
+      }
+      const lock = await acquiring;
+      if (!lock) {
+        throw new Error("Expected gateway lock");
+      }
+      try {
+        expect(onWait).not.toHaveBeenCalled();
+        const current = readGatewayOwnerLease({ env });
+        expect(current).toMatchObject({ pid: process.pid, state: "live" });
+        expect(current?.owner).not.toBe("previous-generation");
+        expect(current?.processNamespace).toMatchObject({ host: "owner-clone" });
+      } finally {
+        await lock.release();
+      }
+    },
+  );
 
   it("keeps the live refusal for a Gateway generation this process published", async () => {
     await using owner = fixture();

@@ -27,7 +27,19 @@ export function readGatewayLockProcessNamespace(): ProcessNamespace | null {
     processNamespace?.platform === process.platform &&
     (processNamespace.value !== null || process.platform !== "linux")
   ) {
-    return processNamespace.value;
+    const cached = processNamespace.value;
+    // Boot and PID namespace identity cannot change under a running process, but a
+    // VM snapshot clone renames its host after restore. A cached host would keep a
+    // lease from the clone's previous boot foreign instead of provably dead.
+    const liveHost = os.hostname();
+    if (cached && liveHost && cached.host !== liveHost) {
+      processNamespace = {
+        platform: processNamespace.platform,
+        value: { ...cached, host: liveHost },
+      };
+      return processNamespace.value;
+    }
+    return cached;
   }
   try {
     const boot = createManagedHandoffBootIdentityReader(process.env)();
