@@ -23,6 +23,7 @@ import {
 import { acquireGatewayLock } from "./gateway-lock.js";
 import {
   acquireGatewayOwnerLease,
+  assertGatewayOwnerLeaseStopped,
   readGatewayOwnerLease,
   type GatewayOwnerLease,
 } from "./gateway-owner-lease.js";
@@ -623,7 +624,10 @@ describe("Gateway owner lease", () => {
   it("preserves a slow live owner after the lease deadline instead of declaring it stale", async () => {
     await using owner = fixture();
     const { env } = owner;
+    // Another live process: a record naming this process is covered by the replay cases below.
     seedOwner(env, {
+      pid: process.ppid,
+      startedAt: pidAlive.getFileLockProcessStartTime(process.ppid),
       expiresAt: Date.now() - 1,
       heartbeatAt: Date.now() - GATEWAY_OWNER_HEARTBEAT_STALE_MS - 1,
       processNamespace: readGatewayLockProcessNamespace(),
@@ -634,6 +638,46 @@ describe("Gateway owner lease", () => {
       expired: true,
     });
     expect(() => owner.acquire()).toThrow("Another Gateway owner lease is still active");
+  });
+
+  it("reclaims a lease replayed from a VM snapshot of this exact process", async () => {
+    await using owner = fixture();
+    const { env } = owner;
+    // A clone restores this PID, start time and boot identity under another clone's token.
+    seedOwner(env, { processNamespace: readGatewayLockProcessNamespace() });
+    expect(readGatewayOwnerLease({ env })).toMatchObject({
+      owner: "previous-generation",
+      pid: process.pid,
+      state: "live",
+      expired: false,
+    });
+    expect(() => assertGatewayOwnerLeaseStopped(env)).toThrow(
+      "Another Gateway owner lease is still active",
+    );
+    expect(() =>
+      assertGatewayOwnerLeaseStopped(env, undefined, { reclaimReplayedSelf: true }),
+    ).not.toThrow();
+    const lease = owner.acquire();
+    await lease.ready;
+    expect(readGatewayOwnerLease({ env })).toMatchObject({
+      owner: lease.owner,
+      pid: process.pid,
+      state: "live",
+    });
+  });
+
+  it("keeps the live refusal for a Gateway generation this process published", async () => {
+    await using owner = fixture();
+    const { env } = owner;
+    const published = owner.acquire({ owner: "published-generation" });
+    await published.ready;
+    expect(() =>
+      assertGatewayOwnerLeaseStopped(env, undefined, { reclaimReplayedSelf: true }),
+    ).toThrow("Another Gateway owner lease is still active");
+    expect(() => owner.acquire({ owner: "next-generation" })).toThrow(
+      "Another Gateway owner lease is still active",
+    );
+    expect(readGatewayOwnerLease({ env })?.owner).toBe("published-generation");
   });
 
   it.each([

@@ -561,6 +561,7 @@ export async function acquireGatewayLock(
               assertGatewayOwnerLeaseStopped(
                 env,
                 role === "sqlite-maintenance" ? owner : undefined,
+                { reclaimReplayedSelf: role === "gateway" },
               ),
             );
             if (previousOwner) {
