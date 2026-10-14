@@ -9,8 +9,3 @@ export function formatSystemTurnPrompt(body: string): string {
     ? trimmedBody
     : `${SYSTEM_TURN_PROMPT_PREFIX} ${trimmedBody}`;
 }
-
-/** True for a prompt the host built as an internal system turn. */
-export function isSystemTurnPrompt(prompt: string): boolean {
-  return prompt.trim().startsWith(SYSTEM_TURN_PROMPT_PREFIX);
-}

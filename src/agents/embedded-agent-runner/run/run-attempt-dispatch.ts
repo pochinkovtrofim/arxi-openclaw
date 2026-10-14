@@ -486,6 +486,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
       pluginHarnessPrompt !== undefined && params.transcriptPrompt === undefined
         ? preparedExecApprovalContinuation.prompt
         : preparedExecApprovalContinuation.transcriptPrompt,
+    currentUserMessage: params.transcriptPrompt ?? "",
     finalizePromptForResolvedTools:
       pluginHarnessPrompt === undefined ? params.finalizePromptForResolvedTools : undefined,
     userTurnTranscriptRecorder: params.userTurnTranscriptRecorder,

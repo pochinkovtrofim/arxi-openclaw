@@ -1904,7 +1904,7 @@ describe("prepareCliRunContext", () => {
     expect(hookRunner.runBeforePromptBuild).toHaveBeenCalledExactlyOnceWith(
       {
         prompt: "latest ask",
-        currentUserMessage: "latest ask",
+        currentUserMessage: "",
         messages: [
           expect.objectContaining({ role: "user", content: "earlier context" }),
           expect.objectContaining({
@@ -1938,6 +1938,12 @@ describe("prepareCliRunContext", () => {
     {
       name: "no request for a host system turn that quotes the assistant's reply",
       prompt: formatSystemTurnPrompt('Your reply text was:\n\n"Nadia is your sister"'),
+      transcriptPrompt: undefined,
+      expected: "",
+    },
+    {
+      name: "no request taken from the prompt when the caller recorded none",
+      prompt: "plain request",
       transcriptPrompt: undefined,
       expected: "",
     },
