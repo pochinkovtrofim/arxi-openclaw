@@ -114,6 +114,20 @@ export async function prepareCodexAttemptContext(
       ? { modelProviderId: params.provider, modelId: params.modelId }
       : {}),
     trigger: params.trigger,
+    // Same requester projection as the embedded and CLI runners: owner-only
+    // prompt hooks need the admitted sender and the raw conversation id.
+    ...(params.trigger === "user" && params.senderId && params.chatId
+      ? {
+          requester: {
+            senderId: params.senderId,
+            conversationId: params.chatId,
+            ...(params.chatType ? { chatType: params.chatType } : {}),
+            ...(params.messageChannel ? { channel: params.messageChannel } : {}),
+            ...(params.agentAccountId ? { accountId: params.agentAccountId } : {}),
+            ...(params.senderIsOwner !== undefined ? { senderIsOwner: params.senderIsOwner } : {}),
+          },
+        }
+      : {}),
     inputProvenance: params.inputProvenance,
     ...buildAgentHookContextChannelFields({
       sessionKey: contextSessionKey,

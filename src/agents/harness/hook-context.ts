@@ -54,6 +54,8 @@ export function buildAgentHookContext(params: AgentHarnessHookContext): PluginHo
     ...(params.channel ? { channel: params.channel } : {}),
     ...(params.trigger ? { trigger: params.trigger } : {}),
     ...(params.inputProvenance ? { inputProvenance: params.inputProvenance } : {}),
+    // Harnesses set a requester only for a user turn whose sender they admitted.
+    ...(params.requester ? { requester: params.requester } : {}),
     ...(params.channelId ? { channelId: params.channelId } : {}),
     ...(params.contextTokenBudget ? { contextTokenBudget: params.contextTokenBudget } : {}),
     ...(params.contextWindowSource ? { contextWindowSource: params.contextWindowSource } : {}),

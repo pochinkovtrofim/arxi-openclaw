@@ -90,4 +90,34 @@ describe("runCodexAppServerAttempt authenticated hook context", () => {
       }
     }
   });
+
+  it("gives prompt hooks the requester of a user turn the host admitted", async () => {
+    const [prompt] = await compactWithHooks({
+      trigger: "user",
+      senderId: "42",
+      chatId: "telegram-chat:42",
+      chatType: "direct",
+      senderIsOwner: true,
+    });
+    expect((prompt as { requester?: unknown }).requester).toEqual({
+      senderId: "42",
+      conversationId: "telegram-chat:42",
+      chatType: "direct",
+      channel: "telegram",
+      accountId: "account-a",
+      senderIsOwner: true,
+    });
+  });
+
+  it("gives non-user turns no requester", async () => {
+    const contexts = await compactWithHooks({
+      trigger: "cron",
+      senderId: "42",
+      chatId: "telegram-chat:42",
+      senderIsOwner: true,
+    });
+    for (const context of contexts) {
+      expect(context).not.toHaveProperty("requester");
+    }
+  });
 });
