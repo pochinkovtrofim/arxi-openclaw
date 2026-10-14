@@ -140,6 +140,13 @@ export type EmbeddedRunAttemptTrajectoryRecorder = {
 };
 
 export type EmbeddedRunAttemptParams = EmbeddedRunAttemptBase & {
+  /**
+   * The turn's request as its caller recorded it for the transcript, or "" when the
+   * caller recorded none. Unlike transcriptPrompt, the runner never fills it from a
+   * prompt it built: an internal continuation, an attachment note or a skill path
+   * remap. It identifies the request, not its author.
+   */
+  currentUserMessage?: string;
   /** Recomputed by the host for this attempt; never inherited from the requesting turn. */
   githubPublicationAvailable?: boolean;
   disableToolSearch?: true;

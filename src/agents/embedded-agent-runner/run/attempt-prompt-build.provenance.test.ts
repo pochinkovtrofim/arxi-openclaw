@@ -1,9 +1,13 @@
 // #143821: prompt-build hook context must carry the turn's typed input provenance so
 // plugins can distinguish inter-session deliveries from human messages.
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
-import type { PluginHookBeforePromptBuildResult } from "../../../plugins/hook-before-agent-start.types.js";
+import type {
+  PluginHookBeforePromptBuildEvent,
+  PluginHookBeforePromptBuildResult,
+} from "../../../plugins/hook-before-agent-start.types.js";
 import type { PluginHookAgentContext } from "../../../plugins/hook-types.js";
 import { createHookRunner } from "../../../plugins/hooks.js";
+import { formatSystemTurnPrompt } from "../../../sessions/system-turn-prompt.js";
 import { matchesTranscriptEvent } from "../../../sessions/transcript-visible-record.js";
 import { prepareSystemAgentRunAdmission } from "../../admitted-run-context.js";
 import { buildAgentRunTerminalReplySnapshot } from "../../agent-run-terminal-reply.js";
@@ -102,6 +106,7 @@ async function assembleWithCapturedHookCtx(
     ...attemptOverrides,
   };
   const captured: PluginHookAgentContext[] = [];
+  const events: PluginHookBeforePromptBuildEvent[] = [];
   const hookRunner = createHookRunner({
     hooks: [],
     plugins: [],
@@ -111,7 +116,8 @@ async function assembleWithCapturedHookCtx(
         hookName: "before_prompt_build",
         source: "test",
         requiresToolAuthority: promptPolicy.requiresToolAuthority,
-        handler: async (_event: unknown, ctx: PluginHookAgentContext) => {
+        handler: async (event: PluginHookBeforePromptBuildEvent, ctx: PluginHookAgentContext) => {
+          events.push(event);
           captured.push(ctx);
           return promptPolicy.hookResult;
         },
@@ -140,8 +146,12 @@ async function assembleWithCapturedHookCtx(
     setLeasedSteering,
   });
   expect(session.messages).toEqual(priorMessages);
-  return { captured, prompt, setLeasedSteering, setSystemPrompt };
+  return { captured, events, prompt, setLeasedSteering, setSystemPrompt };
 }
+
+const STRANDED_RETRY_PROMPT = formatSystemTurnPrompt(
+  'Your previous reply was not delivered. Your reply text was:\n\n"Nadia is your sister"',
+);
 
 describe("prompt-build hook context input provenance", () => {
   it("carries the admitted private requester into prompt enrichment", async () => {
@@ -160,6 +170,47 @@ describe("prompt-build hook context input provenance", () => {
       senderIsOwner: true,
     });
   });
+
+  it.each([undefined, true] as const)(
+    "gives prompt-build hooks the turn's request as its caller recorded it (authority: %s)",
+    async (requiresToolAuthority) => {
+      const { events } = await assembleWithCapturedHookCtx(
+        `current-user-message-${requiresToolAuthority ? "authorized" : "ordinary"}`,
+        {
+          prompt: "Replied message from Nadia: see you at 8\n\nStartup instructions\n\nhello again",
+          transcriptPrompt: "hello again",
+          currentUserMessage: "hello again",
+          ...(requiresToolAuthority ? { toolAuthorityFingerprint: "test-authority" } : {}),
+        },
+        { requiresToolAuthority },
+      );
+
+      // The tool-authorized hook runs only through runAuthorizedPromptBuild.
+      expect(events.map((event) => event.currentUserMessage)).toEqual(["hello again"]);
+    },
+  );
+
+  it.each([
+    { name: "records no request", transcriptPrompt: undefined, currentUserMessage: undefined },
+    {
+      // An attachment note or skill path remap records the built prompt as transcript text.
+      name: "has transcript text the runner filled from its prompt",
+      transcriptPrompt: STRANDED_RETRY_PROMPT,
+      currentUserMessage: "",
+    },
+  ])(
+    "gives no request for a stranded-reply retry that $name",
+    async ({ transcriptPrompt, currentUserMessage }) => {
+      const { events } = await assembleWithCapturedHookCtx("current-user-message-system-turn", {
+        prompt: STRANDED_RETRY_PROMPT,
+        transcriptPrompt,
+        currentUserMessage,
+        suppressNextUserMessagePersistence: true,
+      });
+
+      expect(events[0]?.currentUserMessage).toBe("");
+    },
+  );
 
   it("omits requester authority from background prompt enrichment", async () => {
     const { captured } = await assembleWithCapturedHookCtx("business-background-context", {

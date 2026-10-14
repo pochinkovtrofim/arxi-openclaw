@@ -54,6 +54,7 @@ import { setActivePluginRegistry } from "../../plugins/runtime.js";
 import { withPluginRuntimeRegistryScope } from "../../plugins/runtime/gateway-request-scope.js";
 import type { PluginRuntime } from "../../plugins/runtime/types.js";
 import { setActiveDegradedSecretOwners } from "../../secrets/runtime-degraded-state.js";
+import { formatSystemTurnPrompt } from "../../sessions/system-turn-prompt.js";
 import { createUserTurnTranscriptRecorder } from "../../sessions/user-turn-transcript.js";
 import { AsyncWorkScope } from "../../shared/async-work-scope.js";
 import type { SkillLibraryAuthoringCapability } from "../../skills/library/authoring.js";
@@ -1903,6 +1904,7 @@ describe("prepareCliRunContext", () => {
     expect(hookRunner.runBeforePromptBuild).toHaveBeenCalledExactlyOnceWith(
       {
         prompt: "latest ask",
+        currentUserMessage: "",
         messages: [
           expect.objectContaining({ role: "user", content: "earlier context" }),
           expect.objectContaining({
@@ -1923,6 +1925,47 @@ describe("prepareCliRunContext", () => {
         trigger: "user",
         channelId: "telegram",
       }),
+    );
+  });
+
+  it.each([
+    {
+      name: "the transcript text over a prompt that carries inbound context",
+      prompt: "Replied message from Nadia: see you at 8\n\nlatest ask",
+      transcriptPrompt: "latest ask",
+      expected: "latest ask",
+    },
+    {
+      name: "no request for a host system turn that quotes the assistant's reply",
+      prompt: formatSystemTurnPrompt('Your reply text was:\n\n"Nadia is your sister"'),
+      transcriptPrompt: undefined,
+      expected: "",
+    },
+    {
+      name: "no request taken from the prompt when the caller recorded none",
+      prompt: "plain request",
+      transcriptPrompt: undefined,
+      expected: "",
+    },
+  ])("gives prompt-build hooks $name", async ({ prompt, transcriptPrompt, expected }) => {
+    const hookRunner = {
+      hasHooks: vi.fn((hookName: string) => hookName === "before_prompt_build"),
+      runBeforePromptBuild: vi.fn(async () => ({})),
+    };
+    mockGetGlobalHookRunner.mockReturnValue(hookRunner as never);
+
+    await fixture.prepare({
+      sessionKey: "agent:main:test",
+      agentId: "main",
+      trigger: "user",
+      prompt,
+      transcriptPrompt,
+      config: { ...createCliBackendConfig() },
+    });
+
+    expect(hookRunner.runBeforePromptBuild).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ prompt, currentUserMessage: expected }),
+      expect.objectContaining({ runId: "run-test" }),
     );
   });
 

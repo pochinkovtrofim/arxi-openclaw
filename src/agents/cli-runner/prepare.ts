@@ -669,6 +669,9 @@ async function prepareCliRunContextWithinReadFence(
       return await resolvePromptBuildHookResult({
         config: runConfig,
         prompt: params.prompt,
+        // The turn's request as its caller recorded it; an internal continuation
+        // records none, and its prompt can quote the assistant's own reply.
+        currentUserMessage: params.transcriptPrompt ?? "",
         messages: await loadOpenClawHistoryMessages(),
         hookCtx: promptBuildHookContext,
         hookRunner: promptBuildHookRunner,
