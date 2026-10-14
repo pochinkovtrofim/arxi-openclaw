@@ -666,6 +666,48 @@ describe("Gateway owner lease", () => {
     });
   });
 
+  it("lets only a starting Gateway reclaim a replayed lease through the lifecycle lock", async () => {
+    const env = { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-gateway-owner-replayed-") };
+    const coordinator = acquireGatewayStateOwner({
+      databasePath: resolveOpenClawStateSqlitePath(env),
+      payload: {
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+        configPath: path.join(env.OPENCLAW_STATE_DIR, "openclaw.json"),
+        role: "gateway",
+      },
+    });
+    try {
+      seedOwner(env, { processNamespace: readGatewayLockProcessNamespace() });
+    } finally {
+      coordinator.release();
+    }
+    await closeOpenClawStateDatabaseAsync();
+    await expect(
+      acquireGatewayLock({ env, allowInTests: true, role: "sqlite-maintenance" }),
+    ).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: expect.stringContaining("Another Gateway owner lease is still active"),
+      }),
+    });
+    const lock = await acquireGatewayLock({
+      env,
+      allowInTests: true,
+      port: 19483,
+      listenerMode: "foreground",
+    });
+    if (!lock) {
+      throw new Error("Expected gateway lock");
+    }
+    try {
+      const current = readGatewayOwnerLease({ env });
+      expect(current).toMatchObject({ pid: process.pid, state: "live" });
+      expect(current?.owner).not.toBe("previous-generation");
+    } finally {
+      await lock.release();
+    }
+  });
+
   it("keeps the live refusal for a Gateway generation this process published", async () => {
     await using owner = fixture();
     const { env } = owner;

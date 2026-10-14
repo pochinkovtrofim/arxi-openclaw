@@ -63,9 +63,10 @@ type GatewayOwnerLeaseAdmission = {
 
 /**
  * A VM snapshot restores every clone with this process's PID, start time and boot
- * identity, so a lease written by an earlier clone names this exact process. Only a
- * token this process never published proves the record came from another
- * incarnation: a Gateway generation it published itself keeps the live refusal.
+ * identity, so a lease written by an earlier clone names this exact process. Owner
+ * leases are published only from this main thread, under the physical state owner
+ * the caller already holds, so a token this process never published came from
+ * another incarnation. A Gateway generation it published itself keeps the refusal.
  */
 function isReplayedSelfOwner(previous: GatewayOwnerLeaseIdentity): boolean {
   return (
