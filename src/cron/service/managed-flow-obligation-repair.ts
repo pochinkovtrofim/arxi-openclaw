@@ -9,6 +9,7 @@ import type {
   CronManagedFlowRepairOutput,
 } from "../store/managed-flow-obligations.kernel.js";
 import type { CronJob } from "../types.js";
+import { isJobEnabled, isSuspendWakeDeferredJob } from "./jobs-scheduling.js";
 import type { CronServiceState } from "./state.js";
 import type { TimedCronRunOutcome } from "./timer-execution-timeout.js";
 
@@ -21,6 +22,8 @@ type ObservedReceipts = {
 
 // The suspend-wake snapshot is synchronous; it reads the last committed repair pass.
 const earliestReceiptsByState = new WeakMap<CronServiceState, ObservedReceipts>();
+// Finalized runs consumed receipts that no repair pass has re-read yet.
+const repairDueStates = new WeakSet<CronServiceState>();
 
 function pacedScheduleIdentity(job: CronJob): string | undefined {
   return job.enabled && job.pacing !== undefined ? tryCronScheduleIdentity(job) : undefined;
@@ -41,6 +44,8 @@ export async function repairManagedFlowAutomationObligations(
   if (!isEligible(state) || !state.store) {
     return false;
   }
+  // One prompt pass per consumption: a failing pass falls back to the ordinary cadence.
+  repairDueStates.delete(state);
   const storeKey = cronStoreKey(state.deps.storePath);
   const observed = new Map<string, string>();
   for (const job of state.store.jobs) {
@@ -150,11 +155,26 @@ export function earliestManagedFlowObligationAtMs(
   return earliest;
 }
 
+/**
+ * Whether the timer must run a repair pass soon. Until it does, the suspend
+ * snapshot is incomplete and every suspension prepare refuses; prepare pauses
+ * and re-arms the timer, so a minute-long delay would never elapse between
+ * prepare retries and the host would stay awake.
+ */
+export function managedFlowRepairDue(state: CronServiceState): boolean {
+  // Only deferred jobs make the snapshot read the receipts.
+  return (
+    repairDueStates.has(state) &&
+    (state.store?.jobs.some((job) => isJobEnabled(job) && isSuspendWakeDeferredJob(job)) ?? false)
+  );
+}
+
 /** Finalization consumes receipts; snapshots stay incomplete until the next repair pass. */
 export function managedFlowConsumedRuns(
   state: CronServiceState,
   outcomes: readonly TimedCronRunOutcome[],
 ): CronManagedFlowConsumedRun[] {
   earliestReceiptsByState.delete(state);
+  repairDueStates.add(state);
   return outcomes.map((outcome) => ({ jobId: outcome.jobId, startedAt: outcome.startedAt }));
 }
