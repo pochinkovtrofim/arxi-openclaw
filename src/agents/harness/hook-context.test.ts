@@ -22,3 +22,13 @@ it("gives harness hooks the host's currency check for their memory audience", as
     );
   });
 });
+
+it("keeps the requester a harness admitted for a user turn", () => {
+  const requester = Object.freeze({
+    senderId: "42",
+    conversationId: "telegram-chat:42",
+    senderIsOwner: true,
+  });
+  expect(buildAgentHookContext({ trigger: "user", requester }).requester).toBe(requester);
+  expect(buildAgentHookContext({ trigger: "cron" })).not.toHaveProperty("requester");
+});
