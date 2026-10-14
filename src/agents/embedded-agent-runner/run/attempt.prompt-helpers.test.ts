@@ -6,9 +6,11 @@ const hostHookStateMocks = vi.hoisted(() => ({
 
 vi.mock("../../../plugins/host-hook-state.js", () => hostHookStateMocks);
 
+import { formatSystemTurnPrompt } from "../../../sessions/system-turn-prompt.js";
 import {
   forgetPromptBuildDrainCacheForRun,
   mergeOrphanedTrailingUserPrompt,
+  resolvePromptBuildCurrentUserMessage,
   resolvePromptBuildHookResult,
 } from "./attempt-prompt-helpers.js";
 import { resolvePromptSubmissionSkipReason } from "./attempt-prompt-submit.js";
@@ -150,5 +152,33 @@ describe("resolvePromptBuildHookResult drain cache", () => {
     await build();
     await build();
     expect(hostHookStateMocks.drainPluginNextTurnInjectionContext).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("resolvePromptBuildCurrentUserMessage", () => {
+  it("takes the transcript text over a prompt that carries inbound and startup context", () => {
+    expect(
+      resolvePromptBuildCurrentUserMessage({
+        transcriptPrompt: "[OpenClaw session reset]",
+        prompt: "Replied message from Nadia: see you at 8\n\nStartup instructions",
+      }),
+    ).toBe("[OpenClaw session reset]");
+  });
+
+  it("keeps an explicit empty transcript as no textual request", () => {
+    expect(resolvePromptBuildCurrentUserMessage({ transcriptPrompt: "", prompt: "flush" })).toBe(
+      "",
+    );
+  });
+
+  it("gives a host system turn no request, even when it quotes the assistant's reply", () => {
+    const prompt = formatSystemTurnPrompt(
+      'Your previous reply was not delivered. Your reply text was:\n\n"Nadia is your sister"',
+    );
+    expect(resolvePromptBuildCurrentUserMessage({ transcriptPrompt: undefined, prompt })).toBe("");
+  });
+
+  it("uses the prompt when the turn records no separate transcript text", () => {
+    expect(resolvePromptBuildCurrentUserMessage({ prompt: "plain request" })).toBe("plain request");
   });
 });

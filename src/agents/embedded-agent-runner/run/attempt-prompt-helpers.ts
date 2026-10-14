@@ -15,6 +15,7 @@ import type {
 } from "../../../plugins/types.js";
 import { isCronSessionKey, isSubagentSessionKey } from "../../../routing/session-key.js";
 import { shouldPreserveUserFacingSessionStateForInputProvenance } from "../../../sessions/input-provenance.js";
+import { isSystemTurnPrompt } from "../../../sessions/system-turn-prompt.js";
 import { joinPresentTextSegments } from "../../../shared/text/join-segments.js";
 import { truncateUtf16Safe } from "../../../utils.js";
 import { listActiveProcessSessionReferences } from "../../bash-process-references.js";
@@ -64,10 +65,26 @@ export function forgetPromptBuildDrainCacheForRun(runId: string | undefined): vo
   }
 }
 
+/**
+ * The turn's request as the transcript records it, for prompt-build hooks. A
+ * host-built system turn (stranded-reply retry, stalled-turn recovery) records no
+ * request of its own: its prompt is a host instruction that can quote the
+ * assistant's earlier reply. The text identifies the request, not its author.
+ */
+export function resolvePromptBuildCurrentUserMessage(params: {
+  transcriptPrompt?: string;
+  prompt: string;
+}): string {
+  if (params.transcriptPrompt !== undefined) {
+    return params.transcriptPrompt;
+  }
+  return isSystemTurnPrompt(params.prompt) ? "" : params.prompt;
+}
+
 export async function resolvePromptBuildHookResult(params: {
   config: OpenClawConfig;
   prompt: string;
-  /** Text the user sent this turn, as the transcript records it. */
+  /** The turn's request as the transcript records it. */
   currentUserMessage?: string;
   messages: unknown[];
   hookCtx: PluginHookAgentContext;

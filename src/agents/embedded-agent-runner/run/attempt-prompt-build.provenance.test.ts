@@ -7,6 +7,7 @@ import type {
 } from "../../../plugins/hook-before-agent-start.types.js";
 import type { PluginHookAgentContext } from "../../../plugins/hook-types.js";
 import { createHookRunner } from "../../../plugins/hooks.js";
+import { formatSystemTurnPrompt } from "../../../sessions/system-turn-prompt.js";
 import { matchesTranscriptEvent } from "../../../sessions/transcript-visible-record.js";
 import { prepareSystemAgentRunAdmission } from "../../admitted-run-context.js";
 import { buildAgentRunTerminalReplySnapshot } from "../../agent-run-terminal-reply.js";
@@ -183,6 +184,18 @@ describe("prompt-build hook context input provenance", () => {
     });
 
     expect(events[0]?.currentUserMessage).toBe("plain request");
+  });
+
+  it("gives a stranded-reply retry no user request, though its prompt quotes the reply", async () => {
+    const { events } = await assembleWithCapturedHookCtx("current-user-message-system-turn", {
+      prompt: formatSystemTurnPrompt(
+        'Your previous reply was not delivered. Your reply text was:\n\n"Nadia is your sister"',
+      ),
+      transcriptPrompt: undefined,
+      suppressNextUserMessagePersistence: true,
+    });
+
+    expect(events[0]?.currentUserMessage).toBe("");
   });
 
   it("omits requester authority from background prompt enrichment", async () => {

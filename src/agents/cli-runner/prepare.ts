@@ -96,7 +96,10 @@ import { resolveContextTokensForModel } from "../context.js";
 import { resolveConversationCapabilityProfile } from "../conversation-capability-profile.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../defaults.js";
 import { waitForDeferredTurnMaintenanceForSession } from "../embedded-agent-runner/context-engine-maintenance.js";
-import { resolvePromptBuildHookResult } from "../embedded-agent-runner/run/attempt-prompt-helpers.js";
+import {
+  resolvePromptBuildCurrentUserMessage,
+  resolvePromptBuildHookResult,
+} from "../embedded-agent-runner/run/attempt-prompt-helpers.js";
 import {
   applyEmbeddedAttemptToolsAllow,
   mergeForcedEmbeddedAttemptToolsAllow,
@@ -669,7 +672,10 @@ async function prepareCliRunContextWithinReadFence(
       return await resolvePromptBuildHookResult({
         config: runConfig,
         prompt: params.prompt,
-        currentUserMessage: params.transcriptPrompt ?? params.prompt,
+        currentUserMessage: resolvePromptBuildCurrentUserMessage({
+          transcriptPrompt: params.transcriptPrompt,
+          prompt: params.prompt,
+        }),
         messages: await loadOpenClawHistoryMessages(),
         hookCtx: promptBuildHookContext,
         hookRunner: promptBuildHookRunner,

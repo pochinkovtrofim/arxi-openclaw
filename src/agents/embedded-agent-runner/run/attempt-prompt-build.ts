@@ -60,6 +60,7 @@ import {
 import type { resolveOrphanRepairPlan } from "./attempt-orphan-repair.js";
 import {
   mergeOrphanedTrailingUserPrompt,
+  resolvePromptBuildCurrentUserMessage,
   resolvePromptBuildHookResult,
   shouldWarnOnOrphanedUserRepair,
 } from "./attempt-prompt-helpers.js";
@@ -165,9 +166,12 @@ export async function prepareEmbeddedAttemptPromptAssembly(input: {
   };
   const promptBuildMessages =
     pruneProcessedHistoryImages(input.activeSession.messages) ?? input.activeSession.messages;
-  // Hooks get the user's own request as the transcript records it: the prompt of
-  // a bare session reset also carries inbound context and startup instructions.
-  const currentUserMessage = attempt.transcriptPrompt ?? effectivePrompt;
+  // Hooks get the turn's request as the transcript records it: the prompt of a
+  // bare session reset also carries inbound context and startup instructions.
+  const currentUserMessage = resolvePromptBuildCurrentUserMessage({
+    transcriptPrompt: attempt.transcriptPrompt,
+    prompt: effectivePrompt,
+  });
   const promptEvent = {
     prompt: effectivePrompt,
     currentUserMessage,
