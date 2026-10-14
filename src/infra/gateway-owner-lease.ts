@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { hostname } from "node:os";
 import type { DatabaseSync } from "node:sqlite";
+import { isMainThread } from "node:worker_threads";
 import { createSubsystemLogger } from "../logging/subsystem.js";
+import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { getFileLockProcessStartTime } from "../shared/pid-alive.js";
 import type { OpenClawStateSchemaReadAdmission } from "../state/openclaw-state-db-contract.js";
 import { openDoctorStateSchemaReadAdmission } from "../state/openclaw-state-db-doctor-schema.js";
@@ -48,7 +50,37 @@ export type GatewayOwnerLease = {
   release: () => Promise<void>;
 };
 
-function readStoppedGatewayOwnerLease(db: DatabaseSync) {
+/** Owner tokens this process has published, shared across bundled module copies. */
+const publishedOwners = resolveGlobalSingleton(
+  Symbol.for("openclaw.gatewayOwnerLease.publishedOwners"),
+  () => new Set<string>(),
+);
+
+type GatewayOwnerLeaseAdmission = {
+  /** Only a starting Gateway may reclaim a record replayed from a snapshot of itself. */
+  reclaimReplayedSelf?: boolean;
+};
+
+/**
+ * A VM snapshot restores every clone with this process's PID, start time and boot
+ * identity, so a lease written by an earlier clone names this exact process. Owner
+ * leases are published only from this main thread, under the physical state owner
+ * the caller already holds, so a token this process never published came from
+ * another incarnation. A Gateway generation it published itself keeps the refusal.
+ */
+function isReplayedSelfOwner(previous: GatewayOwnerLeaseIdentity): boolean {
+  return (
+    isMainThread &&
+    previous.state === "live" &&
+    previous.pid === process.pid &&
+    !publishedOwners.has(previous.owner)
+  );
+}
+
+function readStoppedGatewayOwnerLease(
+  db: DatabaseSync,
+  admission: GatewayOwnerLeaseAdmission = {},
+) {
   const previous = readGatewayOwnerLeaseFromDatabase(db);
   if (!previous) {
     return undefined;
@@ -69,6 +101,10 @@ function readStoppedGatewayOwnerLease(db: DatabaseSync) {
   if (previous.expired && previous.state !== "live") {
     return previous;
   }
+  if (admission.reclaimReplayedSelf && isReplayedSelfOwner(previous)) {
+    log.info("Reclaiming a Gateway owner lease replayed from a snapshot of this process");
+    return previous;
+  }
   throw new Error(
     `Another Gateway owner lease is still active for this state directory: ${describeGatewayLockHolder(previous, undefined, previous.state === "live" ? "live" : "unknown")}`,
   );
@@ -78,6 +114,7 @@ function readStoppedGatewayOwnerLease(db: DatabaseSync) {
 export function assertGatewayOwnerLeaseStopped(
   env: NodeJS.ProcessEnv,
   maintenanceOwner?: StateDatabaseSchemaLease,
+  admission: GatewayOwnerLeaseAdmission = {},
 ): void {
   if (maintenanceOwner) {
     const pathname = resolveOpenClawStateSqlitePath(env);
@@ -104,7 +141,7 @@ export function assertGatewayOwnerLeaseStopped(
         runWithSqliteCleanup(
           { release: () => closeAdmission?.() },
           "Gateway owner lease schema read admission",
-          () => readStoppedGatewayOwnerLease(db),
+          () => readStoppedGatewayOwnerLease(db, admission),
         );
       },
     );
@@ -112,7 +149,7 @@ export function assertGatewayOwnerLeaseStopped(
   }
   withExistingOpenClawStateDatabaseCurrentReadOnly(
     ({ db }) => {
-      readStoppedGatewayOwnerLease(db);
+      readStoppedGatewayOwnerLease(db, admission);
     },
     { env },
   );
@@ -150,6 +187,8 @@ export function acquireGatewayOwnerLease(params: {
   const databasePath = resolveOpenClawStateSqlitePath(env);
   const custody = captureGatewayStateOwner(databasePath);
   const identity = { ...gatewayOwnerKey, owner: params.owner ?? randomUUID() };
+  // Recorded before the write: a committed row must never look replayed to this process.
+  publishedOwners.add(identity.owner);
   const processOwner = {
     pid: process.pid,
     host: hostname(),
@@ -171,7 +210,7 @@ export function acquireGatewayOwnerLease(params: {
         db,
         () => {
           assertOpenClawStateWriteAllowed({ database: db, databasePath, env });
-          const previous = readStoppedGatewayOwnerLease(db);
+          const previous = readStoppedGatewayOwnerLease(db, { reclaimReplayedSelf: true });
           if (previous) {
             releaseOpenClawStateLeaseInTransaction(db, { ...identity, owner: previous.owner });
           }
