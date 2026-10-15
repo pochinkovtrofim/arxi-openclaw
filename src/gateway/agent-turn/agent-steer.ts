@@ -58,10 +58,13 @@ export function replaySteeredAgentTurn(params: {
   if (steered?.status !== "steered" || steered.transcriptCommit === "unconfirmed") {
     return false;
   }
-  params.io.emitAcceptance([true, { runId: steered.runId, status: "ok", steered: true }, undefined], {
-    cached: true,
-    runId: steered.runId,
-  });
+  params.io.emitAcceptance(
+    [true, { runId: steered.runId, status: "ok", steered: true }, undefined],
+    {
+      cached: true,
+      runId: steered.runId,
+    },
+  );
   return true;
 }
 
