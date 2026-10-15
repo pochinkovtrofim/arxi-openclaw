@@ -54,6 +54,8 @@ export type AgentRunContext = {
   /** Channel-specific sender/chat metadata for plugin hook identity context. */
   channelContext?: PluginHookChannelContext;
   currentThreadTs?: string;
+  /** Host-admitted inbound message id; set only by trusted host admission. */
+  currentMessageId?: string;
   currentInboundAudio?: boolean;
   senderId?: string | null;
   replyToMode?: "off" | "first" | "all" | "batched";
@@ -184,6 +186,8 @@ export type AgentCommandOpts = {
   preserveUserFacingSessionModelState?: boolean;
   /** Admitted private completion owes an internal result regardless of its channel origin. */
   privateCompletion?: true;
+  /** A trusted host admitted an event that needs no visible reply. */
+  hostAdmittedReplyOptional?: true;
   /** Visible source replies must be sent through the message tool when set. */
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   /** Internal runs can omit the channel message tool entirely. */

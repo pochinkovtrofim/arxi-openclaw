@@ -461,6 +461,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
             restartRecoveryChannelContext?.requesterSenderId ??
             (trustedHostAdmission ? params.request.admittedRequesterSenderId : undefined),
           chatId: trustedHostAdmission ? params.request.admittedConversationId : undefined,
+          currentMessageId: trustedHostAdmission ? params.request.admittedMessageId : undefined,
           groupId: params.groupId,
           groupChannel: params.groupChannel,
           groupSpace: params.groupSpace,
@@ -620,6 +621,9 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
                 runtimeContextFragments: params.client?.internal?.runtimeContextFragments,
                 inputProvenance: params.inputProvenance,
                 privateCompletion: prepared.userTurn.privateCompletion,
+                ...(trustedHostAdmission && params.request.admittedReplyOptional === true
+                  ? { hostAdmittedReplyOptional: true as const }
+                  : {}),
                 senderIsOwner,
                 ...(directOwnerReply
                   ? { nativeDeliveryPurpose: "direct_owner_reply" as const }

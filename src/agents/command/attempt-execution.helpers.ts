@@ -50,7 +50,12 @@ export function resolveCommandReplyExpectation(params: {
   sessionEntry?: Pick<SessionEntry, "chatType">;
   runContext?: Pick<SessionEntry, "chatType">;
   messageChannel?: string;
-  opts: { lane?: string; privateCompletion?: true; inputProvenance?: InputProvenance };
+  opts: {
+    lane?: string;
+    privateCompletion?: true;
+    hostAdmittedReplyOptional?: true;
+    inputProvenance?: InputProvenance;
+  };
 }): ReplyExpectation | undefined {
   if (
     params.opts.privateCompletion ||
@@ -59,6 +64,9 @@ export function resolveCommandReplyExpectation(params: {
     !isDeliverableMessageChannel(params.messageChannel ?? "")
   ) {
     return "required";
+  }
+  if (params.opts.hostAdmittedReplyOptional) {
+    return "optional";
   }
   // Fresh channel routing owns the classification; stored session metadata can
   // still describe a group as direct after an earlier command-only admission.

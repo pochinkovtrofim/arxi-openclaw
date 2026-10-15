@@ -15,6 +15,8 @@ export type AgentRunRequest = Omit<
   }>;
   admittedConversationId?: string;
   admittedRequesterSenderId?: string;
+  admittedMessageId?: string;
+  admittedReplyOptional?: boolean;
   internalEvents?: AgentInternalEvent[];
   inputProvenance?: InputProvenance;
   workspaceDir?: string;
