@@ -1645,7 +1645,11 @@ describe("runGatewayLoop", () => {
         .mockResolvedValueOnce({
           release: lockRelease,
         })
-        .mockRejectedValueOnce(new Error("lock timeout"));
+        .mockRejectedValueOnce(
+          new Error("failed to acquire gateway state ownership", {
+            cause: new Error("OpenClaw state ownership is held by pid 7"),
+          }),
+        );
 
       restartGatewayProcessWithFreshPid.mockReturnValueOnce({
         mode: "disabled",
@@ -1659,7 +1663,8 @@ describe("runGatewayLoop", () => {
       expect(acquireGatewayLock).toHaveBeenCalledTimes(2);
       expect(start).toHaveBeenCalledTimes(1);
       expect(gatewayLog.error).toHaveBeenCalledWith(
-        "failed to reacquire gateway lock for in-process restart: Error: lock timeout",
+        // The cause names the holder; the wrapper alone cannot explain a refusal.
+        "failed to reacquire gateway lock for in-process restart: failed to acquire gateway state ownership | OpenClaw state ownership is held by pid 7",
       );
     });
   });
