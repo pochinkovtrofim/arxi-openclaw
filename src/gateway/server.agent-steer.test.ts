@@ -1,6 +1,4 @@
 import path from "node:path";
-import { isGatewayResponseFrame } from "@openclaw/gateway-protocol/frame-guards";
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { createAssistantMessageEventStream, type Model } from "openclaw/plugin-sdk/llm";
 import { expect, it, onTestFinished, vi } from "vitest";
 import type { RawData } from "ws";
@@ -30,7 +28,6 @@ import {
   dispatchInboundMessageMock,
   embeddedRunMock,
   installGatewayTestHooks,
-  onceMessage,
   prepareGatewayReplyRuntimeForTest,
   rpcReq,
   startServerWithClient,
@@ -266,11 +263,16 @@ it("adds the host's follow-up to the run it waits on, exactly once", async ({ si
       }
     });
     const requestId = "original-agent-steer";
-    const terminal = onceMessage<AgentResponse>(
-      harness.ws,
-      (frame) =>
-        frame.type === "res" && frame.id === requestId && frame.payload?.status !== "accepted",
-    );
+    // The fixture holds the run open until release, so observe its terminal without a budget.
+    const terminal = createDeferred<AgentResponse>();
+    const observeTerminal = (data: RawData) => {
+      const frame = JSON.parse(rawDataToString(data)) as AgentResponse;
+      if (frame.type === "res" && frame.id === requestId && frame.payload?.status !== "accepted") {
+        terminal.resolve(frame);
+      }
+    };
+    harness.ws.on("message", observeTerminal);
+    onTestFinished(() => harness.ws.off("message", observeTerminal));
     harness.ws.send(
       JSON.stringify({
         type: "req",
@@ -323,7 +325,7 @@ it("adds the host's follow-up to the run it waits on, exactly once", async ({ si
       expect(dispatchInboundMessageMock).not.toHaveBeenCalled();
     } finally {
       releaseModel.resolve();
-      const done = await terminal;
+      const done = await withinTest(terminal.promise, signal);
       expect(done.ok, JSON.stringify(done.error)).toBe(true);
     }
     const after = await rpcReq(harness.ws, "agent.steer", {
