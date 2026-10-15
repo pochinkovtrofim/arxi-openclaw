@@ -870,9 +870,9 @@ describe("startAgentRunExecution Gateway ownership", () => {
       senderId: "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       currentMessageId: "7311",
     });
-    expect(dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.hostAdmittedReplyOptional).toBe(
-      true,
-    );
+    expect(
+      dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.hostAdmittedReplyOptional,
+    ).toBe(true);
 
     dispatchAgentRunFromGateway.mockReset();
     const untrusted = createExecution({
