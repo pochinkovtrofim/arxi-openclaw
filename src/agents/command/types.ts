@@ -54,6 +54,8 @@ export type AgentRunContext = {
   /** Channel-specific sender/chat metadata for plugin hook identity context. */
   channelContext?: PluginHookChannelContext;
   currentThreadTs?: string;
+  /** Host-admitted inbound message id; set only by trusted host admission. */
+  currentMessageId?: string;
   currentInboundAudio?: boolean;
   senderId?: string | null;
   replyToMode?: "off" | "first" | "all" | "batched";
