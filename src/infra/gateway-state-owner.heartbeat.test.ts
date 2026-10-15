@@ -438,64 +438,61 @@ it.each([
   "beat missed while prepared",
   "clock stepped after resume",
   "beat missed long after resume",
-] as const)(
-  "bounds Gateway custody by one monotonic budget when a %s",
-  async (scenario) => {
-    const { workers, ready, beats, suspensions } = observeHeartbeatWorkers();
-    const gateway = await acquireGatewayLock({
-      allowInTests: true,
-      env: { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-owner-host-suspension-") },
-      timeoutMs: 0,
-    });
-    if (!gateway) {
-      throw new Error("Expected Gateway custody");
+] as const)("bounds Gateway custody by one monotonic budget when a %s", async (scenario) => {
+  const { workers, ready, beats, suspensions } = observeHeartbeatWorkers();
+  const gateway = await acquireGatewayLock({
+    allowInTests: true,
+    env: { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-owner-host-suspension-") },
+    timeoutMs: 0,
+  });
+  if (!gateway) {
+    throw new Error("Expected Gateway custody");
+  }
+  try {
+    await Promise.all(ready);
+    const lastBeat = beats[0];
+    const suspension = suspensions[0];
+    if (!lastBeat || !suspension) {
+      throw new Error("Expected one heartbeat worker and its shared observations");
     }
-    try {
-      await Promise.all(ready);
-      const lastBeat = beats[0];
-      const suspension = suspensions[0];
-      if (!lastBeat || !suspension) {
-        throw new Error("Expected one heartbeat worker and its shared observations");
-      }
-      // Only the watchdog decides here; a live worker would renew the synthetic beat.
-      await workers[0]?.terminate();
-      const admission = tryBeginGatewaySuspendAdmission(() => {});
-      if (!admission?.commit()) {
-        throw new Error("Expected a prepared host suspension");
-      }
-      expect(Atomics.load(suspension, 0)).toBe(1);
-      const start = performance.now();
-      const monotonic = vi.spyOn(performance, "now").mockReturnValue(start);
-      if (scenario !== "beat missed while prepared") {
-        expect(admission.release()).toBe(true);
-        expect(Atomics.load(suspension, 0)).toBe(2);
-      }
-      if (scenario === "beat missed long after resume") {
-        monotonic.mockReturnValue(start + 60_000);
-      }
-      // A paused VM, or the host's clock step after resume, leaves the beat far behind.
-      Atomics.store(lastBeat, 0, BigInt(Date.now() - 540_000));
-      if (scenario === "beat missed long after resume") {
-        expect(() => gateway.assertCurrent()).toThrow(
-          "utimes heartbeat renewal did not complete within 60 seconds",
-        );
-        return;
-      }
-      expect(() => gateway.assertCurrent()).not.toThrow();
-      monotonic.mockReturnValue(start + 59_999);
-      expect(() => gateway.assertCurrent()).not.toThrow();
-      // A worker that never renews again loses custody one budget after the miss was seen.
+    // Only the watchdog decides here; a live worker would renew the synthetic beat.
+    await workers[0]?.terminate();
+    const admission = tryBeginGatewaySuspendAdmission(() => {});
+    if (!admission?.commit()) {
+      throw new Error("Expected a prepared host suspension");
+    }
+    expect(Atomics.load(suspension, 0)).toBe(1);
+    const start = performance.now();
+    const monotonic = vi.spyOn(performance, "now").mockReturnValue(start);
+    if (scenario !== "beat missed while prepared") {
+      expect(admission.release()).toBe(true);
+      expect(Atomics.load(suspension, 0)).toBe(2);
+    }
+    if (scenario === "beat missed long after resume") {
       monotonic.mockReturnValue(start + 60_000);
+    }
+    // A paused VM, or the host's clock step after resume, leaves the beat far behind.
+    Atomics.store(lastBeat, 0, BigInt(Date.now() - 540_000));
+    if (scenario === "beat missed long after resume") {
       expect(() => gateway.assertCurrent()).toThrow(
         "utimes heartbeat renewal did not complete within 60 seconds",
       );
-    } finally {
-      resetGatewayWorkAdmission();
-      await gateway.release();
-      await Promise.all(workers.map((worker) => worker.terminate()));
+      return;
     }
-  },
-);
+    expect(() => gateway.assertCurrent()).not.toThrow();
+    monotonic.mockReturnValue(start + 59_999);
+    expect(() => gateway.assertCurrent()).not.toThrow();
+    // A worker that never renews again loses custody one budget after the miss was seen.
+    monotonic.mockReturnValue(start + 60_000);
+    expect(() => gateway.assertCurrent()).toThrow(
+      "utimes heartbeat renewal did not complete within 60 seconds",
+    );
+  } finally {
+    resetGatewayWorkAdmission();
+    await gateway.release();
+    await Promise.all(workers.map((worker) => worker.terminate()));
+  }
+});
 
 it("renews retained custody during synchronous work and never touches a successor", async () => {
   const { workers, ready } = observeHeartbeatWorkers();
