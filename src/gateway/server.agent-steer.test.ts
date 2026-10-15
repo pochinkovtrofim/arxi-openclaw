@@ -93,249 +93,249 @@ installGatewayTestHooks({
 });
 
 it("adds the host's follow-up to the run it waits on, exactly once", async ({ signal }) => {
-    const sessionKey = `agent:main:direct-steering-agent-steer`;
-    const sessionId = `direct-steering-session-agent-steer`;
-    const runId = "external:agent-steer-original";
-    const model: Model = {
-      id: "mock-1",
-      name: "Steering fixture",
-      provider: "steering-fixture",
-      api: "openai-responses",
-      baseUrl: "https://steering.example.test",
-      reasoning: false,
-      input: ["text"],
-      contextWindow: 16_000,
-      maxTokens: 2_048,
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    };
-    testState.sessionStorePath = path.join(
-      process.env.OPENCLAW_STATE_DIR!,
-      "agents",
-      "main",
-      "sessions",
-      "sessions.json",
-    );
-    testState.agentConfig = {
-      model: { primary: `${model.provider}/${model.id}` },
-      thinkingDefault: "off",
-      compaction: { enabled: false },
-    };
-    testState.gatewayAuth = { mode: "token", token: gatewayToken };
-    testState.gatewayControlUi = { allowedOrigins: [browserOrigin] };
-    const config = getRuntimeConfig();
-    await writeConfigFile({
-      ...config,
-      plugins: { ...config.plugins, enabled: false },
-      models: {
-        providers: {
-          [model.provider]: {
-            api: "openai-responses",
-            apiKey: "synthetic-steering-key",
-            baseUrl: model.baseUrl,
-            models: [
-              {
-                id: model.id,
-                name: model.name,
-                reasoning: model.reasoning,
-                input: model.input,
-                cost: model.cost,
-                contextWindow: model.contextWindow,
-                maxTokens: model.maxTokens,
-              },
-            ],
-          },
+  const sessionKey = `agent:main:direct-steering-agent-steer`;
+  const sessionId = `direct-steering-session-agent-steer`;
+  const runId = "external:agent-steer-original";
+  const model: Model = {
+    id: "mock-1",
+    name: "Steering fixture",
+    provider: "steering-fixture",
+    api: "openai-responses",
+    baseUrl: "https://steering.example.test",
+    reasoning: false,
+    input: ["text"],
+    contextWindow: 16_000,
+    maxTokens: 2_048,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  };
+  testState.sessionStorePath = path.join(
+    process.env.OPENCLAW_STATE_DIR!,
+    "agents",
+    "main",
+    "sessions",
+    "sessions.json",
+  );
+  testState.agentConfig = {
+    model: { primary: `${model.provider}/${model.id}` },
+    thinkingDefault: "off",
+    compaction: { enabled: false },
+  };
+  testState.gatewayAuth = { mode: "token", token: gatewayToken };
+  testState.gatewayControlUi = { allowedOrigins: [browserOrigin] };
+  const config = getRuntimeConfig();
+  await writeConfigFile({
+    ...config,
+    plugins: { ...config.plugins, enabled: false },
+    models: {
+      providers: {
+        [model.provider]: {
+          api: "openai-responses",
+          apiKey: "synthetic-steering-key",
+          baseUrl: model.baseUrl,
+          models: [
+            {
+              id: model.id,
+              name: model.name,
+              reasoning: model.reasoning,
+              input: model.input,
+              cost: model.cost,
+              contextWindow: model.contextWindow,
+              maxTokens: model.maxTokens,
+            },
+          ],
         },
       },
-    });
-    const discovery = await import("../agents/agent-model-discovery.js");
-    const actualDiscovery = await vi.importActual<
-      typeof import("../agents/agent-model-discovery.js")
-    >("../agents/agent-model-discovery.js");
-    const discoverySpy = vi
-      .spyOn(discovery, "discoverModels")
-      .mockImplementation(actualDiscovery.discoverModels);
-    onTestFinished(() => discoverySpy.mockRestore());
-    await prepareGatewayReplyRuntimeForTest({ force: true });
-    await writeSessionStore({
-      entries: {
-        [sessionKey]: {
-          sessionId,
-          updatedAt: Date.now(),
-          agentHarnessId: "openclaw",
-          permissionMode: "full",
-          restartRecoveryTerminalRunIds: ["unrelated-completed-source"],
-        },
+    },
+  });
+  const discovery = await import("../agents/agent-model-discovery.js");
+  const actualDiscovery = await vi.importActual<
+    typeof import("../agents/agent-model-discovery.js")
+  >("../agents/agent-model-discovery.js");
+  const discoverySpy = vi
+    .spyOn(discovery, "discoverModels")
+    .mockImplementation(actualDiscovery.discoverModels);
+  onTestFinished(() => discoverySpy.mockRestore());
+  await prepareGatewayReplyRuntimeForTest({ force: true });
+  await writeSessionStore({
+    entries: {
+      [sessionKey]: {
+        sessionId,
+        updatedAt: Date.now(),
+        agentHarnessId: "openclaw",
+        permissionMode: "full",
+        restartRecoveryTerminalRunIds: ["unrelated-completed-source"],
       },
-    });
+    },
+  });
 
-    const command = await import("../agents/agent-command.js");
-    agentCommandMock.mockImplementation((...args) =>
-      command.agentCommandFromGatewayIngress(
-        ...(args as Parameters<typeof command.agentCommandFromGatewayIngress>),
-      ),
-    );
-    const releaseModel = createDeferred();
-    const modelStarted = createDeferred();
-    const ownerReady = createDeferred<{
-      attempt: EmbeddedRunAttemptParams;
-      handle: ReturnType<typeof prepareEmbeddedAttemptStream>["queueHandle"];
-    }>();
-    const disposition = createDeferred<"steered" | "followup">();
-    const steerCalls: unknown[][] = [];
-    dispatchInboundMessageMock.mockImplementation(async () => {
-      disposition.resolve("followup");
-      return { queuedFinal: false, counts: { tool: 0, block: 0, final: 0 } };
-    });
-    runAttempt.mockImplementation(async (attempt) => {
-      const modelStream = createAssistantMessageEventStream();
-      streamMocks.streamSimple
-        .mockImplementation(() =>
-          createAssistantResultStream(
-            createAssistant(attempt.model, [{ type: "text", text: "Correction applied." }]),
-          ),
-        )
-        .mockImplementationOnce(() => {
-          modelStarted.resolve();
-          return modelStream;
-        });
-      const { session } = await createTestSession({ model: attempt.model });
-      const steer = session.steer.bind(session);
-      vi.spyOn(session, "steer").mockImplementation(async (...args) => {
-        const result = await steer(...args);
-        steerCalls.push(args);
-        disposition.resolve("steered");
-        return result;
+  const command = await import("../agents/agent-command.js");
+  agentCommandMock.mockImplementation((...args) =>
+    command.agentCommandFromGatewayIngress(
+      ...(args as Parameters<typeof command.agentCommandFromGatewayIngress>),
+    ),
+  );
+  const releaseModel = createDeferred();
+  const modelStarted = createDeferred();
+  const ownerReady = createDeferred<{
+    attempt: EmbeddedRunAttemptParams;
+    handle: ReturnType<typeof prepareEmbeddedAttemptStream>["queueHandle"];
+  }>();
+  const disposition = createDeferred<"steered" | "followup">();
+  const steerCalls: unknown[][] = [];
+  dispatchInboundMessageMock.mockImplementation(async () => {
+    disposition.resolve("followup");
+    return { queuedFinal: false, counts: { tool: 0, block: 0, final: 0 } };
+  });
+  runAttempt.mockImplementation(async (attempt) => {
+    const modelStream = createAssistantMessageEventStream();
+    streamMocks.streamSimple
+      .mockImplementation(() =>
+        createAssistantResultStream(
+          createAssistant(attempt.model, [{ type: "text", text: "Correction applied." }]),
+        ),
+      )
+      .mockImplementationOnce(() => {
+        modelStarted.resolve();
+        return modelStream;
       });
-      const controller = new AbortController();
-      const prepared = prepareEmbeddedAttemptStream({
-        attempt,
-        agentSession: {
-          activeSession: session,
-          hookRunner: null,
-          clientToolCallSlots: [],
-          hasDeliveredSourceReply: () => false,
-          markSourceReplyDelivered: vi.fn(),
-          builtinToolNames: new Set(),
-          coreBuiltinToolNames: new Set(),
-          replaySafeToolNames: new Set(),
-          codeModeExecToolNames: new Set(),
-          sideEffectToolOwners: new Map(),
-          trustedLocalMediaToolNames: new Set(),
-        },
-        hookAgentId: attempt.agentId ?? "main",
-        diagnosticTrace: createDiagnosticTraceContext(),
-        diagnosticOwner: createDiagnosticEmbeddedRunOwner({ sessionId, runId }),
-        nestedToolActivityState: createAttemptNestedToolActivityState(),
-        isReplaySafeTool: () => false,
-        runAbortController: controller,
-        abortRun: (_timeout, reason) => controller.abort(reason),
-        markExternalAbort: vi.fn(),
-        getRunState: () => ({
-          aborted: controller.signal.aborted,
-          promptError: undefined,
-          timedOut: false,
-          yieldDetected: false,
-        }),
-        onBlockReply: undefined,
-        onBlockReplyFlush: undefined,
-      });
-      embeddedRunMock.activeIds.add(sessionId);
-      const prompt = session.prompt(attempt.prompt);
-      try {
-        await modelStarted.promise;
-        ownerReady.resolve({ attempt, handle: prepared.queueHandle });
-        await releaseModel.promise;
-        const assistant = createAssistant(attempt.model, [{ type: "text", text: "Completed." }]);
-        modelStream.push({ type: "done", reason: "stop", message: assistant });
-        modelStream.end();
-        await prompt;
-        return makeEmbeddedRunnerAttempt({
-          sessionIdUsed: sessionId,
-          lastAssistant: assistant,
-          assistantTexts: ["Completed."],
-          messagesSnapshot: session.messages,
-        });
-      } finally {
-        prepared.subscription.unsubscribe();
-        clearActiveEmbeddedRun(sessionId, prepared.queueHandle, sessionKey, attempt.sessionFile);
-        embeddedRunMock.activeIds.delete(sessionId);
-        session.dispose();
-      }
+    const { session } = await createTestSession({ model: attempt.model });
+    const steer = session.steer.bind(session);
+    vi.spyOn(session, "steer").mockImplementation(async (...args) => {
+      const result = await steer(...args);
+      steerCalls.push(args);
+      disposition.resolve("steered");
+      return result;
     });
-    const requestId = "original-agent-steer";
-    // The fixture holds the run open until release, so observe its terminal without a budget.
-    const terminal = createDeferred<AgentResponse>();
-    const observeTerminal = (data: RawData) => {
-      const frame = JSON.parse(rawDataToString(data)) as AgentResponse;
-      if (frame.type === "res" && frame.id === requestId && frame.payload?.status !== "accepted") {
-        terminal.resolve(frame);
-      }
-    };
-    harness.ws.on("message", observeTerminal);
-    onTestFinished(() => harness.ws.off("message", observeTerminal));
-    harness.ws.send(
-      JSON.stringify({
-        type: "req",
-        id: requestId,
-        method: "agent",
-        params: {
-          sessionKey,
-          message: "Find me a hotel in Girona for Friday.",
-          deliver: false,
-          idempotencyKey: runId,
-        },
+    const controller = new AbortController();
+    const prepared = prepareEmbeddedAttemptStream({
+      attempt,
+      agentSession: {
+        activeSession: session,
+        hookRunner: null,
+        clientToolCallSlots: [],
+        hasDeliveredSourceReply: () => false,
+        markSourceReplyDelivered: vi.fn(),
+        builtinToolNames: new Set(),
+        coreBuiltinToolNames: new Set(),
+        replaySafeToolNames: new Set(),
+        codeModeExecToolNames: new Set(),
+        sideEffectToolOwners: new Map(),
+        trustedLocalMediaToolNames: new Set(),
+      },
+      hookAgentId: attempt.agentId ?? "main",
+      diagnosticTrace: createDiagnosticTraceContext(),
+      diagnosticOwner: createDiagnosticEmbeddedRunOwner({ sessionId, runId }),
+      nestedToolActivityState: createAttemptNestedToolActivityState(),
+      isReplaySafeTool: () => false,
+      runAbortController: controller,
+      abortRun: (_timeout, reason) => controller.abort(reason),
+      markExternalAbort: vi.fn(),
+      getRunState: () => ({
+        aborted: controller.signal.aborted,
+        promptError: undefined,
+        timedOut: false,
+        yieldDetected: false,
       }),
-    );
-    try {
-      await withinTest(ownerReady.promise, signal);
-      const other = await rpcReq(harness.ws, "agent.steer", {
-        sessionKey,
-        message: "Under 120 euros, please.",
-        expectedRunId: "external:someone-else",
-        idempotencyKey: "follow-up-mismatch",
-      });
-      expect(other.payload).toEqual({
-        status: "not_steerable",
-        reason: "run_mismatch",
-        activeRunId: runId,
-      });
-      const idle = await rpcReq(harness.ws, "agent.steer", {
-        sessionKey: "agent:main:agent-steer-idle",
-        message: "Under 120 euros, please.",
-        expectedRunId: runId,
-        idempotencyKey: "follow-up-idle",
-      });
-      expect(idle.payload).toMatchObject({ status: "not_steerable" });
-      const request = {
-        sessionKey,
-        message: "Under 120 euros, please.",
-        expectedRunId: runId,
-        idempotencyKey: "follow-up-steered",
-      };
-      // The steer answers once the run reads the follow-up, after its current model turn.
-      const steeredReply = rpcReq(harness.ws, "agent.steer", request);
-      expect(await withinTest(disposition.promise, signal)).toBe("steered");
-      releaseModel.resolve();
-      const steered = await steeredReply;
-      expect(steered.ok, JSON.stringify(steered.error)).toBe(true);
-      expect(steered.payload).toEqual({ status: "steered", runId });
-      const retried = await rpcReq(harness.ws, "agent.steer", request);
-      expect(retried.payload).toEqual({ status: "steered", runId });
-      expect(steerCalls).toHaveLength(1);
-      expect(JSON.stringify(steerCalls[0])).toContain("Under 120 euros, please.");
-      const reused = await rpcReq(harness.ws, "agent.steer", { ...request, message: "Other text" });
-      expect(reused.ok).toBe(false);
-      expect(dispatchInboundMessageMock).not.toHaveBeenCalled();
-    } finally {
-      releaseModel.resolve();
-      const done = await withinTest(terminal.promise, signal);
-      expect(done.ok, JSON.stringify(done.error)).toBe(true);
-    }
-    const after = await rpcReq(harness.ws, "agent.steer", {
-      sessionKey,
-      message: "And breakfast included.",
-      expectedRunId: runId,
-      idempotencyKey: "follow-up-after-terminal",
+      onBlockReply: undefined,
+      onBlockReplyFlush: undefined,
     });
-    expect(after.payload).toMatchObject({ status: "not_steerable" });
+    embeddedRunMock.activeIds.add(sessionId);
+    const prompt = session.prompt(attempt.prompt);
+    try {
+      await modelStarted.promise;
+      ownerReady.resolve({ attempt, handle: prepared.queueHandle });
+      await releaseModel.promise;
+      const assistant = createAssistant(attempt.model, [{ type: "text", text: "Completed." }]);
+      modelStream.push({ type: "done", reason: "stop", message: assistant });
+      modelStream.end();
+      await prompt;
+      return makeEmbeddedRunnerAttempt({
+        sessionIdUsed: sessionId,
+        lastAssistant: assistant,
+        assistantTexts: ["Completed."],
+        messagesSnapshot: session.messages,
+      });
+    } finally {
+      prepared.subscription.unsubscribe();
+      clearActiveEmbeddedRun(sessionId, prepared.queueHandle, sessionKey, attempt.sessionFile);
+      embeddedRunMock.activeIds.delete(sessionId);
+      session.dispose();
+    }
+  });
+  const requestId = "original-agent-steer";
+  // The fixture holds the run open until release, so observe its terminal without a budget.
+  const terminal = createDeferred<AgentResponse>();
+  const observeTerminal = (data: RawData) => {
+    const frame = JSON.parse(rawDataToString(data)) as AgentResponse;
+    if (frame.type === "res" && frame.id === requestId && frame.payload?.status !== "accepted") {
+      terminal.resolve(frame);
+    }
+  };
+  harness.ws.on("message", observeTerminal);
+  onTestFinished(() => harness.ws.off("message", observeTerminal));
+  harness.ws.send(
+    JSON.stringify({
+      type: "req",
+      id: requestId,
+      method: "agent",
+      params: {
+        sessionKey,
+        message: "Find me a hotel in Girona for Friday.",
+        deliver: false,
+        idempotencyKey: runId,
+      },
+    }),
+  );
+  try {
+    await withinTest(ownerReady.promise, signal);
+    const other = await rpcReq(harness.ws, "agent.steer", {
+      sessionKey,
+      message: "Under 120 euros, please.",
+      expectedRunId: "external:someone-else",
+      idempotencyKey: "follow-up-mismatch",
+    });
+    expect(other.payload).toEqual({
+      status: "not_steerable",
+      reason: "run_mismatch",
+      activeRunId: runId,
+    });
+    const idle = await rpcReq(harness.ws, "agent.steer", {
+      sessionKey: "agent:main:agent-steer-idle",
+      message: "Under 120 euros, please.",
+      expectedRunId: runId,
+      idempotencyKey: "follow-up-idle",
+    });
+    expect(idle.payload).toMatchObject({ status: "not_steerable" });
+    const request = {
+      sessionKey,
+      message: "Under 120 euros, please.",
+      expectedRunId: runId,
+      idempotencyKey: "follow-up-steered",
+    };
+    // The steer answers once the run reads the follow-up, after its current model turn.
+    const steeredReply = rpcReq(harness.ws, "agent.steer", request);
+    expect(await withinTest(disposition.promise, signal)).toBe("steered");
+    releaseModel.resolve();
+    const steered = await steeredReply;
+    expect(steered.ok, JSON.stringify(steered.error)).toBe(true);
+    expect(steered.payload).toEqual({ status: "steered", runId });
+    const retried = await rpcReq(harness.ws, "agent.steer", request);
+    expect(retried.payload).toEqual({ status: "steered", runId });
+    expect(steerCalls).toHaveLength(1);
+    expect(JSON.stringify(steerCalls[0])).toContain("Under 120 euros, please.");
+    const reused = await rpcReq(harness.ws, "agent.steer", { ...request, message: "Other text" });
+    expect(reused.ok).toBe(false);
+    expect(dispatchInboundMessageMock).not.toHaveBeenCalled();
+  } finally {
+    releaseModel.resolve();
+    const done = await withinTest(terminal.promise, signal);
+    expect(done.ok, JSON.stringify(done.error)).toBe(true);
+  }
+  const after = await rpcReq(harness.ws, "agent.steer", {
+    sessionKey,
+    message: "And breakfast included.",
+    expectedRunId: runId,
+    idempotencyKey: "follow-up-after-terminal",
+  });
+  expect(after.payload).toMatchObject({ status: "not_steerable" });
 });

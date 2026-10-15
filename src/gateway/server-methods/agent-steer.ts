@@ -23,7 +23,9 @@ export const agentSteerHandler: GatewayRequestHandlers["agent.steer"] = async ({
       false,
       undefined,
       errorShape(
-        error instanceof AgentSteerRequestError ? ErrorCodes.INVALID_REQUEST : ErrorCodes.UNAVAILABLE,
+        error instanceof AgentSteerRequestError
+          ? ErrorCodes.INVALID_REQUEST
+          : ErrorCodes.UNAVAILABLE,
         error instanceof Error ? error.message : String(error),
       ),
     );

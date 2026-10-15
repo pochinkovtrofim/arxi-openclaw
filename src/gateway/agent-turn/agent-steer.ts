@@ -1,6 +1,9 @@
 import { sha256Hex } from "@openclaw/normalization-core/node-crypto";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { AgentSteerParams, AgentSteerResult } from "../../../packages/gateway-protocol/src/index.js";
+import type {
+  AgentSteerParams,
+  AgentSteerResult,
+} from "../../../packages/gateway-protocol/src/index.js";
 import { ACTIVE_EMBEDDED_RUNS_BY_RUN_ID } from "../../agents/embedded-agent-runner/run-state.js";
 import { runAgentHarnessBeforeMessageWriteHook } from "../../agents/harness/hook-helpers.js";
 import {
@@ -52,7 +55,12 @@ export async function steerActiveAgentRun(params: {
     throw new AgentSteerRequestError("agent.steer requires the trusted local host");
   }
   const identity = sha256Hex(
-    JSON.stringify([request.sessionKey, request.agentId ?? "", request.expectedRunId, request.message]),
+    JSON.stringify([
+      request.sessionKey,
+      request.agentId ?? "",
+      request.expectedRunId,
+      request.message,
+    ]),
   );
   const done = context.dedupe.get(DEDUPE_PREFIX + request.idempotencyKey);
   if (done) {
@@ -152,7 +160,9 @@ async function steer(
     errorContext: "gateway agent steer transcript",
     beforeMessageWrite: runAgentHarnessBeforeMessageWriteHook,
     onPersistenceError: (error) => {
-      context.logGateway.warn(`gateway agent steer transcript persistence failed: ${formatForLog(error)}`);
+      context.logGateway.warn(
+        `gateway agent steer transcript persistence failed: ${formatForLog(error)}`,
+      );
     },
   });
   const attempt = beginReplyMessageInjectionTarget(target, request.message, {
