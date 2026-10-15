@@ -385,6 +385,32 @@ export const AgentWaitParamsSchema = closedObject({
   timeoutMs: Type.Optional(Type.Integer({ minimum: 0 })),
 });
 
+/**
+ * Adds a follow-up message to the active run the trusted local host is waiting
+ * on. Never starts a run: `not_steerable` leaves the message for `agent`.
+ */
+export const AgentSteerParamsSchema = closedObject({
+  message: NonEmptyString,
+  sessionKey: NonEmptyString,
+  agentId: Type.Optional(NonEmptyString),
+  expectedRunId: NonEmptyString,
+  idempotencyKey: NonEmptyString,
+});
+
+/** `steered` names the run that answers; `transcriptCommit` reports an unconfirmed receipt. */
+export const AgentSteerResultSchema = Type.Union([
+  closedObject({
+    status: Type.Literal("steered"),
+    runId: NonEmptyString,
+    transcriptCommit: Type.Optional(Type.Literal("unconfirmed")),
+  }),
+  closedObject({
+    status: Type.Literal("not_steerable"),
+    reason: NonEmptyString,
+    activeRunId: Type.Optional(NonEmptyString),
+  }),
+]);
+
 /** Wake request from external schedulers or devices into an agent session. */
 export const WakeParamsSchema = Type.Object(
   {
@@ -421,4 +447,6 @@ export type ConversationTurnResult = Static<typeof ConversationTurnResultSchema>
 export type MessageActionParams = Static<typeof MessageActionParamsSchema>;
 export type PollParams = Static<typeof PollParamsSchema>;
 export type AgentWaitParams = Static<typeof AgentWaitParamsSchema>;
+export type AgentSteerParams = Static<typeof AgentSteerParamsSchema>;
+export type AgentSteerResult = Static<typeof AgentSteerResultSchema>;
 export type WakeParams = Static<typeof WakeParamsSchema>;

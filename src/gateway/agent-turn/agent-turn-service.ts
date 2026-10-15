@@ -33,6 +33,7 @@ import { prepareAgentRequestRouting } from "./agent-request-routing.js";
 import { prepareAgentRunDispatch } from "./agent-run-admission-phase.js";
 import { startAgentRunExecution } from "./agent-run-execution-phase.js";
 import { persistAgentSessionPhase } from "./agent-session-persist.js";
+import { replaySteeredAgentTurn } from "./agent-steer.js";
 import { prepareAgentWaitForTurn } from "./agent-wait.js";
 import type { RequesterSettleWakeReplay } from "./internal-facade.types.js";
 import type { AgentTurnIo, AgentTurnPrincipal } from "./types.js";
@@ -69,6 +70,9 @@ export function createAgentTurnService(
     const promptedAt = Date.now();
     assertAdmissionCurrent?.();
     if (replayAgentTurnIfCached({ preflight, context, io, acceptedOnly: privateCompletion })) {
+      return;
+    }
+    if (replaySteeredAgentTurn({ idempotencyKey: preflight.request.idempotencyKey, context, io })) {
       return;
     }
     assertInputCommitAllowed?.();
