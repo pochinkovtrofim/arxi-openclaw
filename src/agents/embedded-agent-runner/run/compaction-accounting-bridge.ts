@@ -1,8 +1,8 @@
 import type { SessionTranscriptRuntimeTarget } from "../../../config/sessions/session-accessor.js";
 import type { ContextEngineRuntimeContext } from "../../../context-engine/types.js";
 import type { CompactionRequestConstraints } from "../../sessions/compaction/request-budget.js";
-import type { SessionManager } from "../../sessions/session-manager.js";
 import type { SessionManagerBoundedContextLimits } from "../../sessions/session-manager-view-types.js";
+import type { SessionManager } from "../../sessions/session-manager.js";
 import type { NormalizedUsage } from "../../usage.js";
 
 export type CompactionAccountingReceipt = {
