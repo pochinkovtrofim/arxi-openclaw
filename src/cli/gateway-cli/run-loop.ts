@@ -11,7 +11,7 @@ import {
 import { GatewayStartupCleanupError } from "../../gateway/server-shutdown.js";
 import type { startGatewayServer } from "../../gateway/server.js";
 import type { GatewayInstallationReplacement } from "../../gateway/stale-install.js";
-import { formatErrorMessage } from "../../infra/errors.js";
+import { formatErrorMessage, formatErrorMessageWithCode } from "../../infra/errors.js";
 import type { GatewayBootLifecycleCompletion } from "../../infra/gateway-boot-lifecycle.js";
 import { acquireGatewayLock } from "../../infra/gateway-lock.js";
 import { consumeGatewaySuspendHandoff } from "../../infra/gateway-suspend-coordinator.js";
@@ -357,7 +357,7 @@ export async function runGatewayLoop(params: {
             continue;
           }
           gatewayLog.error(
-            `failed to reacquire gateway lock for in-process restart: ${String(err)}`,
+            `failed to reacquire gateway lock for in-process restart: ${formatErrorMessageWithCode(err)}`,
           );
           exitProcess(1);
           return;
