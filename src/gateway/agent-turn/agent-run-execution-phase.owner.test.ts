@@ -83,6 +83,8 @@ function createExecution(
     assertContextCurrent?: () => void;
     admittedConversationId?: string;
     admittedRequesterSenderId?: string;
+    admittedMessageId?: string;
+    admittedReplyOptional?: boolean;
     deliveryChatType?: "direct" | "group" | "channel";
     deliver?: boolean;
     groupId?: string;
@@ -145,6 +147,8 @@ function createExecution(
       request: {
         admittedConversationId: options.admittedConversationId,
         admittedRequesterSenderId: options.admittedRequesterSenderId,
+        admittedMessageId: options.admittedMessageId,
+        admittedReplyOptional: options.admittedReplyOptional,
       },
       cfg: {},
       activeSessionAgentId: "main",
@@ -846,6 +850,8 @@ describe("startAgentRunExecution Gateway ownership", () => {
     const admittedRequest = {
       admittedConversationId: "telegram-chat:42",
       admittedRequesterSenderId: "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      admittedMessageId: "7311",
+      admittedReplyOptional: true,
     };
     const trusted = createExecution({
       ...admittedRequest,
@@ -862,7 +868,11 @@ describe("startAgentRunExecution Gateway ownership", () => {
     expect(dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.runContext).toMatchObject({
       chatId: "telegram-chat:42",
       senderId: "owner:own_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      currentMessageId: "7311",
     });
+    expect(dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.hostAdmittedReplyOptional).toBe(
+      true,
+    );
 
     dispatchAgentRunFromGateway.mockReset();
     const untrusted = createExecution({
@@ -880,6 +890,10 @@ describe("startAgentRunExecution Gateway ownership", () => {
     const runContext = dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.runContext;
     expect(runContext?.chatId).toBeUndefined();
     expect(runContext?.senderId).toBeUndefined();
+    expect(runContext?.currentMessageId).toBeUndefined();
+    expect(
+      dispatchAgentRunFromGateway.mock.calls[0]?.[0]?.ingressOpts.hostAdmittedReplyOptional,
+    ).toBeUndefined();
   });
 
   it.each([

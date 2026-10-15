@@ -184,6 +184,8 @@ export type AgentCommandOpts = {
   preserveUserFacingSessionModelState?: boolean;
   /** Admitted private completion owes an internal result regardless of its channel origin. */
   privateCompletion?: true;
+  /** A trusted host admitted an event that needs no visible reply. */
+  hostAdmittedReplyOptional?: true;
   /** Visible source replies must be sent through the message tool when set. */
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   /** Internal runs can omit the channel message tool entirely. */

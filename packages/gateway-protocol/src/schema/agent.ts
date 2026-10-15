@@ -316,6 +316,12 @@ export const AgentParamsSchema = closedObject({
   // client and never exposed as a model-selectable tool argument.
   admittedConversationId: Type.Optional(NonEmptyString),
   admittedRequesterSenderId: Type.Optional(NonEmptyString),
+  // The channel message this turn answers, for current-message actions such
+  // as a reaction. Same trust rule as the admitted identity above.
+  admittedMessageId: Type.Optional(NonEmptyString),
+  // The host admitted an event that needs no visible reply (for example the
+  // requester's reaction), so the turn may end silently.
+  admittedReplyOptional: Type.Optional(Type.Boolean()),
   timeout: Type.Optional(Type.Integer({ minimum: 0 })),
   bestEffortDeliver: Type.Optional(Type.Boolean()),
   lane: Type.Optional(Type.String()),
