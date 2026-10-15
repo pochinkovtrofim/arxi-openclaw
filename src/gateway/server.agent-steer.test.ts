@@ -312,10 +312,13 @@ it("adds the host's follow-up to the run it waits on, exactly once", async ({ si
         expectedRunId: runId,
         idempotencyKey: "follow-up-steered",
       };
-      const steered = await rpcReq(harness.ws, "agent.steer", request);
+      // The steer answers once the run reads the follow-up, after its current model turn.
+      const steeredReply = rpcReq(harness.ws, "agent.steer", request);
+      expect(await withinTest(disposition.promise, signal)).toBe("steered");
+      releaseModel.resolve();
+      const steered = await steeredReply;
       expect(steered.ok, JSON.stringify(steered.error)).toBe(true);
       expect(steered.payload).toEqual({ status: "steered", runId });
-      expect(await withinTest(disposition.promise, signal)).toBe("steered");
       const retried = await rpcReq(harness.ws, "agent.steer", request);
       expect(retried.payload).toEqual({ status: "steered", runId });
       expect(steerCalls).toHaveLength(1);
