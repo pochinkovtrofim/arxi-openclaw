@@ -8,25 +8,41 @@ export type GatewayStateOwnerHeartbeatData = {
   intervalMs: number;
   failureMs: number;
   lastBeat: SharedArrayBuffer;
+  /** One Int32 host-suspension phase, written only by the main-thread watchdog. */
+  hostSuspension?: SharedArrayBuffer;
   events: MessagePort;
 };
 
-/** Native main-thread work cannot stall renewal; an expired worker never resumes custody. */
+/** The host may pause the whole guest: suspend admission reached prepared. */
+export const GATEWAY_HOST_SUSPENSION_PREPARED = 1;
+/** The suspension ended; the main thread still bounds a missed deadline by monotonic grace. */
+export const GATEWAY_HOST_SUSPENSION_RESUMED = 2;
+
+export function readGatewayHostSuspension(hostSuspension: Int32Array | undefined): number {
+  return hostSuspension ? Atomics.load(hostSuspension, 0) : 0;
+}
+
+/**
+ * Native main-thread work cannot stall renewal; an expired worker never resumes
+ * custody unless a host suspension paused it, and then only through verification.
+ */
 export function runGatewayStateOwnerHeartbeat(
   data: GatewayStateOwnerHeartbeatData,
   parent: MessagePort | null,
 ) {
   const lastBeat = new BigInt64Array(data.lastBeat);
+  const hostSuspension = data.hostSuspension && new Int32Array(data.hostSuspension);
   const now = () => BigInt(Date.now());
   const rootPath = Object.keys(data.locks)[0];
   const remainingMs = (at = now()) => {
+    const suspended = readGatewayHostSuspension(hostSuspension) !== 0;
     const renewedAt = Atomics.load(lastBeat, 0);
     const age = Number(at - renewedAt);
     if (age < 0) {
       data.events.postMessage(`${rootPath}: heartbeat clock moved backwards`, []);
       return 0;
     }
-    return data.failureMs - age;
+    return suspended ? data.failureMs : data.failureMs - age;
   };
   const descriptors = new Map<string, number>();
   let timer: ReturnType<typeof setTimeout> | undefined;

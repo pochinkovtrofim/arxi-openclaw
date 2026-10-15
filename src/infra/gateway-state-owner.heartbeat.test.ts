@@ -6,6 +6,10 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import {
+  resetGatewayWorkAdmission,
+  tryBeginGatewaySuspendAdmission,
+} from "../process/gateway-work-admission.js";
+import {
   classifyGatewayLockProcessNamespace,
   GATEWAY_OWNER_HEARTBEAT_STALE_MS,
   readGatewayLockProcessNamespace,
@@ -33,6 +37,7 @@ function observeHeartbeatWorkers(fault?: "EIO" | "clock origin" | SharedArrayBuf
   const workers: Worker[] = [];
   const ready: Promise<unknown>[] = [];
   const beats: BigInt64Array<SharedArrayBuffer>[] = [];
+  const suspensions: Int32Array<SharedArrayBuffer>[] = [];
   const createWorker = workerCpu.createCpuTrackedWorker;
   vi.spyOn(workerCpu, "createCpuTrackedWorker").mockImplementation((url, options) => {
     const data: unknown = options?.workerData;
@@ -40,6 +45,9 @@ function observeHeartbeatWorkers(fault?: "EIO" | "clock origin" | SharedArrayBuf
       throw new Error("Expected shared heartbeat observation");
     }
     beats.push(new BigInt64Array(data.lastBeat));
+    if (data.hostSuspension instanceof SharedArrayBuffer) {
+      suspensions.push(new Int32Array(data.hostSuspension));
+    }
     const entry = fault
       ? new URL(
           `data:text/javascript,${encodeURIComponent(`
@@ -81,7 +89,7 @@ function observeHeartbeatWorkers(fault?: "EIO" | "clock origin" | SharedArrayBuf
     ready.push(once(worker, "message"));
     return worker;
   });
-  return { workers, ready, beats };
+  return { workers, ready, beats, suspensions };
 }
 
 it("keeps healthy custody when the heartbeat worker has a different clock origin", async () => {
@@ -113,6 +121,7 @@ async function startRuntime(locks: Record<string, string>) {
   const parent = new MessageChannel();
   const closed = once(parent.port2, "close");
   const lastBeat = new BigInt64Array(new SharedArrayBuffer(BigInt64Array.BYTES_PER_ELEMENT));
+  const hostSuspension = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
   Atomics.store(lastBeat, 0, BigInt(Date.now()));
   runGatewayStateOwnerHeartbeat(
     {
@@ -120,12 +129,14 @@ async function startRuntime(locks: Record<string, string>) {
       intervalMs: 15_000,
       failureMs: 60_000,
       lastBeat: lastBeat.buffer,
+      hostSuspension: hostSuspension.buffer,
       events: events.port2,
     } satisfies GatewayStateOwnerHeartbeatData,
     parent.port2,
   );
   return {
     lastBeat,
+    hostSuspension,
     readEvents() {
       const messages: unknown[] = [];
       let message;
@@ -207,6 +218,66 @@ it("keeps the failure deadline ahead of mtime expiry after a slow successful tou
     expect(Date.now() - fs.statSync(rootPath).mtimeMs).toBeLessThan(
       GATEWAY_OWNER_HEARTBEAT_STALE_MS,
     );
+  } finally {
+    await runtime.stop();
+  }
+});
+
+it.each(["none", "prepared", "resumed"] as const)(
+  "renews verified custody after a VM pause only across a host suspension (%s)",
+  async (suspension) => {
+    const rootPath = path.join(tempDirs.make("openclaw-owner-heartbeat-pause-"), "root.lock");
+    fs.writeFileSync(rootPath, "root-owner");
+    const runtime = await startRuntime({ [rootPath]: "root-owner" });
+    const { GATEWAY_HOST_SUSPENSION_PREPARED, GATEWAY_HOST_SUSPENSION_RESUMED } =
+      await import("./gateway-state-owner-heartbeat.runtime.js");
+    const initialBeat = Atomics.load(runtime.lastBeat, 0);
+    const stamp = fs.statSync(rootPath).mtimeMs;
+    try {
+      if (suspension !== "none") {
+        Atomics.store(runtime.hostSuspension, 0, GATEWAY_HOST_SUSPENSION_PREPARED);
+      }
+      // The whole guest stops: its timers fire only after nine minutes of wall clock.
+      vi.setSystemTime(Date.now() + 540_000);
+      if (suspension === "resumed") {
+        Atomics.store(runtime.hostSuspension, 0, GATEWAY_HOST_SUSPENSION_RESUMED);
+      }
+      vi.advanceTimersByTime(15_000);
+      if (suspension === "none") {
+        expect(vi.getTimerCount()).toBe(0);
+        expect(Atomics.load(runtime.lastBeat, 0)).toBe(initialBeat);
+        expect(fs.statSync(rootPath).mtimeMs).toBe(stamp);
+        return;
+      }
+      expect(vi.getTimerCount()).toBe(1);
+      expect(Atomics.load(runtime.lastBeat, 0)).toBeGreaterThan(initialBeat + 540_000n);
+      expect(Date.now() - fs.statSync(rootPath).mtimeMs).toBeLessThan(1_000);
+      expect(runtime.readEvents().at(-1)).toBeNull();
+    } finally {
+      await runtime.stop();
+    }
+  },
+);
+
+it("never renews a replaced owner lock after a host suspension", async () => {
+  const rootPath = path.join(
+    tempDirs.make("openclaw-owner-heartbeat-pause-replaced-"),
+    "root.lock",
+  );
+  fs.writeFileSync(rootPath, "root-owner");
+  const runtime = await startRuntime({ [rootPath]: "root-owner" });
+  const { GATEWAY_HOST_SUSPENSION_PREPARED } =
+    await import("./gateway-state-owner-heartbeat.runtime.js");
+  try {
+    Atomics.store(runtime.hostSuspension, 0, GATEWAY_HOST_SUSPENSION_PREPARED);
+    vi.setSystemTime(Date.now() + 540_000);
+    fs.unlinkSync(rootPath);
+    fs.writeFileSync(rootPath, "successor");
+    const successor = fs.statSync(rootPath).mtimeMs;
+    vi.advanceTimersByTime(15_000);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(fs.statSync(rootPath).mtimeMs).toBe(successor);
+    expect(runtime.readEvents()).toContain(`${rootPath}: owner lock was removed or replaced`);
   } finally {
     await runtime.stop();
   }
@@ -362,6 +433,66 @@ it.each(["EIO", "worker exit", "clock rollback"] as const)(
     }
   },
 );
+
+it.each([
+  "beat missed while prepared",
+  "clock stepped after resume",
+  "beat missed long after resume",
+] as const)("bounds Gateway custody by one monotonic budget when a %s", async (scenario) => {
+  const { workers, ready, beats, suspensions } = observeHeartbeatWorkers();
+  const gateway = await acquireGatewayLock({
+    allowInTests: true,
+    env: { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-owner-host-suspension-") },
+    timeoutMs: 0,
+  });
+  if (!gateway) {
+    throw new Error("Expected Gateway custody");
+  }
+  try {
+    await Promise.all(ready);
+    const lastBeat = beats[0];
+    const suspension = suspensions[0];
+    if (!lastBeat || !suspension) {
+      throw new Error("Expected one heartbeat worker and its shared observations");
+    }
+    // Only the watchdog decides here; a live worker would renew the synthetic beat.
+    await workers[0]?.terminate();
+    const admission = tryBeginGatewaySuspendAdmission(() => {});
+    if (!admission?.commit()) {
+      throw new Error("Expected a prepared host suspension");
+    }
+    expect(Atomics.load(suspension, 0)).toBe(1);
+    const start = performance.now();
+    const monotonic = vi.spyOn(performance, "now").mockReturnValue(start);
+    if (scenario !== "beat missed while prepared") {
+      expect(admission.release()).toBe(true);
+      expect(Atomics.load(suspension, 0)).toBe(2);
+    }
+    if (scenario === "beat missed long after resume") {
+      monotonic.mockReturnValue(start + 60_000);
+    }
+    // A paused VM, or the host's clock step after resume, leaves the beat far behind.
+    Atomics.store(lastBeat, 0, BigInt(Date.now() - 540_000));
+    if (scenario === "beat missed long after resume") {
+      expect(() => gateway.assertCurrent()).toThrow(
+        "utimes heartbeat renewal did not complete within 60 seconds",
+      );
+      return;
+    }
+    expect(() => gateway.assertCurrent()).not.toThrow();
+    monotonic.mockReturnValue(start + 59_999);
+    expect(() => gateway.assertCurrent()).not.toThrow();
+    // A worker that never renews again loses custody one budget after the miss was seen.
+    monotonic.mockReturnValue(start + 60_000);
+    expect(() => gateway.assertCurrent()).toThrow(
+      "utimes heartbeat renewal did not complete within 60 seconds",
+    );
+  } finally {
+    resetGatewayWorkAdmission();
+    await gateway.release();
+    await Promise.all(workers.map((worker) => worker.terminate()));
+  }
+});
 
 it("renews retained custody during synchronous work and never touches a successor", async () => {
   const { workers, ready } = observeHeartbeatWorkers();
