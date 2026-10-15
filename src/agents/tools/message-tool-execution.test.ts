@@ -838,3 +838,62 @@ describe("message tool group thread replies", () => {
     },
   );
 });
+
+describe("host-admitted current message actions", () => {
+  afterEach(() => resetPluginRuntimeStateForTest());
+
+  it("lets a host-admitted turn react to its current message", async () => {
+    const handleAction = vi.fn(async () => jsonResult({ ok: true }));
+    setActivePluginRegistry(
+      createTestRegistry([
+        {
+          pluginId: "workspace",
+          source: "test",
+          plugin: {
+            ...workspaceTestPlugin,
+            actions: { describeMessageTool: () => ({ actions: ["react"] }), handleAction },
+          } satisfies ChannelPlugin,
+        },
+      ]),
+    );
+    const identity = {
+      agentId: "main",
+      runId: "admitted-run",
+      sessionKey: "agent:main:external:owner",
+    };
+    const capability = mintMessageActionTurnCapability({
+      ...identity,
+      sourceReplySessionKey: identity.sessionKey,
+      requesterAccountId: "default",
+      requesterSenderId: "owner:1",
+      toolContext: {
+        currentChannelProvider: "workspace",
+        currentChannelId: "C123",
+        currentMessagingTarget: "C123",
+        currentChatType: "direct",
+        currentMessageId: "4242",
+      },
+      expiresWithRun: true,
+    });
+    try {
+      const tool = createMessageTool({
+        config: workspaceConfig,
+        agentId: identity.agentId,
+        runId: identity.runId,
+        agentSessionKey: identity.sessionKey,
+        agentAccountId: "default",
+        currentChannelProvider: "workspace",
+        currentChannelId: "C123",
+        currentMessageId: "4242",
+        messageActionTurnCapability: capability,
+        ...secretDeps,
+      });
+      await tool.execute("react-call", { action: "react", emoji: "👍" });
+      const ctx = handleAction.mock.calls[0]?.[0] as ChannelMessageActionContext | undefined;
+      expect(ctx?.toolContext?.currentMessageId).toBe("4242");
+      expect(ctx?.runId).toBe("admitted-run");
+    } finally {
+      revokeMessageActionTurnCapability(capability);
+    }
+  });
+});

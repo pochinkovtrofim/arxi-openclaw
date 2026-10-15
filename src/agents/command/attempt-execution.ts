@@ -323,6 +323,7 @@ export function runAgentAttempt(
     spawnedBy: params.spawnedBy,
     currentChannelId: params.runContext.currentChannelId,
     currentMessageId: params.runContext.currentMessageId,
+    messageActionTurnCapability: params.runContext.messageActionTurnCapability,
     chatId: params.runContext.chatId,
     channelContext: params.runContext.channelContext,
     currentThreadTs: params.runContext.currentThreadTs,

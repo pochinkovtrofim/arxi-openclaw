@@ -56,6 +56,8 @@ export type AgentRunContext = {
   currentThreadTs?: string;
   /** Host-admitted inbound message id; set only by trusted host admission. */
   currentMessageId?: string;
+  /** Current-conversation action authority minted only for a trusted host admission. */
+  messageActionTurnCapability?: string;
   currentInboundAudio?: boolean;
   senderId?: string | null;
   replyToMode?: "off" | "first" | "all" | "batched";
