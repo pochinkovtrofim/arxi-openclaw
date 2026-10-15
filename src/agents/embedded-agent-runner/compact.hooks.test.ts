@@ -93,6 +93,7 @@ import {
   sessionAutomaticCompactionMock,
   sessionMessages,
   sessionCompactImpl,
+  sessionManagerMock,
   sessionManualCompactionMock,
   triggerInternalHookMock,
 } from "./compact.hooks.harness.js";
@@ -390,6 +391,38 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
       expect(createAgentSessionMock).toHaveBeenCalledOnce();
       expect(sessionCompactImpl).toHaveBeenCalledTimes(phase === "bootstrap" ? 0 : 1);
       expect(result).toMatchObject({ ok: false, compacted: false });
+    },
+  );
+
+  it.each([
+    { caller: "recovery", limits: { maxBytes: 1_600_000, maxEvents: 10_000 } },
+    { caller: "manual", limits: undefined },
+  ] as const)(
+    "hydrates a persisted session through the $caller caller's context limits",
+    async ({ limits }) => {
+      // A long-lived background session held 1.3 GB of transcript; a full
+      // hydration for overflow compaction aborted the Gateway on its heap limit.
+      const { attachCompactionAccountingRecorder } =
+        await import("./run/compaction-accounting-bridge.js");
+      resolveContextEngineMock.mockResolvedValue({
+        info: { ownsCompaction: false },
+        compact: contextEngineCompactMock,
+      });
+      const contextEngineRuntimeContext = {};
+      if (limits) {
+        attachCompactionAccountingRecorder(contextEngineRuntimeContext, {
+          sessionContextLimits: limits,
+        });
+      }
+      sessionManagerMock.openAsync.mockClear();
+      await compactEmbeddedAgentSessionDirect(
+        wrappedCompactionArgs({
+          trigger: limits ? "overflow" : "manual",
+          contextEngineRuntimeContext,
+        }),
+      );
+      expect(sessionManagerMock.openAsync).toHaveBeenCalledOnce();
+      expect(sessionManagerMock.openAsync.mock.calls[0]?.[2]).toEqual(limits);
     },
   );
 

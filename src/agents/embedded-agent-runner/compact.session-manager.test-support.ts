@@ -8,8 +8,12 @@ export function createCompactionSessionManagerMock(messages: unknown[]) {
   });
   return {
     open: vi.fn(open),
-    openAsync: vi.fn(async (target: Parameters<typeof SessionManager.openAsync>[0]) =>
-      open(target),
+    openAsync: vi.fn(
+      async (
+        target: Parameters<typeof SessionManager.openAsync>[0],
+        _cwd?: Parameters<typeof SessionManager.openAsync>[1],
+        _limits?: Parameters<typeof SessionManager.openAsync>[2],
+      ) => open(target),
     ),
   };
 }

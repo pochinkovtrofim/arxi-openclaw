@@ -104,6 +104,28 @@ describe("embedded compaction recovery authority", () => {
   );
 
   recoveryTest(
+    "hands compaction the attempt's bounded transcript window",
+    { historicalTurns: 4, contextTokenBudget: 200_000 },
+    async (fixture) => {
+      const { readCompactionAccountingRecorder } =
+        await import("./run/compaction-accounting-bridge.js");
+      const originalCompact = fixture.compact.getMockImplementation();
+      if (!originalCompact) {
+        throw new Error("Fixture must provide the real append implementation");
+      }
+      let limits: unknown;
+      fixture.compact.mockImplementationOnce(async (params) => {
+        limits = readCompactionAccountingRecorder(params.runtimeContext)?.sessionContextLimits;
+        return await originalCompact(params);
+      });
+
+      await fixture.recover("overflow");
+
+      expect(limits).toEqual({ maxBytes: 1_600_000, maxEvents: 10_000 });
+    },
+  );
+
+  recoveryTest(
     "uses the resolved model budget to recover current output beyond the default reader window",
     { historicalTurns: 4, contextTokenBudget: 200_000, toolResultText: "x".repeat(1_200_000) },
     async (fixture) => {
