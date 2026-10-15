@@ -44,6 +44,7 @@ import { runWithChatAbortExecution } from "../chat-abort-lifecycle-internal.js";
 import { discardPreparedInboundMedia } from "../chat-attachments.js";
 import { errorShapeFromError } from "../error-shape.js";
 import { getGatewayLocalUserIngress } from "../local-user-ingress.js";
+import { revokeMessageActionTurnCapability } from "../message-action-turn-capability.js";
 import { ADMIN_SCOPE } from "../operator-scopes.js";
 import { createAgentRunModelSelectionHandler } from "../server-methods/agent-run-model-selection.js";
 import { resolveSessionRuntimeCwd } from "../server-methods/agent-session-reset.js";
@@ -66,6 +67,7 @@ import {
 } from "./agent-restart-recovery-context.js";
 import { dispatchAgentRunWithCommentaryMedia } from "./agent-run-commentary-media.js";
 import { createAgentRunDiagnostics } from "./agent-run-diagnostics.js";
+import { admitHostCurrentConversationActions } from "./agent-run-host-admission.js";
 import { withAgentRunDispatchExecutionIdentity } from "./agent-run-dispatch-execution-identity.js";
 import { resolveExecutionIdentitySpawnFacts } from "./agent-run-execution-lineage.js";
 import type { StartAgentRunExecutionParams } from "./agent-run-execution-types.js";
@@ -321,6 +323,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
           );
         };
       };
+      let hostAdmittedActionCapability: string | undefined;
       try {
         if (prepared.activeRunAbort.controller.signal.aborted) {
           await finishUndispatchedAbort();
@@ -492,6 +495,17 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
           !params.groupSpace &&
           params.delivery.deliver &&
           params.delivery.resolvedChatType === "direct";
+        hostAdmittedActionCapability = admitHostCurrentConversationActions(runContext, {
+          cfg: params.cfgForAgent ?? params.cfg,
+          directOwnerReply,
+          admittedMessageId: trustedHostAdmission ? params.request.admittedMessageId : undefined,
+          agentId: ingressAgentId,
+          runId: params.runId,
+          sessionKey: params.resolvedSessionKey,
+          sessionId: params.resolvedSessionId,
+          delivery: params.delivery,
+          timeoutSeconds: prepared.timeoutSeconds,
+        });
 
         const localUserIngress = getGatewayLocalUserIngress(params.client);
         if (params.isRestartRecoveryResumeRun) {
@@ -791,6 +805,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
           }
         } finally {
           try {
+            revokeMessageActionTurnCapability(hostAdmittedActionCapability);
             await mediaCleanup;
           } finally {
             finishUndispatchedFollowup = !dispatched;

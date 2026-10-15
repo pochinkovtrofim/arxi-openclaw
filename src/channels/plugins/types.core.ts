@@ -694,6 +694,8 @@ export type ChannelMessageActionContext = {
   conversationReadOrigin?: ConversationReadInvocationOrigin;
   sessionKey?: string | null;
   sessionId?: string | null;
+  /** Server-owned run that invoked this action; never sourced from tool params. */
+  runId?: string;
   inboundEventKind?: InboundEventKind;
   agentId?: string | null;
   gateway?: {
