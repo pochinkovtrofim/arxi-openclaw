@@ -653,4 +653,6 @@ export const CORE_GATEWAY_METHOD_SPECS = [
   ["sessions.files.assets", "sessions-files", "operator.read", "2026.9"],
   ["worktrees.recoverRemoval", "worktrees", "operator.admin", "2026.9", CONTROL_PLANE_WRITE],
   ["worktrees.retireSnapshot", "worktrees", "operator.admin", "2026.9", CONTROL_PLANE_WRITE],
+  // The trusted local host adds an owner's follow-up to the run it is waiting on.
+  ["agent.steer", "agent", "operator.admin", "2026.9"],
 ] as const satisfies readonly CoreGatewayMethodSpecRow[];
