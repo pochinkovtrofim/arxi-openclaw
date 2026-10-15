@@ -8,8 +8,9 @@ import {
 import { runInDetachedAsyncContext } from "../shared/async-work-scope.js";
 import { GATEWAY_OWNER_HEARTBEAT_MS } from "./gateway-lock-payload.js";
 import {
-  GATEWAY_HOST_SUSPENSION_HELD,
-  gatewayStateOwnerCustodyAge,
+  GATEWAY_HOST_SUSPENSION_PREPARED,
+  GATEWAY_HOST_SUSPENSION_RESUMED,
+  readGatewayHostSuspension,
   type GatewayStateOwnerHeartbeatData,
 } from "./gateway-state-owner-heartbeat.runtime.js";
 import { runtimeProcessEntrypoints } from "./runtime-process-entrypoints.js";
@@ -37,15 +38,19 @@ export function startGatewayStateOwnerHeartbeat(
     const lastBeat = new BigInt64Array(new SharedArrayBuffer(BigInt64Array.BYTES_PER_ELEMENT));
     // Match the lock's mtime clock; Bun workers have independent hrtime origins.
     Atomics.store(lastBeat, 0, BigInt(now()));
-    // The host may pause the VM only after admission reaches prepared.
-    const hostSuspension = new BigInt64Array(
-      new SharedArrayBuffer(BigInt64Array.BYTES_PER_ELEMENT),
-    );
+    // The host may pause the VM only after admission reaches prepared, then steps
+    // the guest wall clock after resume. Neither gap counts against custody; a
+    // missed renewal observed across them gets one monotonic failure budget.
+    const hostSuspension = new Int32Array(new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT));
+    let resumedAt: number | undefined;
+    let graceFrom: number | undefined;
     const followSuspension = (phase: ReturnType<typeof getGatewaySuspendAdmissionPhase>) => {
       if (phase === "prepared") {
-        Atomics.store(hostSuspension, 0, GATEWAY_HOST_SUSPENSION_HELD);
-      } else if (Atomics.load(hostSuspension, 0) === GATEWAY_HOST_SUSPENSION_HELD) {
-        Atomics.store(hostSuspension, 0, BigInt(now()));
+        Atomics.store(hostSuspension, 0, GATEWAY_HOST_SUSPENSION_PREPARED);
+        resumedAt = undefined;
+      } else if (readGatewayHostSuspension(hostSuspension) === GATEWAY_HOST_SUSPENSION_PREPARED) {
+        Atomics.store(hostSuspension, 0, GATEWAY_HOST_SUSPENSION_RESUMED);
+        resumedAt = performance.now();
       }
     };
     followSuspension(getGatewaySuspendAdmissionPhase());
@@ -76,13 +81,28 @@ export function startGatewayStateOwnerHeartbeat(
       while ((message = receiveMessageOnPort(port1))) {
         failure = message.message;
       }
+      const suspension = readGatewayHostSuspension(hostSuspension);
+      const renewedAt = Atomics.load(lastBeat, 0);
       // Sample after loading the beat so concurrent renewal cannot appear to be in the future.
-      const { age, held } = gatewayStateOwnerCustodyAge(
-        () => BigInt(now()),
-        lastBeat,
-        hostSuspension,
-      );
-      const remaining = age < 0 ? 0 : held ? GATEWAY_OWNER_HEARTBEAT_MS : 60_000 - age;
+      const age = now() - Number(renewedAt);
+      const monotonic = performance.now();
+      const resumedRecently = resumedAt !== undefined && monotonic - resumedAt < 60_000;
+      let remaining = age < 0 ? 0 : 60_000 - age;
+      if (remaining > 0) {
+        graceFrom = undefined;
+        if (suspension === GATEWAY_HOST_SUSPENSION_RESUMED && !resumedRecently) {
+          Atomics.store(hostSuspension, 0, 0);
+          resumedAt = undefined;
+        }
+      } else if (
+        age >= 0 &&
+        (graceFrom !== undefined ||
+          suspension === GATEWAY_HOST_SUSPENSION_PREPARED ||
+          resumedRecently)
+      ) {
+        graceFrom ??= monotonic;
+        remaining = 60_000 - (monotonic - graceFrom);
+      }
       if (remaining <= 0) {
         onLost(
           new Error(

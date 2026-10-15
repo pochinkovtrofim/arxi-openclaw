@@ -8,53 +8,41 @@ export type GatewayStateOwnerHeartbeatData = {
   intervalMs: number;
   failureMs: number;
   lastBeat: SharedArrayBuffer;
-  /** One BigInt64: 0 outside a prepared host suspension, HELD while one lasts, then its end time. */
+  /** One Int32 host-suspension phase, written only by the main-thread watchdog. */
   hostSuspension?: SharedArrayBuffer;
   events: MessagePort;
 };
 
-export const GATEWAY_HOST_SUSPENSION_HELD = -1n;
+/** The host may pause the whole guest: suspend admission reached prepared. */
+export const GATEWAY_HOST_SUSPENSION_PREPARED = 1;
+/** The suspension ended; the main thread still bounds a missed deadline by monotonic grace. */
+export const GATEWAY_HOST_SUSPENSION_RESUMED = 2;
 
-/**
- * A prepared host suspension pauses the whole guest, so its wall-clock gap is not
- * a stalled owner: the failure budget restarts when it ends, and renewal still
- * verifies the held inode and bytes before touching them.
- */
-export function gatewayStateOwnerCustodyAge(
-  clock: () => bigint,
-  lastBeat: BigInt64Array,
-  hostSuspension: BigInt64Array | undefined,
-): { age: number; held: boolean } {
-  // Read the suspension first: its end is published only after the phase leaves prepared.
-  const suspension = hostSuspension ? Atomics.load(hostSuspension, 0) : 0n;
-  const renewedAt = Atomics.load(lastBeat, 0);
-  const at = clock();
-  const age = Number(at - renewedAt);
-  if (age < 0 || suspension === 0n) {
-    return { age, held: false };
-  }
-  if (suspension === GATEWAY_HOST_SUSPENSION_HELD) {
-    return { age, held: true };
-  }
-  return { age: Math.min(age, Math.max(0, Number(at - suspension))), held: false };
+export function readGatewayHostSuspension(hostSuspension: Int32Array | undefined): number {
+  return hostSuspension ? Atomics.load(hostSuspension, 0) : 0;
 }
 
-/** Native main-thread work cannot stall renewal; an expired worker never resumes custody. */
+/**
+ * Native main-thread work cannot stall renewal; an expired worker never resumes
+ * custody unless a host suspension paused it, and then only through verification.
+ */
 export function runGatewayStateOwnerHeartbeat(
   data: GatewayStateOwnerHeartbeatData,
   parent: MessagePort | null,
 ) {
   const lastBeat = new BigInt64Array(data.lastBeat);
-  const hostSuspension = data.hostSuspension && new BigInt64Array(data.hostSuspension);
+  const hostSuspension = data.hostSuspension && new Int32Array(data.hostSuspension);
   const now = () => BigInt(Date.now());
   const rootPath = Object.keys(data.locks)[0];
   const remainingMs = (at = now()) => {
-    const { age, held } = gatewayStateOwnerCustodyAge(() => at, lastBeat, hostSuspension);
+    const suspended = readGatewayHostSuspension(hostSuspension) !== 0;
+    const renewedAt = Atomics.load(lastBeat, 0);
+    const age = Number(at - renewedAt);
     if (age < 0) {
       data.events.postMessage(`${rootPath}: heartbeat clock moved backwards`, []);
       return 0;
     }
-    return held ? data.failureMs : data.failureMs - age;
+    return suspended ? data.failureMs : data.failureMs - age;
   };
   const descriptors = new Map<string, number>();
   let timer: ReturnType<typeof setTimeout> | undefined;
