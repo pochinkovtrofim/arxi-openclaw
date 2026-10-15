@@ -1,8 +1,10 @@
 import { sha256Hex } from "@openclaw/normalization-core/node-crypto";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type {
-  AgentSteerParams,
-  AgentSteerResult,
+import {
+  ErrorCodes,
+  errorShape,
+  type AgentSteerParams,
+  type AgentSteerResult,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { ACTIVE_EMBEDDED_RUNS_BY_RUN_ID } from "../../agents/embedded-agent-runner/run-state.js";
 import { runAgentHarnessBeforeMessageWriteHook } from "../../agents/harness/hook-helpers.js";
@@ -22,11 +24,46 @@ import { gatewayClientSenderFields } from "../server-methods/gateway-client-iden
 import type { GatewayClient, GatewayRequestContext } from "../server-methods/shared-types.js";
 import { loadSessionEntry } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
+import type { AgentTurnIo } from "./types.js";
 
 const DEDUPE_PREFIX = "steer:";
 const inFlight = new Map<string, { identity: string; result: Promise<AgentSteerResult> }>();
 
 export class AgentSteerRequestError extends Error {}
+
+/**
+ * A message the run confirmed reading is answered by that run. When the host
+ * lost the steer receipt and falls back to `agent` with the same key, it gets
+ * the steered run back instead of a second turn; a steer still settling makes
+ * the fallback retry later. An unconfirmed steer runs again as its own turn.
+ */
+export function replaySteeredAgentTurn(params: {
+  idempotencyKey: string;
+  context: Pick<GatewayRequestContext, "dedupe">;
+  io: Pick<AgentTurnIo, "emitAcceptance">;
+}): boolean {
+  if (inFlight.has(params.idempotencyKey)) {
+    params.io.emitAcceptance([
+      false,
+      undefined,
+      errorShape(ErrorCodes.UNAVAILABLE, "agent.steer for this message is still settling", {
+        retryable: true,
+      }),
+    ]);
+    return true;
+  }
+  const steered = params.context.dedupe.get(DEDUPE_PREFIX + params.idempotencyKey)?.payload as
+    | AgentSteerResult
+    | undefined;
+  if (steered?.status !== "steered" || steered.transcriptCommit === "unconfirmed") {
+    return false;
+  }
+  params.io.emitAcceptance([true, { runId: steered.runId, status: "ok", steered: true }, undefined], {
+    cached: true,
+    runId: steered.runId,
+  });
+  return true;
+}
 
 function notSteerable(reason: string, extra?: { activeRunId?: string }): AgentSteerResult {
   return { status: "not_steerable", reason, ...extra };

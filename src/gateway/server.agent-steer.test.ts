@@ -338,4 +338,15 @@ it("adds the host's follow-up to the run it waits on, exactly once", async ({ si
     idempotencyKey: "follow-up-after-terminal",
   });
   expect(after.payload).toMatchObject({ status: "not_steerable" });
+  // A lost steer receipt falls back to `agent` with the same key: the run that
+  // read the follow-up answers it, and no second turn starts.
+  const fallback = await rpcReq(harness.ws, "agent", {
+    sessionKey,
+    message: "Under 120 euros, please.",
+    deliver: false,
+    idempotencyKey: "follow-up-steered",
+  });
+  expect(fallback.ok, JSON.stringify(fallback.error)).toBe(true);
+  expect(fallback.payload).toMatchObject({ runId, status: "ok", steered: true });
+  expect(runAttempt).toHaveBeenCalledTimes(1);
 });

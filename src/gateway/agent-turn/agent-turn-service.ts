@@ -26,6 +26,7 @@ import { createAgentAdmissionController } from "./agent-admission-controller.js"
 import { prepareAgentContentPhase } from "./agent-content-phase.js";
 import { createAgentDedupeLifecycle } from "./agent-dedupe-lifecycle.js";
 import { replayAgentTurnIfCached } from "./agent-dedupe.js";
+import { replaySteeredAgentTurn } from "./agent-steer.js";
 import { resolveAgentDeliveryPhase } from "./agent-delivery-phase.js";
 import type { RestoredCronContinuation } from "./agent-handler-helpers.js";
 import type { AgentRequestPreflight } from "./agent-request-preflight.js";
@@ -69,6 +70,11 @@ export function createAgentTurnService(
     const promptedAt = Date.now();
     assertAdmissionCurrent?.();
     if (replayAgentTurnIfCached({ preflight, context, io, acceptedOnly: privateCompletion })) {
+      return;
+    }
+    if (
+      replaySteeredAgentTurn({ idempotencyKey: preflight.request.idempotencyKey, context, io })
+    ) {
       return;
     }
     assertInputCommitAllowed?.();
