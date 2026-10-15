@@ -87,9 +87,10 @@ async function steer(
   context: Pick<GatewayRequestContext, "dedupe" | "logGateway">,
   identity: string,
 ): Promise<AgentSteerResult> {
-  const loaded = loadSessionEntry(request.sessionKey, {
-    ...(request.agentId ? { agentId: request.agentId } : {}),
-  });
+  const loaded = loadSessionEntry(
+    request.sessionKey,
+    request.agentId ? { agentId: request.agentId } : {},
+  );
   const sessionKey = loaded.canonicalKey;
   const sessionId = normalizeOptionalString(loaded.entry?.sessionId);
   if (!sessionKey || !sessionId || !loaded.entry) {
