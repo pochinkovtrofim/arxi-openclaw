@@ -150,6 +150,7 @@ function createDefaultSessionMessages(): unknown[] {
   ];
 }
 export const sessionMessages: unknown[] = createDefaultSessionMessages();
+export const sessionManagerMock = createCompactionSessionManagerMock(sessionMessages);
 const sessionAbortCompactionMock: Mock<(reason?: unknown) => void> = vi.fn();
 export const runCliAgentMock = vi.fn(async () => ({
   meta: {
@@ -670,7 +671,7 @@ export async function loadCompactHooksHarness(options: { durableSession?: boolea
     vi.doMock("../sessions/index.js", () => ({
       AuthStorage: function AuthStorage() {},
       ModelRegistry: function ModelRegistry() {},
-      SessionManager: createCompactionSessionManagerMock(sessionMessages),
+      SessionManager: sessionManagerMock,
       SettingsManager: {
         create: vi.fn(() => ({})),
       },
