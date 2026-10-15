@@ -394,22 +394,37 @@ describe("compactEmbeddedAgentSessionDirect hooks", () => {
     },
   );
 
-  it("hydrates only the bounded model-context window of a persisted session", async () => {
-    // A long-lived background session held 1.3 GB of transcript; a full
-    // hydration for compaction aborted the Gateway on its heap limit.
-    resolveContextEngineMock.mockResolvedValue({
-      info: { ownsCompaction: false },
-      compact: contextEngineCompactMock,
-    });
-    sessionManagerMock.openAsync.mockClear();
-    await compactEmbeddedAgentSessionDirect(wrappedCompactionArgs());
-    expect(sessionManagerMock.openAsync).toHaveBeenCalledOnce();
-    const limits = sessionManagerMock.openAsync.mock.calls[0]?.[2] as
-      | { maxBytes: number; maxEvents: number }
-      | undefined;
-    expect(limits).toEqual({ maxBytes: expect.any(Number), maxEvents: 10_000 });
-    expect(limits?.maxBytes).toBeLessThanOrEqual(64 * 1024 * 1024);
-  });
+  it.each([
+    { caller: "recovery", limits: { maxBytes: 1_600_000, maxEvents: 10_000 } },
+    { caller: "manual", limits: undefined },
+  ] as const)(
+    "hydrates a persisted session through the $caller caller's context limits",
+    async ({ limits }) => {
+      // A long-lived background session held 1.3 GB of transcript; a full
+      // hydration for overflow compaction aborted the Gateway on its heap limit.
+      const { attachCompactionAccountingRecorder } =
+        await import("./run/compaction-accounting-bridge.js");
+      resolveContextEngineMock.mockResolvedValue({
+        info: { ownsCompaction: false },
+        compact: contextEngineCompactMock,
+      });
+      const contextEngineRuntimeContext = {};
+      if (limits) {
+        attachCompactionAccountingRecorder(contextEngineRuntimeContext, {
+          sessionContextLimits: limits,
+        });
+      }
+      sessionManagerMock.openAsync.mockClear();
+      await compactEmbeddedAgentSessionDirect(
+        wrappedCompactionArgs({
+          trigger: limits ? "overflow" : "manual",
+          contextEngineRuntimeContext,
+        }),
+      );
+      expect(sessionManagerMock.openAsync).toHaveBeenCalledOnce();
+      expect(sessionManagerMock.openAsync.mock.calls[0]?.[2]).toEqual(limits);
+    },
+  );
 
   it("restricts compact endpoint tools and omits private skills under a finite policy", async () => {
     resolveSkillsPromptMock.mockResolvedValue("PRIVATE_SKILL_MARKER");

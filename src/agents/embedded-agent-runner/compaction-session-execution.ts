@@ -69,7 +69,6 @@ import { sanitizeSessionHistory, validateReplayTurns } from "./replay-history.js
 import { wrapStreamFnWithDiagnosticModelCallEvents } from "./run/attempt.model-diagnostic-events.js";
 import { readCompactionAccountingRecorder } from "./run/compaction-accounting-bridge.js";
 import { estimateLlmBoundaryTokenPressure } from "./run/preemptive-compaction.js";
-import { resolveEmbeddedSessionContextLimits } from "./run/session-context-limits.js";
 import { attemptServerEndpointCompaction } from "./server-endpoint-compaction.js";
 import { applySystemPromptToSession } from "./system-prompt.js";
 import { collectRegisteredToolNames, toSessionToolAllowlist } from "./tool-name-allowlist.js";
@@ -140,14 +139,14 @@ export async function executePreparedCompactionSession(runtime: PreparedCompacti
       memoryTranscript?.assertActive ?? captureOwnedTranscriptWriteAssertion(sessionTarget);
     assertActive();
     const transcriptPolicy = runtimePlan.transcript.resolvePolicy(runtimePlanModelContext);
-    // Compaction summarizes the same bounded view the attempt sent; hydrating
-    // a long-lived background session in full exhausted the Gateway heap.
+    // Recovery compacts the bounded view its attempt sent; a manual compaction
+    // without a recorder keeps reading the whole active history.
     const preparedSessionManager =
       memoryTranscript?.sessionManager ??
       (await SessionManager.openAsync(
         sessionTarget,
         undefined,
-        resolveEmbeddedSessionContextLimits(contextTokenBudget),
+        accountingRecorder?.sessionContextLimits,
         params.abortSignal,
       ));
     assertActive();

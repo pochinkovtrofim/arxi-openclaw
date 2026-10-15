@@ -222,6 +222,13 @@ export async function compactEmbeddedRunForRecovery(
                       },
                     }
                   : undefined,
+                ...(input.contextTokenBudget !== undefined
+                  ? {
+                      sessionContextLimits: resolveEmbeddedSessionContextLimits(
+                        input.contextTokenBudget,
+                      ),
+                    }
+                  : {}),
                 recordUsage: (usage) => mergeUsageIntoAccumulator(input.usageAccumulator, usage),
                 recordCompaction: ({ tokensAfter }) => {
                   declarePromptHistoryRewrite({ ...promptCacheIdentity, reason: "compaction" });
