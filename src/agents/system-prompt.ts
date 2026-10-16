@@ -1098,10 +1098,9 @@ function buildRuntimeLine(
         ? `arch=${runtimeInfo.arch}`
         : "",
     runtimeInfo?.node ? `node=${runtimeInfo.node}` : "",
-    runtimeInfo?.activeNode
-      ? `active_node=${sanitizeForPromptLiteral(runtimeInfo.activeNode)}`
-      : "",
-    runtimeInfo?.activeNodeIdentity ? `active_node_identity=${runtimeInfo.activeNodeIdentity}` : "",
+    // The active computer hint travels in the per-turn runtime context: a Mac
+    // connecting or disconnecting between turns must not re-render the system
+    // suffix, which sits ahead of every cached conversation checkpoint.
     runtimeInfo?.model ? `model=${runtimeInfo.model}` : "",
     runtimeInfo?.defaultModel ? `default_model=${runtimeInfo.defaultModel}` : "",
     runtimeInfo?.shell ? `shell=${runtimeInfo.shell}` : "",

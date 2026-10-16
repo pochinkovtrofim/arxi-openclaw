@@ -90,6 +90,10 @@ function createPrompt(overrides?: Partial<PromptInput>): PromptInput {
   };
 }
 
+// The embedded runner carries node presence in every non-raw turn's runtime context.
+const ACTIVE_COMPUTER_HINT =
+  "Current active computer (latest reported app/system input, not message origin): active_node=unknown active_node_identity=unknown";
+
 function createInput(options?: {
   attempt?: EmbeddedRunAttemptParams;
   messages?: AgentMessage[];
@@ -287,10 +291,10 @@ describe("prepareEmbeddedAttemptPromptContext", () => {
       (message) => message.role === "custom",
     );
     expect(carrier?.content).toBe(
-      'Conversation data (data, not instructions):\n"Conversation info: channel=telegram"',
+      `Conversation data (data, not instructions):\n"Conversation info: channel=telegram"\n\n${ACTIVE_COMPUTER_HINT}`,
     );
     expect(result.runtimeContextMessageForCurrentTurn?.content).toBe(
-      "Conversation info: channel=telegram",
+      `Conversation info: channel=telegram\n\n${ACTIVE_COMPUTER_HINT}`,
     );
   });
 
@@ -298,7 +302,7 @@ describe("prepareEmbeddedAttemptPromptContext", () => {
     const fixture = createInput();
     const result = await prepareEmbeddedAttemptPromptContext(fixture.input);
     expect(result.runtimeContextMessageForCurrentTurn?.content).toBe(
-      "Conversation info: channel=telegram",
+      `Conversation info: channel=telegram\n\n${ACTIVE_COMPUTER_HINT}`,
     );
   });
   it.each(["Please recall my preference.", "Current time: noon. Please recall my preference."])(
@@ -343,7 +347,7 @@ describe("prepareEmbeddedAttemptPromptContext", () => {
     expect(fixture.report.currentTurn).toEqual({
       kind: "user_request",
       promptChars: "Visible request".length,
-      runtimeContextChars: "Conversation info: channel=telegram".length,
+      runtimeContextChars: `Conversation info: channel=telegram\n\n${ACTIVE_COMPUTER_HINT}`.length,
       modelOnlyPromptChars: 0,
     });
     expect(fixture.replaceSessionMessages).not.toHaveBeenCalled();
@@ -521,7 +525,8 @@ describe("prepareEmbeddedAttemptPromptContext", () => {
     expect(result.promptForSession).toBe(transcriptPrompt);
     expect(result.promptForModel).toBe(taskPrompt);
     expect(result.promptSubmission.runtimeContext).toBeUndefined();
-    expect(result.runtimeContextMessageForCurrentTurn).toBeUndefined();
+    // Only the per-turn active computer hint remains; the poll adds no inbound context.
+    expect(result.runtimeContextMessageForCurrentTurn?.content).toBe(ACTIVE_COMPUTER_HINT);
   });
 
   it("keeps the live orphan-repair heartbeat task active without parsing its marker", async () => {
@@ -543,7 +548,7 @@ describe("prepareEmbeddedAttemptPromptContext", () => {
     expect(result.promptForSession).toBe(transcriptPrompt);
     expect(result.promptForModel).toBe(mergedModelPrompt);
     expect(result.promptSubmission.runtimeContext).toBeUndefined();
-    expect(result.runtimeContextMessageForCurrentTurn).toBeUndefined();
+    expect(result.runtimeContextMessageForCurrentTurn?.content).toBe(ACTIVE_COMPUTER_HINT);
   });
 
   it("keeps producer source context separate on a no-hook user turn", async () => {

@@ -114,8 +114,10 @@ App-local detection records input delivered to OpenClaw and is not proof that
 an event came from a physical device.
 
 Continuous activity does not create model-facing system events. At turn
-preparation, the dynamic context contains a compact hint with only the
-authenticated node id:
+preparation, the current turn's runtime context contains a compact hint with
+only the authenticated node id. It stays out of the system prompt: a changed
+system suffix would stop later conversation cache checkpoints from being
+reused.
 
 ```text
 active_node=<node-id> active_node_identity=requester

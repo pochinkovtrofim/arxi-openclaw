@@ -5,6 +5,10 @@ import { getRuntimeConfig } from "../../../config/config.js";
 import { createRuntimeConfigReader } from "../../../config/runtime-snapshot.js";
 import type { SessionSystemPromptReport } from "../../../config/sessions/types.js";
 import {
+  buildActiveNodeContextText,
+  prepareActiveNodeContext,
+} from "../../../infra/active-node-context.js";
+import {
   type DiagnosticTraceContext,
   freezeDiagnosticTraceContext,
 } from "../../../infra/diagnostic-trace-context.js";
@@ -15,7 +19,10 @@ import {
 import type { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
 import { buildInterSessionPromptContext } from "../../../sessions/input-provenance.js";
 import { joinPresentTextSegments } from "../../../shared/text/join-segments.js";
-import { resolveAdmittedRunActiveAssertion } from "../../admitted-run-context.js";
+import {
+  readAdmittedRunOperatorAuthority,
+  resolveAdmittedRunActiveAssertion,
+} from "../../admitted-run-context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../defaults.js";
 import {
   buildAgentInternalEventContext,
@@ -447,7 +454,10 @@ type PromptContextAttempt = Pick<
   | "sessionKey"
   | "suppressNextUserMessagePersistence"
   | "operation"
->;
+> &
+  // Only the requester identity of the active computer hint reads it; raw probes
+  // and narrow test attempts run without an admitted run context.
+  Partial<Pick<EmbeddedRunAttemptParams, "admittedRunContext">>;
 
 type PromptAssemblyContext = {
   effectivePrompt: string;
@@ -583,7 +593,14 @@ export async function prepareEmbeddedAttemptPromptContext(input: {
           agentId: input.sessionAgentId,
           includeEmptySnapshots: input.appendOnlyRuntimeContext === true,
         });
-  const contextFragments = [...fragments, ...runtimeFacts];
+  // The active computer hint is a per-turn fact. It left the cached Runtime
+  // line of the system prompt so a Mac connecting or disconnecting between
+  // turns cannot invalidate the conversation checkpoints behind that prompt.
+  const activeNodeFacts = await buildActiveNodeRuntimeContext({
+    requesterProfileId: readAdmittedRunOperatorAuthority(attempt.admittedRunContext)?.profileId,
+    skip: input.isRawModelRun || attempt.operation === "settled-tool-finalization",
+  });
+  const contextFragments = [...fragments, ...runtimeFacts, ...activeNodeFacts];
   const runtimeContextForHook = joinPresentTextSegments(
     contextFragments.map((fragment) => fragment.text),
   );
@@ -645,4 +662,18 @@ export async function prepareEmbeddedAttemptPromptContext(input: {
     ...(runtimeContextMessageForCurrentTurn ? { runtimeContextMessageForCurrentTurn } : {}),
     systemPromptForHook,
   };
+}
+
+/** Current-turn active computer hint, refreshed at the same boundary as the system prompt. */
+export async function buildActiveNodeRuntimeContext(params: {
+  requesterProfileId?: string;
+  skip?: boolean;
+}): Promise<RuntimeContextFragment[]> {
+  if (params.skip) {
+    return [];
+  }
+  await prepareActiveNodeContext(params.requesterProfileId);
+  return [
+    { kind: "runtime-instruction", text: buildActiveNodeContextText(params.requesterProfileId) },
+  ];
 }

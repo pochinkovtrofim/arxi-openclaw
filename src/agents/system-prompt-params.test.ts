@@ -7,6 +7,7 @@ import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { buildActiveNodeContextText, setActiveNodeContexts } from "../infra/active-node-context.js";
 import { buildSystemPromptParams, resolveSystemPromptRepoRoot } from "./system-prompt-params.js";
+import { buildAgentSystemPrompt } from "./system-prompt.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const runtime = { host: "host", os: "os", arch: "arch", node: "node", model: "model" };
@@ -47,19 +48,37 @@ describe("buildSystemPromptParams", () => {
     expect(tokyo.userDate).toBe("2026-01-06");
   });
 
-  it("projects the requester-scoped stable active-node identity", () => {
+  it("projects the requester-scoped active-node identity only into per-turn context", () => {
     setActiveNodeContexts([{ nodeId: "mac-123" }, { nodeId: "person-mac", profileId: "person" }]);
 
     const { runtimeInfo } = buildParams({});
 
-    expect(runtimeInfo.activeNode).toBe("mac-123");
-    expect(runtimeInfo.activeNodeIdentity).toBe("unknown");
-    const personal = buildSystemPromptParams({ requesterProfileId: "person", runtime });
-    expect(personal.runtimeInfo.activeNode).toBe("person-mac");
-    expect(personal.runtimeInfo.activeNodeIdentity).toBe("requester");
+    expect(runtimeInfo).not.toHaveProperty("activeNode");
+    expect(runtimeInfo).not.toHaveProperty("activeNodeIdentity");
     expect(buildActiveNodeContextText()).toBe(
       "Current active computer (latest reported app/system input, not message origin): active_node=mac-123 active_node_identity=unknown",
     );
+    expect(buildActiveNodeContextText("person")).toBe(
+      "Current active computer (latest reported app/system input, not message origin): active_node=person-mac active_node_identity=requester",
+    );
+  });
+
+  it("keeps the rendered system prompt byte-identical while the active node changes between turns", () => {
+    // Anthropic caches everything ahead of a conversation checkpoint, including the
+    // volatile system suffix; a node connecting between two turns must not re-render it.
+    const render = () =>
+      buildAgentSystemPrompt({ workspaceDir: "/tmp/openclaw", ...buildParams({}) });
+    setActiveNodeContexts([{ nodeId: "mac-123" }]);
+    const connected = render();
+    setActiveNodeContexts([{ nodeId: "mac-123", isCurrent: () => false }]);
+    const disconnected = render();
+    setActiveNodeContexts([{ nodeId: "mac-456" }]);
+    const replaced = render();
+
+    expect(connected).toContain("Runtime: ");
+    expect(connected).not.toContain("active_node");
+    expect(disconnected).toBe(connected);
+    expect(replaced).toBe(connected);
   });
 
   it("clears an active node that fails current-generation validation", () => {
@@ -67,9 +86,6 @@ describe("buildSystemPromptParams", () => {
       { nodeId: "mac-123", pairingGeneration: "generation-a", isCurrent: () => false },
     ]);
 
-    const { runtimeInfo } = buildParams({});
-
-    expect(runtimeInfo.activeNode).toBe("unknown");
     expect(buildActiveNodeContextText()).toContain("active_node=unknown");
   });
 
@@ -77,7 +93,6 @@ describe("buildSystemPromptParams", () => {
     "keeps malformed presence identifiers out of model context: %s",
     (nodeId) => {
       setActiveNodeContexts([{ nodeId }]);
-      expect(buildParams({}).runtimeInfo.activeNode).toBe("unknown");
       expect(buildActiveNodeContextText()).toContain("active_node=unknown");
     },
   );

@@ -20,6 +20,4 @@ export type SystemPromptRuntimeInfo = {
   chatType?: string;
   capabilities?: string[];
   repoRoot?: string;
-  activeNode?: string;
-  activeNodeIdentity?: "requester" | "unknown";
 };
