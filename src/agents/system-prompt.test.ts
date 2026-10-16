@@ -695,7 +695,6 @@ describe("buildAgentSystemPrompt", () => {
         node: "v20",
         model: "anthropic/claude",
         defaultModel: "anthropic/claude-opus-4-5",
-        activeNode: "mac-123",
         channel: "telegram",
         capabilities: ["inlineButtons"],
       },
@@ -710,7 +709,8 @@ describe("buildAgentSystemPrompt", () => {
     expect(prompt).toContain("node=v20");
     expect(prompt).toContain("model=anthropic/claude");
     expect(prompt).toContain("default_model=anthropic/claude-opus-4-5");
-    expect(prompt).toContain("active_node=mac-123");
+    // Node presence is a per-turn runtime fact, never part of the cached suffix.
+    expect(prompt).not.toContain("active_node");
     expect(prompt).toContain("channel=telegram");
     expect(prompt).toContain("capabilities=inlinebuttons");
   });

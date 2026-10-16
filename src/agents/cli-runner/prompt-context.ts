@@ -28,7 +28,6 @@ async function buildCliTurnAppendContext(
     requesterProfileId?: string;
   },
 ): Promise<string> {
-  const { resolveSystemPromptUsage } = await import("./helpers.js");
   const mediaTaskContext = await buildMediaTaskRuntimeContext({
     capabilityToolNames: params.capabilityToolNames,
     sessionKey: params.sessionKey,
@@ -47,10 +46,8 @@ async function buildCliTurnAppendContext(
       hasSessionsSpawn: params.capabilityToolNames.has("sessions_spawn"),
     }).join("\n"),
     mediaTaskMessage ? labelRuntimeContextText(mediaTaskMessage.content) : undefined,
-    // Native-prompt owners and first-only resumes do not receive the current runtime line.
-    resolveSystemPromptUsage(params)
-      ? undefined
-      : buildActiveNodeContextText(params.requesterProfileId),
+    // The system prompt carries no active computer hint, so every turn does.
+    buildActiveNodeContextText(params.requesterProfileId),
   ]
     .filter((value): value is string => Boolean(value?.trim()))
     .join("\n\n");

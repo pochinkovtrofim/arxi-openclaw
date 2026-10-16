@@ -10,11 +10,6 @@ import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import type { ChatType } from "../channels/chat-type.js";
 import { resolveControlUiSessionUrl } from "../config/control-ui-link-base.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import {
-  formatActiveNodeContextLabel,
-  getActiveNodeIdentityScope,
-  getCurrentActiveNodeContext,
-} from "../infra/active-node-context.js";
 import { findGitRoot } from "../infra/git-root.js";
 import { parseCronRunScopeSuffix } from "../sessions/session-key-utils.js";
 import { formatDateStamp, resolveUserTimezone } from "./date-time.js";
@@ -76,10 +71,6 @@ export function buildSystemPromptParams(params: {
         sessionUrl?.startsWith("https://") && sessionUrl.length <= MAX_RUNTIME_SESSION_URL_CHARS
           ? sessionUrl
           : undefined,
-      activeNode: formatActiveNodeContextLabel(
-        getCurrentActiveNodeContext(params.requesterProfileId),
-      ),
-      activeNodeIdentity: getActiveNodeIdentityScope(params.requesterProfileId),
       repoRoot,
     },
     userTimezone,

@@ -2786,8 +2786,11 @@ describe("prepareCliRunContext", () => {
     expect(second.promptContext).toEqual({
       appendContext: expect.stringMatching(/^For the current source conversation,/),
     });
+    // The per-turn active computer hint follows the media snapshot on every CLI turn.
     expect(
-      second.promptContext?.appendContext?.endsWith(`\n\n${labelRuntimeContextText(carrier)}`),
+      second.promptContext?.appendContext?.endsWith(
+        `\n\n${labelRuntimeContextText(carrier)}\n\nCurrent active computer (latest reported app/system input, not message origin): active_node=unknown active_node_identity=unknown`,
+      ),
     ).toBe(true);
     expect(second.params.transcriptPrompt).toBe("latest ask");
     expect(second.contextEngineTurnPrompt).toBe("latest ask");
