@@ -604,7 +604,11 @@ describe("Anthropic fast mode rejection fallback", () => {
   function runFallback(
     modelId: string,
     respond: (fast: boolean) => AssistantMessageEvent[],
-  ): { calls: boolean[]; events: Promise<AssistantMessageEvent[]> } {
+  ): {
+    calls: boolean[];
+    events: Promise<AssistantMessageEvent[]>;
+    result: Promise<unknown>;
+  } {
     const calls: boolean[] = [];
     const base: StreamFn = (_model, _context, options) => {
       const payload: Record<string, unknown> = {};
@@ -612,10 +616,13 @@ describe("Anthropic fast mode rejection fallback", () => {
       const fast = payload.speed === "fast";
       calls.push(fast);
       const stream = createAssistantMessageEventStream();
-      for (const event of respond(fast)) {
+      const events = respond(fast);
+      const last = events.at(-1);
+      for (const event of events) {
         stream.push(event);
       }
-      stream.end();
+      // A start-only response settles through end(message), without a terminal event.
+      stream.end(last?.type === "start" ? (last.partial as never) : undefined);
       return stream;
     };
     const stream = createAnthropicFastModeWrapper(base, true)(
@@ -630,6 +637,7 @@ describe("Anthropic fast mode rejection fallback", () => {
     ) as ReturnType<typeof createAssistantMessageEventStream>;
     return {
       calls,
+      result: stream.result(),
       events: (async () => {
         const events: AssistantMessageEvent[] = [];
         for await (const event of stream) {
@@ -653,6 +661,16 @@ describe("Anthropic fast mode rejection fallback", () => {
     const second = runFallback("claude-opus-5-5", respond);
     expect((await second.events).at(-1)?.type).toBe("done");
     expect(second.calls).toEqual([false]);
+  });
+
+  it("keeps the result of a fast response that settles without a terminal event", async () => {
+    const message = (terminal("done", { text: "settled" }) as { message: unknown }).message;
+    const { calls, events, result } = runFallback("claude-opus-5-5-settled", () => [
+      { type: "start", partial: message } as AssistantMessageEvent,
+    ]);
+    expect((await events).map((event) => event.type)).toEqual(["start"]);
+    expect(await result).toBe(message);
+    expect(calls).toEqual([true]);
   });
 
   it("passes through fast responses and errors that are not a refusal", async () => {

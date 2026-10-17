@@ -261,6 +261,7 @@ function createFastModeRejectionFallback(
 ): ReturnType<StreamFn> {
   const output = createAssistantMessageEventStream();
   const fast = startFast();
+  let served = fast;
   const pipe = async (
     source: ReturnType<StreamFn>,
     onFirstOutcome?: (event: AssistantMessageEvent) => boolean,
@@ -299,8 +300,11 @@ function createFastModeRejectionFallback(
         return true;
       });
       if (!finished) {
-        await pipe(startStandard());
+        served = startStandard();
+        await pipe(served);
       }
+      // A producer may settle through end(message) without a terminal event.
+      output.end(await (await served).result());
     } catch (error) {
       output.push({
         type: "error",
@@ -317,7 +321,6 @@ function createFastModeRejectionFallback(
           timestamp: Date.now(),
         },
       });
-    } finally {
       output.end();
     }
   })();
