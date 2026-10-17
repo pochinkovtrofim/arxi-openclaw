@@ -3,7 +3,12 @@ import { calculateUsageCost } from "@openclaw/llm-core";
 // Anthropic tests cover stream wrappers plugin behavior.
 import { expectDefined } from "@openclaw/normalization-core";
 import type { StreamFn } from "openclaw/plugin-sdk/agent-core";
-import { type Model, streamSimple } from "openclaw/plugin-sdk/llm";
+import {
+  type AssistantMessageEvent,
+  createAssistantMessageEventStream,
+  type Model,
+  streamSimple,
+} from "openclaw/plugin-sdk/llm";
 import { useProviderCatalogMetadata } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { resolveProviderEndpoint } from "openclaw/plugin-sdk/provider-model-shared";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
@@ -518,11 +523,18 @@ describe("anthropic stream wrappers", () => {
     });
   });
 
+  it("sends native fast mode over subscription OAuth and keeps the OAuth betas", () => {
+    const captured = runNativeFastModeWrapper({ apiKey: "sk-ant-oat01-test-token" });
+
+    expect(captured.headers?.["anthropic-beta"]?.split(",")).toEqual([
+      ...OAUTH_BETA_HEADER.split(","),
+      "fast-mode-2026-02-01",
+    ]);
+    expect(captured.payload).toEqual({ speed: "fast" });
+    expect(captured.model?.cost.output).toBe(50);
+  });
+
   it.each([
-    {
-      label: "OAuth",
-      params: { apiKey: "sk-ant-oat01-test-token" },
-    },
     {
       label: "proxy",
       params: { baseUrl: "https://proxy.example.com/v1" },
@@ -564,6 +576,97 @@ describe("anthropic stream wrappers", () => {
 
     expect(captured.headers?.["anthropic-beta"] ?? "").not.toContain("fast-mode");
     expect(captured.payload).toEqual({});
+  });
+});
+
+describe("Anthropic fast mode rejection fallback", () => {
+  function terminal(
+    type: "done" | "error",
+    fields: { text?: string; errorCode?: string; errorMessage?: string; model?: string },
+  ): AssistantMessageEvent {
+    const message = {
+      role: "assistant",
+      content: fields.text ? [{ type: "text", text: fields.text }] : [],
+      api: "anthropic-messages",
+      provider: "anthropic",
+      model: fields.model ?? "claude-opus-5-5",
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 },
+      stopReason: type === "done" ? "stop" : "error",
+      ...(fields.errorCode ? { errorCode: fields.errorCode } : {}),
+      ...(fields.errorMessage ? { errorMessage: fields.errorMessage } : {}),
+      timestamp: 0,
+    } as never;
+    return type === "done"
+      ? ({ type, reason: "stop", message } as AssistantMessageEvent)
+      : ({ type, reason: "error", error: message } as AssistantMessageEvent);
+  }
+
+  function runFallback(
+    modelId: string,
+    respond: (fast: boolean) => AssistantMessageEvent[],
+  ): { calls: boolean[]; events: Promise<AssistantMessageEvent[]> } {
+    const calls: boolean[] = [];
+    const base: StreamFn = (_model, _context, options) => {
+      const payload: Record<string, unknown> = {};
+      options?.onPayload?.(payload as never, _model as never);
+      const fast = payload.speed === "fast";
+      calls.push(fast);
+      const stream = createAssistantMessageEventStream();
+      for (const event of respond(fast)) {
+        stream.push(event);
+      }
+      stream.end();
+      return stream;
+    };
+    const stream = createAnthropicFastModeWrapper(base, true)(
+      {
+        provider: "anthropic",
+        api: "anthropic-messages",
+        id: modelId,
+        cost: { input: 4, output: 20, cacheRead: 0.4, cacheWrite: 5 },
+      } as never,
+      {} as never,
+      { apiKey: "sk-ant-oat01-test-token" } as never,
+    ) as ReturnType<typeof createAssistantMessageEventStream>;
+    return {
+      calls,
+      events: (async () => {
+        const events: AssistantMessageEvent[] = [];
+        for await (const event of stream) {
+          events.push(event);
+        }
+        return events;
+      })(),
+    };
+  }
+
+  it("reruns a refused fast request at standard speed and skips fast while cooling down", async () => {
+    const respond = (fast: boolean) =>
+      fast
+        ? [terminal("error", { errorCode: "429", errorMessage: "429: rate_limit_error" })]
+        : [{ type: "start" } as AssistantMessageEvent, terminal("done", { text: "hello" })];
+    const first = runFallback("claude-opus-5-5", respond);
+
+    expect((await first.events).map((event) => event.type)).toEqual(["start", "done"]);
+    expect(first.calls).toEqual([true, false]);
+
+    const second = runFallback("claude-opus-5-5", respond);
+    expect((await second.events).at(-1)?.type).toBe("done");
+    expect(second.calls).toEqual([false]);
+  });
+
+  it("passes through fast responses and errors that are not a refusal", async () => {
+    const served = runFallback("claude-opus-5", () => [terminal("done", { text: "fast" })]);
+    expect((await served.events).map((event) => event.type)).toEqual(["done"]);
+    expect(served.calls).toEqual([true]);
+
+    const overloaded = runFallback("claude-opus-4.8", () => [
+      terminal("error", { errorCode: "529", errorMessage: "529: overloaded_error" }),
+    ]);
+    const events = await overloaded.events;
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type === "error" && events[0].error.errorCode).toBe("529");
+    expect(overloaded.calls).toEqual([true]);
   });
 });
 

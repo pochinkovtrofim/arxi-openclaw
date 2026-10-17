@@ -36,15 +36,14 @@ export function resolveAnthropicFastModePlan(
   ) {
     return undefined;
   }
-  if (
-    normalizeAnthropicServiceTier(context.params?.serviceTier ?? context.params?.service_tier) ||
-    context.authMode === "oauth"
-  ) {
+  if (normalizeAnthropicServiceTier(context.params?.serviceTier ?? context.params?.service_tier)) {
     return false;
   }
   const model = { id: context.modelId, params: context.modelParams };
   const native = supportsClaudeFastMode(model);
-  if (!native && !supportsAnthropicPriorityTier(model)) {
+  // Subscription OAuth carries native speed=fast (billed to the account's usage credits),
+  // but never Priority Tier.
+  if (!native && (context.authMode === "oauth" || !supportsAnthropicPriorityTier(model))) {
     return false;
   }
   if (!context.api) {
@@ -59,7 +58,7 @@ export function resolveAnthropicFastModePlan(
   ) {
     return false;
   }
-  if (context.authMode !== "api_key") {
+  if (context.authMode !== "api_key" && context.authMode !== "oauth") {
     return undefined;
   }
   return native ? "native" : "service-tier";
