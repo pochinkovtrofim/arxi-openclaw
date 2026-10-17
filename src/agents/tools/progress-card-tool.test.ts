@@ -107,9 +107,23 @@ describe("progress_card tool", () => {
       text: "Progress card updated (rev 1, 2/2 done). All steps are done: send the result now; recheck a step only if new evidence contradicts it.",
     },
     {
+      name: "prefers the active step over an earlier pending one",
+      steps: [
+        { step: "Book the table", status: "pending" as const },
+        { step: "Find the restaurant", status: "in_progress" as const },
+        { step: "Add it to the calendar", status: "pending" as const },
+      ],
+      text: 'Progress card updated (rev 1, 0/3 done). Now: "Find the restaurant". Next: "Book the table".',
+    },
+    {
       name: "shortens a long step",
       steps: [{ step: "a".repeat(200), status: "in_progress" as const }],
       text: `Progress card updated (rev 1, 0/1 done). Now: "${"a".repeat(119)}…". This is the last step.`,
+    },
+    {
+      name: "shortens by characters without splitting a surrogate pair",
+      steps: [{ step: `${"a".repeat(118)}😀😀😀`, status: "in_progress" as const }],
+      text: `Progress card updated (rev 1, 0/1 done). Now: "${"a".repeat(118)}😀…". This is the last step.`,
     },
   ])("digest $name", async ({ steps, text }) => {
     const callGateway = vi.fn().mockResolvedValueOnce({
