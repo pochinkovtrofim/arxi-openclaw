@@ -21,12 +21,7 @@ describe("selected request Fast applicability", () => {
       expected: undefined,
     },
     { name: "legacy Priority Tier", context: { modelId: "claude-sonnet-4-6" }, expected: true },
-    { name: "OAuth native", context: { authMode: "oauth" }, expected: true },
-    {
-      name: "OAuth Priority Tier",
-      context: { authMode: "oauth", modelId: "claude-sonnet-4-6" },
-      expected: false,
-    },
+    { name: "OAuth", context: { authMode: "oauth" }, expected: false },
     { name: "unknown auth", context: { authMode: undefined }, expected: undefined },
     { name: "unclassified token", context: { authMode: "token" }, expected: undefined },
     { name: "unknown API", context: { api: undefined }, expected: undefined },

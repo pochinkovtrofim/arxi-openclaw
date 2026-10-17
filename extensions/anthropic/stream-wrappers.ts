@@ -1,10 +1,5 @@
 import type { StreamFn } from "openclaw/plugin-sdk/agent-core";
-import {
-  createAssistantMessageEventStream,
-  getEnvApiKey,
-  streamSimple,
-  type AssistantMessageEvent,
-} from "openclaw/plugin-sdk/llm";
+import { getEnvApiKey, streamSimple } from "openclaw/plugin-sdk/llm";
 import type { ProviderWrapStreamFnContext } from "openclaw/plugin-sdk/plugin-entry";
 import {
   resolveProviderEndpoint,
@@ -19,7 +14,6 @@ import {
   resolveAnthropicPayloadPolicy,
   resolveAnthropicServerCompactionPlan,
 } from "openclaw/plugin-sdk/provider-stream-shared";
-import { createEmptyTransportUsage } from "openclaw/plugin-sdk/provider-transport-runtime";
 import { createSubsystemLogger } from "openclaw/plugin-sdk/runtime-env";
 import {
   normalizeFastMode,
@@ -39,10 +33,6 @@ const ANTHROPIC_CONTEXT_1M_BETA_LEGACY = "context-1m-2025-08-07";
 const ANTHROPIC_COMPACTION_BETA = "compact-2026-01-12";
 const ANTHROPIC_FAST_MODE_BETA = "fast-mode-2026-02-01";
 const ANTHROPIC_FAST_MODE_COST_MULTIPLIER = 2;
-// Anthropic refuses speed=fast with 429 when the fast pool is limited or a subscription has no
-// usage credits; skip fast for this long (or the server's Retry-After) instead of asking again.
-const ANTHROPIC_FAST_MODE_REJECTION_COOLDOWN_MS = 10 * 60_000;
-const ANTHROPIC_FAST_MODE_REJECTION_CODES = new Set(["400", "403", "429"]);
 const OPENCLAW_DEFAULT_ANTHROPIC_BETAS = [
   "fine-grained-tool-streaming-2025-05-14",
   "interleaved-thinking-2025-05-14",
@@ -210,22 +200,13 @@ export function createAnthropicFastModeWrapper(
       },
     });
     if (plan === "native") {
-      if (!resolved || Date.now() < (fastModeRejectedUntil.get(model.id) ?? 0)) {
+      if (!resolved) {
         return underlying(model, context, options);
       }
-      // A per-request beta header replaces the transport default, so OAuth keeps its own betas.
-      const betas = isAnthropicOAuthApiKey(options?.apiKey)
-        ? [...OPENCLAW_OAUTH_ANTHROPIC_BETAS, ANTHROPIC_FAST_MODE_BETA]
-        : [ANTHROPIC_FAST_MODE_BETA];
-      return createFastModeRejectionFallback(
-        model,
-        () =>
-          fastPayloadWrapper(applyAnthropicFastModePricing(model), context, {
-            ...options,
-            headers: mergeAnthropicBetaHeader(options?.headers, betas),
-          }),
-        () => underlying(model, context, options),
-      );
+      return fastPayloadWrapper(applyAnthropicFastModePricing(model), context, {
+        ...options,
+        headers: mergeAnthropicBetaHeader(options?.headers, [ANTHROPIC_FAST_MODE_BETA]),
+      });
     }
     return plan === "service-tier"
       ? createAnthropicServiceTierWrapper(underlying, resolved ? "auto" : "standard_only")(
@@ -235,96 +216,6 @@ export function createAnthropicFastModeWrapper(
         )
       : underlying(model, context, options);
   };
-}
-
-const fastModeRejectedUntil = new Map<string, number>();
-
-function readFastModeRejection(event: AssistantMessageEvent): number | undefined {
-  if (event.type !== "error" || event.reason !== "error" || event.error.content.length > 0) {
-    return undefined;
-  }
-  const code = event.error.errorCode ?? event.error.errorMessage?.match(/^(\d{3})\b/)?.[1];
-  if (!code || !ANTHROPIC_FAST_MODE_REJECTION_CODES.has(code)) {
-    return undefined;
-  }
-  const retryAfterSeconds = Number(event.error.errorMessage?.match(/Retry-After: (\d+)/)?.[1]);
-  return retryAfterSeconds > 0
-    ? retryAfterSeconds * 1000
-    : ANTHROPIC_FAST_MODE_REJECTION_COOLDOWN_MS;
-}
-
-/** Fast is an owner preference, not a requirement: a refused fast request reruns at standard speed. */
-function createFastModeRejectionFallback(
-  model: Parameters<StreamFn>[0],
-  startFast: () => ReturnType<StreamFn>,
-  startStandard: () => ReturnType<StreamFn>,
-): ReturnType<StreamFn> {
-  const output = createAssistantMessageEventStream();
-  const fast = startFast();
-  let served = fast;
-  const pipe = async (
-    source: ReturnType<StreamFn>,
-    onFirstOutcome?: (event: AssistantMessageEvent) => boolean,
-  ) => {
-    const held: AssistantMessageEvent[] = [];
-    let deciding = onFirstOutcome !== undefined;
-    for await (const event of await source) {
-      if (deciding && event.type === "start") {
-        held.push(event);
-        continue;
-      }
-      if (deciding) {
-        deciding = false;
-        if (onFirstOutcome?.(event)) {
-          return false;
-        }
-        held.splice(0).forEach((heldEvent) => output.push(heldEvent));
-      }
-      output.push(event);
-    }
-    held.splice(0).forEach((heldEvent) => output.push(heldEvent));
-    return true;
-  };
-  void (async () => {
-    try {
-      const finished = await pipe(fast, (event) => {
-        const cooldownMs = readFastModeRejection(event);
-        if (cooldownMs === undefined) {
-          return false;
-        }
-        fastModeRejectedUntil.set(model.id, Date.now() + cooldownMs);
-        log.warn(
-          `fast mode refused for ${model.id} (${event.type === "error" ? event.error.errorMessage : ""}); ` +
-            `using standard speed for ${Math.round(cooldownMs / 1000)}s`,
-        );
-        return true;
-      });
-      if (!finished) {
-        served = startStandard();
-        await pipe(served);
-      }
-      // A producer may settle through end(message) without a terminal event.
-      output.end(await (await served).result());
-    } catch (error) {
-      output.push({
-        type: "error",
-        reason: "error",
-        error: {
-          role: "assistant",
-          content: [],
-          api: model.api,
-          provider: model.provider,
-          model: model.id,
-          usage: createEmptyTransportUsage(),
-          stopReason: "error",
-          errorMessage: error instanceof Error ? error.message : String(error),
-          timestamp: Date.now(),
-        },
-      });
-      output.end();
-    }
-  })();
-  return output;
 }
 
 function createAnthropicCompactionWrapper(
