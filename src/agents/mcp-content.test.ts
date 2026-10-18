@@ -11,6 +11,38 @@ function nestedStructuredContent(depth: number): Record<string, unknown> {
 
 describe("projectMcpCallToolResult", () => {
   it.each([
+    { label: "pretty", text: JSON.stringify({ zeta: 2, alpha: "<a>&" }, null, 2) },
+    { label: "compact", text: '{"zeta":2,"alpha":"<a>&"}' },
+    { label: "reordered and escaped", text: ' {"alpha":"\\u003ca\\u003e\\u0026","zeta":2}\n' },
+  ])("deduplicates the $label mirror only for the model", ({ text }) => {
+    const structuredContent = { zeta: 2, alpha: "<a>&" };
+    const content = [{ type: "text", text }];
+    const result = projectMcpCallToolResult({ content, structuredContent });
+    expect(result.content).toEqual([
+      { type: "text", text: 'structuredContent:\n{\n  "alpha": "<a>&",\n  "zeta": 2\n}' },
+    ]);
+    expect(result.details).toEqual({ structuredContent });
+    expect(consumeMcpCodeModeGuestResult(result)).toEqual({ content, structuredContent });
+  });
+
+  it("preserves recovery text, partial or different JSON, and other content in order", () => {
+    const content = [
+      { type: "text", text: 'Retry after login: {"items":[1,2],"retryable":true}' },
+      { type: "text", text: '{"retryable":true}' },
+      { type: "text", text: '{"items":[2,1],"retryable":true}' },
+      { type: "text", text: '{"items":[1,2],"retryable":true,"extra":null}' },
+      { type: "text", text: '{"items":' },
+      { type: "text", text: "[".repeat(20_000) + "0" + "]".repeat(20_000) },
+      { type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+    ];
+    const structuredContent = { items: [1, 2], retryable: true };
+    const result = projectMcpCallToolResult({ content, structuredContent, isError: true });
+    expect(result.content.slice(1)).toEqual(content);
+    expect(result.details).toEqual({ structuredContent, status: "error" });
+    expect(consumeMcpCodeModeGuestResult(result)).toEqual({ content, structuredContent, isError: true });
+  });
+
+  it.each([
     { label: "ordinary", deep: false, isError: undefined },
     { label: "server error", deep: false, isError: true },
     { label: "unprojectable", deep: true, isError: false },
