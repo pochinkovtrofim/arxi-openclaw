@@ -149,8 +149,8 @@ Start agent work in the background: hook-dispatched turns for external content a
     `deleteSession(...)` can delete sessions created by the same plugin through `api.runtime.subagent.run(...)`. Deleting arbitrary user or operator sessions still requires an admin-scoped Gateway request.
 
   </Accordion>
-  <Accordion title="api.runtime.tasks.managedFlows (Arxi)">
-    Arxi retains owner-bound managed Flows for initiatives and personal obligations.
+  <Accordion title="api.runtime.tasks.managedFlows (Ro)">
+    Ro retains owner-bound managed Flows for initiatives and personal obligations.
     Bind with `bindSession({ sessionKey })` or `fromToolContext(ctx)`. Creation,
     reads, revision-checked transitions and opt-in history retain their existing
     synchronous contract. Scheduled obligation commits are available only within

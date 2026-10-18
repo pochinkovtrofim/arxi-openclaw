@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Fingerprints the source that defines persisted state formats and their repair.
 //
-// Arxi runs `doctor --fix` and a memory index offline on an owner's first wake
+// Ro runs `doctor --fix` and a memory index offline on an owner's first wake
 // after an OpenClaw change. Two builds with the same fingerprint carry the same
 // migrations, schema versions and doctor repairs, so state that one build's
 // doctor completed needs nothing from the other's and that wake can skip it.

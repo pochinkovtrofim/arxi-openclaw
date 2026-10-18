@@ -1,12 +1,12 @@
-# Arxi OpenClaw fork: coding-agent instructions
+# Ro OpenClaw fork: coding-agent instructions
 
-This repository contains the OpenClaw fork used by Arxi. Follow the Arxi workspace
+This repository contains the OpenClaw fork used by Ro. Follow the Ro workspace
 AGENTS.md and the applicable subtree AGENTS.md. OpenClaw owns agent behavior;
-Arxi product/hosting boundaries remain in the workspace contract.
+Ro product/hosting boundaries remain in the workspace contract.
 
-## Arxi delivery
+## Ro delivery
 
-Read the current containing Arxi workspace `AGENTS.md`, including above a task
+Read the current containing Ro workspace `AGENTS.md`, including above a task
 worktree's Git root. It owns freshness, authorization, focused proof and completion.
 For standalone checkouts, preserve WIP, fetch the target revision and validate in a
 synchronized isolated checkout on `arxi-production`; runtime delivery uses current
@@ -73,7 +73,7 @@ when installing dependencies or running checks. All commands execute on the serv
 - Untrusted contributor/fork code must not run on the workstation or a
   credential-bearing production host. Review source first and obtain explicit
   owner approval for a suitably isolated production-host execution environment;
-  Arxi has no hosted-CI fallback.
+  Ro has no hosted-CI fallback.
 - Prose/instruction-only changes: inspect the diff, check whitespace and relevant
   links/formatting on the server. No runtime rebuild, behavior test, or automatic
   review loop is required unless the change actually alters such a contract.
@@ -87,7 +87,7 @@ when installing dependencies or running checks. All commands execute on the serv
   require a full suite, extra review agent, or repeated autoreview. Preserve
   exact-head evidence.
 - Choose tests by the affected contract; `$openclaw-testing` helps when selection
-  is unclear. Upstream hosted-compute recipes do not apply to Arxi.
+  is unclear. Upstream hosted-compute recipes do not apply to Ro.
 - UI changes need inspected before/after captures from an isolated running surface.
   Gateway flows use an isolated state directory and owned port. Channel-visible
   behavior can use boundary harness proof for development; runtime release still
@@ -115,13 +115,13 @@ for ClawSweeper reviews and its review findings, not as a preflight for all task
 ## GitHub / PRs
 
 Use [.agents/guidance/github.md](.agents/guidance/github.md) when creating or
-managing issues, PRs, reviews, or landing. Arxi's server-receipt landing contract
+managing issues, PRs, reviews, or landing. Ro's server-receipt landing contract
 above takes precedence over upstream CI and `scripts/pr` procedures.
 `CODEOWNERS` routes reviewers; it does not itself establish enforced approval.
 Preserve restricted/security ownership and verify actual protection rules when
 relevant. For upstream ownership/review governance changes, follow the organization
-owner authorization requirements in `CONTRIBUTING.md`; Arxi fork policy changes
-follow the Arxi owner's explicit direction. Neither waives GitHub-enforced review.
+owner authorization requirements in `CONTRIBUTING.md`; Ro fork policy changes
+follow the Ro owner's explicit direction. Neither waives GitHub-enforced review.
 
 ## Tooling Gotchas
 
@@ -158,7 +158,7 @@ shell/Git/GitHub problem; it is not required reading before ordinary commands.
 - Necessary dependency patches/overrides/vendor fixes are implementation decisions within the requested repair. Record their reason and validate the affected dependency contract; unrelated dependency changes remain outside scope. Patched dependencies use exact versions.
 - Release/package guards: no hard-coded retired-package denylists; use generic artifact/dependency checks or fix build source.
 - `pnpm-lock.yaml` is the product dependency security review surface; `.github/release/clawhub-cli/package-lock.json` separately pins trusted release tooling. Published packages bundle runtime dependencies where configured and never ship lockfiles; other npm-format locks exist only transiently during checks and publish staging.
-- An Arxi ship/deploy request authorizes its versioning and activation through current Ops contracts without another approval. Publishing upstream OpenClaw packages is a separate scope; when explicitly requested, use `$release-openclaw-maintainer` (nightlies: `$release-openclaw-nightly`). Disabled upstream release CI does not apply to the Arxi fork.
+- A Ro ship/deploy request authorizes its versioning and activation through current Ops contracts without another approval. Publishing upstream OpenClaw packages is a separate scope; when explicitly requested, use `$release-openclaw-maintainer` (nightlies: `$release-openclaw-nightly`). Disabled upstream release CI does not apply to the Ro fork.
 - During an active release, freeze the operator-selected cut SHA and release identity through publish and verification; touch `main` only for the smallest critical main-owned blocker or on operator request, then return to the release branch.
 - GHSA/advisories: never create, open, draft, update, publish, or otherwise mutate a GitHub Security Advisory, GHSA temporary fork, private security-review repository, or security-only review artifact unless the user explicitly asks for that exact advisory/security workflow action. Terms such as "security-sensitive", "hardening", "private review", "unshipped", or "unreleased" grant no advisory authority; unshipped hardening uses the normal code/PR workflow. Routes: `$openclaw-ghsa-maintainer` / `$security-triage`. Secret scanning: `$openclaw-secret-scanning-maintainer`.
 

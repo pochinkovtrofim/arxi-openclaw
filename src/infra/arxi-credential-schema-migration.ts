@@ -15,7 +15,7 @@ export async function migrateArxiCredentialSchema(
     return false;
   }
   if (!path.isAbsolute(directory)) {
-    throw new Error("Arxi credential database requires an absolute directory");
+    throw new Error("Ro credential database requires an absolute directory");
   }
   const pathname = path.join(directory, "openclaw-agent.sqlite");
   let info: fs.Stats;
@@ -28,7 +28,7 @@ export async function migrateArxiCredentialSchema(
     throw error;
   }
   if (!info.isFile()) {
-    throw new Error("Arxi credential database must be a regular file");
+    throw new Error("Ro credential database must be a regular file");
   }
   const database = openNodeSqliteDatabase(pathname, { readOnly: true });
   let previous: number;
@@ -44,7 +44,7 @@ export async function migrateArxiCredentialSchema(
         .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")
         .get(name);
       if (exists && database.prepare(`SELECT 1 FROM ${name} LIMIT 1`).get()) {
-        throw new Error("Arxi credential database unexpectedly contains session state");
+        throw new Error("Ro credential database unexpectedly contains session state");
       }
     }
   } finally {
@@ -57,7 +57,7 @@ export async function migrateArxiCredentialSchema(
       Number(verified.prepare("PRAGMA user_version").get()?.user_version) !==
       OPENCLAW_AGENT_SCHEMA_VERSION
     ) {
-      throw new Error("Arxi credential database schema did not converge");
+      throw new Error("Ro credential database schema did not converge");
     }
   } finally {
     verified.close();

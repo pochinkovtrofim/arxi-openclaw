@@ -329,7 +329,7 @@ async function acquireMemoryWorkspaceLock(
 
 /**
  * Process-global handle for other in-process plugins that rewrite curated
- * memory files (the Arxi owner memory view edits USER.md and MEMORY.md). They
+ * memory files (the Ro owner memory view edits USER.md and MEMORY.md). They
  * join the same writer serialization as dreaming, promotion and forget instead
  * of racing their read-compare-rename.
  */

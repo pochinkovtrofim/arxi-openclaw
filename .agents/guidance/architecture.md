@@ -1,7 +1,7 @@
 # Architecture
 
 Read when changing runtime architecture, config, persistence, plugin boundaries, or model context. Paths and commands in this document are repository-root
-relative unless explicitly stated otherwise. The root AGENTS.md Arxi execution
+relative unless explicitly stated otherwise. The root AGENTS.md Ro execution
 and authorization rules apply to every example and linked skill.
 
 - Core stays plugin-agnostic. No bundled ids/defaults/policy in core when manifest/registry/capability contracts work.

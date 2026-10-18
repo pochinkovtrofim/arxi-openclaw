@@ -1,7 +1,7 @@
 # Docs Guide
 
 This directory owns docs authoring, Mintlify link rules, and docs i18n policy.
-Run any named generation, check, or publishing command only on the Arxi
+Run any named generation, check, or publishing command only on the Ro
 production server under the root execution contract.
 
 ## Mintlify Rules
@@ -33,12 +33,12 @@ production server under the root execution contract.
 
 `taxonomy.yaml` and `qa/maturity-scores.yaml` are the source inputs; generated maturity docs under `docs/maturity/` are projections and should not be hand-edited for score, LTS, taxonomy, QA profile, or evidence tables.
 `scripts/qa/render-maturity-docs.ts` owns generation; use `pnpm maturity:render` to refresh committed docs and `pnpm maturity:check` to verify them.
-In the Arxi fork, the upstream scorecard and release-check workflows are
+In the Ro fork, the upstream scorecard and release-check workflows are
 reference-only under `.github/workflows-disabled/`; do not enable or dispatch
 them. Run the relevant render/check commands on the production server under the
-root Arxi landing contract.
+root Ro landing contract.
 Upstream keeps deterministic `qa-evidence.json.scorecard` in GitHub Actions
-artifacts. For Arxi, retain it with the production-server validation receipt;
+artifacts. For Ro, retain it with the production-server validation receipt;
 commit only a sanitized projection when explicitly requested.
 Human overrides must change source state in a PR and explain the reason plus public or redacted evidence.
 

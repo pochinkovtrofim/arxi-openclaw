@@ -126,7 +126,7 @@ describe("exa web search provider", () => {
     expect(applied?.plugins?.entries?.exa?.enabled).toBe(true);
   });
 
-  it("uses the exact Arxi loopback endpoint without changing normal Exa endpoints", async () => {
+  it("uses the exact Ro loopback endpoint without changing normal Exa endpoints", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ results: [] }), {
         status: 200,
@@ -239,7 +239,7 @@ describe("exa web search provider", () => {
     }
   });
 
-  it("does not widen the Arxi loopback seam to another port", async () => {
+  it("does not widen the Ro loopback seam to another port", async () => {
     const tool = createExaWebSearchProvider().createTool({
       config: {
         plugins: {

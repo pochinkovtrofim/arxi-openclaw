@@ -233,7 +233,7 @@ export function discoverAgentDatabaseMigrationTargets(params: {
       activeStateDirRealPath &&
       (realPath === activeStateDirRealPath || isPathInside(activeStateDirRealPath, realPath)),
     );
-    // Arxi deliberately relocates only the auth-profile database outside the
+    // Ro deliberately relocates only the auth-profile database outside the
     // owner state tree. It is an exact configured credential target, not a
     // session database, so session migrations must neither mutate nor reject it.
     if (realPath && isArxiCredentialOnlyDatabase(realPath, params.env)) {

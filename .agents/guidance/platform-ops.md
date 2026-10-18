@@ -1,12 +1,12 @@
 # Platform / Ops
 
 Read when working on native apps, gateway operations, or external channel delivery. Paths and commands in this document are repository-root
-relative unless explicitly stated otherwise. The root AGENTS.md Arxi execution
+relative unless explicitly stated otherwise. The root AGENTS.md Ro execution
 and authorization rules apply to every example and linked skill.
 
 - For device-dependent behavior, use a suitable available device or emulator.
   Native macOS/iOS signing, build, and test proof requires macOS/Xcode; if the
-  authorized Arxi execution environment cannot provide it, report the missing
+  authorized Ro execution environment cannot provide it, report the missing
   proof and obtain explicit authorization before using another host. Linux
   checks do not establish native-platform acceptance.
 - "restart iOS/Android apps" = rebuild/reinstall/relaunch, not kill/launch.

@@ -50,7 +50,7 @@ describe("auth profile path helpers (direct-import coverage attribution)", () =>
     });
   });
 
-  it("relocates Arxi auth without relocating the agent database", () => {
+  it("relocates Ro auth without relocating the agent database", () => {
     const agentDir = path.join(stateDir, "agents", "main", "agent");
     const runtimeAgentDir = `${stateDir}-runtime-agent`;
     const runtimeStore = path.join(runtimeAgentDir, "openclaw-agent.sqlite");

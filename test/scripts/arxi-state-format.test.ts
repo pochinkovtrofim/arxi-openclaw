@@ -1,4 +1,4 @@
-// State format fingerprint tests cover which sources gate Arxi's offline repair.
+// State format fingerprint tests cover which sources gate Ro's offline repair.
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

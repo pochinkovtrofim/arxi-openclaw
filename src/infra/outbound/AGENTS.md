@@ -26,7 +26,7 @@ real delivery.
 
 ## Verification
 
-- Run applicable commands only on the Arxi production server. For outbound
+- Run applicable commands only on the Ro production server. For outbound
   performance work, benchmark the affected test file before/after with
   `pnpm test <file>`. When shared outbound behavior changes, run the closest
   media, action, or payload contract test.

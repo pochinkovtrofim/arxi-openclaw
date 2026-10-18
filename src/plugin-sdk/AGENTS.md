@@ -95,7 +95,7 @@ changed.
 
 ## Verification
 
-- Run applicable commands only on the Arxi production server. Use `pnpm build`
+- Run applicable commands only on the Ro production server. Use `pnpm build`
   when an SDK seam affects lazy loading, hot channel entrypoints, or bundled
   plugin import topology. If the change can alter bundled channel startup cost,
   also run the isolated entrypoint profiler for the affected plugin:

@@ -391,7 +391,7 @@ async function compileVitestWorkerArtifacts(directory: string): Promise<void> {
   for (const [asset, relativeDestination] of [
     ...vitestWorkerRuntimeAssets.map((sourceAsset) => [sourceAsset, sourceAsset] as const),
     ...preservedModuleBuildAssets.map(
-      // Arxi keeps workflow fixtures disabled in source; subprocess fixtures retain upstream paths.
+      // Ro keeps workflow fixtures disabled in source; subprocess fixtures retain upstream paths.
       (sourceAsset) =>
         [
           sourceAsset,

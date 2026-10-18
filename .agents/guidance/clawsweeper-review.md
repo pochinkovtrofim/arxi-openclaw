@@ -1,7 +1,7 @@
 # ClawSweeper Review Policy
 
 Read when performing a ClawSweeper review or interpreting its findings. Paths and commands in this document are repository-root
-relative unless explicitly stated otherwise. The root AGENTS.md Arxi execution
+relative unless explicitly stated otherwise. The root AGENTS.md Ro execution
 and authorization rules apply to every example and linked skill.
 
 - OpenClaw-specific ClawSweeper review rules live here; this workflow is not required for unrelated edits or ordinary chat answers.
@@ -19,7 +19,7 @@ and authorization rules apply to every example and linked skill.
 - Won't-implement and out-of-scope closes are maintainer product judgment: automated review recommends with evidence, never executes the close; plausible design intent escalates instead of closing.
 - Doctrine-class findings are first-class: action path ending with no visible outcome and no recorded reason; default-path regression; prompt/tool text contradicting shipped behavior; multi-signal inference where a recorded fact belongs; new default-off capability with no named enablement path.
 - `maturity:stable`: issue-only attention signal for broken existing behavior primarily owned by an M4/M5 scorecard surface; name that surface and category. Not for feature requests, new config/policy choices, docs/support work, or lower-maturity owners merely passing through a stable surface. Visibility only — not fix proof, backport approval, or a release blocker.
-- Before landing any PR: read the latest ClawSweeper comment and its `Rank-up moves:` list; apply each move or state the skip in the PR — never merge past them silently. A <12h review covers the PR once every actionable finding is addressed (or skip stated) and the exact head has its required upstream CI or Arxi production-server receipt. Request `@clawsweeper re-review` only for an older review or post-review pushes that changed behavior beyond findings + mechanical refreshes (rebase, format, merge-ref). A queued or late re-review refreshes the rating; never block landing on the publisher.
+- Before landing any PR: read the latest ClawSweeper comment and its `Rank-up moves:` list; apply each move or state the skip in the PR — never merge past them silently. A <12h review covers the PR once every actionable finding is addressed (or skip stated) and the exact head has its required upstream CI or Ro production-server receipt. Request `@clawsweeper re-review` only for an older review or post-review pushes that changed behavior beyond findings + mechanical refreshes (rebase, format, merge-ref). A queued or late re-review refreshes the rating; never block landing on the publisher.
 - Public ClawSweeper comments prefer `https://docs.openclaw.ai/...` when a public docs page exists; structured evidence still cites repo files, lines, SHAs.
 - Findings follow the Start-section evidence bar (source, tests, current/shipped behavior, dependency contract proof when involved). Validation is judged against touched + sibling surfaces plus the Commands section; user-visible changes need clear evidence, and Telegram-visible behavior needs `$telegram-e2e-userbot` event proof when feasible.
 - Real-behavior-proof gate: a mock-gateway harness run (mock channel API + mock provider + ephemeral gateway, verdict JSON in the PR body) satisfies it for channel-visible changes covering the changed path; live-channel proof is stronger evidence.

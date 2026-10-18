@@ -100,7 +100,7 @@ changed.
 
 ## Verification
 
-- Run applicable commands only on the Arxi production server. Use `pnpm build`
+- Run applicable commands only on the Ro production server. Use `pnpm build`
   when loader, registry, activation, or public-artifact changes can alter bundled
   plugin import fanout. If the change can alter bundled plugin startup cost,
   re-profile the affected plugin entrypoint with:

@@ -1,7 +1,7 @@
 # Commands
 
 Read when selecting install, build, formatting, lint, typecheck, or test commands. Paths and commands in this document are repository-root
-relative unless explicitly stated otherwise. The root AGENTS.md Arxi execution
+relative unless explicitly stated otherwise. The root AGENTS.md Ro execution
 and authorization rules apply to every example and linked skill.
 
 - Derive supported Node/Bun versions and package-manager pins from current `package.json`, `pnpm-workspace.yaml` and the selected server environment. Do not use a historical guide or memory as a version inventory. Preserve supported runtime paths.

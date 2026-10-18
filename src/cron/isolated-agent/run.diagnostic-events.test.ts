@@ -157,7 +157,7 @@ describe("runCronIsolatedAgentTurn diagnostic events", () => {
     });
     const messageTrace = events.find((event) => event.type === "message.dispatch.started")?.trace;
     expect(result.status).toBe("ok");
-    // Arxi: scheduled work never joins the request scope its timer inherited.
+    // Ro: scheduled work never joins the request scope its timer inherited.
     expect(messageTrace?.traceId).toEqual(expect.any(String));
     expect(messageTrace?.traceId).not.toBe(parent.traceId);
     expect(getActiveDiagnosticTraceContext()).toBeUndefined();

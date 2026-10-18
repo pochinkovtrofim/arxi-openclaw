@@ -1,7 +1,7 @@
 # Code
 
 Read when writing or reviewing implementation code. Paths and commands in this document are repository-root
-relative unless explicitly stated otherwise. The root AGENTS.md Arxi execution
+relative unless explicitly stated otherwise. The root AGENTS.md Ro execution
 and authorization rules apply to every example and linked skill.
 
 - TS ESM, strict. Avoid `any`; prefer real types, `unknown`, narrow adapters.

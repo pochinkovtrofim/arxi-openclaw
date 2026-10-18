@@ -58,7 +58,7 @@ not just runner noise.
 
 ## Verification
 
-- Run applicable commands only on the Arxi production server. For agent
+- Run applicable commands only on the Ro production server. For agent
   performance changes, record seconds and RSS before/after in the handoff or
   benchmark report. Add `pnpm build` when the change affects lazy loading,
   plugin runtime imports, or bundled artifacts.

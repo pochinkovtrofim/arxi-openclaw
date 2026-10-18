@@ -463,7 +463,7 @@ export async function migrateLegacyMediaPersistence(
       signal.throwIfAborted();
       if (await migrateArxiCredentialSchema(env, maintenance)) {
         changes.push(
-          "Upgraded the imported Arxi credential database schema without moving its auth profiles.",
+          "Upgraded the imported Ro credential database schema without moving its auth profiles.",
         );
       }
       if (advisory) {

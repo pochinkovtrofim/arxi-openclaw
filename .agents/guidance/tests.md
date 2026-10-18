@@ -1,7 +1,7 @@
 # Tests
 
 Read when writing or changing tests or configuring a test environment. Paths and commands in this document are repository-root
-relative unless explicitly stated otherwise. The root AGENTS.md Arxi execution
+relative unless explicitly stated otherwise. The root AGENTS.md Ro execution
 and authorization rules apply to every example and linked skill.
 
 - Use the current repository test runner and colocated tests. Derive supported live models from the owning provider catalog; preserve user-selected model/effort. Use the cheapest supported model only when it proves the required capability; fixtures use stable public or synthetic IDs.

@@ -80,7 +80,7 @@ runtime when they only need plugin-owned static descriptors.
 
 ## Verification
 
-- Run applicable commands only on the Arxi production server. For Gateway
+- Run applicable commands only on the Ro production server. For Gateway
   performance work, benchmark the affected test file before/after with
   `pnpm test <file>`. Add `pnpm build` when Gateway lazy loading or bundled
   plugin artifacts change.
