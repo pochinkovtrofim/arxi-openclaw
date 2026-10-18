@@ -150,7 +150,18 @@ function projectMcpCallToolResultContent(result: {
                 return true;
               }
               try {
-                return stableStringify(JSON.parse(block.text)) !== canonicalJson;
+                const parsed: unknown = JSON.parse(
+                  block.text,
+                  (_key, value: unknown, context?: { source?: string }) => {
+                    // Parsing can round a precise numeric ID or decimal. Only
+                    // discard text whose number spelling survives unchanged.
+                    if (typeof value === "number" && context?.source !== JSON.stringify(value)) {
+                      throw new Error("MCP text contains a non-canonical JSON number");
+                    }
+                    return value;
+                  },
+                );
+                return stableStringify(parsed) !== canonicalJson;
               } catch {
                 // Invalid or excessively nested text remains useful to the caller.
                 return true;

@@ -46,6 +46,19 @@ describe("projectMcpCallToolResult", () => {
     });
   });
 
+  it.each(["9007199254740993", "0.1234567890123456789", "1e-400", "-0", "1.0"])(
+    "preserves numeric text %s when parsing changes its spelling",
+    (number) => {
+      const text = `{"value":${number}}`;
+      const result = projectMcpCallToolResult({
+        content: [{ type: "text", text }],
+        structuredContent: { value: Number(number) },
+      });
+      expect(result.content).toHaveLength(2);
+      expect(result.content[1]).toEqual({ type: "text", text });
+    },
+  );
+
   it.each([
     { label: "ordinary", deep: false, isError: undefined },
     { label: "server error", deep: false, isError: true },
