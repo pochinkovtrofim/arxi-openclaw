@@ -1,6 +1,6 @@
 # Ro fork verification
 
-This repository is an Ro runtime fork, not a distribution of every OpenClaw
+This repository is a Ro runtime fork, not a distribution of every OpenClaw
 product surface. Ordinary pull requests and `main` pushes are gated by
 `Ro fork gate`, which verifies only the Linux runtime and public seams that
 the composed Ro platform ships:

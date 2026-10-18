@@ -2,7 +2,7 @@
 summary: "Disposition ledger for Ro patches carried above the selected OpenClaw release"
 read_when:
   - Updating the OpenClaw version used by Ro
-  - Removing or adding an Ro fork patch
+  - Removing or adding a Ro fork patch
   - Qualifying the Ro owner-channel runtime
 title: "Ro fork patch ledger"
 ---
@@ -23,7 +23,7 @@ runtime. Deployment is established by Ops artifact/golden and activation receipt
 not by this source ledger.
 
 Each update is reviewed as a tree delta against the selected tag, not as a
-mechanical replay of old commits. `Retain` means an Ro-only production contract
+mechanical replay of old commits. `Retain` means a Ro-only production contract
 still requires code in the fork. `Redesign` means the outcome remains but now
 uses the current upstream seam. `Remove` means upstream owns the behavior or the
 old integration no longer exists.
