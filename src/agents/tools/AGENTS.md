@@ -22,7 +22,7 @@ descriptions.
 
 ## Verification
 
-- Run applicable commands only on the Arxi production server. For
+- Run applicable commands only on the Ro production server. For
   `src/agents/tools/*.test.ts` performance work, compare the targeted file with
   `pnpm test <file>` before/after. Add `pnpm build` when bundled plugin artifacts
   change.

@@ -22,7 +22,7 @@ Use full-runner tests only when the behavior truly requires the runner.
 
 ## Verification
 
-- Run applicable commands only on the Arxi production server. For runner test
+- Run applicable commands only on the Ro production server. For runner test
   slimming, cover the touched helper and the nearest runner/context-engine
   integration surface. Record Vitest duration, wall time, and RSS when the
   change is performance motivated.

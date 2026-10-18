@@ -55,7 +55,7 @@ changed.
 
 ## Verification
 
-- Run applicable commands only on the Arxi production server. Use `pnpm build`
+- Run applicable commands only on the Ro production server. Use `pnpm build`
   for changes to hot channel entrypoints or lazy-loading seams. For bundled
   plugin channel changes that can affect startup/import cost, run:
   `OPENCLAW_LOCAL_CHECK=0 node --import tsx scripts/profile-extension-memory.mts --extension <id> --skip-combined --concurrency 1`

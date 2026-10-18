@@ -29,7 +29,7 @@ refresh both lockfiles, and remove the temporary allowlist entry.
 
 ## Validation
 
-Run applicable steps only on the Arxi production server. For an ACPX integration
+Run applicable steps only on the Ro production server. For an ACPX integration
 change, install the pinned extension dependency and run its focused test. Add a
 full build when package wiring or runtime imports change; restart the isolated
 validation gateway when runtime behavior changes; add a real ACP smoke when chat

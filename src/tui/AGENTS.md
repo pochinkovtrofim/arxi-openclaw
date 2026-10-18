@@ -1,6 +1,6 @@
 # TUI Notes
 
-- Run TUI test commands only on the Arxi production server. Use
+- Run TUI test commands only on the Ro production server. Use
   `node scripts/run-vitest.mjs run --config test/vitest/vitest.tui-pty.config.ts`
   when the fast fake-backend PTY lane is relevant.
 - Add `OPENCLAW_TUI_PTY_INCLUDE_LOCAL=1` for the slower `tui --local` smoke test,
