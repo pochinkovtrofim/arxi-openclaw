@@ -1,7 +1,7 @@
 # Execution Identity Audit
 
 Read when changing execution identity collection, storage, receipts, or inspection. Paths and commands in this document are repository-root
-relative unless explicitly stated otherwise. The root AGENTS.md Arxi execution
+relative unless explicitly stated otherwise. The root AGENTS.md Ro execution
 and authorization rules apply to every example and linked skill.
 
 Review invariants; full doctrine: `docs/gateway/audit.md`.

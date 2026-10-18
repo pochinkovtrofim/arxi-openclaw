@@ -1,18 +1,18 @@
 ---
-summary: "Disposition ledger for Arxi patches carried above the selected OpenClaw release"
+summary: "Disposition ledger for Ro patches carried above the selected OpenClaw release"
 read_when:
-  - Updating the OpenClaw version used by Arxi
-  - Removing or adding an Arxi fork patch
-  - Qualifying the Arxi owner-channel runtime
-title: "Arxi fork patch ledger"
+  - Updating the OpenClaw version used by Ro
+  - Removing or adding an Ro fork patch
+  - Qualifying the Ro owner-channel runtime
+title: "Ro fork patch ledger"
 ---
 
-# Arxi fork patch ledger
+# Ro fork patch ledger
 
 ## Selected upstream
 
 The selected stable base is OpenClaw `v2026.10.2`, exact upstream commit
-`b8952d477f0c932d8ddc6da5c89cab5a169b6ff1`. This integration starts from Arxi
+`b8952d477f0c932d8ddc6da5c89cab5a169b6ff1`. This integration starts from Ro
 `4bef05fec4a150af34dd466d33e28da0e7d12f7e`; its previous stable base was
 `v2026.9.8` (`fc23bc864e4553c2d215e479eeec47b67a0bf943`). Dispositions recorded
 at `v2026.9.8` below still hold unless the `v2026.10.2` section revises them.
@@ -23,7 +23,7 @@ runtime. Deployment is established by Ops artifact/golden and activation receipt
 not by this source ledger.
 
 Each update is reviewed as a tree delta against the selected tag, not as a
-mechanical replay of old commits. `Retain` means an Arxi-only production contract
+mechanical replay of old commits. `Retain` means an Ro-only production contract
 still requires code in the fork. `Redesign` means the outcome remains but now
 uses the current upstream seam. `Remove` means upstream owns the behavior or the
 old integration no longer exists.
@@ -39,13 +39,13 @@ old integration no longer exists.
 | Startup session-store rescan avoidance (`e643bcf37f2`)                                            | Remove: upstream lifecycle cache owns startup reuse.                                                     |
 | Mantis proof cache write/restore fences (`a763860ae4f`, `9e30c946caf`)                            | Remove: `v2026.8.2` deleted the proof workflow and its cache path.                                       |
 | Telegram conversation runtime base (`3d9c7a5b973`)                                                | Remove: `git cherry` identifies this patch as equivalent to the released upstream tree.                  |
-| Active-model readiness and catalog-worker metadata implementations (`1feb86782dc`, `46e5363f621`) | Remove implementations: upstream owns the stronger behavior; only Arxi shipped-surface coverage remains. |
-| Arxi-owned proactive scheduler or heartbeat behavior                                              | Remove/absent: OpenClaw remains the sole owner of Automation and proactive work semantics.               |
+| Active-model readiness and catalog-worker metadata implementations (`1feb86782dc`, `46e5363f621`) | Remove implementations: upstream owns the stronger behavior; only Ro shipped-surface coverage remains. |
+| Ro-owned proactive scheduler or heartbeat behavior                                              | Remove/absent: OpenClaw remains the sole owner of Automation and proactive work semantics.               |
 
 These removals keep the fork closer to upstream and avoid preserving obsolete CI
 or runtime layers merely because they existed in the previous history.
 
-## Retained narrow Arxi contracts
+## Retained narrow Ro contracts
 
 | Contract                                       | Disposition at `v2026.9.8`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | Removal condition                                                                                                                                                                                                       |
 | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -60,19 +60,19 @@ or runtime layers merely because they existed in the previous history.
 | Current plugin-tool execution context          | Retain reconstruction with the admitted run's authenticated context.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Upstream cached descriptors reconstruct tools with equivalent current-run authority.                                                                                                                                    |
 | MCP resolver authority                         | Retain requester identity, authenticated host-run identity, generation fencing, and senderless account-automation resolution without replaying creator identity. Background resolution requires an exact finite effective cap, privately binds each allowed allocated name to its canonical server/operation/tool identity, preserves ownership across partial catalogs and static collisions, fails legacy-unbound or mismatched identities closed, applies the same unattended Codex approval gate, and surfaces bounded resolver/OAuth diagnostics. | Upstream resolver APIs carry equivalent authenticated run ownership, approval enforcement, private canonical identity binding, diagnostics, collision handling, finite-cap enforcement, and stale-generation rejection. |
 | Automation model input                         | Retain provider-compatible `{ enabled: false }` model input for a per-job failure-alert opt-out, canonicalized to OpenClaw's existing stored `false` sentinel.                                                                                                                                                                                                                                                                                                                                                                                         | Upstream's model-facing Automations schema can express the per-job alert opt-out without violating provider schema constraints.                                                                                         |
-| Codex harness integration                      | Retain app-server lifecycle, explicit remote/native tool profile, diagnostic correlation, media, and MCP bridging.                                                                                                                                                                                                                                                                                                                                                                                                                                     | OpenClaw upstream ships the same supported Codex harness contract required by Arxi.                                                                                                                                     |
+| Codex harness integration                      | Retain app-server lifecycle, explicit remote/native tool profile, diagnostic correlation, media, and MCP bridging.                                                                                                                                                                                                                                                                                                                                                                                                                                     | OpenClaw upstream ships the same supported Codex harness contract required by Ro.                                                                                                                                     |
 | Managed-agent ownership                        | Retain explicit agent creation identity and correction of metadata owners at the authenticated gateway boundary.                                                                                                                                                                                                                                                                                                                                                                                                                                       | Upstream exposes equivalent owner-derived creation and repair semantics.                                                                                                                                                |
 | Warm owner-state rebind                        | Remove implementation: upstream now awaits agent database closure before retiring shared state. Retain the restart and failed-close boundary tests.                                                                                                                                                                                                                                                                                                                                                                                                    | Satisfied by the upstream asynchronous agent database lifecycle at v2026.9.8.                                                                                                                                           |
 | Delegated system-agent session isolation       | Retain a distinct Codex binding key for each live delegated OpenClaw chat instead of sharing the system-agent main key.                                                                                                                                                                                                                                                                                                                                                                                                                                | Upstream isolates concurrent delegated system-agent native bindings by their chat identity.                                                                                                                             |
-| Shipped-surface fork gate                      | Retain exact Linux runtime, generated protocol, integration, and fork-pin coverage.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | An upstream or cross-repository gate proves every Arxi production seam on the exact candidate.                                                                                                                          |
+| Shipped-surface fork gate                      | Retain exact Linux runtime, generated protocol, integration, and fork-pin coverage.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | An upstream or cross-repository gate proves every Ro production seam on the exact candidate.                                                                                                                          |
 
 ## Redesigned on current upstream seams
 
 - Secret requests now reserve and settle delivery through upstream's current
-  `question.request` lifecycle. The only Arxi branch is the authenticated Mini
+  `question.request` lifecycle. The only Ro branch is the authenticated Mini
   App instruction; plaintext chat answers remain disabled.
 - MCP catalog activation now composes with upstream stale-catalog reconciliation.
-  Arxi adds only host-authorized background identity and generation checks.
+  Ro adds only host-authorized background identity and generation checks.
 - State migration coverage follows upstream's asynchronous migration boundary
   while continuing to exclude the credential database.
 - Generated SDK surface budgets and protocol consumers were rebased to the
@@ -99,7 +99,7 @@ or runtime layers merely because they existed in the previous history.
 
 | Contract                                               | Current owner and disposition                                                                                                                                                                                                                                                                       |
 | ------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Managed Flow state, history and Automation obligations | Retain `runtime.tasks.managedFlows` used by the Arxi channel. Restore only managed records, revision checks, bounded history, atomic obligation writes, owner checks and terminal retention. Remove the upstream-deleted task executor and its `runTask`, `getTaskSummary` and `cancel` API.        |
+| Managed Flow state, history and Automation obligations | Retain `runtime.tasks.managedFlows` used by the Ro channel. Restore only managed records, revision checks, bounded history, atomic obligation writes, owner checks and terminal retention. Remove the upstream-deleted task executor and its `runTask`, `getTaskSummary` and `cancel` API.        |
 | Background MCP capability grants                       | Rebuild on the current prepared harness and tool setup. Require admitted scheduled authority and canonical server/operation/tool bindings; handle disappeared resolvers and name collisions without transferring grants. Keep requesterless account resolution and credential renewal.              |
 | Native tool surface                                    | Retain host context, trace propagation, explicit searchable remote tools and disabled native apps. Upstream now disables native `view_image` and uses the sole OpenClaw dynamic media loader; remove the obsolete vision filter test in favor of dynamic-tool-build and thread-lifecycle contracts. |
 | Delivery custody and wake                              | Rebuild pre-dispatch deferral as a SQLite worker command. Release custody only after persistence, restore reserved attempt counts, and include all three executable outbound namespaces in the synchronous suspend snapshot. Keep useful-final provenance and direct-owner/native delivery purpose. |
@@ -134,6 +134,6 @@ activity; write custody also accompanies the ready response.
 
 GitHub Actions remain archived under `.github/workflows-disabled`. The former
 fork-only ancestry assertion in upstream workflow self-tests is retired with
-the inactive workflow; the archived Arxi gate and disabled-actions boundary
+the inactive workflow; the archived Ro gate and disabled-actions boundary
 retain their focused checks. Upstream workflow self-tests are not hosted-runtime
 acceptance.

@@ -6,7 +6,7 @@ commit `42bf1c5ecdde9eb0d96d6bd75a9e6698cf93b14c`. Relative paths below this
 directory match `tests/fixtures/` upstream. The adjacent MIT license applies.
 
 Fixtures are test inputs, including intentionally hostile documents. Their
-presence does not qualify a format for Arxi. Qualification must execute the
+presence does not qualify a format for Ro. Qualification must execute the
 bundled extractor and the exact Linux native binding inside the candidate
 Runtime, followed by the private Telegram composition.
 

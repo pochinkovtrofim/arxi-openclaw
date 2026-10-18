@@ -307,7 +307,7 @@ it.each(["foreign-owner", "session-state"])(
 );
 
 it.each([19, 21])(
-  "upgrades Arxi credential-only schema %s without importing it as session state",
+  "upgrades Ro credential-only schema %s without importing it as session state",
   async (schemaVersion) => {
     stateDir = fs.realpathSync.native(makeTempDir(tempDirs, "media-persistence-arxi-owner-state-"));
     const authDir = fs.realpathSync.native(

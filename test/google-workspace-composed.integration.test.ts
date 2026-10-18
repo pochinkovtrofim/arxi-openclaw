@@ -201,9 +201,9 @@ afterEach(async () => {
 
 const liveComposedTest = process.env.ARXI_GOOGLE_COMPOSED_LIVE === "1" ? it : it.skip;
 
-describe("authenticated Telegram to Arxi Google Workspace composition", () => {
+describe("authenticated Telegram to Ro Google Workspace composition", () => {
   liveComposedTest(
-    "uses the production resolver, real MCP runtime, Arxi policy, and real facade boundary",
+    "uses the production resolver, real MCP runtime, Ro policy, and real facade boundary",
     async () => {
       await bindSessionMcpRuntimeTestScheduler();
       const identityId = requiredEnvironment("ARXI_GOOGLE_COMPOSED_IDENTITY_ID");

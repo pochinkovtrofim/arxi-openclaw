@@ -90,7 +90,7 @@ describe("terminal result transformation boundary", () => {
       name: "mcp__google_workspace__google_private_gmail_get",
       execute: vi.fn(async () => original),
     };
-    const advice = { type: "text" as const, text: "[Arxi attention] advisory only" };
+    const advice = { type: "text" as const, text: "[Ro attention] advisory only" };
     initializeGlobalHookRunner(
       createMockPluginRegistry([
         {

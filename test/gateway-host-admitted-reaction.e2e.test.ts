@@ -132,21 +132,21 @@ async function startModel(finalText: string) {
   return { baseUrl: `http://127.0.0.1:${address.port}`, requests };
 }
 
-// A channel plugin shaped like Arxi's: one direct logical target, a react action,
+// A channel plugin shaped like Ro's: one direct logical target, a react action,
 // and outbound text. It records what reaches the plugin.
 async function writeChannelPlugin(dir: string, tracePath: string): Promise<void> {
   await writeFile(
     path.join(dir, "openclaw.plugin.json"),
     JSON.stringify({
       id: "arxi",
-      name: "Arxi probe",
+      name: "Ro probe",
       description: "Records host-admitted channel actions",
       activation: { onStartup: true },
       channels: ["arxi"],
       configSchema: { type: "object", additionalProperties: false, properties: {} },
       channelConfigs: {
         arxi: {
-          label: "Arxi",
+          label: "Ro",
           description: "probe",
           schema: {
             type: "object",
@@ -168,7 +168,7 @@ const account = { accountId: "default", enabled: true, configured: true };
 const plugin = createChatChannelPlugin({
   base: {
     id: "arxi",
-    meta: { id: "arxi", label: "Arxi", selectionLabel: "Arxi", docsPath: "/channels/arxi", blurb: "probe" },
+    meta: { id: "arxi", label: "Ro", selectionLabel: "Ro", docsPath: "/channels/arxi", blurb: "probe" },
     capabilities: { chatTypes: ["direct"], media: false, blockStreaming: true },
     config: {
       listAccountIds: () => ["default"],
@@ -204,7 +204,7 @@ const plugin = createChatChannelPlugin({
     },
   },
 });
-export default defineChannelPluginEntry({ id: "arxi", name: "Arxi probe", description: "probe", plugin });
+export default defineChannelPluginEntry({ id: "arxi", name: "Ro probe", description: "probe", plugin });
 `,
   );
 }
@@ -230,7 +230,7 @@ async function connectHost(instance: OpenClawTestInstance): Promise<GatewayClien
     resolveHello = resolve;
     rejectHello = reject;
   });
-  // The Arxi guest connects over loopback as a backend with the admin scope.
+  // The Ro guest connects over loopback as a backend with the admin scope.
   const client = new GatewayClient({
     url: instance.url,
     token: TOKEN,

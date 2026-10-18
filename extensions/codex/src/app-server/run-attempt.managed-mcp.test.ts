@@ -60,7 +60,7 @@ function createRunPaths() {
     workspaceDir: path.join(tempDir, "workspace"),
   };
 }
-describe("Arxi requester-scoped MCP admission", () => {
+describe("Ro requester-scoped MCP admission", () => {
   it("binds scoped MCP execution to the current host capability", async () => {
     const { sessionFile, workspaceDir } = createRunPaths();
     const harness = createStartedThreadHarness();

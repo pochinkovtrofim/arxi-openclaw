@@ -101,7 +101,7 @@ response remains authoritative even if it contains no visible models; HTTP
 `401` and `403` return an empty catalog rather than exposing fallback models.
 
 <Note>
-Arxi bundles `@openai/codex` `0.159.3`. The upstream live `model/list`
+Ro bundles `@openai/codex` `0.159.3`. The upstream live `model/list`
 probe against `0.158.0`, authenticated with a ChatGPT account, returned
 this public subset of catalog metadata on September 28, 2026:
 

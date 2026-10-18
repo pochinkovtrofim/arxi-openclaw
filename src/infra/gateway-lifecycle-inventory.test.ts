@@ -23,7 +23,7 @@ const GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS = [
   { id: "migration-and-backup-custody", countKey: "lifecycleWrites" },
 ] as const;
 
-describe("Arxi lifecycle upgrade inventory", () => {
+describe("Ro lifecycle upgrade inventory", () => {
   it("covers every canonical active-work count", () => {
     const countKeys = Object.keys(createGatewayActiveWorkSnapshot().counts)
       .filter((key) => key !== "totalActive")

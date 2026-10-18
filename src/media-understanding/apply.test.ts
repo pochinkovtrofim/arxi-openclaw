@@ -1429,7 +1429,7 @@ describe("applyMediaUnderstanding", () => {
     });
   });
 
-  // Arxi: a supported +zip document format without a local extractor reports the
+  // Ro: a supported +zip document format without a local extractor reports the
   // runtime gap instead of hiding it behind the generic unsupported-format path.
   it("reports unavailable local extraction for supported +zip document MIME types", async () => {
     const ctx: MsgContext = {

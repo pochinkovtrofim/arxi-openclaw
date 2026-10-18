@@ -109,7 +109,7 @@ describe("web-guarded-fetch", () => {
     "http://127.0.0.1:18081/search",
     "http://127.0.0.1:18080/other",
     "http://localhost:18080/search",
-  ])("rejects non-literal Arxi Exa routes: %s", async (url) => {
+  ])("rejects non-literal Ro Exa routes: %s", async (url) => {
     await expect(withArxiExaWebToolsEndpoint({ url }, async () => undefined)).rejects.toThrow(
       "literal loopback route",
     );

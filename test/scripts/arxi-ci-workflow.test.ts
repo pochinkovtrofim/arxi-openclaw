@@ -9,7 +9,7 @@ type Workflow = {
   >;
 };
 
-describe("archived Arxi fork gate", () => {
+describe("archived Ro fork gate", () => {
   it("keeps GitHub Actions disabled", () => {
     expect(existsSync(".github/workflows")).toBe(false);
   });

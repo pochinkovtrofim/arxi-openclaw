@@ -1,7 +1,7 @@
 # Tooling Gotchas
 
 Read when a relevant shell, Git, or GitHub command needs troubleshooting. Paths and commands in this document are repository-root
-relative unless explicitly stated otherwise. The root AGENTS.md Arxi execution
+relative unless explicitly stated otherwise. The root AGENTS.md Ro execution
 and authorization rules apply to every example and linked skill.
 
 Mechanics only; policy lives above.
@@ -10,7 +10,7 @@ Mechanics only; policy lives above.
 - zsh: quote `gh api` endpoints containing `?` or brackets and quote command globs; unmatched patterns abort before the tool runs. Don't use `path` as a variable; it rewrites `$PATH`. Git object paths: `${sha}:path`; `$sha:path` invokes parameter modifiers. File lists into tools: `--name-only -z | xargs -0`; zsh scalars don't word-split, and a zero-file run exits 0 looking clean.
 - git: shared checkout — serialize `git fetch`; on ref-lock failure, re-read the ref before retry. Fetch/pull yielding without completion: inspect/stop only the owned process before retry; never overlap retries. Main locked elsewhere: detach at `origin/main`, then create the task branch.
 - Upstream GitHub Actions: resolve workflow files from `.github/workflows` or
-  API. In the Arxi fork, `.github/workflows-disabled/` is reference-only and
+  API. In the Ro fork, `.github/workflows-disabled/` is reference-only and
   must never be enabled or dispatched.
 - Shell/exec: yielded exec — retain the returned session id before polling; never blind-retry. Nested remote shell: avoid local `$()` expansion; use remote-safe validation. Merge guard shells start `set -euo pipefail`; a failed `[[ ... ]]` alone does not stop a later merge command.
 - `rg`: options/globs before `--`; `--` immediately before a leading-dash pattern only.

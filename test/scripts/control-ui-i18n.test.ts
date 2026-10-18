@@ -488,7 +488,7 @@ describe("control-ui-i18n generated ownership", () => {
       "",
     );
   });
-  it("allows a generated mix only for the exact pinned Arxi upstream merge", () => {
+  it("allows a generated mix only for the exact pinned Ro upstream merge", () => {
     const tempDirs = createTempDirTracker();
     const cwd = tempDirs.make("openclaw-arxi-upstream-sync-");
     const git = (args: string[], input?: string): string => {
@@ -499,7 +499,7 @@ describe("control-ui-i18n generated ownership", () => {
     try {
       git(["init", "--initial-branch=main"]);
       git(["config", "user.email", "arxi-test@example.invalid"]);
-      git(["config", "user.name", "Arxi Test"]);
+      git(["config", "user.name", "Ro Test"]);
       writeFileSync(path.join(cwd, "base.txt"), "base\n", "utf8");
       git(["add", "--", "base.txt"]);
       git(["commit", "-m", "base"]);

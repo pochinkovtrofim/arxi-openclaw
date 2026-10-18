@@ -15,7 +15,7 @@ function tool() {
 }
 
 describe("octen web search provider", () => {
-  it("uses only the fenced Arxi loopback route with a marker", async () => {
+  it("uses only the fenced Ro loopback route with a marker", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ code: 0, data: { results: [] } }), {
         status: 200,

@@ -109,7 +109,7 @@ export async function sendQuestionToolPrompt(params: {
         ? ` Allowed hosts: ${binding.allowedHosts.join(", ")}.`
         : "";
       await send({
-        text: `🔑 Agent requests credential ${binding.name} (${binding.kind}).${allowedHosts} Reply is disabled for secrets — open the Arxi Mini App, then Settings → Keys and API tokens.`,
+        text: `🔑 Agent requests credential ${binding.name} (${binding.kind}).${allowedHosts} Reply is disabled for secrets — open the Ro Mini App, then Settings → Keys and API tokens.`,
         channelData: { askUser: { questionId } },
       });
       return;

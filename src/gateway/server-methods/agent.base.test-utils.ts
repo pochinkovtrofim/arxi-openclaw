@@ -235,7 +235,7 @@ describe("gateway agent handler", () => {
       const arxiPlugin = {
         ...createChannelTestPluginBase({
           id: "arxi",
-          label: "Arxi",
+          label: "Ro",
           capabilities: { chatTypes: ["direct", "group"] },
         }),
         messaging: {

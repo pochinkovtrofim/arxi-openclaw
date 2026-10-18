@@ -1,8 +1,8 @@
-# Workflows disabled in the Arxi fork
+# Workflows disabled in the Ro fork
 
 The following upstream workflows are disabled in GitHub for
 `pochinkovtrofim/arxi-openclaw`. They are not product acceptance evidence for
-the hosted Arxi Linux runtime and must not be re-enabled by routine maintenance
+the hosted Ro Linux runtime and must not be re-enabled by routine maintenance
 or future implementation threads.
 
 ## Upstream CI and test infrastructure
@@ -21,9 +21,9 @@ or future implementation threads.
 - `workflow-sanity.yml`
 
 `ci.yml` is manual-only in source. It may be enabled in GitHub only after that
-manual-only revision is on `main`; it is never an automatic Arxi gate.
+manual-only revision is on `main`; it is never an automatic Ro gate.
 
-## UI and native products Arxi does not ship
+## UI and native products Ro does not ship
 
 - `codeql-android-critical-security.yml`
 - `codeql-macos-critical-security.yml`
@@ -60,4 +60,4 @@ The active automatic verification boundary is `arxi-ci.yml` plus generic
 security workflows: `opengrep-precise.yml`, `codeql.yml`,
 `dependency-guard.yml`, and `security-sensitive-guard.yml`. Manual release or
 diagnostic workflows can remain available because they do not run on ordinary
-Arxi pushes or pull requests.
+Ro pushes or pull requests.

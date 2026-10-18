@@ -12,7 +12,7 @@
  * script, one level deep. Expansions, escapes and other syntax that would need
  * a real shell to resolve the word classify as "other".
  *
- * Arxi's guest diagnostics receiver (arxi-platform
+ * Ro's guest diagnostics receiver (arxi-platform
  * internal/guestdiagnostics/exec_class.go) accepts exactly this set and maps
  * anything else to "other"; extend both lists together.
  */

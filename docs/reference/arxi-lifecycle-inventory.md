@@ -1,14 +1,14 @@
 ---
-summary: "Reviewed work-producer evidence for the Arxi host lifecycle seam"
+summary: "Reviewed work-producer evidence for the Ro host lifecycle seam"
 read_when:
-  - Updating the OpenClaw version used by Arxi
+  - Updating the OpenClaw version used by Ro
   - Changing Gateway suspension, cron, tasks, queues, sessions, or terminals
-title: "Arxi lifecycle producer inventory"
+title: "Ro lifecycle producer inventory"
 ---
 
-# Arxi lifecycle producer inventory
+# Ro lifecycle producer inventory
 
-This is source-level upgrade evidence, not a stable OpenClaw API. Arxi consumes
+This is source-level upgrade evidence, not a stable OpenClaw API. Ro consumes
 only the versioned `gateway.suspend.*` protocol. The inventory was reviewed at
 OpenClaw `v2026.8.2`, exact upstream commit
 `0965053fe6b9341776df147a6934b7485c60b5ca`.

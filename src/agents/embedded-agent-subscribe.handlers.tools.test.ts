@@ -510,7 +510,7 @@ describe("handleToolExecutionStart read path checks", () => {
     },
   );
 
-  it("routes Arxi credential requests to its authenticated Mini App", async () => {
+  it("routes Ro credential requests to its authenticated Mini App", async () => {
     vi.useFakeTimers();
     vi.stubEnv("ARXI_AUTH_AGENT_DIR", "/run/arxi/credential-lease");
     const { ctx } = createTestContext();
@@ -547,7 +547,7 @@ describe("handleToolExecutionStart read path checks", () => {
       await vi.advanceTimersByTimeAsync(50);
       await vi.waitFor(() => expect(onToolResult).toHaveBeenCalledOnce());
       expect(onToolResult).toHaveBeenCalledWith({
-        text: "🔑 Agent requests credential TEST_API_KEY (secret). Allowed hosts: api.example.test. Reply is disabled for secrets — open the Arxi Mini App, then Settings → Keys and API tokens.",
+        text: "🔑 Agent requests credential TEST_API_KEY (secret). Allowed hosts: api.example.test. Reply is disabled for secrets — open the Ro Mini App, then Settings → Keys and API tokens.",
         channelData: { askUser: { questionId } },
       });
     } finally {

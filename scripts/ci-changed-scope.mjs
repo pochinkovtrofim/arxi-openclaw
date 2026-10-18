@@ -710,7 +710,7 @@ export function resolveAllowedGeneratedMixBranch(
  * Fork sync PRs must retain upstream-owned generated locale artifacts. Permit
  * that mix only when the same-repository PR first-parent range contains exactly
  * one merge whose first parent is the exact base and whose second parent
- * matches the Arxi upstream pin committed at the current head. Ordinary repair
+ * matches the Ro upstream pin committed at the current head. Ordinary repair
  * commits may follow that merge, but another merge invalidates the exception.
  * @param {Readonly<Record<string, string | undefined>>} [env]
  * @param {string} [cwd]

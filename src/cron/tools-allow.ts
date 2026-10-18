@@ -24,7 +24,7 @@ export function applyDefaultCronToolsAllow(job: CronToolRuntimeSpec): void {
  * tools the creator had. Such an agent turn runs like a `*` job, with its owner
  * conversation's tools. Condition triggers keep their list (scripts reach MCP only
  * through named servers), as do jobs without a valid owner policy or whose Codex app
- * authority is bound to the captured list. Arxi background MCP grants are bound to
+ * authority is bound to the captured list. Ro background MCP grants are bound to
  * the exact captured MCP bindings, so jobs carrying them keep their list as well.
  */
 export function resolveCronRunToolsAllow(

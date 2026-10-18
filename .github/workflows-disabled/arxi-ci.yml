@@ -1,4 +1,4 @@
-name: Arxi fork gate
+name: Ro fork gate
 
 on:
   workflow_dispatch:
@@ -60,7 +60,7 @@ jobs:
           echo "ARXI_DIFF_BASE=$change_base" >> "$GITHUB_ENV"
           echo "ARXI_UPSTREAM_BASE=$upstream_base" >> "$GITHUB_ENV"
 
-      - name: Format and lint changed Arxi-owned source
+      - name: Format and lint changed Ro-owned source
         run: |
           set -euo pipefail
           mapfile -d '' formatted < <(
@@ -386,13 +386,13 @@ jobs:
           done < <(git diff --name-only -z "$ARXI_DIFF_BASE" HEAD)
           test "$failed" = false
 
-      - name: Validate Arxi workflow contract
+      - name: Validate Ro workflow contract
         run: pnpm check:workflows
 
       - name: Typecheck shipped core and extensions
         run: pnpm tsgo:core && pnpm tsgo:extensions
 
-      - name: Test fork seams consumed by Arxi
+      - name: Test fork seams consumed by Ro
         run: |
           pnpm test \
             extensions/codex/src/app-server/attempt-diagnostics.test.ts \

@@ -89,17 +89,17 @@ export async function withTrustedWebToolsEndpoint<T>(
 const ARXI_EXA_SEARCH_URL = "http://127.0.0.1:18080/search";
 const ARXI_OCTEN_SEARCH_URL = "http://127.0.0.1:18080/octen/search";
 
-/** Runs only the Arxi Octen route without trusting proxies or redirects. */
+/** Runs only the Ro Octen route without trusting proxies or redirects. */
 export async function withArxiOctenWebToolsEndpoint<T>(
   params: WebToolEndpointFetchOptions,
   run: (result: { response: Response; finalUrl: string }) => Promise<T>,
 ): Promise<T> {
   if (params.url !== ARXI_OCTEN_SEARCH_URL) {
-    throw new Error("Arxi Octen endpoint must match its literal loopback route");
+    throw new Error("Ro Octen endpoint must match its literal loopback route");
   }
   const policy = ssrfPolicyFromHttpBaseUrlAllowedOrigin(ARXI_OCTEN_SEARCH_URL);
   if (!policy) {
-    throw new Error("Arxi Octen endpoint origin is invalid");
+    throw new Error("Ro Octen endpoint origin is invalid");
   }
   return await withWebToolsNetworkGuard(
     { ...params, maxRedirects: 0, policy: { ...policy, hostnameAllowlist: ["127.0.0.1"] } },
@@ -107,17 +107,17 @@ export async function withArxiOctenWebToolsEndpoint<T>(
   );
 }
 
-/** Runs only the Arxi Exa route without trusting proxies or redirects. */
+/** Runs only the Ro Exa route without trusting proxies or redirects. */
 export async function withArxiExaWebToolsEndpoint<T>(
   params: WebToolEndpointFetchOptions,
   run: (result: { response: Response; finalUrl: string }) => Promise<T>,
 ): Promise<T> {
   if (params.url !== ARXI_EXA_SEARCH_URL) {
-    throw new Error("Arxi Exa endpoint must match its literal loopback route");
+    throw new Error("Ro Exa endpoint must match its literal loopback route");
   }
   const policy = ssrfPolicyFromHttpBaseUrlAllowedOrigin(ARXI_EXA_SEARCH_URL);
   if (!policy) {
-    throw new Error("Arxi Exa endpoint origin is invalid");
+    throw new Error("Ro Exa endpoint origin is invalid");
   }
   return await withWebToolsNetworkGuard(
     { ...params, maxRedirects: 0, policy: { ...policy, hostnameAllowlist: ["127.0.0.1"] } },
