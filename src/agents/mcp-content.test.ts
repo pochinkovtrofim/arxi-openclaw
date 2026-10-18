@@ -39,7 +39,11 @@ describe("projectMcpCallToolResult", () => {
     const result = projectMcpCallToolResult({ content, structuredContent, isError: true });
     expect(result.content.slice(1)).toEqual(content);
     expect(result.details).toEqual({ structuredContent, status: "error" });
-    expect(consumeMcpCodeModeGuestResult(result)).toEqual({ content, structuredContent, isError: true });
+    expect(consumeMcpCodeModeGuestResult(result)).toEqual({
+      content,
+      structuredContent,
+      isError: true,
+    });
   });
 
   it.each([
