@@ -136,24 +136,37 @@ function projectMcpCallToolResultContent(result: {
   const sourceContent = Array.isArray(result.content) ? result.content : [];
   if (isRecord(result.structuredContent)) {
     try {
-      let mirroredText: string | undefined;
-      const structuredJson = JSON.stringify(
-        JSON.parse(stableStringify(result.structuredContent)),
-        null,
-        2,
-      );
+      const canonicalJson = stableStringify(result.structuredContent);
+      const structuredJson = JSON.stringify(JSON.parse(canonicalJson), null, 2);
       const structuredText = `structuredContent:\n${structuredJson}`;
       return {
         content: [
           { type: "text", text: structuredText },
           ...sourceContent
-            // Only the SDK's full pretty-JSON mirror is redundant; overlapping text can carry recovery guidance.
-            .filter(
-              (block) =>
-                !isRecord(block) ||
-                block.type !== "text" ||
-                block.text !== (mirroredText ??= JSON.stringify(result.structuredContent, null, 2)),
-            )
+            // Servers mirror JSON with different whitespace, key order and escaping.
+            // Drop only a complete equivalent value; keep recovery guidance and near matches.
+            .filter((block) => {
+              if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") {
+                return true;
+              }
+              try {
+                const parsed: unknown = JSON.parse(
+                  block.text,
+                  (_key, value: unknown, context?: { source?: string }) => {
+                    // Parsing can round a precise numeric ID or decimal. Only
+                    // discard text whose number spelling survives unchanged.
+                    if (typeof value === "number" && context?.source !== JSON.stringify(value)) {
+                      throw new Error("MCP text contains a non-canonical JSON number");
+                    }
+                    return value;
+                  },
+                );
+                return stableStringify(parsed) !== canonicalJson;
+              } catch {
+                // Invalid or excessively nested text remains useful to the caller.
+                return true;
+              }
+            })
             .map(mcpContentBlockToAgentContent),
         ],
       };
