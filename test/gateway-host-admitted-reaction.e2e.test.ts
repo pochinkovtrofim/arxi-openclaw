@@ -37,7 +37,10 @@ function writeReact(res: ServerResponse): void {
     call_id: "call_react",
     // The message tool is deferred behind tool search, as on Owner runtimes.
     name: "tool_call",
-    arguments: JSON.stringify({ id: "message", args: { action: "react", emoji: "👍", final: true } }),
+    arguments: JSON.stringify({
+      id: "message",
+      args: { action: "react", emoji: "👍", final: true },
+    }),
     status: "completed",
   };
   writeOpenAiResponsesSse(res, [
@@ -347,14 +350,17 @@ describe("host-admitted reaction", () => {
         ),
       );
       const observation = JSON.stringify({
-          finalText,
-          accepted,
-          terminal,
-          modelRequests: model.requests.length,
-          reactToolOutput: toolOutput.slice(0, 6000),
-          trace,
-        });
-      expect(trace.filter((entry) => entry.kind === "action"), `OBS ${observation}`).toEqual([
+        finalText,
+        accepted,
+        terminal,
+        modelRequests: model.requests.length,
+        reactToolOutput: toolOutput.slice(0, 6000),
+        trace,
+      });
+      expect(
+        trace.filter((entry) => entry.kind === "action"),
+        `OBS ${observation}`,
+      ).toEqual([
         expect.objectContaining({
           action: "react",
           runId: accepted.runId,
@@ -362,7 +368,10 @@ describe("host-admitted reaction", () => {
         }),
       ]);
       // A reaction is the whole answer: nothing else reaches the Owner.
-      expect(trace.filter((entry) => entry.kind === "text"), `OBS ${observation}`).toEqual([]);
+      expect(
+        trace.filter((entry) => entry.kind === "text"),
+        `OBS ${observation}`,
+      ).toEqual([]);
       // A final reaction settles the turn: no empty-reply retry or host summary.
       expect(model.requests.length, `OBS ${observation}`).toBe(2);
     },
