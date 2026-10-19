@@ -13,16 +13,9 @@ import { handleCodexAppServerApprovalRequest } from "./approval-bridge.js";
 import { terminateCodexBackgroundTerminals } from "./attempt-client-cleanup.js";
 import { isCodexAppServerApprovalRequest } from "./client.js";
 import { shouldAutoApproveCodexAppServerApprovals } from "./config.js";
-import {
-  emitDynamicToolErrorDiagnostic,
-  emitDynamicToolStartedDiagnostic,
-  emitDynamicToolTerminalDiagnostic,
-} from "./dynamic-tool-diagnostics.js";
+import { createCodexDynamicToolDiagnostics } from "./dynamic-tool-diagnostics.js";
 import {
   handleDynamicToolCallWithTimeout,
-  hasPendingDynamicToolTerminalDiagnostic,
-  isDynamicToolTerminalDiagnosticEvent,
-  isMatchingDynamicToolTerminalDiagnostic,
   resolveDynamicToolCallTimeoutMs,
   toCodexDynamicToolProgressResponse,
   toCodexDynamicToolProtocolResponse,
@@ -87,7 +80,7 @@ export function createCodexAttemptServerRequestController(
   } = turnRuntime;
   const {
     emitExecutionPhaseOnce,
-    scheduleTurnReleaseAfterTerminalDynamicTool,
+    recordDynamicToolResult,
     scheduleTerminalDynamicToolReleaseCheck,
   } = lifecycle;
   let refreshDrain: ReturnType<typeof createDeferred<void>> | undefined;
@@ -260,24 +253,18 @@ export function createCodexAttemptServerRequestController(
       });
       setExecutionTimeoutMs?.(dynamicToolTimeoutMs);
       const toolStartedAt = Date.now();
-      const diagnosticContext = {
+      const diagnostics = createCodexDynamicToolDiagnostics({
         call,
         agentId: sessionAgentId,
         runId: params.runId,
         sessionId: params.sessionId,
         sessionKey: params.sessionKey,
         trace: toolDiagnosticTrace,
-      };
+      });
       let terminalDiagnosticObserved = false;
       const unsubscribeToolDiagnosticObserver = onInternalDiagnosticEvent(
         (event) => {
-          if (
-            isDynamicToolTerminalDiagnosticEvent(event) &&
-            isMatchingDynamicToolTerminalDiagnostic({
-              ...diagnosticContext,
-              event,
-            })
-          ) {
+          if (diagnostics.matchesTerminal(event)) {
             terminalDiagnosticObserved = true;
           }
         },
@@ -288,7 +275,7 @@ export function createCodexAttemptServerRequestController(
           // Publish the execution claim before persistence yields, so a replay
           // cannot become another owner of this call's progress or result.
           await projector?.transcriptCheckpoint.flush();
-          emitDynamicToolStartedDiagnostic(diagnosticContext);
+          diagnostics.started();
           const response = await handleDynamicToolCallWithTimeout({
             call,
             toolBridge,
@@ -374,43 +361,24 @@ export function createCodexAttemptServerRequestController(
           });
           void emitCodexAppServerEvent(params, { stream: "item", data: activity });
         }
-        if (
-          !terminalDiagnosticObserved &&
-          !hasPendingDynamicToolTerminalDiagnostic(diagnosticContext)
-        ) {
-          emitDynamicToolTerminalDiagnostic({
-            ...diagnosticContext,
-            response,
-            durationMs: toolDurationMs,
-          });
+        if (!terminalDiagnosticObserved && !diagnostics.hasPendingTerminal()) {
+          diagnostics.terminal(response, toolDurationMs);
         }
         pendingOpenClawDynamicToolCompletionIds.delete(call.callId);
         if (params.pluginRuntimeRefreshPending?.()) {
           await settlePluginRuntimeRefresh(turnId);
-        } else if (response.terminate === true && response.success) {
-          scheduleTurnReleaseAfterTerminalDynamicTool({
-            call,
-            response,
-            durationMs: toolDurationMs,
-          });
-        } else if (response.asyncStarted === true) {
-          scheduleTerminalDynamicToolReleaseCheck();
         } else {
-          state.currentTurnHadNonTerminalDynamicToolResult = true;
-          state.pendingTerminalDynamicToolRelease = undefined;
+          recordDynamicToolResult({ call, response, durationMs: toolDurationMs });
         }
         return protocolResponse as JsonValue;
       } catch (error) {
         pendingOpenClawDynamicToolCompletionIds.delete(call.callId);
-        if (
-          !terminalDiagnosticObserved &&
-          !hasPendingDynamicToolTerminalDiagnostic(diagnosticContext)
-        ) {
-          emitDynamicToolErrorDiagnostic({
-            ...diagnosticContext,
-            durationMs: Math.max(0, Date.now() - toolStartedAt),
-            errorCode: asOptionalRecord(error)?.code,
-          });
+        if (!terminalDiagnosticObserved && !diagnostics.hasPendingTerminal()) {
+          diagnostics.error(
+            Math.max(0, Date.now() - toolStartedAt),
+            "failed",
+            asOptionalRecord(error)?.code,
+          );
         }
         await settlePluginRuntimeRefresh(turnId);
         throw error;

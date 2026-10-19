@@ -1,4 +1,3 @@
-/** Harness-facing materialization of configured MCP tools. */
 import type { SessionToolOverrides } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
@@ -55,7 +54,6 @@ type RequesterScopedHarnessMcpTools = {
 };
 
 type StaticHarnessMcpTools = {
-  /** Final executable static MCP tools for this turn. */
   tools: AnyAgentTool[];
   /** Canonical identity bindings used to reject cross-partition name collisions. */
   mcpNameAllocations?: readonly HarnessMcpNameAllocation[];

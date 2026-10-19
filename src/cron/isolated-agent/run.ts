@@ -31,7 +31,6 @@ import { withPluginRuntimeGenerationScope } from "../../plugins/runtime/generati
 import { isCommandLaneTaskTimeoutError } from "../../process/command-queue.js";
 import { CommandLane } from "../../process/lanes.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import { CronExecutionRootRuntimeError } from "../execution-root-runtime.js";
 import { removeCronRunContinuationSessionIfIdle } from "../run-continuation-cleanup.js";
 import { createCronRunDiagnosticsFromError, mergeCronRunDiagnostics } from "../run-diagnostics.js";
 import { resolveCronRunErrorReason } from "../run-error-reason.js";
@@ -43,6 +42,7 @@ import {
 import { resolveCronJobsStorePathFromConfig } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
 import type { CronAgentExecutionPhaseUpdate } from "../types.js";
+import type { CronRunExecutionParams } from "./run-execution.types.js";
 import { finalizeCronRun } from "./run-finalize.js";
 import type { RunCronAgentTurnParams } from "./run-prepare-runtime.js";
 import { prepareCronRunContext } from "./run-prepare.js";
@@ -99,9 +99,6 @@ async function runCronIsolatedAgentTurnInTrace(
       onLifecycleInterrupt: () => lifecycleAbortController.abort(createAgentRunRestartAbortError()),
     });
   } catch (err) {
-    if (err instanceof CronExecutionRootRuntimeError) {
-      return { status: "error", error: err.message, admissionDisposition: "rejected" };
-    }
     if (err instanceof CronSessionLifecycleClaimError) {
       return {
         status: "error",
@@ -205,6 +202,9 @@ async function runCronIsolatedAgentTurnInTrace(
           let outcomeError: string | undefined;
           let cronRunSessionCleanupHandled = false;
           let completedPromptRuns: readonly CronCompletedPromptRun[] = [];
+          let promptAdmission:
+            | Parameters<CronRunExecutionParams["onPromptAdmission"]>[0]
+            | undefined;
           let usage: RunCronAgentTurnResult["usage"];
           let usageSettlement: Promise<void> | undefined;
           const settleUsage = async (contextTokens?: number) => {
@@ -271,6 +271,10 @@ async function runCronIsolatedAgentTurnInTrace(
                 prepared.context.runContinuationSession?.setCliExecutionProvider,
               abortSignal,
               lifecycle,
+              onPromptAdmission: (admission) => {
+                promptAdmission?.close();
+                promptAdmission = admission;
+              },
               onExecutionStarted: notifyExecutionStarted,
               onExecutionPhase: notifyExecutionPhase,
               onLaneWait: params.onLaneWait,
@@ -293,6 +297,7 @@ async function runCronIsolatedAgentTurnInTrace(
             // Publish the execution fact captured before bookkeeping; cron persistence
             // and delivery retain their separate workflow outcome.
             lifecycle.emit("end", execution.runResult);
+            await promptAdmission?.finish();
             const finalized = await finalizeCronRun({
               prepared: prepared.context,
               execution,
@@ -316,6 +321,7 @@ async function runCronIsolatedAgentTurnInTrace(
               : { ...finalized, nextCheck };
           } catch (err) {
             lifecycle.emit("error", err);
+            await promptAdmission?.finish();
             consumeCronNextCheckProposal(runId, params.job.id);
             const isCronLaneTimeout =
               isAborted() || isCommandLaneTaskTimeoutError(err, CommandLane.CronNested);
@@ -330,7 +336,7 @@ async function runCronIsolatedAgentTurnInTrace(
             const admissionDisposition =
               err instanceof CronSessionLifecycleClaimError
                 ? err.admissionDisposition
-                : err instanceof CronExecutionRootRuntimeError || !executionStarted
+                : !executionStarted
                   ? "rejected"
                   : undefined;
             if (completedPromptRuns.length > 0) {
@@ -368,6 +374,8 @@ async function runCronIsolatedAgentTurnInTrace(
               ),
             });
           } finally {
+            // Terminal persistence must settle before the continuation rejects late events.
+            await promptAdmission?.finish();
             try {
               await prepared.context.runContinuationSession?.seal();
             } catch (sealError) {

@@ -45,7 +45,7 @@ function classifyClaudeCliHistoryEntry(params: {
     new Map(),
     { reseedMode: "preserve" },
   );
-  if (parsed?.role !== "user" || parsed.display === false) {
+  if (parsed?.role !== "user") {
     return { humanTurn: false };
   }
   const occurredAt = parseDateStringTimestampMs(entry.timestamp);

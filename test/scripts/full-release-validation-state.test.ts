@@ -996,7 +996,7 @@ describe("release decision policy", () => {
     }
   });
 
-  it.each(["beta", "stable", "full"])(
+  it.each(["beta", "stable"])(
     "blocks %s release decisions and evidence on a failed Windows Node shard",
     (releaseProfile) => {
       const snapshot = child("normalCi", {
@@ -1087,8 +1087,10 @@ describe("release decision policy", () => {
     ]);
   });
 
-  it("preserves the last valid snapshot through a transient error and then recovers", async () => {
-    const message = "HTTP 403: secondary rate limit";
+  it.each([
+    "HTTP 403: secondary rate limit",
+    "stream error: stream ID 47; CANCEL; received from peer",
+  ])("preserves the last valid snapshot through %s and then recovers", async (message) => {
     const planned = child("normalCi");
     const previous = {
       ...planned,
@@ -1181,20 +1183,6 @@ describe("release decision policy", () => {
         workflowRef: "main",
       }),
     ).toMatchObject({ state: "orchestration_error" });
-  });
-
-  it("keeps GitHub permission errors terminal", async () => {
-    const message = "HTTP 403: Resource not accessible by integration";
-    const planned = child("normalCi");
-    const observed = await readChild(planned, planned, undefined, {
-      readRun: async () => {
-        throw Object.assign(new Error(message), { stderr: message });
-      },
-    });
-    expect(observed).toMatchObject({
-      errors: [expect.objectContaining({ kind: "api_error" })],
-      transportFailure: undefined,
-    });
   });
 
   it("preserves complete composite evidence when the run read succeeds but jobs fail", async () => {

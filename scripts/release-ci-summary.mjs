@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-/**
- * Release CI summary helper that prints parent and child workflow status for a
- * full release run.
- */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, statSync } from "node:fs";
@@ -29,12 +25,14 @@ import {
   composeReleaseAttemptJobs,
   formatReleaseStateOutcome,
   isReleaseGhArtifactMissingError,
+  isReleaseGhServerError,
   isSplitChangelogEvidenceDelta,
   classifyReleaseChangelogEvidenceComparison,
   SPLIT_CHANGELOG_EVIDENCE_REUSE_POLICY,
   MAX_RELEASE_ARTIFACT_BYTES,
   normalizeReleaseCoveragePolicy,
   normalizeReleaseTelegramWaiver,
+  readReleaseJobListing,
   releaseCompositeJobsSha256,
   releaseChildSpec,
   terminalPolicyPass,
@@ -62,6 +60,7 @@ import {
   RELEASE_EVIDENCE_FILE,
   normalizeSha,
   normalizeWorkflowPathRef,
+  retainedPublicationArtifactSource,
   resolveTrustedWorkflowIdentity,
   resolveVerifierIdentity,
   validateTrustedProducerIdentity,
@@ -200,7 +199,7 @@ export function runReleaseCiGh(args, params = {}) {
   }
 }
 
-async function ghAsync(args) {
+async function ghAsync(args, { smallerPageFallback = false } = {}) {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await execGhReadAsync(args, {
@@ -209,6 +208,9 @@ async function ghAsync(args) {
         timeout: GH_COMMAND_TIMEOUT_MS,
       });
     } catch (error) {
+      if (smallerPageFallback && isReleaseGhServerError(error)) {
+        throw error;
+      }
       await sleep(evidenceReadRetryDelay(args, error, attempt));
     }
   }
@@ -226,8 +228,8 @@ function githubRestJson(pathSuffix, repository = DEFAULT_REPO) {
   return jsonGh(githubRestArgs(pathSuffix, repository));
 }
 
-async function githubRestJsonAsync(pathSuffix, repository = DEFAULT_REPO) {
-  return JSON.parse(await ghAsync(githubRestArgs(pathSuffix, repository)));
+async function githubRestJsonAsync(pathSuffix, repository = DEFAULT_REPO, options = {}) {
+  return JSON.parse(await ghAsync(githubRestArgs(pathSuffix, repository), options));
 }
 
 function artifactDownloadArgs(artifactId, repository = DEFAULT_REPO) {
@@ -807,69 +809,66 @@ function findExactChildRun(child, repository = DEFAULT_REPO) {
   return selectExactChildRunFromPages(runPages, child.displayTitle, child.headBranch);
 }
 
-async function findParentJobsAll(parentRunId, repository = DEFAULT_REPO) {
-  const jobs = [];
-  for (let page = 1; page <= 10; page += 1) {
-    const query = new URLSearchParams({
-      filter: "all",
-      page: String(page),
-      per_page: "100",
-    });
-    const pageJobs =
-      (
-        await githubRestJsonAsync(
-          `actions/runs/${parentRunId}/jobs?${query.toString()}`,
-          repository,
-        )
-      ).jobs ?? [];
-    jobs.push(...pageJobs);
-    if (pageJobs.length < 100) {
-      break;
+// The listing keeps the 1,000-job inventory ceiling of ten 100-job pages, whatever page size
+// readReleaseJobListing selects.
+const MAX_RUN_JOBS = 1000;
+
+function readRunJobPages(path, baseQuery, repository, requireComplete) {
+  return readReleaseJobListing(async (perPage, { smallerPageFallback }) => {
+    const jobs = [];
+    let total;
+    for (let page = 1; jobs.length < MAX_RUN_JOBS; page += 1) {
+      const query = new URLSearchParams({
+        ...baseQuery,
+        page: String(page),
+        per_page: String(perPage),
+      });
+      const response = await githubRestJsonAsync(`${path}?${query.toString()}`, repository, {
+        smallerPageFallback,
+      });
+      const pageJobs = response.jobs ?? [];
+      if (
+        requireComplete &&
+        (!Array.isArray(response.jobs) ||
+          !Number.isSafeInteger(response.total_count) ||
+          response.total_count < 0 ||
+          (total !== undefined && total !== response.total_count))
+      ) {
+        throw new Error("publication original jobs enumeration is invalid");
+      }
+      total = response.total_count;
+      jobs.push(...pageJobs);
+      if (pageJobs.length < perPage) {
+        break;
+      }
     }
-  }
-  return jobs;
+    jobs.splice(MAX_RUN_JOBS);
+    if (
+      requireComplete &&
+      (jobs.length !== total || new Set(jobs.map((job) => job.id)).size !== total)
+    ) {
+      throw new Error("publication original jobs enumeration is incomplete or duplicated");
+    }
+    return jobs;
+  });
 }
 
-async function findRunAttemptJobsAll(
+function findParentJobsAll(parentRunId, repository = DEFAULT_REPO) {
+  return readRunJobPages(`actions/runs/${parentRunId}/jobs`, { filter: "all" }, repository, false);
+}
+
+function findRunAttemptJobsAll(
   runId,
   runAttempt,
   repository = DEFAULT_REPO,
   requireComplete = false,
 ) {
-  const jobs = [];
-  let total;
-  for (let page = 1; page <= 10; page += 1) {
-    const query = new URLSearchParams({
-      page: String(page),
-      per_page: "100",
-    });
-    const response = await githubRestJsonAsync(
-      `actions/runs/${runId}/attempts/${runAttempt}/jobs?${query.toString()}`,
-      repository,
-    );
-    const pageJobs = response.jobs ?? [];
-    if (
-      requireComplete &&
-      (!Array.isArray(response.jobs) ||
-        !Number.isSafeInteger(response.total_count) ||
-        response.total_count < 0 ||
-        (total !== undefined && total !== response.total_count))
-    ) {
-      throw new Error("publication original jobs enumeration is invalid");
-    }
-    total = response.total_count;
-    jobs.push(...pageJobs);
-    if (pageJobs.length < 100) {
-      break;
-    }
-  }
-  if (
-    requireComplete &&
-    (jobs.length !== total || new Set(jobs.map((job) => job.id)).size !== total)
-  ) {
-    throw new Error("publication original jobs enumeration is incomplete or duplicated");
-  }
-  return jobs;
+  return readRunJobPages(
+    `actions/runs/${runId}/attempts/${runAttempt}/jobs`,
+    {},
+    repository,
+    requireComplete,
+  );
 }
 
 function parentJobLogArgs(jobId, repository = DEFAULT_REPO, allowEscapeSequences = true) {
@@ -1411,6 +1410,17 @@ export function validateParentManifest(value, expected) {
   };
 }
 
+function retainedRootPublication(manifest) {
+  return manifest.publicationAdmissionContract === "1"
+    ? {
+        sourceAdmissionContract: manifest.sourceAdmissionContract,
+        sourceAdmission: manifest.sourceAdmission,
+        publicationAdmissionContract: manifest.publicationAdmissionContract,
+        publicationAdmission: manifest.publicationAdmission,
+      }
+    : null;
+}
+
 export function validateEvidenceReuseChain(
   currentManifest,
   selectedManifest,
@@ -1446,15 +1456,7 @@ export function validateEvidenceReuseChain(
   if (selectedManifest.runId !== rootManifest.runId) {
     throw new Error("evidence reuse selected manifest is not the chain root");
   }
-  const rootPublication =
-    rootManifest.publicationAdmissionContract === "1"
-      ? {
-          sourceAdmissionContract: rootManifest.sourceAdmissionContract,
-          sourceAdmission: rootManifest.sourceAdmission,
-          publicationAdmissionContract: rootManifest.publicationAdmissionContract,
-          publicationAdmission: rootManifest.publicationAdmission,
-        }
-      : null;
+  const rootPublication = retainedRootPublication(rootManifest);
   if (
     publicationObservationJson(reuse.publication ?? null) !==
     publicationObservationJson(rootPublication)
@@ -1556,7 +1558,11 @@ export function validateRequestedEvidenceReuse(
       throw new Error("reused release evidence no longer matches the requested validation");
     }
     validateEvidenceReuseChain(
-      { ...currentManifest, evidenceReuse: requested, targetSha: expectedTarget },
+      {
+        ...currentManifest,
+        evidenceReuse: { ...requested, publication: retainedRootPublication(rootManifest) },
+        targetSha: expectedTarget,
+      },
       selectedManifest,
       rootManifest,
       compareCommits,
@@ -2422,9 +2428,52 @@ async function validateStrictChildRun({
   };
 }
 
+function qualificationReuseIdentity(admission) {
+  const { request, producer } = admission;
+  const envelope = JSON.parse(request.inputs.trusted_workflow_json);
+  if (
+    !isDeepStrictEqual(envelope.trustedWorkflow, {
+      ref: request.transportRef,
+      fullRef: "refs/heads/" + request.transportRef,
+      sha: request.qualificationSha,
+    })
+  ) {
+    throw new Error("Qualification reuse transport differs from its authenticated Q identity");
+  }
+  // Each receipt authenticates its own dispatch locator. Only that locator and
+  // the admission run tuple may differ; policy, complete inputs and C/Q/P may not.
+  return {
+    candidateSha: request.candidateSha,
+    qualificationSha: request.qualificationSha,
+    repository: request.repository,
+    publisher: {
+      repository: producer.repository,
+      workflowPath: producer.workflowPath,
+      workflowEvent: producer.workflowEvent,
+      workflowHeadBranch: producer.workflowHeadBranch,
+      workflowFullRef: producer.workflowFullRef,
+      workflowSha: producer.workflowSha,
+    },
+    inputs: {
+      ...request.inputs,
+      trusted_workflow_json: JSON.stringify(
+        sortReleaseJsonValueKeys({
+          ...envelope,
+          trustedWorkflow: { sha: request.qualificationSha },
+        }),
+      ),
+    },
+    coverage: admission.coverage,
+    baselinePolicy: admission.baselinePolicy,
+    workflowSourceDigest: admission.workflowSourceDigest,
+    policySourceDigest: admission.policySourceDigest,
+  };
+}
+
 /**
  * @param {{
  *   manifestPath?: string,
+ *   qualificationReuse?: { candidateSha: string, qualificationSha: string, workflowRef: string, descriptor: object, inputs: Record<string, string> },
  *   repository?: string,
  *   reuseRequest?: { releaseProfile: string, runReleaseSoak: string, targetSha: string, validationInputs: Record<string, unknown> },
  *   runId: string,
@@ -2445,6 +2494,7 @@ async function validateStrictChildRun({
 export async function validateReleaseRunEvidence(
   {
     manifestPath,
+    qualificationReuse,
     repository = DEFAULT_REPO,
     reuseRequest,
     runId,
@@ -2613,6 +2663,35 @@ export async function validateReleaseRunEvidence(
     [currentEvidence.manifest.runId, await authenticateProducer(currentEvidence)],
   ]);
 
+  if (qualificationReuse !== undefined) {
+    if (!qualificationReuse.inputs || typeof qualificationReuse.inputs !== "object") {
+      throw new Error("Qualification reuse requires complete current dispatch inputs");
+    }
+    const selectedAdmission = qualificationAdmissions.get(currentEvidence.manifest.runId);
+    if (!selectedAdmission || currentEvidence.manifest.evidenceReuse) {
+      throw new Error("Qualification reuse requires a directly admitted root execution");
+    }
+    const requestedAdmission = await evidenceClient.verifyQualificationAdmission({
+      ...qualificationReuse,
+      repository: normalizedRepository,
+    });
+    if (
+      (reuseRequest !== undefined &&
+        reuseRequest.targetSha !== requestedAdmission.request.candidateSha) ||
+      (expectedTargetSha !== undefined &&
+        expectedTargetSha !== requestedAdmission.request.candidateSha) ||
+      requestedAdmission.producer.workflowSha !== verifier.sourceSha ||
+      requestedAdmission.producer.workflowHeadBranch !== normalizedTrustedWorkflowRef ||
+      requestedAdmission.producer.workflowFullRef !== trustedIdentity.fullRef ||
+      !isDeepStrictEqual(
+        qualificationReuseIdentity(selectedAdmission),
+        qualificationReuseIdentity(requestedAdmission),
+      )
+    ) {
+      throw new Error("Qualification reuse requires exact admitted C/Q/P, coverage and inputs");
+    }
+  }
+
   let rootEvidence = currentEvidence;
   let selectedEvidence = currentEvidence;
   const reuse = currentEvidence.manifest.evidenceReuse;
@@ -2737,6 +2816,40 @@ export async function validateReleaseRunEvidence(
     }
   }
   const qualification = qualificationAdmissions.get(rootEvidence.manifest.runId);
+  const currentQualification = qualificationAdmissions.get(currentEvidence.manifest.runId);
+  if (reuse?.policy === EXACT_TARGET_EVIDENCE_REUSE_POLICY && currentQualification) {
+    if (
+      !qualification ||
+      !isDeepStrictEqual(
+        qualificationReuseIdentity(currentQualification),
+        qualificationReuseIdentity(qualification),
+      )
+    ) {
+      throw new Error("Qualification reuse requires exact admitted C/Q/P, coverage and inputs");
+    }
+    const currentArtifacts = currentEvidence.manifest.publicationArtifacts;
+    const rootArtifacts = rootEvidence.manifest.publicationArtifacts;
+    const retainedSource = retainedPublicationArtifactSource(currentEvidence.manifest);
+    const npmWorkflowRef = currentArtifacts?.npmPreflight?.producer?.workflowRef;
+    const retainedTransport =
+      retainedSource?.workflow.ref !== currentEvidence.manifest.workflowFullRef &&
+      npmWorkflowRef?.endsWith(`@${retainedSource?.workflow.ref}`);
+    const adoptedProducer =
+      retainedTransport ||
+      (currentArtifacts?.npmPreflight?.producer?.runId &&
+        currentArtifacts.npmPreflight.producer.runId ===
+          rootArtifacts?.npmPreflight?.producer?.runId) ||
+      (currentArtifacts?.docker?.preparedRunId &&
+        currentArtifacts.docker.preparedRunId === rootArtifacts?.docker?.preparedRunId) ||
+      (currentArtifacts?.pluginNpm?.runId &&
+        currentArtifacts.pluginNpm.runId === rootArtifacts?.pluginNpm?.runId);
+    if (
+      adoptedProducer &&
+      (!retainedSource || !isDeepStrictEqual(currentArtifacts, rootArtifacts))
+    ) {
+      throw new Error("Reused publication artifacts differ from their authenticated root");
+    }
+  }
   const selectedKeys = qualification
     ? new Set(qualification.coverage.children.map((child) => child.key))
     : requiredChildKeysForManifest(rootEvidence.manifest);
@@ -2964,6 +3077,7 @@ function parseReleaseCiSummaryArgs(argv) {
     expectedTargetSha: undefined,
     json: false,
     manifestPath: undefined,
+    qualificationReuse: undefined,
     repository: DEFAULT_REPO,
     reuseRequest: undefined,
     runId: undefined,
@@ -2986,6 +3100,11 @@ function parseReleaseCiSummaryArgs(argv) {
       options.manifestPath = argv[++index];
     } else if (argument === "--reuse-request-json") {
       options.reuseRequest = normalizeJsonObject(JSON.parse(argv[++index]), "reuse request");
+    } else if (argument === "--qualification-reuse-json") {
+      options.qualificationReuse = normalizeJsonObject(
+        JSON.parse(argv[++index]),
+        "qualification reuse request",
+      );
     } else if (argument === "--trusted-workflow-ref") {
       options.trustedWorkflowRef = argv[++index];
     } else if (argument === "--trusted-workflow-full-ref") {
@@ -3054,6 +3173,9 @@ function parseReleaseCiSummaryArgs(argv) {
   }
   if (!options.validate && options.reuseRequest !== undefined) {
     throw new Error("--reuse-request-json requires --validate-run");
+  }
+  if (!options.validate && options.qualificationReuse !== undefined) {
+    throw new Error("--qualification-reuse-json requires --validate-run");
   }
   if (!options.validate && options.expectedRunAttempts !== undefined) {
     throw new Error("--expected-run-attempts-json requires --validate-run");

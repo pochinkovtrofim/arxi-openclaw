@@ -144,6 +144,7 @@ export async function maybeHandleResetCommand(
         (params.opts as InternalResetCommandOptions | undefined)?.onSessionPrepared?.({
           sessionKey: resetResult.sessionKey ?? boundAcpKey,
           sessionId: resetResult.sessionId,
+          lifecycleRevision: resetResult.lifecycleRevision,
           storePath: resetResult.storePath,
         });
       }
@@ -155,18 +156,13 @@ export async function maybeHandleResetCommand(
         }
         return { shouldContinue: false };
       }
-      return {
-        shouldContinue: false,
-        reply: { text: "✅ ACP session reset in place.", isStatusNotice: true },
-      };
     }
-    return {
-      shouldContinue: false,
-      reply: {
-        text: "⚠️ ACP session reset failed. Check /acp status and try again.",
-        isStatusNotice: true,
-      },
-    };
+    return commandReply({
+      text: resetResult.ok
+        ? "✅ ACP session reset in place."
+        : "⚠️ ACP session reset failed. Check /acp status and try again.",
+      isStatusNotice: true,
+    });
   }
 
   const targetSessionEntry = params.sessionStore?.[params.sessionKey] ?? params.sessionEntry;
@@ -178,20 +174,15 @@ export async function maybeHandleResetCommand(
     onObservedReplyDelivery: params.opts?.onObservedReplyDelivery,
   });
   if (!resetTail) {
-    return {
-      shouldContinue: false,
-      ...(hookResult.routedReply
-        ? {}
-        : {
-            reply: {
-              text:
-                commandAction === "reset"
-                  ? renderUserMessage({ code: "session_reset" }, "✅ Session reset.")
-                  : renderUserMessage({ code: "session_reset" }, "✅ New session started."),
-              isStatusNotice: true,
-            },
-          }),
-    };
+    return hookResult.routedReply
+      ? { shouldContinue: false }
+      : commandReply({
+          text:
+            commandAction === "reset"
+              ? renderUserMessage({ code: "session_reset" }, "✅ Session reset.")
+              : renderUserMessage({ code: "session_reset" }, "✅ New session started."),
+          isStatusNotice: true,
+        });
   }
   return null;
 }

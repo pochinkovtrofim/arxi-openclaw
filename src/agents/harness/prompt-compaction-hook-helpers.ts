@@ -18,6 +18,11 @@ import { buildAgentHookContext, type AgentHarnessHookContext } from "./hook-cont
 
 const log = createSubsystemLogger("agents/harness");
 
+const warnHookFailure = (hook: string) => (error: unknown) => {
+  log.warn(`${hook} hook failed: ${String(error)}`);
+  return undefined;
+};
+
 /** Prompt/developer-instruction pair after harness prompt-build hooks run. */
 type AgentHarnessPromptBuildResult = {
   prompt: string;
@@ -116,18 +121,14 @@ export async function resolveAgentHarnessBeforePromptBuildResult(params: {
             },
             hookCtx,
           )
-          .catch((error: unknown) => {
-            log.warn(`heartbeat_prompt_contribution hook failed: ${String(error)}`);
-            return undefined;
-          })
+          .catch(warnHookFailure("heartbeat_prompt_contribution"))
       : undefined;
 
   const promptBuildResult =
     hookRunner && hasPromptBuildHooks
-      ? await hookRunner.runBeforePromptBuild(promptEvent, hookCtx).catch((error: unknown) => {
-          log.warn(`before_prompt_build hook failed: ${String(error)}`);
-          return undefined;
-        })
+      ? await hookRunner
+          .runBeforePromptBuild(promptEvent, hookCtx)
+          .catch(warnHookFailure("before_prompt_build"))
       : undefined;
   const developerInstructions = resolveDeveloperInstructions(
     params.developerInstructions,
@@ -143,10 +144,7 @@ export async function resolveAgentHarnessBeforePromptBuildResult(params: {
             activeToolNames: toolAuthority.activeToolNames(),
             assertHostActive: toolAuthority.assertActive,
           })
-          .catch((error: unknown) => {
-            log.warn(`authorized before_prompt_build hook failed: ${String(error)}`);
-            return undefined;
-          })
+          .catch(warnHookFailure("authorized before_prompt_build"))
       : undefined;
   const systemPrompt =
     typeof promptBuildResult?.systemPrompt === "string"

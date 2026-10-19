@@ -32,11 +32,12 @@ import {
 } from "./lib/arg-utils.mts";
 import { readBoundedResponseText } from "./lib/bounded-response.mjs";
 import { parsePluginReleaseSelection } from "./lib/plugin-npm-release.ts";
-import { loadChangelogCollection, loadReleaseChangelog } from "./lib/release-changelog.mjs";
+import { loadChangelogCollection } from "./lib/release-changelog.mjs";
 import { releaseBranchForTag } from "./lib/release-context.mjs";
 import { ensureReleasePublishToolingTag } from "./lib/release-publish-preflight-evidence.mts";
 import { formatReleasePublishPreflight } from "./lib/release-publish-preflight-interface.mts";
 import { classifyReleaseTrain, parseReleaseVersion } from "./lib/release-version.mjs";
+import { sleep as wait } from "./lib/sleep.mjs";
 import {
   downloadFullReleaseNpmPreflight,
   verifyNpmPreflightProducer,
@@ -117,13 +118,15 @@ const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/u;
 const RELEASE_CANDIDATE_STATE_VERSION = 2;
 const RELEASE_CANDIDATE_STATE_FILE = "release-candidate-state.json";
 const TRUSTED_TOOLING_SHA_ENV = "OPENCLAW_RELEASE_CANDIDATE_TRUSTED_TOOLING_SHA";
+// Release tooling (toolingSha and its publishWorkflowRef tag) is not candidate
+// identity: each run re-verifies the current tooling against trusted main, and
+// saved FRV/npm evidence is authenticated against its own producer run. Tooling
+// repaired mid-release can therefore resume the same state.
 const RELEASE_CANDIDATE_STATE_KEYS = [
   "repo",
   "tag",
   "targetSha",
-  "toolingSha",
   "workflowRef",
-  "publishWorkflowRef",
   "provider",
   "mode",
   "releaseProfile",
@@ -874,11 +877,15 @@ export function assertReleaseCandidateTag(tag: string, targetSha: string, cwd: s
   }
 }
 
-function savedPublishWorkflowRef(statePath: string) {
+function savedPublishWorkflowRef(statePath: string, toolingSha: string) {
   const saved = existsSync(statePath)
     ? readJson(statePath, "release candidate state").publishWorkflowRef
     : undefined;
-  return typeof saved === "string" && PUBLISH_TOOLING_TAG_PATTERN.test(saved) ? saved : "";
+  return typeof saved === "string" &&
+    PUBLISH_TOOLING_TAG_PATTERN.test(saved) &&
+    saved.startsWith(`release-publish/${toolingSha.slice(0, 12)}-`)
+    ? saved
+    : "";
 }
 
 function gitIsAncestor(ancestor: string, target: string, cwd = process.cwd()) {
@@ -1053,7 +1060,7 @@ export function loadCandidateShippedBaseline(ref: string, rootDir = process.cwd(
   gitRevParse(`${tagRef}^{commit}`, rootDir);
   const changelog = loadChangelogCollection({ rootDir, ref: tagRef, recordsOnly: true });
   const version = requireString(releaseNotesVersionForTag(ref), "release notes version");
-  const source = loadReleaseChangelog({ rootDir, ref: tagRef, version });
+  const source = loadReleaseNotesForTag({ rootDir, ref: tagRef, tag: ref, version });
   candidateContributionRecordPullRequests(
     source.record ?? source.section,
     `shipped baseline ${ref}`,
@@ -1068,6 +1075,10 @@ export function validateCandidateReleaseNotes({
   tag,
   contributionRecordPath,
 }: StringFields<"changelog" | "repository" | "tag"> & { contributionRecordPath?: string }) {
+  if (/-beta\.[1-9][0-9]*$/u.test(tag)) {
+    // New candidates cannot silently reuse cumulative or earlier-beta prose.
+    extractChangelogSection(changelog, tag.slice(1));
+  }
   const rendered = renderGithubReleaseNotes({
     changelog,
     version: releaseNotesVersionForTag(tag),
@@ -1098,7 +1109,7 @@ export function validateCandidateChangelogProvenance({
   isAncestor?: (ancestor: string, target: string) => boolean;
   loadShippedBaseline?: (ref: string) => { pullRequests: Set<number> };
 }) {
-  // Correction tags may carry their own changelog heading.
+  // Beta and correction tags may carry their own changelog heading.
   let section: string | undefined;
   let sectionVersion = version;
   const dedicatedVersion = dedicatedSectionVersionForTag(tag);
@@ -1288,12 +1299,8 @@ function runLocalGeneratedCheckIfNeeded(options: ReturnType<typeof parseArgs>): 
   return { status: "passed", command: "pnpm release:generated:check" };
 }
 
-export function parseRunIdFromDispatchOutput(output: string) {
-  return output.match(/actions\/runs\/([0-9]+)/u)?.[1] ?? "";
-}
-
 export function requireRunIdFromDispatchOutput(output: string, workflowFile: string) {
-  const runId = parseRunIdFromDispatchOutput(output);
+  const runId = output.match(/actions\/runs\/([0-9]+)/u)?.[1];
   if (!runId) {
     throw new Error(
       `gh workflow run ${workflowFile} did not return an Actions run URL; refusing to guess from recent workflow_dispatch runs`,
@@ -1369,12 +1376,6 @@ function dispatchFullReleaseUsingHelper(
     );
   }
   return String(observed!.id);
-}
-
-async function wait(ms: number) {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
-  });
 }
 
 function dispatchWorkflow(
@@ -1534,33 +1535,31 @@ function sha256(path: string) {
   return run("shasum", ["-a", "256", path], { capture: true }).trim().split(/\s+/u)[0] ?? "";
 }
 
-function pluginPlanArgs(options: ReturnType<typeof parseArgs>) {
-  const args = ["--selection-mode", options.pluginPublishScope];
-  if (options.pluginPublishScope === "selected") {
-    args.push("--plugins", options.plugins);
-  }
-  return args;
-}
-
 function collectPluginPlan(script: string, options: ReturnType<typeof parseArgs>): unknown {
   const plan: unknown = JSON.parse(
-    run("node", ["--import", "tsx", join(TOOLING_ROOT, script), ...pluginPlanArgs(options)], {
-      capture: true,
-    }),
+    run(
+      "node",
+      [
+        "--import",
+        "tsx",
+        join(TOOLING_ROOT, script),
+        "--selection-mode",
+        options.pluginPublishScope,
+      ],
+      { capture: true },
+    ),
   );
   console.log(formatPluginPlanSummary(script, plan).join("\n"));
   return plan;
 }
 
 async function collectPluginPlanWithRetry(script: string, options: ReturnType<typeof parseArgs>) {
-  let lastError: unknown;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
+  for (let attempt = 1; ; attempt += 1) {
     try {
       return collectPluginPlan(script, options);
     } catch (error) {
-      lastError = error;
       if (attempt === 3) {
-        break;
+        throw error;
       }
       console.warn(
         `${script} failed on attempt ${attempt}; retrying: ${
@@ -1570,7 +1569,6 @@ async function collectPluginPlanWithRetry(script: string, options: ReturnType<ty
       await wait(5_000 * attempt);
     }
   }
-  throw lastError;
 }
 
 function formatPluginPlanSummary(label: string, plan: unknown): string[] {
@@ -1699,7 +1697,7 @@ export function validatePreflightManifest(manifest: JsonRecord, params: JsonReco
   const dependencyTarballs = preflightDependencyTarballs(manifest);
   for (const dependency of [...corePackageTarballs, ...dependencyTarballs]) {
     if (
-      !dependency?.packageName ||
+      !dependency.packageName ||
       !dependency.packageVersion ||
       !dependency.tarballName ||
       !dependency.tarballSha256 ||
@@ -2021,10 +2019,10 @@ async function main() {
         `--workflow-sha ${options.workflowSha} does not match tooling checkout ${toolingSha}`,
       );
     }
-    // A resumed candidate keeps the exact tag it recorded; a newer tag at the
-    // same SHA must not fail state reconciliation. The identity check below
-    // still proves that saved tag resolves to this tooling SHA.
-    const savedTag = savedPublishWorkflowRef(statePath);
+    // A resumed candidate reuses the tag it recorded for this tooling SHA; a
+    // repaired tooling SHA gets its own tag. The identity check below proves
+    // the selected tag resolves to this tooling SHA.
+    const savedTag = savedPublishWorkflowRef(statePath, toolingSha);
     const ensured = savedTag
       ? { tag: savedTag, created: false }
       : ensureReleasePublishToolingTag({
@@ -2496,9 +2494,7 @@ async function main() {
       }`,
       `- full release artifact: ${fullArtifactName}`,
       `- GitHub release notes: ${releaseNotesCheck.status} (${releaseNotesCheck.mode}, ${releaseNotesCheck.characters} characters, ${releaseNotesCheck.bytes} bytes)`,
-      releaseNotesProvenance.status === "passed"
-        ? `- changelog provenance: passed (${releaseNotesProvenance.base}..${releaseNotesProvenance.target})`
-        : `- changelog provenance: skipped (${releaseNotesProvenance.reason})`,
+      `- changelog provenance: passed (${releaseNotesProvenance.base}..${releaseNotesProvenance.target})`,
       `- ${
         formatShippedBaselineExclusions(releaseNotesProvenance.shippedBaselines) ||
         "Shipped baseline exclusions: none"

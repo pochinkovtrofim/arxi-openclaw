@@ -32,6 +32,7 @@ import {
 import {
   createSessionVisibilityRowChecker,
   formatSessionToolAccessDenial,
+  isSessionToolMainAlias,
   resolveDisplaySessionKey,
   resolveSessionReference,
   resolveSessionToolAccess,
@@ -392,10 +393,7 @@ export function createSessionsSearchTool(opts?: {
         const semanticTargetAgentId =
           normalizedRequestedKey === "current"
             ? requesterAgentId
-            : normalizedRequestedKey === "main" ||
-                normalizedRequestedKey === "global" ||
-                normalizedRequestedKey === mainKey ||
-                normalizedRequestedKey === alias ||
+            : isSessionToolMainAlias(normalizedRequestedKey, { mainKey, alias }) ||
                 Boolean(parseAgentSessionKey(normalizedRequestedKey))
               ? resolveSessionToolTargetAgentId({
                   cfg,
@@ -631,6 +629,12 @@ export function createSessionsSearchTool(opts?: {
                 : {}),
             }
         : undefined;
+      const warnings = [
+        indexing ? SESSIONS_SEARCH_INDEXING_WARNING : undefined,
+        archivedTranscriptsExcluded > 0
+          ? `Search excludes ${archivedTranscriptsExcluded} archived transcripts. Restore a transcript to include it in search.`
+          : undefined,
+      ].filter(Boolean);
       return jsonResult({
         results: capped.items,
         ...(context ? { context } : {}),
@@ -642,18 +646,7 @@ export function createSessionsSearchTool(opts?: {
           : {}),
         ...(indexing ? { indexing: true } : {}),
         ...(archivedTranscriptsExcluded > 0 ? { archivedTranscriptsExcluded } : {}),
-        ...(indexing || archivedTranscriptsExcluded > 0
-          ? {
-              warning: [
-                ...(indexing ? [SESSIONS_SEARCH_INDEXING_WARNING] : []),
-                ...(archivedTranscriptsExcluded > 0
-                  ? [
-                      `Search excludes ${archivedTranscriptsExcluded} archived transcripts. Restore a transcript to include it in search.`,
-                    ]
-                  : []),
-              ].join(" "),
-            }
-          : {}),
+        ...(warnings.length ? { warning: warnings.join(" ") } : {}),
         ...(backendTruncated || visibleHits.length > limit || capped.truncated
           ? { truncated: true }
           : {}),

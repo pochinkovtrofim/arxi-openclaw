@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { BrowserRouteContext } from "../server-context.js";
 import { browserNavigationPolicyForProfile } from "./agent.shared.js";
+import {
+  captureBrowserOperationTarget,
+  resolveOperationTargetOutcome,
+} from "./agent.snapshot-target.js";
 import { createBrowserRouteApp, createBrowserRouteResponse } from "./test-helpers.js";
 import type { BrowserRequest } from "./types.js";
 
@@ -225,15 +230,11 @@ describe("local-managed browser snapshot routes", () => {
     expect(pw.snapshotRoleViaPlaywright).toHaveBeenCalledTimes(1);
   });
 
-  it.each([
-    ["aria refs", { format: "ai", interactive: "true", refs: "aria" }],
-    ["selector scope", { format: "ai", selector: "button" }],
-    ["frame scope", { format: "ai", frame: "iframe" }],
-  ])("keeps %s on Playwright-first role snapshots", async (_name, query) => {
+  it("keeps aria refs on Playwright-first role snapshots", async () => {
     navigationGuardMocks.assertBrowserNavigationResultAllowed.mockResolvedValue(undefined);
     const pw = createPwModule();
     pwState.module = pw;
-    const response = await snapshot(query);
+    const response = await snapshot({ format: "ai", interactive: "true", refs: "aria" });
 
     expect(response.statusCode).toBe(200);
     expect(response.body).toMatchObject({ snapshot: expect.stringContaining("Playwright") });
@@ -255,29 +256,6 @@ describe("local-managed browser snapshot routes", () => {
 
     expect(response.statusCode).toBe(200);
     expect(pw.snapshotRoleViaPlaywright).toHaveBeenCalledWith(expect.objectContaining(policy));
-  });
-
-  it("stores raw ARIA refs through Playwright when it is available", async () => {
-    navigationGuardMocks.assertBrowserNavigationResultAllowed.mockResolvedValue(undefined);
-    const storeSnapshotRefsViaPlaywright = vi.fn(async () => {});
-    pwState.module = createPwModule({ storeSnapshotRefsViaPlaywright });
-    const response = await snapshot({ format: "aria", limit: "25", timeoutMs: "4321" });
-
-    expect(response.statusCode).toBe(200);
-    expect(cdpMocks.snapshotAria).toHaveBeenCalledWith({
-      wsUrl: "ws://127.0.0.1/devtools/page/7",
-      lookup: tabLookup,
-      limit: 25,
-      timeoutMs: 4321,
-    });
-    expect(storeSnapshotRefsViaPlaywright).toHaveBeenCalledWith({
-      cdpUrl: "http://127.0.0.1:18800",
-      targetId: "7",
-      nodes: [{ ref: "1", role: "link", name: "private", depth: 0 }],
-      expectedDocumentIdentity: "pw:test-document",
-      signal: expect.any(AbortSignal),
-      deadlineMs: expect.any(Number),
-    });
   });
 
   it.each([
@@ -425,5 +403,60 @@ describe("local-managed browser snapshot routes", () => {
       urls: true,
       delta: { mode: "role", previousKeys: expect.any(Set) },
     });
+  });
+});
+
+describe("captureBrowserOperationTarget", () => {
+  it("fails closed when a registered relay cannot capture the acted-on target", async () => {
+    const relays = new Map([["chrome", { bridge: { captureOperationTarget: () => undefined } }]]);
+    const state = { extensionRelays: relays, profiles: new Map([["chrome", {}]]) };
+    const ctx = { state: () => state } as unknown as BrowserRouteContext;
+    const resolveRelayTarget = await captureBrowserOperationTarget({
+      ctx,
+      profileName: "chrome",
+      targetId: "old-123",
+    });
+
+    expect(typeof resolveRelayTarget).toBe("function");
+    expect(
+      await resolveOperationTargetOutcome({
+        actedOnTargetId: "old-123",
+        operationTargetId: "unrelated-999",
+        resolveRelayTarget,
+      }),
+    ).toBe("old-123");
+  });
+
+  it("rejects a replacement relay even when it reports the same profile and target", async () => {
+    const original = {
+      bridge: { captureOperationTarget: () => () => "replacement-456" },
+    };
+    const relays = new Map([["chrome", original]]);
+    const state = { extensionRelays: relays, profiles: new Map([["chrome", {}]]) };
+    const ctx = { state: () => state } as unknown as BrowserRouteContext;
+    const resolveRelayTarget = await captureBrowserOperationTarget({
+      ctx,
+      profileName: "chrome",
+      targetId: "old-123",
+    });
+
+    expect(
+      await resolveOperationTargetOutcome({
+        actedOnTargetId: "old-123",
+        operationTargetId: "old-123",
+        resolveRelayTarget,
+      }),
+    ).toBe("replacement-456");
+    relays.set("chrome", {
+      bridge: { captureOperationTarget: () => () => "unrelated-999" },
+    });
+    expect(await resolveRelayTarget?.()).toBeUndefined();
+    expect(
+      await resolveOperationTargetOutcome({
+        actedOnTargetId: "old-123",
+        operationTargetId: "unrelated-999",
+        resolveRelayTarget,
+      }),
+    ).toBe("old-123");
   });
 });

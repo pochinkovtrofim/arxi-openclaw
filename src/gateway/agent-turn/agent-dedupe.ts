@@ -148,13 +148,7 @@ export function setGatewayDedupeEntries(params: {
   session?: Parameters<typeof setGatewayDedupeEntry>[0]["session"];
 }): void {
   for (const key of params.keys) {
-    setGatewayDedupeEntry({
-      dedupe: params.dedupe,
-      key,
-      entry: params.entry,
-      startNewAttempt: params.startNewAttempt,
-      session: params.session,
-    });
+    setGatewayDedupeEntry({ ...params, key });
   }
 }
 
@@ -185,9 +179,7 @@ export function setAbortedAgentDedupeEntries(params: {
   session?: Parameters<typeof setGatewayDedupeEntry>[0]["session"];
 }): void {
   setGatewayDedupeEntries({
-    dedupe: params.dedupe,
-    keys: params.keys,
-    session: params.session,
+    ...params,
     entry: {
       ts: Date.now(),
       ok: true,

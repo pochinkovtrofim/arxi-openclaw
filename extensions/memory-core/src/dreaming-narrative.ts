@@ -41,8 +41,6 @@ const NARRATIVE_SYSTEM_PROMPT = [
   "Output only the entry, without a heading, preamble, or sign-off.",
 ].join("\n");
 
-// Bound best-effort diary inference independently from the parent sweep.
-const NARRATIVE_TIMEOUT_MS = 60_000;
 const RECENT_DIARY_CONTEXT_LIMIT = 3;
 function isRequestScopedSubagentRuntimeError(err: unknown): boolean {
   return (
@@ -167,6 +165,7 @@ function buildNarrativePrompt(data: NarrativePhaseData): string {
 export type DreamNarrativeRequest = {
   /** Agent whose configured model and credentials own the completion. */
   agentId: string;
+  timeoutMs: number;
   subagent: DreamingCompletion;
   workspaceDir: string;
   data: NarrativePhaseData;
@@ -208,7 +207,7 @@ async function generateAndAppendDreamNarrative(
                 ].join("\n")
               : NARRATIVE_SYSTEM_PROMPT,
           ...(model ? { model } : {}),
-          timeoutMs: NARRATIVE_TIMEOUT_MS,
+          timeoutMs: params.timeoutMs,
         });
         narrative = result.text.trim();
         break;

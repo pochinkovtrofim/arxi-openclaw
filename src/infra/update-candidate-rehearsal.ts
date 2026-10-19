@@ -13,6 +13,7 @@ import {
   resolveUpdateCandidateStatePath,
 } from "./update-candidate-paths.js";
 import type { UpdateCandidatePluginCodeLink } from "./update-candidate-plugin-code-links.js";
+import type { UpdateCandidateBundledSource } from "./update-candidate-plugins.js";
 import { prepareUpdateCandidateStateSnapshot } from "./update-candidate-snapshot.js";
 import {
   CONTROL_PLANE_UPDATE_SENTINEL_META_ENV,
@@ -158,6 +159,7 @@ function isolatedConfig(
 export async function prepareUpdateCandidateRehearsal(params: {
   config: OpenClawConfigWithLegacyRoster;
   candidateRoot: string;
+  sourceBundledPlugins?: UpdateCandidateBundledSource;
   stateDir: string;
   env?: NodeJS.ProcessEnv;
   nodeRunner?: string;

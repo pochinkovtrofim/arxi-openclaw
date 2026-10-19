@@ -83,9 +83,6 @@ import type {
   PluginHookBeforeMessageWriteResult,
   PluginHookResolveExecEnvContext,
   PluginHookResolveExecEnvEvent,
-  PluginHookSkillContext,
-  PluginHookSkillProposalEvaluateEvent,
-  PluginHookSkillProposalEvaluationOutcome,
 } from "./hook-types.js";
 import { getPluginValueInstance, runPluginCleanup } from "./plugin-instance-scope.js";
 import {
@@ -1149,52 +1146,6 @@ export function createHookRunner(
     return result && result.message !== event.message ? { message: result.message } : undefined;
   }
 
-  /**
-   * Run every registered proposal evaluator and retain its attribution.
-   *
-   * Evaluator failures are returned as data so Workshop can persist and show
-   * them. A broken optional evaluator must not make proposal state unreadable.
-   */
-  async function runSkillProposalEvaluate(
-    event: PluginHookSkillProposalEvaluateEvent,
-    ctx: PluginHookSkillContext,
-  ): Promise<PluginHookSkillProposalEvaluationOutcome[]> {
-    const hookName = "skill_proposal_evaluate";
-    const hooks = getHooksForName(registry, hookName);
-    if (hooks.length === 0) {
-      return [];
-    }
-
-    logger?.debug?.(`[hooks] running ${hookName} (${hooks.length} handlers, attributed)`);
-    const immutableEvent = deepFreezeHookValue(structuredClone(event));
-    return await Promise.all(
-      hooks.map(async (hook): Promise<PluginHookSkillProposalEvaluationOutcome> => {
-        const pluginVersion = registry.plugins.find(
-          (plugin) => plugin.id === hook.pluginId,
-        )?.packageVersion;
-        const attribution = {
-          evaluatorId: hook.registrationId ?? hook.pluginId,
-          pluginId: hook.pluginId,
-          ...(pluginVersion ? { pluginVersion } : {}),
-        };
-        try {
-          const handler = hook.handler;
-          const promise = Promise.resolve(handler(immutableEvent, ctx));
-          const result = await awaitHook(hook, promise, modifyingHookTimeoutMsByHook[hookName]);
-          return result
-            ? Object.assign(attribution, { status: "completed" as const, result })
-            : Object.assign(attribution, { status: "skipped" as const });
-        } catch (error) {
-          const message = sanitizeHookError(error);
-          logger?.error(
-            `[hooks] ${hookName} handler from ${hook.pluginId} failed: ${formatHookErrorForLog(error)}`,
-          );
-          return Object.assign(attribution, { status: "error" as const, error: message });
-        }
-      }),
-    );
-  }
-
   async function runResolveExecEnv(
     event: PluginHookResolveExecEnvEvent,
     ctx: PluginHookResolveExecEnvContext,
@@ -1335,8 +1286,6 @@ export function createHookRunner(
     }),
     runCronReconciled: bindVoidHook("cron_reconciled"),
     runCronChanged: bindVoidHook("cron_changed"),
-    runSkillProposalEvaluate,
-    runSkillProposalChanged: bindFrozenVoidHook("skill_proposal_changed"),
     runSkillChanged: bindFrozenVoidHook("skill_changed"),
     runBeforeInstall: bindModifyingHook("before_install", {
       mergeResults: (acc, next) => {

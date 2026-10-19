@@ -70,8 +70,6 @@ export async function prepareUpdateCommandFailureTriage(
     invocationCwd: opts.invocationCwd,
   });
   return async (error) => {
-    // An exit is an already-reported outcome (including the succeeded-run publication
-    // warning), never an update failure to triage.
     if (error instanceof ExitError) {
       throw error;
     }

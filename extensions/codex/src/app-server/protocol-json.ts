@@ -29,3 +29,8 @@ export function isRpcResponse(message: unknown): message is RpcResponse {
     !("method" in message)
   );
 }
+
+export type CodexCursorPage<T> = {
+  data: T[];
+  nextCursor?: string | null;
+};

@@ -5,6 +5,7 @@ import {
 } from "../../infra/active-node-context.js";
 import { labelRuntimeContextText } from "../../llm/types.js";
 import type { CliBackendConfig, CliBackendPromptContext } from "../../plugins/cli-backend.types.js";
+import { prepareTtsPreferences } from "../../tts/tts-preferences.js";
 import { buildCliSessionDriftNote } from "../cli-session.js";
 import type { ResolvedPromptBuildHookResult } from "../embedded-agent-runner/run/attempt-prompt-helpers.js";
 import { composeSystemPromptWithHookContext } from "../embedded-agent-runner/run/attempt-thread-helpers.js";
@@ -153,17 +154,35 @@ export async function prepareCliSystemPrompt(
     sessionKey: params.sessionKey,
     ...(params.sessionId ? { sessionId: params.sessionId } : {}),
   });
-  return buildCliAgentSystemPrompt({ ...params, preparedModelRuntime, preparedGitCoauthorPrompt });
+  const preparedTtsPreferences = params.preparedTtsPreferences ?? (await prepareTtsPreferences());
+  return buildCliAgentSystemPrompt({
+    ...params,
+    preparedModelRuntime,
+    preparedGitCoauthorPrompt,
+    preparedTtsPreferences,
+  });
 }
 
-export function prependCliSessionDriftUserContext(
+export function prependCliSessionResumeUserContext(
   context: RunCliAgentParams["currentInboundContext"],
   reusableCliSession: CliReusableSession,
+  preservedTurnsContext?: string,
 ): RunCliAgentParams["currentInboundContext"] {
-  if (reusableCliSession.mode !== "reuse-with-drift") {
+  const completionContext =
+    reusableCliSession.mode === "reuse" || reusableCliSession.mode === "reuse-with-drift"
+      ? preservedTurnsContext
+      : undefined;
+  const note = [
+    reusableCliSession.mode === "reuse-with-drift"
+      ? buildCliSessionDriftNote(reusableCliSession.drift.reasons)
+      : undefined,
+    completionContext,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join("\n\n");
+  if (!note) {
     return context;
   }
-  const note = buildCliSessionDriftNote(reusableCliSession.drift.reasons);
   if (!context) {
     return { text: note };
   }

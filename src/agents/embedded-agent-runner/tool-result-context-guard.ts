@@ -199,6 +199,7 @@ export function installContextEngineLoopHook(params: {
   isHeartbeat?: boolean;
 }): () => void {
   const { contextEngine, sessionId, sessionKey, sessionFile, tokenBudget, modelId } = params;
+  const sessionIdentity = { sessionId, sessionKey };
   const mutableAgent = params.agent as GuardableAgentRecord;
   const originalTransformContext = mutableAgent.transformContext;
   let lastSeenLength: number | null = null;
@@ -246,8 +247,7 @@ export function installContextEngineLoopHook(params: {
       if (!params.deferredTurn) {
         if (typeof contextEngine.afterTurn === "function") {
           await contextEngine.afterTurn({
-            sessionId,
-            sessionKey,
+            ...sessionIdentity,
             sessionTarget: params.sessionTarget,
             sessionFile,
             messages: transcriptMessages,
@@ -264,16 +264,14 @@ export function installContextEngineLoopHook(params: {
           const newMessages = transcriptMessages.slice(prePromptMessageCount);
           if (typeof contextEngine.ingestBatch === "function") {
             await contextEngine.ingestBatch({
-              sessionId,
-              sessionKey,
+              ...sessionIdentity,
               messages: newMessages,
               isHeartbeat: params.isHeartbeat,
             });
           } else {
             for (const message of newMessages) {
               await contextEngine.ingest({
-                sessionId,
-                sessionKey,
+                ...sessionIdentity,
                 message,
                 isHeartbeat: params.isHeartbeat,
               });
@@ -304,8 +302,7 @@ export function installContextEngineLoopHook(params: {
       });
       const reserve = Math.max(0, Math.floor(params.reserveTokens?.() ?? 0));
       const assembled = await contextEngine.assemble({
-        sessionId,
-        sessionKey,
+        ...sessionIdentity,
         messages: providerMessages.slice(0, historyLength),
         ...params.deferredTurn,
         tokenBudget:

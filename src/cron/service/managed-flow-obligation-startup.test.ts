@@ -7,6 +7,7 @@ import * as stateWorkerStore from "../../state/openclaw-state-worker-store.js";
 import { upsertTaskFlowAutomationObligationInStateTransaction } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { createManagedTaskFlow } from "../../tasks/task-flow-registry.js";
 import { resetTaskFlowRegistryForTests } from "../../tasks/task-runtime.test-helpers.js";
+import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
 import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-clock.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import { CronService } from "../service.js";
@@ -96,8 +97,10 @@ afterEach(async () => {
   for (const service of services.splice(0)) {
     service.stop();
   }
-  resetTaskFlowRegistryForTests();
   await saveCronJobsStore(storePath, { version: 1, jobs: [] });
+  resetTaskFlowRegistryForTests();
+  // The cron receipt authority is an async state resource; a sync close leaves it stale.
+  await closeStateDatabaseForTest();
   vi.clearAllMocks();
 });
 

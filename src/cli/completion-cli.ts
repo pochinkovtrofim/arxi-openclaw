@@ -1,4 +1,3 @@
-// Shell completion generation, cache writing, and install command registration.
 import fs from "node:fs/promises";
 import { Option, type Command } from "commander";
 import { formatDocsLink } from "../../packages/terminal-core/src/links.js";
@@ -138,7 +137,6 @@ export function registerCompletionCli(program: Command) {
         }
       }
 
-      // Eagerly register all subcommands except completion itself to build the full tree.
       await registerSubcommandsForCompletion(program);
 
       if (process.env[COMPLETION_SKIP_PLUGIN_COMMANDS_ENV] !== "1") {
@@ -249,13 +247,7 @@ function generateZshSubcmdList(cmd: Command): string {
 }
 
 function escapeZshDoubleQuotedDescription(description: string): string {
-  return description
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\$/g, "\\$")
-    .replaceAll("`", "\\`")
-    .replace(/\[/g, "\\[")
-    .replace(/\]/g, "\\]");
+  return description.replace(/[\\$"`[\]]/g, "\\$&");
 }
 
 function generateZshCommandGroup(
@@ -394,6 +386,10 @@ Register-ArgumentCompleter -Native -CommandName ${rootCmd} -ScriptBlock {
     $previousElement = if ($previousElementIndex -ge 1) { $commandElements[$previousElementIndex].Extent.Text } else { '' }
     $choiceFlag = $previousElement
     $choicePrefix = $wordToComplete
+    # PowerShell retains quotes in wordToComplete, even for an unfinished literal.
+    if ($wordToComplete -ne '' -and $commandElements[-1] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+        $choicePrefix = $commandElements[-1].Value
+    }
     $choiceCompletionPrefix = ''
     if ($wordToComplete -match '^(--[^=]+)=(.*)$') {
         $choiceFlag = $Matches[1]
@@ -469,7 +465,6 @@ function generateFishCompletion(tree: ShellCompletionCommandTree): string {
       fishCommandPathCondition(rootCmd, parents),
     );
     for (const condition of conditions) {
-      // Subcommands (canonical names and aliases)
       for (const sub of visibleCompletionCommands(cmd)) {
         for (const name of commandNameVariants(sub)) {
           segments.push(
@@ -482,7 +477,6 @@ function generateFishCompletion(tree: ShellCompletionCommandTree): string {
           );
         }
       }
-      // Options
       for (const opt of cmd.options.filter((option) => !option.hidden)) {
         segments.push(
           buildFishOptionCompletionLine({

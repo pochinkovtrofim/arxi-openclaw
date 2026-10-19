@@ -15,7 +15,6 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import {
   DeferredPluginMigrationConflictError,
   readDeferredPluginMigrations,
-  recordDeferredPluginMigrations,
   withDeferredPluginMigrationsCurrent,
   type DeferredPluginMigration,
 } from "../infra/deferred-plugin-migrations.js";
@@ -52,7 +51,6 @@ import {
   readSqliteEntryCount,
   resolveTargetSqlitePath,
 } from "../infra/session-sqlite-migration-readers.js";
-import { normalizePluginId, normalizePluginsConfig } from "../plugins/config-state.js";
 import { prepareActiveSqliteTranscriptSettlement } from "./doctor-session-sqlite-active.js";
 import {
   archiveImportedLegacySessionStores,
@@ -138,34 +136,13 @@ export async function runDoctorSessionSqlite(
   const env = options.env ?? process.env;
   const cfg = resolveDoctorSessionSqliteConfig(options);
   const configuredAgentIds = new Set(listAgentIds(cfg));
-  let pendingPlugins = readDeferredPluginMigrations({ env });
+  const pendingPlugins = readDeferredPluginMigrations({ env });
   const verifyMissingIndex = createMissingSessionIndexVerifier({ cfg, env });
   const {
     targets: candidates,
     knownTargets,
     repairEntryStates,
   } = await prepareDoctorSessionSqliteTargets({ ...options, cfg, env, authority });
-  if (options.mode === "import" || options.mode === "recover") {
-    const plugins = normalizePluginsConfig(cfg.plugins);
-    const disabled = pendingPlugins
-      .filter(({ pluginId }) => {
-        const id = normalizePluginId(pluginId);
-        return (
-          !plugins.enabled || plugins.entries[id]?.enabled === false || plugins.deny.includes(id)
-        );
-      })
-      .map(({ pluginId }) => pluginId);
-    if (disabled.length > 0) {
-      authority?.assertCurrent();
-      pendingPlugins =
-        (await recordDeferredPluginMigrations({
-          env,
-          pending: [],
-          resolvedPluginIds: disabled,
-          expectedPending: pendingPlugins,
-        })) ?? pendingPlugins;
-    }
-  }
   const settlements =
     options.mode === "import" || options.mode === "recover"
       ? await settleDuplicateSessionSqliteArchives({
@@ -174,6 +151,10 @@ export async function runDoctorSessionSqlite(
           targets: candidates.map(createMigrationTargetInput),
         })
       : [];
+  const settlementIssuesForStore = (storePath: string) =>
+    settlements
+      .filter((item) => item.target.storePath === storePath)
+      .flatMap((item) => item.issues);
   let historicalSources = ["import", "dry-run", "validate", "recover"].includes(options.mode)
     ? collectHistoricalArchiveSources({ cfg, env })
     : undefined;
@@ -193,7 +174,6 @@ export async function runDoctorSessionSqlite(
   if (options.mode === "recover") {
     return recoverDoctorSessionSqliteTargets({
       env,
-      options,
       targets,
       prepareTarget: (target) => repairEntryStates([target]),
       recoveryInventory: historicalSources?.inventory,
@@ -231,11 +211,7 @@ export async function runDoctorSessionSqlite(
                   pending: pendingPlugins,
                 }),
               });
-        report.issues.push(
-          ...settlements
-            .filter((item) => item.target.storePath === target.storePath)
-            .flatMap((item) => item.issues),
-        );
+        report.issues.push(...settlementIssuesForStore(target.storePath));
         return report;
       },
     });
@@ -284,11 +260,7 @@ export async function runDoctorSessionSqlite(
     );
   }
   for (const report of reports) {
-    report.issues.push(
-      ...settlements
-        .filter((item) => item.target.storePath === report.storePath)
-        .flatMap((item) => item.issues),
-    );
+    report.issues.push(...settlementIssuesForStore(report.storePath));
   }
   if (activeRun && coverage) {
     for (const owner of archiveTargets) {
@@ -515,7 +487,7 @@ export async function settleRetainedDoctorSessionSources(
   if (!plan) {
     return;
   }
-  const assertCurrent = () => {
+  const assertCurrent = (): undefined => {
     authority.assertCurrent();
     assertCompletionCurrent();
   };
@@ -724,6 +696,13 @@ async function inspectOrMigrateTarget(params: {
     archivedLegacyStoreFiles: [],
     issues,
   });
+  const updateManifest = (validationBeforeArchive?: "passed" | "failed") =>
+    updateMigrationManifestTarget(
+      params.activeRun,
+      createMigrationTargetInput(params.target),
+      report.issues,
+      { validationBeforeArchive },
+    );
   const retained = await prepareRetainedSessionImport(params, report);
   if (!retained) {
     return report;
@@ -878,20 +857,11 @@ async function inspectOrMigrateTarget(params: {
     if (issues.length === 0) {
       report.sqliteEntries = 0;
     }
-    updateMigrationManifestTarget(
-      params.activeRun,
-      createMigrationTargetInput(params.target),
-      issues,
-    );
+    updateManifest();
     return report;
   }
   if (!retainedImport && params.verifyMissingIndex(report)) {
-    updateMigrationManifestTarget(
-      params.activeRun,
-      createMigrationTargetInput(params.target),
-      report.issues,
-      { validationBeforeArchive: "passed" },
-    );
+    updateManifest("passed");
     return report;
   }
   if (retainedImport) {
@@ -908,14 +878,7 @@ async function inspectOrMigrateTarget(params: {
   let validationPassed = retainedImport !== undefined;
   if (params.mode === "import" && retainedImport) {
     // Exact source and database identities carry the earlier verified import into archival.
-    updateMigrationManifestTarget(
-      params.activeRun,
-      createMigrationTargetInput(params.target),
-      report.issues,
-      {
-        validationBeforeArchive: "passed",
-      },
-    );
+    updateManifest("passed");
   }
   if (
     params.mode === "import" &&
@@ -929,14 +892,7 @@ async function inspectOrMigrateTarget(params: {
       "before-archive",
       params.env,
     );
-    updateMigrationManifestTarget(
-      params.activeRun,
-      createMigrationTargetInput(params.target),
-      report.issues,
-      {
-        validationBeforeArchive: validationPassed ? "passed" : "failed",
-      },
-    );
+    updateManifest(validationPassed ? "passed" : "failed");
     if (validationPassed && params.activeRun) {
       const recoveredMoves = records.flatMap((record) =>
         record.historical?.archiveMove && record.recovery?.complete
@@ -1065,11 +1021,7 @@ async function inspectOrMigrateTarget(params: {
   if (params.mode !== "import") {
     appendActiveSqliteTranscriptFileIssues(params.target, report, retainedSourcePaths);
   }
-  updateMigrationManifestTarget(
-    params.activeRun,
-    createMigrationTargetInput(params.target),
-    report.issues,
-  );
+  updateManifest();
   return report;
 }
 
@@ -1077,7 +1029,7 @@ async function archiveLegacyArtifacts(
   owners: readonly LegacyArchiveTarget[],
   coverage: ReturnType<typeof gatherLegacyArchiveCoverage>,
   activeRun: ActiveSessionSqliteMigrationRun,
-  assertCurrent?: () => void,
+  assertCurrent?: () => undefined,
   capturedSources?: ReadonlySet<string>,
   publishSourceRemoval?: (remove: () => void, retainSource: () => void) => void,
 ): Promise<void> {
@@ -1297,7 +1249,6 @@ async function archiveLegacyArtifacts(
       try {
         const move = planSessionJsonlArchiveMove({
           archiveKey: "archive-tier",
-          baseNameRaw: path.basename(source),
           kind,
           reservedArchivePaths,
           sourcePathRaw: source,
@@ -1398,11 +1349,7 @@ async function archiveLegacyArtifacts(
         move.sourcePath,
         move.archivePath,
         move.artifact!.identity,
-        assertCurrent
-          ? () => {
-              assertCurrent();
-            }
-          : undefined,
+        assertCurrent,
         publishSourceRemoval,
       );
       assertCurrent?.();

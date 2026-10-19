@@ -57,12 +57,7 @@ export function buildCodexPluginThreadConfigEligibilityLogData(params: {
 
 type CodexModelCallFailureKind = "aborted" | "timeout";
 
-type CodexModelCallDiagnosticCapture = {
-  inputMessages?: boolean;
-  outputMessages?: boolean;
-  systemPrompt?: boolean;
-  toolDefinitions?: boolean;
-};
+type CodexModelCallDiagnosticCapture = Partial<Record<keyof DiagnosticModelCallContent, boolean>>;
 
 type CodexModelCallDiagnosticTool = {
   name: string;
@@ -171,13 +166,17 @@ export function createCodexModelCallDiagnosticEmitter(params: {
     };
   };
 
-  const privateData = (modelContent: DiagnosticModelCallContent | undefined) =>
-    modelContent && Object.keys(modelContent).length > 0 ? { modelContent } : undefined;
-  const buildContent = (): DiagnosticModelCallContent => ({
-    ...(params.capture.inputMessages ? { inputMessages: params.buildInputMessages() } : {}),
-    ...(params.capture.systemPrompt ? { systemPrompt: params.buildSystemPrompt() } : {}),
-    ...(toolDefinitions ? { toolDefinitions } : {}),
-  });
+  const buildPrivateData = (
+    terminalOutput?: Pick<DiagnosticModelCallContent, "outputMessages">,
+  ) => {
+    const modelContent: DiagnosticModelCallContent = {
+      ...(params.capture.inputMessages ? { inputMessages: params.buildInputMessages() } : {}),
+      ...(params.capture.systemPrompt ? { systemPrompt: params.buildSystemPrompt() } : {}),
+      ...(toolDefinitions ? { toolDefinitions } : {}),
+      ...(terminalOutput && params.capture.outputMessages ? terminalOutput : {}),
+    };
+    return Object.keys(modelContent).length > 0 ? { modelContent } : undefined;
+  };
   const emitTerminal = (
     type: "model.call.completed" | "model.call.error",
     outputMessages: unknown,
@@ -197,10 +196,7 @@ export function createCodexModelCallDiagnosticEmitter(params: {
         ...(requestPayloadBytes !== undefined ? { requestPayloadBytes } : {}),
         ...inferenceTransport(),
       } as TrustedDiagnosticEventInput,
-      privateData({
-        ...buildContent(),
-        ...(params.capture.outputMessages ? { outputMessages } : {}),
-      }),
+      buildPrivateData({ outputMessages }),
     );
     return true;
   };
@@ -223,7 +219,7 @@ export function createCodexModelCallDiagnosticEmitter(params: {
           ...params.baseFields,
           promptStats,
         } as TrustedDiagnosticEventInput,
-        privateData(buildContent()),
+        buildPrivateData(),
       );
     },
     emitCompleted(result: { assistantTexts?: unknown; lastAssistant?: unknown }): void {

@@ -141,7 +141,7 @@ retains its current runtime until a signed fork Windows build is published;
 unsigned dry-run artifacts are not shippable.
 
 Every repin requires both gates on the same published tag: CI's paired Bun-lane
-replay and Bun-only smoke, plus the macOS runtime probes and two-binary test set.
+replay and Bun-only smoke, plus the macOS runtime checks and two-binary test set.
 Neither app nor CI advances when either gate fails. A Linux-only regression
 also stops the shared repin. Preserve the last tag admitted by both gates while
 investigating; a published prerelease alone is not admission. Record the exact
@@ -231,6 +231,14 @@ state; named-profile preferences use a fresh domain and are also discarded with
 the runner.
 If process cleanup cannot be verified or Keychain deletion fails, the launcher
 fails and retains its files for inspection.
+The release-only bundled recovery app-host lane keeps the disposable account’s
+canonical home so the real CLI can manage its unique named-profile service. Its
+state and preferences use that profile. The app host and Security commands share
+the account’s user Keychain domain, selecting the launcher-owned empty-password
+Keychain file; temporary files also remain launcher-owned. Cleanup removes
+the profile state only after the service and its observed process group retire.
+Unverified retirement retains both the profile state and temporary resources.
+
 CI environment markers only catch accidental invocation; they do not enforce
 isolation or make an operator desktop safe.
 

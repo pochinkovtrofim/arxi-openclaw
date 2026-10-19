@@ -63,7 +63,7 @@ struct BundledGatewayPreparationTests {
               printf '%s\n' '2026.9.1' > "$OPENCLAW_PREPARATION_FIXTURE_ROOT/version"
             fi
             if [ -f "$OPENCLAW_PREPARATION_FIXTURE_ROOT/fail" ]; then
-              printf '%s\n' '{"status":"error","reason":"fixture offline"}'
+              printf '%s\n' '{"status":"error","reason":"fixture offline","steps":[{"name":"package update","exitCode":1,"stderrTail":"registry unavailable: fixture offline"}]}'
               exit 1
             fi
             printf '%s\n' '2026.9.1' > "$OPENCLAW_PREPARATION_FIXTURE_ROOT/version"
@@ -126,9 +126,10 @@ struct BundledGatewayPreparationTests {
                         try PostAppUpdateReceiptStore.recordCoreUpdateDispatch(receipt: notice, owner: owner)
                     },
                     statusHandler: { _ in })
-                guard case .failure = failed else { Issue.record("Expected interrupted core update")
+                guard case let .failure(_, details) = failed else { Issue.record("Expected interrupted core update")
                     return
                 }
+                #expect(details?.contains("registry unavailable") == true)
                 try FileManager.default.removeItem(at: fixture.root.appendingPathComponent("fail"))
             }
             let pending: PostAppUpdateReceipt = if fresh {
@@ -344,7 +345,7 @@ struct BundledGatewayPreparationTests {
                 var runtimeActions: [String] = []
                 var failHealth = scenario == "runtime-failure"
                 var operations = ManagedNodeGatewayMigration.liveOperations(
-                    checkCurrent: {}, resolveLegacyCLI: { cli }, allowNamedServiceRetry: true,
+                    checkCurrent: {}, resolveLegacyCLI: { cli },
                     verifyHealth: {
                         runtimeActions.append("health")
                         if failHealth {
@@ -1082,6 +1083,27 @@ struct BundledGatewayPreparationTests {
                 after: .ready, currentVersion: "2026.9.1")
             #expect(PostAppUpdateReceiptStore.pending(currentVersion: "2026.9.1") == nil)
             #expect(manager.retainedServiceCLI?.prefix == cli.prefix)
+        }
+    }
+
+    @Test func `bundled setup reuses a newer managed Node package without updating it`() async throws {
+        let home = try makeTempDirForTests()
+        defer { try? FileManager.default.removeItem(at: home) }
+        try await TestIsolation.withIsolatedState(
+            launchAgentHomeDirectory: home,
+            defaults: [cliInstallPolicyKey: "exact", postAppUpdateReceiptKey: nil])
+        {
+            let fixture = try Fixture(home: home)
+            defer { fixture.remove() }
+            try "2026.10.2\n".write(
+                to: fixture.root.appendingPathComponent("version"), atomically: false, encoding: .utf8)
+            let original = GatewayLaunchAgentManager.launchdConfigSnapshot()
+            let location = try await CLIInstaller.prepareBundledGateway(
+                targetVersion: "2026.10.1", statusHandler: { _ in })
+            #expect(location == fixture.cli.prefix.last)
+            #expect(GatewayLaunchAgentManager.launchdConfigSnapshot() == original)
+            #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("updates").path))
+            #expect(PostAppUpdateReceiptStore.pendingSetupRecovery() == nil)
         }
     }
 

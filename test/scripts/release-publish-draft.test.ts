@@ -60,6 +60,7 @@ function publicationFixture({
   for (const source of [
     "scripts/render-github-release-notes.mts",
     "scripts/openclaw-npm-extended-stable-release.mjs",
+    "scripts/plugin-sdk-api-release-evidence.mjs",
     "scripts/lib/release-changelog.mjs",
     "scripts/lib/release-notes-compaction.mjs",
     "scripts/lib/release-version.mjs",

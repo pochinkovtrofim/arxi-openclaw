@@ -14,11 +14,7 @@ import { initializeGlobalHookRunner } from "openclaw/plugin-sdk/hook-runtime";
 import { createMockPluginRegistry } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { describe, expect, it, vi } from "vitest";
 import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
-import {
-  emitDynamicToolStartedDiagnostic,
-  emitDynamicToolErrorDiagnostic,
-  emitDynamicToolTerminalDiagnostic,
-} from "./dynamic-tool-diagnostics.js";
+import { createCodexDynamicToolDiagnostics } from "./dynamic-tool-diagnostics.js";
 import { setCodexTestToolFactory } from "./host-capability.test-support.js";
 import type { CodexDynamicToolCallParams } from "./protocol.js";
 import {
@@ -131,21 +127,19 @@ describe("runCodexAppServerAttempt dynamic tools", () => {
     } satisfies CodexDynamicToolCallParams;
 
     try {
-      emitDynamicToolStartedDiagnostic({
+      const diagnostics = createCodexDynamicToolDiagnostics({
         call,
         runId: "run-memory-search-trace",
         trace: diagnosticTrace,
       });
-      emitDynamicToolTerminalDiagnostic({
-        call,
-        runId: "run-memory-search-trace",
-        trace: diagnosticTrace,
-        durationMs: 7,
-        response: {
+      diagnostics.started();
+      diagnostics.terminal(
+        {
           success: true,
           contentItems: [{ type: "inputText", text: "sensitive result" }],
         },
-      });
+        7,
+      );
       await waitForDiagnosticEventsDrained();
     } finally {
       unsubscribeDiagnostics();
@@ -178,28 +172,25 @@ describe("runCodexAppServerAttempt dynamic tools", () => {
       }) satisfies CodexDynamicToolCallParams;
     const tooLong = "a".repeat(65);
     try {
-      emitDynamicToolTerminalDiagnostic({
-        call: call("call-coded"),
-        runId: "run-coded",
-        durationMs: 3,
-        response: {
+      createCodexDynamicToolDiagnostics({ call: call("call-coded"), runId: "run-coded" }).terminal(
+        {
           success: false,
           contentItems: [{ type: "inputText", text: "private failure prose" }],
           errorCode: "revision_required",
         },
-      });
+        3,
+      );
       for (const [callId, errorCode] of [
         ["call-spaces", "bad code"],
         ["call-unicode", "кодошибки"],
         ["call-long", tooLong],
         ["call-object", { code: "nested" }],
       ] as const) {
-        emitDynamicToolErrorDiagnostic({
-          call: call(callId),
-          runId: "run-uncoded",
-          durationMs: 3,
+        createCodexDynamicToolDiagnostics({ call: call(callId), runId: "run-uncoded" }).error(
+          3,
+          "failed",
           errorCode,
-        });
+        );
       }
       await waitForDiagnosticEventsDrained();
     } finally {
@@ -231,6 +222,8 @@ describe("runCodexAppServerAttempt dynamic tools", () => {
     params.runtimePlan = createCodexRuntimePlanFixture();
     setCodexTestModelSupportsTools(params, true);
     const closeHost = await bindProductionHarnessHostCapabilitiesForTest(params);
+    // Keep fixture I/O from spending the attempt clock before the command starts.
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
     const run = runCodexAppServerAttempt(params);
     let response: ReturnType<typeof callTool> | undefined;
     try {
@@ -239,17 +232,16 @@ describe("runCodexAppServerAttempt dynamic tools", () => {
       response = callTool(harness, "sandbox_exec", "required-command", {
         command: "verify-required",
         awaitResults: true,
+        yieldMs: 10,
       }).then((value) => {
         collected = true;
         return value;
       });
       await command.started;
-      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-      await vi.advanceTimersByTimeAsync(60_000);
+      await vi.advanceTimersByTimeAsync(20);
       expect(collected).toBe(false);
       expect(command.spawn).toHaveBeenCalledOnce();
       expect(harness.requests.filter(({ method }) => method === "turn/start")).toHaveLength(1);
-      vi.useRealTimers();
       command.finish();
       await expect(response).resolves.toMatchObject({
         success: true,

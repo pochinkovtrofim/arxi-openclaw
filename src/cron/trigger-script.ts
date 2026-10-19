@@ -16,9 +16,10 @@ import {
   type HookContext,
 } from "../agents/agent-tools.before-tool-call.js";
 import {
-  createOpenClawCodingTools,
+  createOpenClawCodingToolsInternalAsync,
   resolveToolLoopDetectionConfig,
 } from "../agents/agent-tools.js";
+import { hasAnyAuthProfileStoreSourceAsync } from "../agents/auth-profiles/source-check.js";
 import { getBeforeToolCallHookContext } from "../agents/before-tool-call-metadata.js";
 import { createHeadlessDeadlineScope } from "../agents/code-mode-headless.js";
 import type {
@@ -115,7 +116,7 @@ type PreparedTriggerRuntime = {
     admitted: AdmittedRunContext,
     signal: AbortSignal,
     messageActionTurnCapability: string | undefined,
-  ) => AnyAgentTool[];
+  ) => Promise<AnyAgentTool[]>;
   /** Starts this evaluation's own MCP runtime for servers its toolsAllow names by prefix. */
   acquireMcpTools?: (
     admitted: AdmittedRunContext,
@@ -224,6 +225,9 @@ async function prepareTriggerRuntime(
       toolsEnabled: true,
       toolsAllow: params.toolsAllow,
     });
+    const authProfileStoreSource =
+      toolPlan.constructTools && (await hasAnyAuthProfileStoreSourceAsync(agentDir));
+    preparationSignal?.throwIfAborted();
     const scheduledToolPolicy = resolveScheduledToolPolicyContext({
       toolsAllow: params.toolsAllow,
       scheduledToolPolicy: params.scheduledToolPolicy,
@@ -255,13 +259,13 @@ async function prepareTriggerRuntime(
       return profile;
     };
     // LSP runtimes are session-scoped and intentionally outside trigger v1.
-    const createTools: PreparedTriggerRuntime["createTools"] = (
+    const createTools: PreparedTriggerRuntime["createTools"] = async (
       admitted,
       signal,
       messageActionTurnCapability,
     ) => {
       const allTools = toolPlan.constructTools
-        ? createOpenClawCodingTools({
+        ? await createOpenClawCodingToolsInternalAsync({
             agentId,
             runId: admitted.operationalRunInstance.runId,
             operationalRunInstance: admitted.operationalRunInstance,
@@ -273,6 +277,7 @@ async function prepareTriggerRuntime(
             trigger: "cron",
             jobId: params.jobId,
             agentDir,
+            authProfileStoreSource,
             cwd: effectiveWorkspace,
             workspaceDir: effectiveWorkspace,
             spawnWorkspaceDir: workspaceDir,
@@ -504,13 +509,14 @@ function createCronCodeModeRunner(deps: CronTriggerEvaluatorDeps) {
           }
           const selected = runtime;
           const authority = admitted;
-          tools = withPluginRuntimeRegistryScope(selected.pluginRegistry, () =>
+          tools = await withPluginRuntimeRegistryScope(selected.pluginRegistry, () =>
             selected.createTools(
               authority,
               evaluationScope.signal,
               admission?.messageActionTurnCapability,
             ),
           );
+          assertActive();
           if (!runtime.isCurrent()) {
             throw new PluginInstanceUnavailableError();
           }

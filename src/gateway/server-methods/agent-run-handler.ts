@@ -1,5 +1,9 @@
 import { validateAgentParams } from "../../../packages/gateway-protocol/src/index.js";
 import {
+  captureExternalSessionCommitGuard,
+  composeSessionSourceAssertion,
+} from "../../config/sessions/session-source-authority.js";
+import {
   freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
@@ -33,12 +37,15 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
     client,
     context,
   });
-  const assertAdmissionCurrent = () => {
-    sessionMutationCommitGuard?.();
-    if (hasCurrentClientAuthority?.() === false) {
-      throw new Error("Gateway caller authority is no longer active.");
-    }
-  };
+  const assertAdmissionCurrent = composeSessionSourceAssertion(
+    [captureExternalSessionCommitGuard(sessionMutationCommitGuard)],
+    (assertSource) => {
+      assertSource();
+      if (hasCurrentClientAuthority?.() === false) {
+        throw new Error("Gateway caller authority is no longer active.");
+      }
+    },
+  );
   assertAdmissionCurrent();
   const io = createAgentTurnIo(respond);
   if (

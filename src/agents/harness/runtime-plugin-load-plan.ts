@@ -1,4 +1,3 @@
-/** Builds deterministic plugin load plans for selected harness, memory, and context-engine owners. */
 import { normalizeUniqueStringEntries } from "@openclaw/normalization-core/string-normalization";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { withActivatedPluginIds } from "../../plugins/activation-context.js";
@@ -40,7 +39,7 @@ export type AgentHarnessPluginSelection = {
   agentId?: string;
 };
 
-export type RuntimePluginLoadPurpose = "agent" | "model-catalog";
+export type RuntimePluginLoadPurpose = "agent" | "model-catalog" | "isolated-completion";
 
 function restrictiveAllowlistOmitsPlugin(config: OpenClawConfig | undefined, pluginId: string) {
   const allow = config?.plugins?.allow ?? [];
@@ -304,7 +303,6 @@ export function resolveSelectedAgentHarnessRuntime(
       }).runtime;
 }
 
-// Returns whether a selection needs a plugin-owned harness in its prepared generation.
 export function requiresAgentHarnessPluginSelection(
   selection: AgentHarnessPluginSelection,
   config?: OpenClawConfig,
@@ -376,7 +374,7 @@ export function resolveAgentRuntimePluginLoadPlan(params: {
   purpose?: RuntimePluginLoadPurpose;
 }): { config?: OpenClawConfig; pluginIds?: string[] } {
   let config = params.config;
-  const includeAgentOwners = params.purpose !== "model-catalog";
+  const includeAgentOwners = params.purpose === undefined || params.purpose === "agent";
   const memoryPluginIds = includeAgentOwners
     ? resolveSelectedMemoryPluginIds({
         config: params.config,
@@ -392,7 +390,7 @@ export function resolveAgentRuntimePluginLoadPlan(params: {
   );
   const pluginIds = [...basePluginIds, ...memoryPluginIds, ...contextEnginePluginIds];
   const forceActivatedPluginIds = [...memoryPluginIds, ...contextEnginePluginIds];
-  if (includeAgentOwners) {
+  if (params.purpose !== "model-catalog") {
     const selection = resolveAgentRuntimePluginSelectionOwners(params);
     pluginIds.push(...selection.pluginIds);
     forceActivatedPluginIds.push(...selection.forceActivatedPluginIds);

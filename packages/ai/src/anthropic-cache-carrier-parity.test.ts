@@ -94,7 +94,7 @@ describe("Anthropic runtime-context cache lifecycle", () => {
     { implementation: "transport", marker: "legacy" },
     { implementation: "transport", marker: "canonical" },
   ] as const)(
-    "keeps mixed-media $marker carriers before steering out of the cache through $implementation replay",
+    "keeps mixed-media $marker carriers out of the prompt cache through $implementation replay",
     async ({ implementation, marker }) => {
       const carrier: Message = {
         role: "user",
@@ -112,11 +112,7 @@ describe("Anthropic runtime-context cache lifecycle", () => {
         cacheRetention: "short",
         context: {
           ...context,
-          messages: [
-            { role: "user", content: "Original question", timestamp: 1 },
-            carrier,
-            { role: "user", content: "Steering correction", timestamp: 3 },
-          ],
+          messages: [{ role: "user", content: "Original question", timestamp: 1 }, carrier],
         },
       });
       const wire = payload.messages as Array<{ content: unknown }>;
@@ -135,7 +131,90 @@ describe("Anthropic runtime-context cache lifecycle", () => {
           source: { type: "base64", media_type: "image/png", data: "aW1n" },
         },
       ]);
-      expect(wire[2]?.content).toBe("Steering correction");
+    },
+  );
+
+  it.each([false, true])(
+    "preserves excluded-consult updates and the prompt prefix (prior conversation=%s)",
+    async (priorConversation) => {
+      const model = { ...anthropicModel, id: "claude-opus-5-5" };
+      const answer: Message = {
+        role: "assistant",
+        api: model.api,
+        provider: model.provider,
+        model: model.id,
+        timestamp: 1,
+        stopReason: "stop",
+        usage: createZeroUsage(),
+        content: [{ type: "text", text: "Answer" }],
+      };
+      const prior: Context["messages"] = priorConversation
+        ? [{ role: "user", content: "Earlier question", timestamp: 0 }, answer]
+        : [];
+      // The generated consult prompt was excluded from replay; both updates survive.
+      const messages: Context["messages"] = [
+        ...prior,
+        {
+          role: "user",
+          content: "Changed instructions",
+          timestamp: 2,
+          operatorMessage: { turnScoped: false },
+        },
+        {
+          role: "user",
+          content: "Consult facts",
+          timestamp: 3,
+          operatorMessage: { turnScoped: true },
+        },
+      ];
+      appendToolRound(messages, model, 2);
+      const expected = [
+        ...(priorConversation
+          ? [
+              { role: "user", content: "Earlier question" },
+              { role: "assistant", content: [{ type: "text", text: "Answer" }] },
+            ]
+          : []),
+        { role: "user", content: "." },
+        { role: "system", content: [{ type: "text", text: "Changed instructions" }] },
+        {
+          role: "system",
+          content: [{ type: "text", text: "Consult facts" }],
+          clear_at: "next_user_message",
+        },
+        { role: "assistant", content: [{ type: "tool_use" }, { type: "tool_use" }] },
+        { role: "user", content: [{ type: "tool_result" }, { type: "tool_result" }] },
+      ];
+      for (const implementation of ["provider", "transport"] as const) {
+        const first = await captureAnthropicRequest(implementation, {
+          model,
+          cacheRetention: "none",
+          context: { ...context, messages },
+        });
+        expect(first.payload.messages).toMatchObject(expected);
+        const second = await captureAnthropicRequest(implementation, {
+          model,
+          cacheRetention: "none",
+          context: {
+            ...context,
+            messages: [
+              ...messages,
+              answer,
+              { role: "user", content: "Next question", timestamp: 6 },
+            ],
+          },
+        });
+        expect(second.payload.messages).toMatchObject([
+          ...expected,
+          { role: "assistant", content: [{ type: "text", text: "Answer" }] },
+          { role: "user", content: "Next question" },
+        ]);
+        expect(second.payload.system).toEqual(first.payload.system);
+        expect(second.payload.system).toEqual([{ type: "text", text: context.systemPrompt }]);
+        expect((second.payload.messages as unknown[]).slice(0, expected.length)).toEqual(
+          first.payload.messages,
+        );
+      }
     },
   );
 
@@ -427,16 +506,11 @@ describe("Anthropic runtime-context cache lifecycle", () => {
                 : "OpenClaw runtime context:\nRuntime context",
             });
           } else {
-            const retainedContent = wire[1]?.content;
-            expect(
-              typeof retainedContent === "string"
-                ? [{ type: "text", text: retainedContent }]
-                : retainedContent,
-            ).toEqual([
+            expect(wire[1]?.content).toEqual([
               {
                 type: "text",
                 text: "OpenClaw runtime context:\nRuntime context",
-                ...(round < 2 ? { cache_control: cacheControl } : {}),
+                cache_control: cacheControl,
               },
             ]);
           }
@@ -458,16 +532,9 @@ describe("Anthropic runtime-context cache lifecycle", () => {
                   }),
                 ],
           );
-          // String content is Anthropic's shorthand for one text block; markers may move.
+          // Checkpoint metadata advances; the content preceding it must remain reusable.
           const prefix = JSON.parse(
-            JSON.stringify(stable, (key, value) => {
-              if (key === "cache_control") {
-                return undefined;
-              }
-              return key === "content" && typeof value === "string"
-                ? [{ type: "text", text: value }]
-                : value;
-            }),
+            JSON.stringify(stable, (key, value) => (key === "cache_control" ? undefined : value)),
           );
           expect(prefix.slice(0, previousPrefix.length)).toEqual(previousPrefix);
           previousPrefix = prefix;

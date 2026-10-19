@@ -1,5 +1,4 @@
 import { isDeepStrictEqual } from "node:util";
-import { supportsNativeOpenAIResponsesEndpoint } from "@openclaw/ai/internal/openai-responses-payload-policy";
 import {
   captureOpenAIResponsesCompaction,
   requestPreparedOpenAIResponsesCompaction,
@@ -48,12 +47,12 @@ export async function attemptServerEndpointCompaction(params: {
   if (
     params.trigger === "overflow" ||
     params.customInstructions?.trim() ||
-    !resolveOpenAIResponsesCompactEndpointPlan(params.model, params.extraParams).enabled
+    !resolveOpenAIResponsesCompactEndpointPlan(params.model, params.extraParams, params.trigger)
+      .enabled
   ) {
     return undefined;
   }
   params.assertActive?.();
-  let compacted: ServerEndpointCompactionResult;
   let compactionCommitted = false;
   try {
     const messages = params.context.messages.filter(
@@ -61,29 +60,11 @@ export async function attemptServerEndpointCompaction(params: {
         message.role === "user" || message.role === "assistant" || message.role === "toolResult",
     );
     if (messages.at(-1)?.role !== "assistant") {
-      log.warn(
-        "Responses compact endpoint skipped: history does not end with an assistant message; " +
-          "using client compaction",
-      );
       return undefined;
     }
     if (requiresCompactionReplayRefresh(messages, params.model, params.requestOptions)) {
       // The exact old window is gone. Only the durable full-history client
       // compactor can rebuild it; recent-turn endpoint input cannot.
-      log.warn(
-        "Responses compact endpoint skipped: the stored checkpoint needs a full-history rebuild; " +
-          "using client compaction",
-      );
-      return undefined;
-    }
-    // The returned window can carry these sources verbatim, and a window that transcript
-    // redaction would change cannot be stored. Decide before paying for the endpoint call.
-    const windowSource = findEndpointWindowRedactionSource(params);
-    if (windowSource) {
-      log.warn(
-        `Responses compact endpoint skipped: its ${windowSource} would require transcript ` +
-          "redaction in the stored window; using client compaction",
-      );
       return undefined;
     }
     const owner = params.sessionManager
@@ -92,7 +73,7 @@ export async function attemptServerEndpointCompaction(params: {
     if (!owner || owner.type !== "message" || owner.message.role !== "assistant") {
       throw new Error("Responses compact endpoint requires a persisted assistant owner");
     }
-    compacted = await compactWithSafetyTimeout(
+    const compacted = await compactWithSafetyTimeout(
       (signal) =>
         requestPreparedOpenAIResponsesCompaction(
           params.streamFn,
@@ -132,10 +113,6 @@ export async function attemptServerEndpointCompaction(params: {
         replacementTokens + budget.fixedTokens + budget.pendingTokens >
         budget.contextWindow - budget.reserveTokens
       ) {
-        log.warn(
-          "Responses compact endpoint result discarded: returned window does not fit the " +
-            `request budget (windowTokens=${replacementTokens}); using client compaction`,
-        );
         return undefined;
       }
     }
@@ -165,6 +142,7 @@ export async function attemptServerEndpointCompaction(params: {
       compactionCommitted = true;
       params.onCompactionCommitted?.(compacted.usage.input_tokens);
     });
+    return compacted;
   } catch (err) {
     // Observer or handle-release failures after commit must not trigger a
     // second client compaction of the already replaced context.
@@ -172,35 +150,9 @@ export async function attemptServerEndpointCompaction(params: {
       throw err;
     }
     params.assertActive?.();
-    log.warn(
+    log.debug(
       `Responses compact endpoint failed; falling back to client compaction: ${formatErrorMessage(err)}`,
     );
     return undefined;
   }
-  return compacted;
-}
-
-/** Name the first request source the endpoint may retain that redaction would rewrite. */
-function findEndpointWindowRedactionSource(params: {
-  model: Parameters<typeof supportsNativeOpenAIResponsesEndpoint>[0];
-  context: { systemPrompt: string; messages: readonly AgentMessage[] };
-  config?: OpenClawConfig;
-}): "system prompt" | "user message" | undefined {
-  // Public OpenAI receives the prompt as `instructions`; other compact routes put it in input.
-  if (params.context.systemPrompt && !supportsNativeOpenAIResponsesEndpoint(params.model)) {
-    const prompt: AgentMessage = {
-      role: "user",
-      content: params.context.systemPrompt,
-      timestamp: 0,
-    };
-    if (redactTranscriptMessage(prompt, params.config) !== prompt) {
-      return "system prompt";
-    }
-  }
-  return params.context.messages.some(
-    (message) =>
-      message.role === "user" && redactTranscriptMessage(message, params.config) !== message,
-  )
-    ? "user message"
-    : undefined;
 }

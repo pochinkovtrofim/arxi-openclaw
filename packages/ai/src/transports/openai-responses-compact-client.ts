@@ -18,32 +18,18 @@ export async function postOpenAIResponsesCompaction(params: {
   request: ReturnType<typeof buildOpenAIResponsesParams>;
   options: OpenAIResponsesOptions | undefined;
 }): Promise<OpenAIResponsesCompactEndpointResult> {
-  const instructions =
+  const compactInput =
     typeof params.request.instructions === "string" && params.request.instructions.length > 0
-      ? params.request.instructions
-      : undefined;
-  // Public OpenAI accepts `instructions`, which keeps the prompt out of the returned window
-  // (https://developers.openai.com/api/reference/resources/responses/methods/compact);
-  // xAI and other compatible routes require it first in input.
-  const body =
-    instructions && !supportsNativeOpenAIResponsesEndpoint(params.model)
-      ? {
-          model: params.request.model,
-          input: [
-            buildOpenAIResponsesCompactSystemMessage(params.model, instructions),
-            ...(params.request.input ?? []),
-          ],
-        }
-      : {
-          model: params.request.model,
-          input: params.request.input,
-          ...(instructions ? { instructions } : {}),
-        };
+      ? [
+          buildOpenAIResponsesCompactSystemMessage(params.model, params.request.instructions),
+          ...(params.request.input ?? []),
+        ]
+      : params.request.input;
   const response = await params.client.post<unknown>("/responses/compact", {
     ...buildOpenAISdkRequestOptions(params.model, params.options?.signal, {
       timeoutMs: params.options?.timeoutMs,
     }),
-    body,
+    body: { model: params.request.model, input: compactInput },
   });
   const output = isRecord(response) && Array.isArray(response.output) ? response.output : [];
   const item = output.at(-1);

@@ -11,14 +11,14 @@ title: "Ro fork patch ledger"
 
 ## Selected upstream
 
-The selected stable base is OpenClaw `v2026.10.2`, exact upstream commit
-`b8952d477f0c932d8ddc6da5c89cab5a169b6ff1`. This integration starts from Ro
-`4bef05fec4a150af34dd466d33e28da0e7d12f7e`; its previous stable base was
-`v2026.9.8` (`fc23bc864e4553c2d215e479eeec47b67a0bf943`). Dispositions recorded
-at `v2026.9.8` below still hold unless the `v2026.10.2` section revises them.
+The selected stable base is OpenClaw `v2026.10.5`, exact upstream commit
+`1b58cb9a1b4f4353e1add63c8506db4d890962e8`. This integration starts from Ro
+`b420f7bd3e16a97837781b36ae67b7d2c77ab714`; its previous stable base was
+`v2026.10.2` (`b8952d477f0c932d8ddc6da5c89cab5a169b6ff1`). Dispositions recorded
+for earlier bases below still hold unless a later section revises them.
 
 The managed Codex app-server remains pinned to `@openai/codex@0.159.3`.
-The release's older `0.158.0` pin does not replace the already deployed managed
+The release's `0.160.0` pin does not replace the already deployed managed
 runtime. Deployment is established by Ops artifact/golden and activation receipts,
 not by this source ledger.
 
@@ -95,6 +95,29 @@ or runtime layers merely because they existed in the previous history.
 - Fork product-copy codes render upstream's revised failure wording; the new
   `media_invalid_reference` code covers upstream's invalid media reference.
 
+## Redesigned for v2026.10.5
+
+- Gateway state custody across a host suspension (#137) is removed. Upstream's
+  watchdog now verifies the held lock's inode and bytes when the deadline has
+  passed and renews it in place, so a clock jump after a standby resume no
+  longer loses custody; a replaced lock still does.
+- Replayed-snapshot owner lease reclaim (#134) is ported onto upstream's
+  `resolveStoppedGatewayOwnerLease` and its admission parameter.
+- The active computer hint stays out of the cached Runtime line (#143) in
+  upstream's new `system-prompt-runtime.ts`.
+- Skill Workshop final approval for proposals is removed: upstream replaced
+  proposals with a direct, versioned learning loop. The bounded review suffix
+  (#122, #124) is retained.
+- Approved-execution binding composes with upstream's trusted approval grant in
+  `before_tool_call`; MCP catalog signatures keep the fork's scoped server and
+  tool annotations on upstream's lifecycle structure.
+- Delivery recovery keeps the deferral readiness check beside upstream's
+  `isDeliveryRecoveryRetryEligible`.
+- Doctor capture retirement (#129) respects upstream's pending recovery seals:
+  a capture with `manifest.json.partial` is never retired.
+- New product-copy code `prompt_size_limit` covers upstream's provider prompt
+  size failure.
+
 ## Contracts rebuilt on v2026.9.8
 
 | Contract                                               | Current owner and disposition                                                                                                                                                                                                                                                                       |
@@ -127,7 +150,7 @@ keep the accepted candidate selected, and qualify a schema-compatible fallback
 before release closeout. The preceding runtime is not a compatible rollback.
 No source pin or test result by itself establishes production activation.
 
-The lifecycle inventory at `b8952d477f0c932d8ddc6da5c89cab5a169b6ff1`
+The lifecycle inventory at `1b58cb9a1b4f4353e1add63c8506db4d890962e8`
 uses agent-run contexts, ACP turns, media generation, and migration/backup write
 custody in place of the retired task registry. All are included in suspension
 activity; write custody also accompanies the ready response.

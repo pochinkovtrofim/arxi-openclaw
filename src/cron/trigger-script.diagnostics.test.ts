@@ -28,7 +28,7 @@ function preparedRuntime(config: OpenClawConfig) {
     { config, agentId: "main", sessionKey: "agent:main:cron:condition" },
   );
   return {
-    createTools: () => [tool],
+    createTools: async () => [tool],
     context: {
       config,
       agentId: "main",
@@ -88,7 +88,7 @@ describe("headless Cron condition diagnostic lifecycle", () => {
   it.each([false, true])("records bounded source tool outcome for failure=%s", async (fails) => {
     const config: OpenClawConfig = {};
     const prepared = preparedRuntime(config);
-    const [preparedTool] = prepared.createTools();
+    const [preparedTool] = await prepared.createTools();
     if (!preparedTool) {
       throw new Error("missing prepared probe tool");
     }
@@ -103,7 +103,7 @@ describe("headless Cron condition diagnostic lifecycle", () => {
     };
     const runtime = createCronScriptRuntimeFixture({
       config,
-      prepareRuntime: async () => ({ ...prepared, createTools: () => [tool] }),
+      prepareRuntime: async () => ({ ...prepared, createTools: async () => [tool] }),
     });
     const captured = captureToolEvents();
     const runCaptured = captureRunEvents();

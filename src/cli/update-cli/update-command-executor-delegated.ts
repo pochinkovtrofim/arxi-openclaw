@@ -15,6 +15,7 @@ import {
   type UpdateCommandChildGrant,
 } from "./update-command-executor-children.js";
 import { resolveUpdateCommandChildBinding } from "./update-command-executor-grant.js";
+import { withUpdateCommandExecutorOperation } from "./update-command-executor-operation.js";
 import {
   admittedAuthorities,
   slotReservations,
@@ -25,6 +26,20 @@ import { createUpdateIdentityWarningReporter } from "./update-command-identity-w
 import { UpdateCommandRecoveryPendingError } from "./update-command-recovery-error.js";
 import { createUpdateOperationDeadline } from "./update-operation-deadline.js";
 
+function memoizeSuccessfulLeaseCheck<T>(check: (lease: T) => boolean) {
+  const checked: T[] = [];
+  return (lease: T) => {
+    if (checked.some((previous) => isDeepStrictEqual(previous, lease))) {
+      return true;
+    }
+    if (!check(lease)) {
+      return false;
+    }
+    checked.push(lease);
+    return true;
+  };
+}
+
 /** A delegated executor retains both its original root and immediate spawner.
  * Neither the transported grant nor a lease row without live identity grants effects. */
 export async function withDelegatedUpdateCommandExecutor<T>(
@@ -33,7 +48,7 @@ export async function withDelegatedUpdateCommandExecutor<T>(
   root: string,
   operation: (
     fence: UpdateRecoveryFence,
-    commandAuthority: ManagedCommandProcessAuthority | undefined,
+    commandAuthority: ManagedCommandProcessAuthority,
   ) => Promise<T>,
   options?: { activationTimeoutMs: number },
 ): Promise<T> {
@@ -54,7 +69,7 @@ export async function withDelegatedUpdateCommandExecutor<T>(
         retainedChild,
         slot,
         slotChild,
-      } = resolveUpdateCommandChildBinding(grant, runId, root, identityWarnings.warn);
+      } = await resolveUpdateCommandChildBinding(grant, runId, root, identityWarnings.warn);
       using readConnections = new DisposableStack();
       readConnections.use(store.retainReadConnection());
       let active = true;
@@ -86,28 +101,13 @@ export async function withDelegatedUpdateCommandExecutor<T>(
         }
         // Several lineage roles can name the same full lease. Share only this
         // assertion's successful checks; every later assertion reads live state.
-        const checkedParents: ManagedHandoffParent[] = [];
-        const checkedReceivers: ManagedHandoffLease[] = [];
-        const parentIsCurrent = (lease: ManagedHandoffParent) => {
-          if (checkedParents.some((checked) => isDeepStrictEqual(checked, lease))) {
-            return true;
-          }
-          if (!store.current(lease) || !isLive(lease.helper) || !isLive(lease.executor)) {
-            return false;
-          }
-          checkedParents.push(lease);
-          return true;
-        };
-        const receiverIsCurrent = (lease: ManagedHandoffLease) => {
-          if (checkedReceivers.some((checked) => isDeepStrictEqual(checked, lease))) {
-            return true;
-          }
-          if (!store.owns(lease, "executor")) {
-            return false;
-          }
-          checkedReceivers.push(lease);
-          return true;
-        };
+        const parentIsCurrent = memoizeSuccessfulLeaseCheck(
+          (lease: ManagedHandoffParent) =>
+            store.current(lease) && isLive(lease.helper) && isLive(lease.executor),
+        );
+        const receiverIsCurrent = memoizeSuccessfulLeaseCheck((lease: ManagedHandoffLease) =>
+          store.owns(lease, "executor"),
+        );
         if (
           !active ||
           !parentIsCurrent(original) ||
@@ -183,11 +183,15 @@ export async function withDelegatedUpdateCommandExecutor<T>(
         owner.run(childRoot, childOperation, purpose),
       );
       try {
-        return await withCommandProcessScope(async () => {
-          let outcome: { result: T } | { error: unknown };
-          try {
-            fence.assertCurrent();
-            if (databaseIdentity) {
+        return await withUpdateCommandExecutorOperation(
+          {
+            children: owner,
+            assertCurrent: () => {
+              fence.assertCurrent();
+              identityWarnings.flush();
+            },
+            operation: () => {
+              fence.assertCurrent();
               admittedAuthorities.set(fence, {
                 authority: Object.freeze({
                   ...databaseIdentity,
@@ -199,55 +203,26 @@ export async function withDelegatedUpdateCommandExecutor<T>(
                 runId,
                 retainedRoot: retained?.key,
               });
-            }
-            if (options) {
-              activation.start(
-                new UpdateActivationTimeoutError(root, options.activationTimeoutMs),
-                options.activationTimeoutMs,
-              );
-            }
-            outcome = {
-              result: await operation(
-                fence,
-                databaseIdentity
-                  ? {
-                      runId,
-                      databaseIdentity,
-                      parents: [
-                        originalChild,
-                        child,
-                        ...(retainedChild ? [retainedChild] : []),
-                        ...(slotChild ? [slotChild] : []),
-                      ],
-                    }
-                  : undefined,
-              ),
-            };
-          } catch (error) {
-            outcome = { error };
-          }
-          owner.close();
-          try {
-            await owner.settle();
-            fence.assertCurrent();
-            identityWarnings.flush();
-          } catch (cause) {
-            outcome = {
-              error:
-                "error" in outcome && outcome.error !== cause
-                  ? new AggregateError(
-                      [outcome.error, cause],
-                      "Unable to finish stopping the update process and its children",
-                      { cause },
-                    )
-                  : cause,
-            };
-          }
-          if ("error" in outcome) {
-            throw outcome.error;
-          }
-          return outcome.result;
-        });
+              if (options) {
+                activation.start(
+                  new UpdateActivationTimeoutError(root, options.activationTimeoutMs),
+                  options.activationTimeoutMs,
+                );
+              }
+              return operation(fence, {
+                runId,
+                databaseIdentity,
+                parents: [
+                  originalChild,
+                  child,
+                  ...(retainedChild ? [retainedChild] : []),
+                  ...(slotChild ? [slotChild] : []),
+                ],
+              });
+            },
+          },
+          "delegated",
+        );
       } finally {
         active = false;
         childOwners.delete(fence);

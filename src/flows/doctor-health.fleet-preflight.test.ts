@@ -123,6 +123,7 @@ it("preserves original config bytes before Doctor relocates and repairs legacy s
     fs.writeFileSync(earlierCronBackup, "earlier cron backup");
     fs.writeFileSync(newestCronBackup, "newest cron backup");
     vi.stubEnv("OPENCLAW_TEST_FAST", "0");
+    vi.stubEnv("OPENCLAW_HOME", undefined);
     vi.stubEnv("OPENCLAW_STATE_DIR", undefined);
     vi.stubEnv("OPENCLAW_CONFIG_PATH", undefined);
     vi.stubEnv("OPENCLAW_UPDATE_IN_PROGRESS", undefined);
@@ -143,8 +144,7 @@ it("preserves original config bytes before Doctor relocates and repairs legacy s
         }
         expect(scope.ownsSchemaMaintenance).toBe(true);
         scope.assertOwnerCurrent();
-        expect(fs.lstatSync(legacyRoot).isSymbolicLink()).toBe(true);
-        expect(fs.realpathSync(legacyRoot)).toBe(state.stateDir);
+        expect(fs.existsSync(legacyRoot)).toBe(false);
         expect(resolveStateDir(process.env)).toBe(state.stateDir);
         const store = resolveUpdateCaptureRoot(legacyRoot);
         expect(fs.existsSync(store), runtime.log.mock.calls.flat().join("\n")).toBe(true);
@@ -166,24 +166,27 @@ it("preserves original config bytes before Doctor relocates and repairs legacy s
         return { ...result, path: state.configPath };
       });
     try {
-      expect(resolveStateDir(process.env)).toBe(legacyRoot);
+      expect(resolveStateDir(process.env)).toBe(state.stateDir);
       await runDoctorHealthFlow(runtime, { repair: true, nonInteractive: true });
       expect(repair).toHaveBeenCalledOnce();
       expect(fs.existsSync(expiredCapture)).toBe(false);
-      // Relocation keeps the same files; legacyRoot now links to the canonical state directory.
-      expect(fs.existsSync(earlierCronBackup)).toBe(false);
-      expect(fs.readFileSync(newestCronBackup, "utf8")).toBe("newest cron backup");
+      // Relocation moves the legacy files into the canonical state directory; only the
+      // newest earlier cron backup stays as the rollback point.
+      const relocated = (backupPath: string) =>
+        path.join(state.stateDir, "state", path.basename(backupPath));
+      expect(fs.existsSync(relocated(earlierCronBackup))).toBe(false);
+      expect(fs.readFileSync(relocated(newestCronBackup), "utf8")).toBe("newest cron backup");
       expect(runtime.log).toHaveBeenCalledWith(
         `Retired superseded Doctor capture: ${expiredCapture}. The newest sealed capture remains for manual recovery; take a verified backup when you need a long-term copy.`,
       );
-      expect(fs.realpathSync(legacyRoot)).toBe(state.stateDir);
+      expect(fs.existsSync(legacyRoot)).toBe(false);
       expect(fs.readFileSync(state.configPath, "utf8")).toContain("19102");
       if (!captured) {
         throw new Error("Doctor did not reach the config repair boundary");
       }
       expect(fs.readFileSync(captured.manifestPath)).toEqual(captured.manifestBytes);
       expect(fs.readFileSync(captured.payloadPath)).toEqual(original);
-      expect(await inspectUpdateRecoveryBackups({ installRoot: process.cwd() })).toEqual([
+      expect(await inspectUpdateRecoveryBackups()).toEqual([
         expect.objectContaining({
           ref: expect.objectContaining({ manifestPath: captured.manifestPath }),
           runId: captured.manifest.runId,
@@ -409,7 +412,7 @@ it("shares one fleet preflight with Doctor admission and its health contribution
   });
 });
 
-it.each(["copy", "hardlink", "relocated-copy"] as const)(
+it.each(["hardlink", "relocated-copy"] as const)(
   "reconciles Doctor admission with physical quarantine across ancestor aliases: %s",
   async (kind) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {

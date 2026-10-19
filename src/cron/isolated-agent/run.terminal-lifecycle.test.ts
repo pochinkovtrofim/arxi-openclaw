@@ -285,6 +285,7 @@ describe("runCronIsolatedAgentTurn terminal lifecycle", () => {
           replaySafeToolNames: new Set(),
           codeModeExecToolNames: new Set(),
           sideEffectToolOwners: new Map(),
+          sourceReplyCapableToolNames: new Set(),
           trustedLocalMediaToolNames: new Set(),
         },
         hookAgentId: "main",
@@ -476,21 +477,24 @@ describe("runCronIsolatedAgentTurn terminal lifecycle", () => {
         : outcome === "failure" || outcome === "cli-timeout" || retryPreparationFailure || exhausted
           ? "error"
           : "final";
-      expect(
-        broadcast.mock.calls.filter(
-          ([event, payload]) => event === "chat" && payload.state !== "delta",
-        ),
-      ).toEqual([
-        [
-          "chat",
-          expect.objectContaining({
-            runId: occurrenceRunId,
-            state,
-            ...(outcome === "cli-timeout" ? { stopReason: "timeout", errorKind: "timeout" } : {}),
-          }),
-          expect.anything(),
-        ],
-      ]);
+      // A terminal error publishes only after its durable failure notice settles.
+      await vi.waitFor(() =>
+        expect(
+          broadcast.mock.calls.filter(
+            ([event, payload]) => event === "chat" && payload.state !== "delta",
+          ),
+        ).toEqual([
+          [
+            "chat",
+            expect.objectContaining({
+              runId: occurrenceRunId,
+              state,
+              ...(outcome === "cli-timeout" ? { stopReason: "timeout", errorKind: "timeout" } : {}),
+            }),
+            expect.anything(),
+          ],
+        ]),
+      );
     } finally {
       releaseFirst.resolve();
       releaseSecond.resolve();

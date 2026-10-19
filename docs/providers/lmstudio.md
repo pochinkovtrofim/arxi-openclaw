@@ -73,6 +73,17 @@ command below and looking at the `key` field:
 curl http://localhost:1234/api/v1/models
 ```
 
+After installing another model in LM Studio, refresh OpenClaw's model list:
+
+```bash
+openclaw models list --provider lmstudio --refresh
+```
+
+In the default merge mode, refresh adds discovered models while preserving your
+configured rows and their authored metadata, including names and context limits.
+An empty configured `models` array also supports discovery on an unauthenticated
+server. `models.mode: "replace"` keeps only explicitly configured models.
+
 ## Non-interactive onboarding
 
 ```bash
@@ -136,6 +147,11 @@ model compat metadata. Some LM Studio builds advertise a binary UI option (`allo
 "on"]`) while rejecting those literal values on `/v1/chat/completions`; OpenClaw normalizes that
 binary shape to the six-level scale before sending requests, including for older saved config that
 still has `off`/`on` reasoning maps.
+
+For graded options, fresh discovery maps `max` (and Ultra's provider effort) to the highest
+advertised canonical effort, regardless of option order. For example, `off`, `low`, `medium`
+maps `max` to `medium`. Existing saved graded `reasoningEffortMap` values remain explicit
+configuration; rerun LM Studio setup to regenerate them from current server metadata.
 
 ### Explicit configuration
 
