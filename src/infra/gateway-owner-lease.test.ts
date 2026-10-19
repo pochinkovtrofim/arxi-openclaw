@@ -768,12 +768,12 @@ describe("Gateway owner lease", () => {
       state: "live",
       expired: false,
     });
-    expect(() => assertGatewayOwnerLeaseStopped(env)).toThrow(
+    await expect(assertGatewayOwnerLeaseStopped(env)).rejects.toThrow(
       "Another Gateway owner lease is still active",
     );
-    expect(() =>
+    await expect(
       assertGatewayOwnerLeaseStopped(env, undefined, { reclaimReplayedSelf: true }),
-    ).not.toThrow();
+    ).resolves.toBeUndefined();
     const lease = owner.acquire();
     await lease.ready;
     expect(readGatewayOwnerLease({ env })).toMatchObject({
@@ -899,9 +899,9 @@ describe("Gateway owner lease", () => {
     const { env } = owner;
     const published = owner.acquire({ owner: "published-generation" });
     await published.ready;
-    expect(() =>
+    await expect(
       assertGatewayOwnerLeaseStopped(env, undefined, { reclaimReplayedSelf: true }),
-    ).toThrow("Another Gateway owner lease is still active");
+    ).rejects.toThrow("Another Gateway owner lease is still active");
     expect(() => owner.acquire({ owner: "next-generation" })).toThrow(
       "Another Gateway owner lease is still active",
     );
