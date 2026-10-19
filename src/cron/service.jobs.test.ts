@@ -323,31 +323,31 @@ describe("suspend wake policy", () => {
   const rejection = 'cron suspendWake "never" requires an every or cron schedule';
 
   it("stores never on recurring schedules and leaves the default absent", () => {
-    expect(createJob(state(), input({ suspendWake: "never" })).suspendWake).toBe("never");
-    expect(createJob(state(), input())).not.toHaveProperty("suspendWake");
+    expect(createJob(fixtureState(), input({ suspendWake: "never" })).suspendWake).toBe("never");
+    expect(createJob(fixtureState(), input())).not.toHaveProperty("suspendWake");
   });
 
   it("rejects never on a one-shot at create and when a schedule change makes it one", () => {
-    expect(() => createJob(state(), input({ suspendWake: "never", schedule: oneShot }))).toThrow(
+    expect(() => createJob(fixtureState(), input({ suspendWake: "never", schedule: oneShot }))).toThrow(
       rejection,
     );
     expect(() =>
       applyJobPatch(
-        job({ suspendWake: "never" }),
+        fixtureJob({ suspendWake: "never" }),
         { schedule: oneShot },
         { scheduleValidationNowMs: NOW },
       ),
     ).toThrow(rejection);
-    expect(() => applyJobPatch(job({ schedule: oneShot }), { suspendWake: "never" })).toThrow(
+    expect(() => applyJobPatch(fixtureJob({ schedule: oneShot }), { suspendWake: "never" })).toThrow(
       rejection,
     );
-    const current = job({ suspendWake: "never" });
+    const current = fixtureJob({ suspendWake: "never" });
     applyJobPatch(current, { schedule: { kind: "cron", expr: "0 * * * *", tz: "UTC" } });
     expect(current.suspendWake).toBe("never");
   });
 
   it("converges suspendWake declaratively in both directions", () => {
-    const current = job();
+    const current = fixtureJob();
     applyDeclarativeJobSpec(current, input({ suspendWake: "never" }), convergence);
     expect(current.suspendWake).toBe("never");
     applyDeclarativeJobSpec(current, input(), convergence);
@@ -555,9 +555,9 @@ describe("cron schedules", () => {
   });
 
   it("keeps a suspendWake never cadence on the timer but off the host wake", () => {
-    const serviceState = state();
-    const watch = job({ id: "watch", suspendWake: "never", state: { nextRunAtMs: NOW + 60_000 } });
-    const reminder = job({ id: "reminder", state: { nextRunAtMs: NOW + 3_600_000 } });
+    const serviceState = fixtureState();
+    const watch = fixtureJob({ id: "watch", suspendWake: "never", state: { nextRunAtMs: NOW + 60_000 } });
+    const reminder = fixtureJob({ id: "reminder", state: { nextRunAtMs: NOW + 3_600_000 } });
     serviceState.store = { version: 1, jobs: [watch, reminder] };
     expect(summarizeCronJobSchedule(serviceState)).toMatchObject({
       nextWakeAtMs: NOW + 60_000,

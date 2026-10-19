@@ -20,6 +20,10 @@ vi.mock("./agent-turn-attachments.js", async (importOriginal) => {
 });
 
 const originalStateDirEnv = process.env.OPENCLAW_STATE_DIR;
+const PNG_IMAGE_BYTES = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=",
+  "base64",
+);
 const PDF_BYTES = Buffer.from("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n");
 
 function restoreProcessState() {

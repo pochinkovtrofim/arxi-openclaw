@@ -285,6 +285,7 @@ describe("runCronIsolatedAgentTurn terminal lifecycle", () => {
           replaySafeToolNames: new Set(),
           codeModeExecToolNames: new Set(),
           sideEffectToolOwners: new Map(),
+          sourceReplyCapableToolNames: new Set(),
           trustedLocalMediaToolNames: new Set(),
         },
         hookAgentId: "main",

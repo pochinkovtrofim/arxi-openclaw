@@ -249,7 +249,13 @@ it("lets the next startup admission replace a pending inspection its stopped own
       expect(hasAbandonedAgentDatabaseInspections(fleet.env)).toBe(false);
       // The first Gateway becomes ready, then an in-process restart closes it.
       const { stop } = first.adopt();
-      first.activate({ isCurrent: () => true, prepareAgent: async () => {} });
+      first.activate({
+        isCurrent: () => true,
+        preparationReady: Promise.resolve(),
+        openAgent: async () => {},
+        migrateAgent: async () => {},
+        publishAgent: async () => {},
+      });
       const stopped = stop();
       release.resolve();
       await stopped;

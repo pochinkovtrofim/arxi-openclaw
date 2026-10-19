@@ -220,6 +220,7 @@ it("adds the host's follow-up to the run it waits on, exactly once", async ({ si
         replaySafeToolNames: new Set(),
         codeModeExecToolNames: new Set(),
         sideEffectToolOwners: new Map(),
+        sourceReplyCapableToolNames: new Set(),
         trustedLocalMediaToolNames: new Set(),
       },
       hookAgentId: attempt.agentId ?? "main",
@@ -272,7 +273,9 @@ it("adds the host's follow-up to the run it waits on, exactly once", async ({ si
     }
   };
   harness.ws.on("message", observeTerminal);
-  onTestFinished(() => harness.ws.off("message", observeTerminal));
+  onTestFinished(() => {
+    harness.ws.off("message", observeTerminal);
+  });
   harness.ws.send(
     JSON.stringify({
       type: "req",

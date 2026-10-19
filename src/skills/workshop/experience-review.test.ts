@@ -11,7 +11,10 @@ import {
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
 import type { WorkshopChange } from "./changes.kernel.js";
-import { runSkillExperienceReview } from "./experience-review.js";
+import {
+  EXPERIENCE_REVIEW_CONTEXT_LIMITS,
+  runSkillExperienceReview,
+} from "./experience-review.js";
 import { createExperienceReviewCandidate } from "./experience-review.test-support.js";
 import { createWorkshopSkill, writeWorkshopSkillFile } from "./library.js";
 import type { runSkillWorkshopReview } from "./review-run.js";
@@ -219,4 +222,40 @@ describe("runSkillExperienceReview", () => {
       }
     },
   );
+
+  it("reviews only the bounded recent suffix of a long source session", async () => {
+    // About 1 MiB of older history: far beyond the review budget, as in a
+    // natively compacted harness mirror.
+    const history = Array.from({ length: 64 }, (_, index) => ({
+      role: "user" as const,
+      content: `older turn ${index} ${"x".repeat(16 * 1024)}`,
+      timestamp: index + 1,
+    }));
+    const candidate = await createExperienceReviewCandidate(
+      "review-bounded-context",
+      [...history, { role: "user", content: "Review the completed fixture.", timestamp: 100 }],
+      { workspaceDir: state.workspaceDir, modelId: "gpt-test" },
+    );
+    let reviewed: unknown[] | undefined;
+    mocks.runSkillWorkshopReview.mockImplementationOnce(
+      async (params: Parameters<typeof runSkillWorkshopReview>[0]) => {
+        reviewed = params.sessionManager?.buildSessionContext().messages;
+        return { meta: { durationMs: 1 } };
+      },
+    );
+
+    await runSkillExperienceReview(candidate);
+
+    expect(mocks.runSkillWorkshopReview).toHaveBeenCalledOnce();
+    expect(reviewed?.at(-1)).toMatchObject({
+      role: "user",
+      content: "Review the completed fixture.",
+    });
+    expect(reviewed?.length).toBeGreaterThan(1);
+    expect(reviewed?.length).toBeLessThan(history.length + 1);
+    expect(JSON.stringify(reviewed).length).toBeLessThanOrEqual(
+      EXPERIENCE_REVIEW_CONTEXT_LIMITS.maxBytes,
+    );
+    expect(JSON.stringify(reviewed)).not.toContain("older turn 0 ");
+  });
 });

@@ -517,7 +517,10 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                       },
                     })
                   : null;
-              const sourceReads = sourceAttempt?.value ?? [];
+              const sourceReads =
+                sourceAttempt && sourceAttempt.outcome !== "not-registered"
+                  ? (sourceAttempt.value ?? [])
+                  : [];
               callerSignal?.throwIfAborted();
               const citationsMode = resolveMemoryCitationsMode(cfg);
               const presentation = buildMemorySearchPresentation(

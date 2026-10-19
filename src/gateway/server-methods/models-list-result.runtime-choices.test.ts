@@ -69,7 +69,7 @@ describe("models.list configured runtime choices", () => {
               readModelCatalogReadiness: () => ({ accountType: "apiKey" }),
             },
           });
-          const projector = createGatewayAgentModelCatalogProjector({
+          const projector = createModelCatalogDecisions({
             cfg,
             agentId: "main",
             snapshot,

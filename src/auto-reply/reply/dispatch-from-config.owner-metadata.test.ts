@@ -203,7 +203,7 @@ it.each([
         throw new Error("dispatch gather did not prepare the turn");
       }
       const prepared = await prepareDispatchDelivery(gathered.state);
-      await prepared.state.routeReplyToOriginating(
+      await prepared.routeReplyToOriginating(
         { text: "owner reply" },
         { deliveryIntentId: `intent-${sender}-${chatType ?? "unknown"}` },
       );

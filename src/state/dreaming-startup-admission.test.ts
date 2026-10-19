@@ -204,6 +204,13 @@ it.each([
             update: async () => {},
             remove: async () => ({ removed: false }),
             removeStaleJobFamily: async () => 0,
+            getJob: () => undefined,
+            run: async () => {
+              throw new Error("unused cron run");
+            },
+            mutateTriggerState: async () => {
+              throw new Error("unused cron trigger state");
+            },
           }),
         };
         try {

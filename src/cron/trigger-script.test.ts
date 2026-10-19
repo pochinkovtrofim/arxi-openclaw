@@ -78,7 +78,7 @@ describe("cron trigger script evaluator", () => {
       const foreground = createAgentPluginRuntimeRefresh();
       const config: OpenClawConfig = {};
       const prepared = createPreparedRuntime(config);
-      const [preparedTool] = prepared.createTools();
+      const [preparedTool] = await prepared.createTools();
       if (!preparedTool) {
         throw new Error("Expected the prepared probe tool");
       }
@@ -86,7 +86,7 @@ describe("cron trigger script evaluator", () => {
       let invocationRefresh: ReturnType<typeof captureAgentPluginRuntimeRefresh> | undefined;
       const prepareRuntime = vi.fn(async () => ({
         ...prepared,
-        createTools: () => {
+        createTools: async () => {
           invocationRefresh = captureAgentPluginRuntimeRefresh();
           return [tool];
         },
