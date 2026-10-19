@@ -328,9 +328,9 @@ describe("suspend wake policy", () => {
   });
 
   it("rejects never on a one-shot at create and when a schedule change makes it one", () => {
-    expect(() => createJob(fixtureState(), input({ suspendWake: "never", schedule: oneShot }))).toThrow(
-      rejection,
-    );
+    expect(() =>
+      createJob(fixtureState(), input({ suspendWake: "never", schedule: oneShot })),
+    ).toThrow(rejection);
     expect(() =>
       applyJobPatch(
         fixtureJob({ suspendWake: "never" }),
@@ -338,9 +338,9 @@ describe("suspend wake policy", () => {
         { scheduleValidationNowMs: NOW },
       ),
     ).toThrow(rejection);
-    expect(() => applyJobPatch(fixtureJob({ schedule: oneShot }), { suspendWake: "never" })).toThrow(
-      rejection,
-    );
+    expect(() =>
+      applyJobPatch(fixtureJob({ schedule: oneShot }), { suspendWake: "never" }),
+    ).toThrow(rejection);
     const current = fixtureJob({ suspendWake: "never" });
     applyJobPatch(current, { schedule: { kind: "cron", expr: "0 * * * *", tz: "UTC" } });
     expect(current.suspendWake).toBe("never");
@@ -556,7 +556,11 @@ describe("cron schedules", () => {
 
   it("keeps a suspendWake never cadence on the timer but off the host wake", () => {
     const serviceState = fixtureState();
-    const watch = fixtureJob({ id: "watch", suspendWake: "never", state: { nextRunAtMs: NOW + 60_000 } });
+    const watch = fixtureJob({
+      id: "watch",
+      suspendWake: "never",
+      state: { nextRunAtMs: NOW + 60_000 },
+    });
     const reminder = fixtureJob({ id: "reminder", state: { nextRunAtMs: NOW + 3_600_000 } });
     serviceState.store = { version: 1, jobs: [watch, reminder] };
     expect(summarizeCronJobSchedule(serviceState)).toMatchObject({

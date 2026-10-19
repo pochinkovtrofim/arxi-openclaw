@@ -11,10 +11,7 @@ import {
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
 import type { WorkshopChange } from "./changes.kernel.js";
-import {
-  EXPERIENCE_REVIEW_CONTEXT_LIMITS,
-  runSkillExperienceReview,
-} from "./experience-review.js";
+import { EXPERIENCE_REVIEW_CONTEXT_LIMITS, runSkillExperienceReview } from "./experience-review.js";
 import { createExperienceReviewCandidate } from "./experience-review.test-support.js";
 import { createWorkshopSkill, writeWorkshopSkillFile } from "./library.js";
 import type { runSkillWorkshopReview } from "./review-run.js";
