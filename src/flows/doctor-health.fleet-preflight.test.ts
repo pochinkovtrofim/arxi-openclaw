@@ -170,9 +170,12 @@ it("preserves original config bytes before Doctor relocates and repairs legacy s
       await runDoctorHealthFlow(runtime, { repair: true, nonInteractive: true });
       expect(repair).toHaveBeenCalledOnce();
       expect(fs.existsSync(expiredCapture)).toBe(false);
-      // Relocation keeps the same files; legacyRoot now links to the canonical state directory.
-      expect(fs.existsSync(earlierCronBackup)).toBe(false);
-      expect(fs.readFileSync(newestCronBackup, "utf8")).toBe("newest cron backup");
+      // Relocation moves the legacy files into the canonical state directory; only the
+      // newest earlier cron backup stays as the rollback point.
+      const relocated = (backupPath: string) =>
+        path.join(state.stateDir, "state", path.basename(backupPath));
+      expect(fs.existsSync(relocated(earlierCronBackup))).toBe(false);
+      expect(fs.readFileSync(relocated(newestCronBackup), "utf8")).toBe("newest cron backup");
       expect(runtime.log).toHaveBeenCalledWith(
         `Retired superseded Doctor capture: ${expiredCapture}. The newest sealed capture remains for manual recovery; take a verified backup when you need a long-term copy.`,
       );
