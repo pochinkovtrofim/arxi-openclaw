@@ -3,8 +3,8 @@ import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-pay
 import { readAcpSessionEntryAsync } from "../../acp/runtime/session-meta.js";
 import { normalizeChatType } from "../../channels/chat-type.js";
 import { logVerbose } from "../../globals.js";
-import { resolveCommandAuthorization } from "../command-auth.js";
 import { RUN_STALE_TAKEOVER_MS } from "../../logging/diagnostic-run-activity.js";
+import { resolveCommandAuthorization } from "../command-auth.js";
 import { resolveCommandTurnTargetSessionKey } from "../command-turn-context.js";
 import {
   copyReplyPayloadMetadata,

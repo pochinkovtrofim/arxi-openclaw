@@ -205,7 +205,7 @@ async function steer(
       );
     },
   });
-  const attempt = beginReplyMessageInjectionTarget(target, request.message, {
+  const attempt = await beginReplyMessageInjectionTarget(target, request.message, {
     isInboundUserMessage: true,
     steeringMode: "all",
     toolAuthorityFingerprint: activeFingerprint,
@@ -215,12 +215,8 @@ async function steer(
     // An own property like a user turn; the agent RPC never negotiates gateway suggestions.
     taskSuggestionDeliveryMode: undefined,
   });
-  const finalized = await finalizeReplyMessageInjectionAttempt({
-    attempt,
-    target,
-    // The first answer survives an uncertain receipt; the host reports the gap.
-    abortOnUnconfirmedTranscript: false,
-  });
+  // An uncertain receipt is indeterminate: the run keeps its answer and the host reports the gap.
+  const finalized = await finalizeReplyMessageInjectionAttempt({ attempt, target });
   if (finalized.status === "rejected") {
     context.logGateway.info(
       `agent.steer not steerable: reason=${finalized.outcome.reason} runId=${target.runId}`,
@@ -228,9 +224,7 @@ async function steer(
     return notSteerable(finalized.outcome.reason, { activeRunId: target.runId });
   }
   const runId = normalizeOptionalString(finalized.targetRunId) ?? target.runId;
-  const unconfirmed =
-    finalized.status === "indeterminate" ||
-    finalized.outcome.result?.transcriptCommit === "unconfirmed";
+  const unconfirmed = finalized.status === "indeterminate";
   const payload: AgentSteerResult = {
     status: "steered",
     runId,

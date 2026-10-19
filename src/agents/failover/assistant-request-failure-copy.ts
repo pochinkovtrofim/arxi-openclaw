@@ -7,8 +7,8 @@ import {
   formatTransportErrorCopy,
   parseApiErrorInfo,
 } from "../../shared/assistant-error-format.js";
-import { renderUserMessage, resolveUserMessage } from "../../shared/user-message.js";
 import { escapeMarkdownText } from "../../shared/text/escape-markdown.js";
+import { renderUserMessage, resolveUserMessage } from "../../shared/user-message.js";
 import { classifyFailoverSignalCore } from "./classify-core.js";
 import { isContextOverflowErrorFromTables } from "./context-overflow-tables.js";
 import {

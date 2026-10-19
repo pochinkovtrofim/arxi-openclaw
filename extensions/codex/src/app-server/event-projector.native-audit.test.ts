@@ -17,7 +17,6 @@ import {
   requireArray,
   forCurrentTurn,
   type DiagnosticEventPayload,
-  vi,
   TURN_ID,
   readAttemptTerminal,
   turnCompleted,

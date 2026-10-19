@@ -507,9 +507,7 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
               const sourceAttempt =
                 !signal.aborted && recalled.some((hit) => hit.source === "memory")
                   ? await attemptMemoryCorpus({
-                      corpus: "memory",
                       signal: AbortSignal.any([signal, AbortSignal.timeout(500)]),
-                      unavailableValue: [],
                       run: async () => {
                         const { readAgentMemoryFile } = await loadMemoryToolRuntime();
                         return readMemorySearchSources({
@@ -519,10 +517,7 @@ export function createMemorySearchTool(options: MemoryToolOptions) {
                       },
                     })
                   : null;
-              const sourceReads =
-                sourceAttempt && sourceAttempt.outcome !== "not-registered"
-                  ? sourceAttempt.value
-                  : [];
+              const sourceReads = sourceAttempt?.value ?? [];
               callerSignal?.throwIfAborted();
               const citationsMode = resolveMemoryCitationsMode(cfg);
               const presentation = buildMemorySearchPresentation(

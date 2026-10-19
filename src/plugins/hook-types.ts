@@ -39,8 +39,8 @@ import type {
   PluginHookMessageSendingResult,
   PluginHookMessageSentEvent,
 } from "./hook-message.types.js";
-import type { PluginHookToolRequesterContext } from "./hook-requester-context.types.js";
 import type { PluginHookReplyDispatchEvent } from "./hook-reply-dispatch-event.types.js";
+import type { PluginHookToolRequesterContext } from "./hook-requester-context.types.js";
 import type { PluginHookSkillChangedEvent, PluginHookSkillContext } from "./hook-skill.types.js";
 import type { PluginJsonValue } from "./host-hook-json.js";
 import type {

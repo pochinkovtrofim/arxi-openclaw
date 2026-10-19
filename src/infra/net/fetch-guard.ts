@@ -704,7 +704,7 @@ async function fetchWithSsrFGuardInternal(
       // Only transport rejection belongs here, not policy or capture failures.
       let initiated = false;
       try {
-        response = await effect.initiate(() => {
+        response = await effect.initiate<Response>(() => {
           const beforeRequestResult: unknown = params.beforeRequest?.();
           if (isPromiseLike(beforeRequestResult)) {
             void Promise.resolve(beforeRequestResult).catch(() => undefined);
@@ -712,7 +712,7 @@ async function fetchWithSsrFGuardInternal(
           }
           assertCurrent?.();
           initiated = true;
-          const send = () =>
+          const send = (): Promise<Response> =>
             shouldUseRuntimeFetch
               ? fetchWithRuntimeDispatcher(parsedUrl.toString(), init)
               : captureAdmission.fetchImpl(parsedUrl.toString(), init);

@@ -19,8 +19,8 @@ import {
   createOpenClawCodingToolsInternalAsync,
   resolveToolLoopDetectionConfig,
 } from "../agents/agent-tools.js";
-import { getBeforeToolCallHookContext } from "../agents/before-tool-call-metadata.js";
 import { hasAnyAuthProfileStoreSourceAsync } from "../agents/auth-profiles/source-check.js";
+import { getBeforeToolCallHookContext } from "../agents/before-tool-call-metadata.js";
 import { createHeadlessDeadlineScope } from "../agents/code-mode-headless.js";
 import type {
   CodeModeNamespaceDescriptor,

@@ -1,7 +1,6 @@
 import { InputFile } from "grammy";
 import type { Message } from "grammy/types";
 import type { MarkdownTableMode } from "openclaw/plugin-sdk/config-contracts";
-import type { MediaKind } from "openclaw/plugin-sdk/media-mime";
 import { isGifMedia, kindFromMime } from "openclaw/plugin-sdk/media-runtime";
 import { logVerbose } from "openclaw/plugin-sdk/runtime-env";
 import { formatErrorMessage } from "openclaw/plugin-sdk/ssrf-runtime";
@@ -25,7 +24,6 @@ const MEDIA_SEND_METHODS = {
   audio: "sendAudio",
   document: "sendDocument",
 } as const;
-
 
 type TelegramOutboundMediaKind = keyof typeof MEDIA_SEND_METHODS;
 

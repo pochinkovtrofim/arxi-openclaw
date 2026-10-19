@@ -359,7 +359,7 @@ export async function sanitizeContentBlocksImages(
         fileName,
         verifyDecodability: opts.verifyDecodability,
       });
-      if (resized.resized) {
+      if (resized.base64 !== canonicalData) {
         // Charge two bytes per character even on runtimes storing ASCII compactly.
         const cacheBytes = resized.base64.length * 2;
         if (cacheBytes <= MAX_RESIZED_IMAGE_CACHE_BYTES) {

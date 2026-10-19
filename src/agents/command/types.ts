@@ -6,8 +6,8 @@ import type {
   SourceReplyDeliveryMode,
   TaskSuggestionDeliveryMode,
 } from "../../auto-reply/get-reply-options.types.js";
-import type { ChatType } from "../../channels/chat-type.js";
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
+import type { ChatType } from "../../channels/chat-type.js";
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.public.js";
 import type { GatewayUiCommandTarget } from "../../gateway/ui-command-target.types.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";

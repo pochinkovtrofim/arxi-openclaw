@@ -1980,8 +1980,6 @@ src/gateway/server-channels.ts	1
 src/gateway/server-chat-state.ts	1
 src/gateway/server-chat.ts	3
 src/gateway/server-core-runtime.ts	1
-src/gateway/server-cron-reconciled.ts	1
-src/gateway/server-cron.ts	1
 src/gateway/server-http-upgrades.ts	2
 src/gateway/server-in-process-dispatch.ts	3
 src/gateway/server-instance-runtime.ts	3
@@ -2042,7 +2040,6 @@ src/gateway/server-reload-utils.ts	1
 src/gateway/server-restart-sentinel-agent-delivery.ts	2
 src/gateway/server-runtime-state-prepare.ts	1
 src/gateway/server-startup-config-helpers.ts	1
-src/gateway/server-startup-post-attach.ts	1
 src/gateway/server.auth.control-ui.bootstrap-lifecycle.suite.ts	7
 src/gateway/server.auth.control-ui.device-token.suite.ts	2
 src/gateway/server.auth.control-ui.mobile-bootstrap.suite.ts	6

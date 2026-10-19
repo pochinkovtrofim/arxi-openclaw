@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { browserNavigationPolicyForProfile } from "./agent.shared.js";
 import type { BrowserRouteContext } from "../server-context.js";
+import { browserNavigationPolicyForProfile } from "./agent.shared.js";
 import {
   captureBrowserOperationTarget,
   resolveOperationTargetOutcome,

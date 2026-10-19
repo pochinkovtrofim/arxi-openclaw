@@ -443,13 +443,8 @@ export async function deliverOutboundPayloadsCore(
       finishDeliveryDiagnostics(deliveredResults.length);
     } catch (caughtError) {
       if (caughtError instanceof OutboundDeliveryDeferredError) {
-        recordPayloadOutcome(
-          suppressedPayloadOutcome({
-            index: payloadIndex,
-            reason: "adapter_returned_no_send",
-          }),
-        );
-        completeDeliveryDiagnostics(0);
+        recordSuppressedPayload("adapter_returned_no_send");
+        finishDeliveryDiagnostics(0);
         throw caughtError;
       }
       let err = caughtError;

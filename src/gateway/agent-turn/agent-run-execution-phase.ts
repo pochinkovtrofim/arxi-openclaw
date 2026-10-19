@@ -35,8 +35,8 @@ import {
   getActiveDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
-import { logMessageDispatchStarted, logMessageProcessed } from "../../logging/diagnostic.js";
 import { adoptExecRequestSession } from "../../infra/exec-request-context.js";
+import { logMessageDispatchStarted, logMessageProcessed } from "../../logging/diagnostic.js";
 import { bindGatewayContextResolver } from "../../plugins/runtime/gateway-request-scope.js";
 import { retainGatewayRootWorkAdmissionContinuation } from "../../process/gateway-work-admission.js";
 import { readWithdrawnUserTurnInputId } from "../../sessions/user-turn-transcript-admission.js";
@@ -65,11 +65,11 @@ import {
   resolveAgentRestartRecoveryExecutionIdentityAdmission,
 } from "./agent-restart-recovery-context.js";
 import { createAgentRunDiagnostics } from "./agent-run-diagnostics.js";
-import { admitHostCurrentConversationActions } from "./agent-run-host-admission.js";
 import { withAgentRunDispatchExecutionIdentity } from "./agent-run-dispatch-execution-identity.js";
 import { projectWithdrawnAgentInput } from "./agent-run-dispatch-outcome.js";
 import { resolveExecutionIdentitySpawnFacts } from "./agent-run-execution-lineage.js";
 import type { StartAgentRunExecutionParams } from "./agent-run-execution-types.js";
+import { admitHostCurrentConversationActions } from "./agent-run-host-admission.js";
 import { dispatchAgentRunWithMedia } from "./agent-run-media.js";
 import { settleUnstartedGatewayFollowup } from "./agent-run-subagent.js";
 import {

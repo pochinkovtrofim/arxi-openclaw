@@ -12,6 +12,7 @@ import {
   stripExtractedFileImageMetadata,
   type ExtractedFileImage,
 } from "../../media-understanding/extracted-file-images.js";
+import type { MediaAttachment } from "../../media-understanding/types.js";
 import { normalizeMediaFacts } from "../../media/media-facts.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
 import type { RuntimeMsgContext as MsgContext } from "../templating.js";
