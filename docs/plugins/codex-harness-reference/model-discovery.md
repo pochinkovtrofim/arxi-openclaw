@@ -154,7 +154,7 @@ fallback and leave native models unavailable until discovery succeeds.
 }
 ```
 
-Disable discovery when you want startup to avoid probing Codex and use only
+Disable discovery when you want startup to avoid checking Codex and use only
 the fallback catalog:
 
 ```json5

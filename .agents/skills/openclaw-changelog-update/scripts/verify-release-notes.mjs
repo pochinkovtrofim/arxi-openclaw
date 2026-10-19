@@ -19,10 +19,12 @@ import {
   loadReleaseChangelog,
   writeReleaseChangelog,
 } from "../../../../scripts/lib/release-changelog.mjs";
+import { parseReleaseVersion } from "../../../../scripts/lib/release-version.mjs";
 import {
   extractChangelogReleaseSections,
   formatContributionRecordProvenance,
   formatShippedBaselineExclusions,
+  loadReleaseNotesForTag,
   parseContributionRecordProvenance,
   parseShippedBaselineExclusions,
   releaseNotesVersionForTag,
@@ -87,10 +89,11 @@ function fail(message) {
 function printUsage() {
   console.log(`Usage:
   node --import tsx .agents/skills/openclaw-changelog-update/scripts/verify-release-notes.mjs \\
-    --base <tag-or-sha> --target <tag-or-sha> --version <version> [options]
+    [--base <tag-or-sha|npm-beta>] --target <tag-or-sha> --version <version> [options]
 
 Required:
-  --base <ref>          Release range start.
+  --base <ref>          Release range start; beta versions default to npm-beta.
+                       Capture npm beta before publication; reuse the resolved tag on retries.
   --target <ref>        Release range end.
   --version <version>   Release changelog version heading to verify.
 
@@ -196,6 +199,9 @@ export function parseArgs(argv) {
   }
 
   if (!options.help) {
+    if (!options.base && parseReleaseVersion(options.version ?? "")?.channel === "beta") {
+      options.base = "npm-beta";
+    }
     for (const name of ["base", "target", "version"]) {
       if (!options[name]) {
         fail(`--${name} is required`);
@@ -832,9 +838,9 @@ function shippedBaselineFor(ref) {
   git(["rev-parse", `${tagRef}^{commit}`]);
   const rootDir = process.cwd();
   const changelog = loadChangelogCollection({ rootDir, ref: tagRef, recordsOnly: true });
-  const source = loadReleaseChangelog({ rootDir, ref: tagRef, version });
+  const source = loadReleaseNotesForTag({ rootDir, ref: tagRef, tag: ref, version });
   completeContributionRecord(
-    sectionFor(source.record ?? source.section, version),
+    sectionFor(source.record ?? source.section, source.version),
     `shipped baseline ${ref}`,
   );
   return {
@@ -975,13 +981,8 @@ function backportPullRequestOrigins(message) {
   ].map((match) => Number(match[1]));
 }
 
-const RELEASE_PROVENANCE_MARKER_PATTERN =
-  /^Release provenance: ([0-9a-f]{40}) -> (#\d+(?:,\s*#\d+)*)\.?\s*$/i;
-const CONSOLIDATED_RELEASE_PROVENANCE_PATTERN =
-  /^Release provenance: [0-9a-f]{40} -> #\d+(?:,\s*#\d+)*(?:;\s*[0-9a-f]{40} -> #\d+(?:,\s*#\d+)*)+\.?\s*$/i;
-
 function releaseProvenanceMarker(line) {
-  const match = line.match(RELEASE_PROVENANCE_MARKER_PATTERN);
+  const match = line.match(/^Release provenance: ([0-9a-f]{40}) -> (#\d+(?:,\s*#\d+)*)\.?\s*$/i);
   if (!match) {
     fail(`invalid release provenance marker: ${line}`);
   }
@@ -1011,29 +1012,16 @@ export function collectReleaseProvenanceOverrides(activeCommits, releaseProvenan
     }
     overrides.set(marker.commit, marker.pullRequests);
   };
+  for (const commit of activeCommits) {
+    for (const marker of releaseProvenanceMarkers(commit.body)) {
+      addMarker(marker);
+    }
+  }
   for (const value of releaseProvenance) {
     if (/[\r\n]/u.test(value)) {
       fail(`invalid release provenance marker: Release provenance: ${value}`);
     }
     addMarker(releaseProvenanceMarker(`Release provenance: ${value}`));
-  }
-  const explicitlyMappedCommits = new Set(overrides.keys());
-  for (const commit of activeCommits) {
-    for (const line of commit.body
-      .split("\n")
-      .filter((line) => /^Release provenance:/i.test(line))) {
-      // Recover consolidated origin metadata without rewriting pushed history, but
-      // only when the containing commit's explicit mapping preserves every PR.
-      if (
-        explicitlyMappedCommits.has(commit.hash) &&
-        CONSOLIDATED_RELEASE_PROVENANCE_PATTERN.test(line) &&
-        [...new Set([...line.matchAll(/#(\d+)/g)].map((match) => Number(match[1])))].join(",") ===
-          overrides.get(commit.hash).join(",")
-      ) {
-        continue;
-      }
-      addMarker(releaseProvenanceMarker(line));
-    }
   }
   return overrides;
 }
@@ -1893,10 +1881,17 @@ export function validateReleaseProvenanceOverrides(
   nodes,
   mainCommit,
   isMainAncestor = gitIsAncestor,
+  resolveNodes = (numbers) => resolveReferences(numbers).nodes,
 ) {
+  // Shipped-ref subtraction removes already-released PRs from the release
+  // inventory, but markers naming them still need the same main validation.
+  const missing = [...new Set([...provenanceOverrides.values()].flat())].filter(
+    (number) => !nodes.has(number),
+  );
+  const markerNodes = missing.length > 0 ? resolveNodes(missing) : new Map();
   for (const [commit, pullRequests] of provenanceOverrides) {
     for (const number of pullRequests) {
-      const node = nodes.get(number);
+      const node = nodes.get(number) ?? markerNodes.get(number);
       // Markers may name current-main forward-ports, but never release-only or unmerged PRs.
       if (
         node?.__typename !== "PullRequest" ||
@@ -2374,9 +2369,10 @@ export function countTopLevelSectionBullets(sectionSource, heading) {
 
 export function highlightCountError(sectionSource) {
   const count = countTopLevelSectionBullets(sectionSource, "Highlights");
-  return count >= 5 && count <= 8
+  const minimum = /^## [^\n]+-beta\.[1-9][0-9]*\r?(?:\n|$)/u.test(sectionSource) ? 0 : 5;
+  return count >= minimum && count <= 8
     ? undefined
-    : `### Highlights must contain 5-8 top-level bullets; found ${count}`;
+    : `### Highlights must contain ${minimum}-8 top-level bullets; found ${count}`;
 }
 
 export function ledgerChecks(section, pullRequests, nodes, directCommits, shippedBaselines = []) {
@@ -2626,6 +2622,54 @@ function main() {
   if (options.help) {
     printUsage();
     return;
+  }
+  if (options.base === "npm-beta") {
+    const candidate = parseReleaseVersion(options.version);
+    if (candidate?.channel !== "beta") {
+      fail("--base npm-beta requires an exact beta changelog version");
+    }
+    const previous = JSON.parse(
+      run("npm", [
+        "view",
+        "openclaw@beta",
+        "version",
+        "--json",
+        "--registry=https://registry.npmjs.org",
+      ]),
+    );
+    const baseline = typeof previous === "string" ? parseReleaseVersion(previous) : null;
+    if (!baseline || baseline.channel === "alpha" || baseline.patch >= 33) {
+      fail("npm beta did not resolve to a supported regular release version");
+    }
+    const compareBase =
+      candidate.year - baseline.year ||
+      candidate.month - baseline.month ||
+      candidate.patch - baseline.patch;
+    if (
+      compareBase < 0 ||
+      (compareBase === 0 &&
+        (baseline.channel !== "beta" || baseline.betaNumber >= candidate.betaNumber))
+    ) {
+      fail(
+        "npm beta already points to this candidate or a newer version; reuse the previously captured --base tag for verification or recovery",
+      );
+    }
+    // Resolve once before discovery. The manifest and contribution provenance
+    // retain this tag; publication/verification never consult a moving selector.
+    options.base = `v${baseline.version}`;
+  }
+  if (
+    parseReleaseVersion(options.version)?.channel === "beta" &&
+    /^v[0-9]/u.test(options.base) &&
+    !gitIsAncestor(options.base, options.target)
+  ) {
+    // Stable closeout may forward-port a release without retaining tag ancestry.
+    // Keep the reachable range strict and subtract the shipped record through
+    // its existing owner rather than documenting already-shipped PRs again.
+    if (!options.shippedRefs.includes(options.base)) {
+      options.shippedRefs.push(options.base);
+    }
+    options.base = git(["merge-base", options.base, options.target]);
   }
   const rootDir = process.cwd();
   const releaseSource = loadReleaseChangelog({ rootDir, version: options.version });

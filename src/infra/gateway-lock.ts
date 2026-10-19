@@ -196,15 +196,13 @@ function resolveGatewayOwnerStatusSync(
       : "alive";
   }
   // Embedded agents cover every state-writing command; maintenance roles require
-  // their exact command. Gateway classification also recognizes retitled processes.
+  // an OpenClaw command. Gateway classification also recognizes retitled processes.
   const command =
-    role === "agent-embedded"
+    role === "agent-embedded" || role === "sqlite-maintenance"
       ? undefined
-      : role === "sqlite-maintenance"
-        ? "doctor"
-        : role === "skill-workshop-apply"
-          ? "skills"
-          : "gateway";
+      : role === "skill-workshop-apply"
+        ? "skills"
+        : "gateway";
   const identity = classifyOpenClawArgv(
     args,
     command ? { command, ...identityOptions } : identityOptions,
@@ -557,7 +555,7 @@ export async function acquireGatewayLock(
               projection = previousOwner.retainProjection();
             }
             await assertHistoricalGatewayOwnerStopped(paths, opts, projection);
-            owner.run(() =>
+            await owner.run(() =>
               assertGatewayOwnerLeaseStopped(
                 env,
                 role === "sqlite-maintenance" ? owner : undefined,
@@ -651,8 +649,7 @@ export async function acquireGatewayLock(
       : undefined;
   let ownerLease: GatewayOwnerLease | undefined;
   try {
-    // Relocation policy may close over the released root; it was checked before transfer.
-    assertStateOwnerCurrent(previousOwner ? undefined : opts.assertCurrent);
+    assertStateOwnerCurrent(opts.assertCurrent);
     // Shipped Gateways discover this PID sidecar before starting. Synchronous
     // schema work retains the same fs-safe owner through its final reference.
     const shouldReclaim = (previous: LockPayload | null) =>

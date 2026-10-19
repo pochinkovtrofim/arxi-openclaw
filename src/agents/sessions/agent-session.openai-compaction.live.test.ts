@@ -1,5 +1,5 @@
 // Live OpenAI AgentSession coverage for repeated automatic compaction and long-context opt-in.
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,10 +8,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { isTruthyEnvValue } from "../../infra/env.js";
-import {
-  closeOpenClawAgentDatabaseByPathAsync,
-  disposeOpenClawAgentDatabaseByPath,
-} from "../../state/openclaw-agent-db.js";
+import { disposeOpenClawAgentDatabaseByPath } from "../../state/openclaw-agent-db-disposal.js";
+import { closeOpenClawAgentDatabaseByPathAsync } from "../../state/openclaw-agent-db.js";
 import { prepareSystemAgentRunAdmission } from "../admitted-run-context.js";
 import { runEmbeddedAgent } from "../embedded-agent-runner.js";
 import { AgentSession } from "./agent-session.js";
@@ -78,9 +76,6 @@ function createResourceLoader(): ResourceLoader {
     getSkills: () => ({ skills: [], diagnostics: [] }),
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => undefined,
-    getAppendSystemPrompt: () => [],
     extendResources: () => {},
     reload: async () => {},
   };
@@ -167,13 +162,12 @@ async function createLiveSession() {
   });
   const contextChunk = buildContextChunk(STRESS_PROFILE.chunkChars);
   const { session } = await createAgentSession({
+    systemPrompt: "Follow the user's instructions and use the supplied tools when requested.",
     cwd,
-    agentDir,
     model,
     thinkingLevel: "medium",
-    noTools: "all",
+    tools: [],
     resourceLoader: createResourceLoader(),
-    authStorage,
     modelRegistry,
     sessionManager,
     settingsManager,
@@ -209,7 +203,10 @@ describeLive("OpenAI AgentSession repeated compaction live", () => {
         storePath: join(agentDir, "openclaw-agent.sqlite"),
       };
       ownedDatabasePaths.add(sessionTarget.storePath);
-      const marker = `TOOL-MEMORY-${randomUUID()}`;
+      // The model must reproduce this marker verbatim after a model-written compaction summary.
+      // A short random token keeps the proof unguessable without testing 36-character UUID
+      // copy fidelity, which GPT-5.6 occasionally garbles.
+      const marker = `TOOL-MEMORY-${randomBytes(4).toString("hex").toUpperCase()}`;
       const tailMarker = `SYNTHETIC-END-${randomUUID()}`;
       const sourceFile = join(workspaceDir, "synthetic-context.txt");
       const sourceText = `The durable verification marker is ${marker}. Remember it.\n${buildContextChunk(24_000)}\n${tailMarker}\n`;
@@ -309,8 +306,7 @@ describeLive("OpenAI AgentSession repeated compaction live", () => {
         }
       };
       const reopen = async () => {
-        await closeOpenClawAgentDatabaseByPathAsync(sessionTarget.storePath);
-        disposeOpenClawAgentDatabaseByPath(sessionTarget.storePath);
+        await disposeOpenClawAgentDatabaseByPath(sessionTarget.storePath);
         return SessionManager.open(sessionTarget, workspaceDir);
       };
       try {
@@ -383,8 +379,7 @@ describeLive("OpenAI AgentSession repeated compaction live", () => {
           `[openai-checkpoint-live] budget=${modelDefinition.contextTokens} compactions=${checkpointCount} replayTokens=${replayUsage.totalTokens} sqliteReplay=passed toolMarker=preserved\n`,
         );
       } finally {
-        await closeOpenClawAgentDatabaseByPathAsync(sessionTarget.storePath);
-        disposeOpenClawAgentDatabaseByPath(sessionTarget.storePath);
+        await disposeOpenClawAgentDatabaseByPath(sessionTarget.storePath);
       }
     },
     10 * 60 * 1000,

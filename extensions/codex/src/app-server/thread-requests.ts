@@ -26,7 +26,6 @@ import {
   type CodexDynamicToolSpec,
   type CodexThreadResumeParams,
   type CodexThreadStartParams,
-  type CodexTurnEnvironmentParams,
   type JsonObject,
   type JsonValue,
 } from "./protocol.js";
@@ -58,29 +57,14 @@ const CODEX_CODE_MODE_THREAD_CONFIG: JsonObject = {
   suppress_unstable_features_warning: true,
 };
 
-const CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG: JsonObject = {
-  "features.goals": false,
-  // OpenClaw owns the durable progress card; Codex's native checklist would create a second owner.
-  "tools.update_plan.enabled": false,
-};
-
 const CODEX_NATIVE_VIEW_IMAGE_DISABLED_THREAD_CONFIG: JsonObject = {
   // OpenClaw's dynamic view_image resolves durable owner-scoped media:// references;
   // Codex's native loader is limited to files reachable from its execution cwd.
   "features.view_image": false,
 };
 
-const CODEX_CODE_MODE_DISABLED_THREAD_CONFIG: JsonObject = {
-  "features.code_mode": false,
-  "features.code_mode_only": false,
-};
-
 const CODEX_NO_PROJECT_DOCS_CONFIG: JsonObject = {
   project_doc_max_bytes: 0,
-};
-
-const CODEX_TOOL_SEARCH_UNSUPPORTED_THREAD_CONFIG: JsonObject = {
-  "features.multi_agent": false,
 };
 
 const CODEX_DELEGATION_DISABLED_THREAD_CONFIG: JsonObject = {
@@ -175,6 +159,10 @@ export function buildCodexThreadConfiguration(
   params: CodexThreadConfigurationContext,
   options: CodexThreadConfigurationOptions,
 ) {
+  const config = buildCodexRuntimeThreadConfigForRun(params, options.config, {
+    ...options,
+    directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
+  });
   return {
     ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
     ...(options.appServer.sessionRoot
@@ -186,16 +174,16 @@ export function buildCodexThreadConfiguration(
     ...(options.appServer.serviceTier !== undefined
       ? { serviceTier: options.appServer.serviceTier }
       : {}),
-    config: buildCodexRuntimeThreadConfigForRun(params, options.config, {
-      ...options,
-      directOnlyToolNamespaces: resolveDirectOnlyToolNamespaces(options.dynamicTools),
-    }),
+    config,
     // Catalog-owned collaboration messages replace caller collaboration instructions
     // (codex-rs/core/src/context/world_state/collaboration_mode.rs), so refreshable
     // workspace instructions ride the thread developer carrier after the immutable generic policy.
     developerInstructions: joinPresentSections(
       options.developerInstructions ??
-        buildDeveloperInstructions(params, { dynamicTools: options.dynamicTools }),
+        buildDeveloperInstructions(params, {
+          dynamicTools: options.dynamicTools,
+          nativeCodeModeOnlyEnabled: config["features.code_mode_only"] === true,
+        }),
       options.refreshableInstructions,
     ),
   };
@@ -216,8 +204,7 @@ export function buildThreadStartParams(
     modelProvider: options.modelProvider ?? resolvedModelProvider,
   });
   return {
-    model: modelSelection.model,
-    ...(modelSelection.modelProvider ? { modelProvider: modelSelection.modelProvider } : {}),
+    ...modelSelection,
     ...buildCodexThreadConfiguration(params, options),
     ...((options.hostSystemAgentActive ?? isHostScopedAgentToolActive("openclaw")) &&
     isSystemAgentOnlyCodexDynamicToolAllowlist(params.toolsAllow)
@@ -226,9 +213,11 @@ export function buildThreadStartParams(
     personality: CODEX_NATIVE_PERSONALITY_NONE,
     serviceName: "OpenClaw",
     threadSource: "openclaw",
-    ...resolveCodexThreadEnvironmentSelection(
-      params.requireWorkspaceOnly === true ? { nativeCodeModeEnabled: false } : options,
-    ),
+    ...(params.requireWorkspaceOnly === true || options.nativeCodeModeEnabled === false
+      ? { environments: [] }
+      : options.environmentSelection
+        ? { environments: options.environmentSelection }
+        : {}),
     // Codex 0.146 accepts canonical typed function and namespace specs natively.
     dynamicTools: [...options.dynamicTools],
     experimentalRawEvents: true,
@@ -272,12 +261,7 @@ export function buildThreadResumeParams(
       sortDirection: "desc",
       itemsView: "notLoaded",
     },
-    ...(modelSelection
-      ? {
-          model: modelSelection.model,
-          ...(modelSelection.modelProvider ? { modelProvider: modelSelection.modelProvider } : {}),
-        }
-      : {}),
+    ...modelSelection,
     ...buildCodexThreadConfiguration(params, options),
     personality: CODEX_NATIVE_PERSONALITY_NONE,
   };
@@ -292,44 +276,36 @@ export function buildCodexRuntimeThreadConfig(
     directOnlyToolNamespaces?: readonly string[];
   } = {},
 ): JsonObject {
-  const configured = expectDefined(
-    mergeCodexThreadConfigs(
-      buildCodexProjectDocThreadConfig(config),
-      options.disableNativeViewImage ? CODEX_NATIVE_VIEW_IMAGE_DISABLED_THREAD_CONFIG : undefined,
-    ),
-    "Codex runtime config",
-  );
-  // Native goal RPCs remain available through app-server, but the Codex goals
-  // feature also starts autonomous turns. Keep it disabled until a run owner exists.
-  const codeModeConfig: JsonObject = {
-    ...CODEX_CODE_MODE_THREAD_CONFIG,
-    "features.code_mode_only": options.nativeCodeModeOnlyEnabled === true,
-  };
-  if (options.nativeCodeModeEnabled === false) {
-    const disabledConfig = expectDefined(
-      mergeCodexThreadConfigs(
-        configured,
-        CODEX_CODE_MODE_DISABLED_THREAD_CONFIG,
-        CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG,
-      ),
-      "Codex disabled code mode config",
-    );
-    // Native patch streaming is part of native code mode, so do not send it
-    // when runtime policy disables that tool surface.
-    delete disabledConfig["features.apply_patch_streaming_events"];
-    return ensureDirectOnlyToolNamespaces(disabledConfig, options.directOnlyToolNamespaces);
-  }
+  const enabled = options.nativeCodeModeEnabled !== false;
+  const codeModeOnly = options.nativeCodeModeOnlyEnabled === true;
   const merged = expectDefined(
     mergeCodexThreadConfigs(
-      codeModeConfig,
-      configured,
-      CODEX_NATIVE_CONTINUATIONS_DISABLED_THREAD_CONFIG,
-      options.nativeCodeModeOnlyEnabled === true ? { "features.code_mode_only": true } : undefined,
+      enabled
+        ? { ...CODEX_CODE_MODE_THREAD_CONFIG, "features.code_mode_only": codeModeOnly }
+        : undefined,
+      buildCodexProjectDocThreadConfig(config),
+      options.disableNativeViewImage ? CODEX_NATIVE_VIEW_IMAGE_DISABLED_THREAD_CONFIG : undefined,
+      {
+        // Native goals start autonomous turns; OpenClaw owns both continuation and progress cards.
+        "features.goals": false,
+        "tools.update_plan.enabled": false,
+        ...(!enabled
+          ? { "features.code_mode": false, "features.code_mode_only": false }
+          : codeModeOnly
+            ? { "features.code_mode_only": true }
+            : {}),
+      },
     ),
-    options.nativeCodeModeOnlyEnabled === true
-      ? "Codex code mode only config"
-      : "Codex code mode config",
+    !enabled
+      ? "Codex disabled code mode config"
+      : codeModeOnly
+        ? "Codex code mode only config"
+        : "Codex code mode config",
   );
+  if (!enabled) {
+    // Native patch streaming belongs to the code-mode tool surface.
+    delete merged["features.apply_patch_streaming_events"];
+  }
   return ensureDirectOnlyToolNamespaces(merged, options.directOnlyToolNamespaces);
 }
 
@@ -463,7 +439,7 @@ export function buildCodexRuntimeThreadConfigForRun(
         ? { "features.image_generation": false }
         : undefined,
       shouldDisableCodexToolSearchForModel(params.modelId)
-        ? CODEX_TOOL_SEARCH_UNSUPPORTED_THREAD_CONFIG
+        ? { "features.multi_agent": false }
         : undefined,
       messageOnlySourceReply ||
         params.pluginHarnessToolPolicyRestricted === true ||
@@ -730,17 +706,4 @@ export function codexThreadSandboxOrPermissions(
     return {};
   }
   return { sandbox: appServer.sandbox };
-}
-
-function resolveCodexThreadEnvironmentSelection(options: {
-  nativeCodeModeEnabled?: boolean;
-  environmentSelection?: CodexTurnEnvironmentParams[];
-}): Pick<CodexThreadStartParams, "environments"> {
-  if (options.nativeCodeModeEnabled === false) {
-    return { environments: [] };
-  }
-  if (options.environmentSelection) {
-    return { environments: options.environmentSelection };
-  }
-  return {};
 }

@@ -1,3 +1,4 @@
+import path from "node:path";
 import * as agentHarnessToolRuntime from "openclaw/plugin-sdk/agent-harness-tool-runtime";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
@@ -45,6 +46,7 @@ import type {
   PreparedModelRuntimeLeaseOptions,
   PreparedModelRuntimePluginGeneration,
 } from "../prepared-model-runtime.types.js";
+import { buildConfiguredAgentSystemPrompt } from "../system-prompt-config.js";
 import { markCoreTtsAttemptResult } from "../tools/tts-tool-result-provenance.js";
 import { makeAttemptResult } from "./run.overflow-compaction.fixture.js";
 import {
@@ -57,7 +59,6 @@ import {
   useOpenAIPlatformAuthFixture,
 } from "./run.overflow-compaction.harness.js";
 import type { RunEmbeddedAgentInternalParams } from "./run/internal-params.js";
-import { buildEmbeddedSystemPrompt } from "./system-prompt.js";
 
 const runnerState = await setupAgentRunnerExecutionTestState();
 
@@ -91,6 +92,10 @@ describe("prepared harness source delivery", () => {
     const loaded = await loadRunOverflowCompactionHarness();
     const { createOpenClawTestState } = await import("../../test-utils/openclaw-test-state.js");
     state = await createOpenClawTestState({ label: "prepared-source-delivery" });
+    // The real runner must not borrow the dispatch mock’s shared /tmp database.
+    sessionStoreMocks.resolveSessionStorePathCore.mockReturnValue(
+      path.join(state.stateDir, "mock-sessions.json"),
+    );
     return loaded;
   }
   afterEach(async () => {
@@ -191,7 +196,7 @@ describe("prepared harness source delivery", () => {
       forceMessageTool?: boolean;
       sourceReplyDeliveryMode?: "automatic" | "message_tool_only";
     }) => {
-      modelVisiblePrompt = buildEmbeddedSystemPrompt({
+      modelVisiblePrompt = buildConfiguredAgentSystemPrompt({
         workspaceDir: followupRun.run.workspaceDir,
         reasoningTagHint: false,
         extraSystemPrompt: attemptParams.extraSystemPrompt,
@@ -202,7 +207,6 @@ describe("prepared harness source delivery", () => {
           arch: "arm64",
           node: "24",
           model: "model",
-          provider: "custom",
           channel: "discord",
           chatType: "direct",
         },

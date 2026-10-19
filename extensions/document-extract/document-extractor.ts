@@ -11,7 +11,7 @@ export { createOfficeDocumentExtractor } from "./office-extractor.js";
 const pool = new WorkerTaskPool<DocumentExtractorWorkerRequest, DocumentExtractorWorkerReply>({
   workerUrl: resolveRuntimeWorkerUrl(documentExtractorWorkerEntrypoint),
   // One reusable PDFium heap bounds simultaneous document rendering memory.
-  maxWorkers: 1,
+  workerClass: "singleton",
   sharedCompute: true,
 });
 

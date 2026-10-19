@@ -22,10 +22,11 @@ import {
   readAgentCommandExecutionIdentitySpawnFacts,
   withoutAgentCommandExecutionIdentitySpawnFacts,
 } from "./agent-command-execution-identity-spawn.js";
-import type {
-  AgentCommandGatewayIngressOpts,
-  AgentCommandIngressOpts,
-  AgentCommandOpts,
+import {
+  AGENT_COMMAND_PUBLIC_INGRESS_DEFAULTS,
+  type AgentCommandGatewayIngressOpts,
+  type AgentCommandIngressOpts,
+  type AgentCommandOpts,
 } from "./command/types.js";
 import { commitMainSessionRecovery } from "./main-session-recovery/main-session-recovery-store.js";
 import type { MainSessionRecoveryCommand } from "./main-session-recovery/main-session-recovery-types.js";
@@ -228,28 +229,7 @@ export function sanitizePublicAgentCommandIngressOpts(
     opts as AgentCommandIngressOpts & { nativeDeliveryPurpose?: unknown };
   return withoutAgentCommandExecutionIdentitySpawnFacts({
     ...publicOpts,
-    clientCaps: undefined,
-    gatewayUiCommandTarget: undefined,
-    toolBindings: undefined,
-    taskSuggestionDeliveryMode: undefined,
-    runtimeContextFragments: undefined,
-    senderIsOwner: false,
-    mainRestartRecoveryOwnerLease: undefined,
-    mainRestartRecoveryAdmitted: undefined,
-    mainRestartRecoveryAttempt: undefined,
-    pinnedWidgetAuthoring: undefined,
-    executionIdentityAdmission: undefined,
-    operationalRunInstance: undefined,
-    assertSourceCurrent: undefined,
-    operatorAuthority: undefined,
-    privateCompletion: undefined,
-    skillLibraryAuthoring: undefined,
-    cronCreatorAuthorityCapability: undefined,
-    onAdmittedRunContext: undefined,
-    onPostAdmittedRunContext: undefined,
-    beforeTerminalDelivery: undefined,
-    prepareAssistantTranscriptMessage: undefined,
-    internalDeliverySuppressErrors: undefined,
+    ...AGENT_COMMAND_PUBLIC_INGRESS_DEFAULTS,
   });
 }
 

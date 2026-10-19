@@ -60,7 +60,7 @@ type SteeringLease = {
   isCurrent: () => boolean;
 };
 
-type TrajectoryRecorder = ReturnType<typeof createTrajectoryRuntimeRecorder>;
+type TrajectoryRecorder = Awaited<ReturnType<typeof createTrajectoryRuntimeRecorder>>;
 
 export async function submitEmbeddedAttemptPrompt(input: {
   attempt: Pick<
@@ -172,23 +172,22 @@ export async function submitEmbeddedAttemptPrompt(input: {
     };
     activeSession.agent.prepareNextTurnWithContext = prepareNextTurn;
     const persistThenStream: StreamFn = async (model, context, options) => {
+      const assertRequestCurrent = () => {
+        options?.signal?.throwIfAborted();
+        assertSteeringCurrent();
+        input.assertHostActive?.();
+      };
       // Runtime admission queues behind the user append; join it outside that write lane.
       await userTurnRecorder?.waitForRuntimePersistence();
-      options?.signal?.throwIfAborted();
-      assertSteeringCurrent();
-      input.assertHostActive?.();
+      assertRequestCurrent();
       await input.persistToolResultProjections();
-      options?.signal?.throwIfAborted();
-      assertSteeringCurrent();
-      input.assertHostActive?.();
+      assertRequestCurrent();
       let requestContext = context;
       const foregroundRequest = captureCurrentPromptForModel && !activeSession.isCompacting;
       const preparation = foregroundRequest ? input.preparePrimaryModelRequest?.() : undefined;
       if (preparation) {
         const readRestoredContext = await preparation;
-        options?.signal?.throwIfAborted();
-        assertSteeringCurrent();
-        input.assertHostActive?.();
+        assertRequestCurrent();
         // Read the live permitted surface only after all awaited preparation.
         // Do not reuse the tools snapshot captured before the restoration.
         const projection = readRestoredContext().promptUpdate;
@@ -209,15 +208,11 @@ export async function submitEmbeddedAttemptPrompt(input: {
             ],
           };
         }
-        options?.signal?.throwIfAborted();
-        assertSteeringCurrent();
-        input.assertHostActive?.();
+        assertRequestCurrent();
         if (projection) {
           projection.commit();
           await input.persistToolResultProjections();
-          options?.signal?.throwIfAborted();
-          assertSteeringCurrent();
-          input.assertHostActive?.();
+          assertRequestCurrent();
         }
         const { tools, systemPrompt } = readRestoredContext();
         requestContext = { ...requestContext, tools, systemPrompt };
@@ -226,9 +221,7 @@ export async function submitEmbeddedAttemptPrompt(input: {
         primaryRequestObserved = true;
         input.onPrimaryModelRequest?.(requestContext.tools ?? []);
       }
-      options?.signal?.throwIfAborted();
-      assertSteeringCurrent();
-      input.assertHostActive?.();
+      assertRequestCurrent();
       if (foregroundRequest) {
         projectionRecorder?.markSentToProvider?.();
       }
@@ -300,9 +293,7 @@ export async function submitEmbeddedAttemptPrompt(input: {
     },
   });
   const armModelPromptTransform = (submitted: boolean) => {
-    if (submitted) {
-      captureCurrentPromptForModel = true;
-    }
+    captureCurrentPromptForModel ||= submitted;
   };
   const promptOptions = {
     ...(!input.runtimeOnly && input.images.length > 0 ? { images: input.images } : {}),

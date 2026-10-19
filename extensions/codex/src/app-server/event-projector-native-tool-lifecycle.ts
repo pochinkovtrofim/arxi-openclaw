@@ -160,8 +160,7 @@ export class CodexNativeToolLifecycleProjector {
     if (
       !candidate ||
       candidate.status !== "inProgress" ||
-      typeof candidate.server !== "string" ||
-      !candidate.server.trim() ||
+      !serverName.trim() ||
       typeof candidate.tool !== "string" ||
       !candidate.tool.trim() ||
       candidate.arguments === undefined ||
@@ -172,7 +171,7 @@ export class CodexNativeToolLifecycleProjector {
     }
     return {
       id: candidate.id,
-      server: candidate.server,
+      server: serverName,
       tool: candidate.tool,
       arguments: candidate.arguments,
     };

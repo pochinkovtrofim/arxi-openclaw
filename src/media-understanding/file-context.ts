@@ -204,6 +204,7 @@ async function classifyFileAttachment(params: {
       config: cfg,
       classification,
       signal: params.signal,
+      mimeType: attachment.mime,
     });
   } catch (err) {
     const extractionFailure = documentExtractionFailureFromError(err);

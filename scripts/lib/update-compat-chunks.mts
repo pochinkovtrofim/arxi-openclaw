@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import * as ts from "typescript/unstable/ast";
 import { createNativeTypeScriptParser } from "./native-typescript.mts";
+import { isRecord as object } from "./record-shared.mjs";
 import { parseReleaseVersion } from "./release-version.mjs";
-import { standaloneRuntimeProcessBuildEntries } from "./runtime-process-core-build-entries.mts";
 import {
   isUpdateCompatibilityChunk,
   UPDATE_COMPATIBILITY_CHUNK_HEADER,
@@ -12,11 +12,7 @@ import { ModuleGraph, type UpdateCompatibilityOrigin } from "./update-compat-mod
 import { isUpdatePackageAssetImport } from "./update-compat-source-imports.mts";
 
 export { isUpdateCompatibilityChunk } from "./update-compat-contract.mjs";
-export const UPDATE_COMPATIBILITY_INVENTORY_FILE = "update-compat-inventory.json";
 const HASHED_CHUNK = /-[A-Za-z0-9_-]{8}\.m?js$/;
-const standaloneRuntimeProcessOutputs = new Set(
-  Object.keys(standaloneRuntimeProcessBuildEntries).map((name) => `${name}.js`),
-);
 const POST_SWAP_OWNER = /^src\/(?:cli\/update-cli\/|daemon\/|cli\/runtime-cleanup(?:-scope)?\.ts$)/;
 
 // These verified releases coalesced lifecycle declarations under the cache module's region.
@@ -66,6 +62,7 @@ export type UpdateCompatibilityRelease = {
   buildId: string;
   commit: string;
   integrity: string;
+  schemaVersions?: unknown;
   chunks: UpdateCompatibilityChunk[];
 };
 export type UpdateCompatibilityInventory = {
@@ -248,6 +245,7 @@ export function recordUpdateCompatibilityRelease(params: {
     buildId: build.buildId,
     commit: build.commit,
     integrity: params.integrity,
+    schemaVersions: packageJson.openclaw?.schemaVersions,
     chunks: [...chunks.values()]
       .toSorted((a, b) => a.path.localeCompare(b.path))
       .map((chunk) => ({
@@ -258,9 +256,6 @@ export function recordUpdateCompatibilityRelease(params: {
   };
 }
 
-function object(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 function safeRelative(value: unknown): value is string {
   return (
     typeof value === "string" &&
@@ -355,6 +350,7 @@ export function parseUpdateCompatibilityInventory(
       buildId: release.buildId,
       commit: release.commit,
       integrity: release.integrity,
+      schemaVersions: release.schemaVersions,
       chunks,
     };
   });
@@ -468,11 +464,10 @@ export function writeUpdateCompatibilityChunks(params: {
   const candidates = new Map<string, Map<string, { file: string; exported: string }>>();
   for (const file of moduleFiles(distDir)) {
     const relative = portable(path.relative(distDir, file));
-    // Standalone processes, retained config repairs, and the one-shot hook relay
-    // have independent module instances; their shared-source annotations cannot
-    // authorize bridging to worker-only lifecycle or authority state.
+    // Retained config repairs and the one-shot native hook relay are built
+    // separately from the updater's runtime graph; their copies of shared
+    // modules are not bridge candidates.
     if (
-      standaloneRuntimeProcessOutputs.has(relative) ||
       relative.startsWith("extensions/") ||
       relative.startsWith("plugin-sdk/") ||
       relative.startsWith("config-doctor/") ||
@@ -590,9 +585,5 @@ export function writeUpdateCompatibilityChunks(params: {
       fs.writeFileSync(destination, contents);
     }
   }
-  fs.writeFileSync(
-    path.join(distDir, UPDATE_COMPATIBILITY_INVENTORY_FILE),
-    `${JSON.stringify(params.inventory, null, 2)}\n`,
-  );
   return [...outputs.keys()].toSorted();
 }

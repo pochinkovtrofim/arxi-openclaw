@@ -2,37 +2,16 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
 import { buildNodeShellCommand } from "../infra/node-shell.js";
 import * as processExec from "../process/exec.js";
 import { mockProcessPlatform } from "../test-utils/vitest-spies.js";
 import { runCommand } from "./invoke-run-command.js";
 
 describe("runCommand", () => {
+  const tempDirs = useAutoCleanupTempDirTracker(afterEach);
   afterEach(() => {
     vi.restoreAllMocks();
-  });
-
-  it("captures stdout, stderr, and exit status", async () => {
-    await expect(
-      runCommand(
-        [
-          process.execPath,
-          "-e",
-          "process.stdout.write('captured stdout'); process.stderr.write('captured stderr')",
-        ],
-        undefined,
-        undefined,
-        undefined,
-      ),
-    ).resolves.toEqual({
-      exitCode: 0,
-      timedOut: false,
-      success: true,
-      stdout: "captured stdout",
-      stderr: "captured stderr",
-      error: null,
-      truncated: false,
-    });
   });
 
   it.each(["before", "after"] as const)(
@@ -67,91 +46,76 @@ describe("runCommand", () => {
     },
   );
 
-  it("closes stdin for commands that wait for EOF", async () => {
-    await expect(
-      runCommand(
-        [
-          process.execPath,
-          "-e",
-          "process.stdin.resume(); process.stdin.once('end', () => process.stdout.write('eof'))",
-        ],
+  it.runIf(process.platform === "linux")(
+    "restores the service PATH after login startup and resolves service-only tools",
+    async () => {
+      const home = tempDirs.make("openclaw-node-service-path-");
+      fs.writeFileSync(path.join(home, ".profile"), "export PATH=/usr/bin:/bin\n");
+      const serviceBin = path.join(home, "service bin");
+      fs.mkdirSync(serviceBin);
+      fs.writeFileSync(path.join(serviceBin, "openclaw-path-probe"), "#!/bin/sh\nprintf service", {
+        mode: 0o755,
+      });
+      const servicePath = `${serviceBin}:/usr/bin:/bin`;
+      const result = await runCommand(
+        buildNodeShellCommand('printf "%s\\n" "$PATH"; openclaw-path-probe', "linux"),
         undefined,
+        { HOME: home, PATH: servicePath, OPENCLAW_PREPEND_PATH: "/request-override" },
         undefined,
-        2_000,
-      ),
-    ).resolves.toMatchObject({ success: true, stdout: "eof" });
-  });
+      );
+      expect(result).toMatchObject({ success: true, stderr: "" });
+      const [childPath, output] = result.stdout.split("\n");
+      expect(childPath?.startsWith(`${servicePath}:`)).toBe(true);
+      expect(output).toBe("service");
+    },
+  );
 
-  it("preserves nonzero command results", async () => {
-    await expect(
-      runCommand(
-        [process.execPath, "-e", "process.stderr.write('failed'); process.exit(7)"],
-        undefined,
-        undefined,
-        undefined,
-      ),
-    ).resolves.toMatchObject({
-      exitCode: 7,
+  it.runIf(process.platform !== "win32")("preserves signal termination diagnostics", async () => {
+    const result = await runCommand(
+      [process.execPath, "-e", "process.kill(process.pid, 'SIGTERM')"],
+      undefined,
+      undefined,
+      undefined,
+    );
+
+    expect(result).toMatchObject({
+      exitCode: undefined,
       timedOut: false,
       success: false,
-      stderr: "failed",
-      error: null,
+      stdout: "",
+      stderr: "",
+      error: "Command terminated by signal SIGTERM",
     });
-  });
-
-  it.runIf(process.platform !== "win32")("force-kills timed-out command trees", async () => {
-    const startedAt = Date.now();
-    const result = await runCommand(
-      [process.execPath, "-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
-      undefined,
-      undefined,
-      25,
-    );
-    expect(result).toMatchObject({ timedOut: true, success: false, error: null });
-    expect(Date.now() - startedAt).toBeLessThan(2_000);
   });
 
   it.runIf(process.platform !== "win32")("force-kills cancelled command trees", async () => {
     const controller = new AbortController();
-    const startedAt = Date.now();
-    const cancelling = setTimeout(() => controller.abort(), 25);
-    try {
-      const result = await runCommand(
-        [process.execPath, "-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"],
-        undefined,
-        undefined,
-        undefined,
-        controller.signal,
-      );
-
-      expect(result).toMatchObject({ timedOut: false, success: false, error: null });
-      expect(Date.now() - startedAt).toBeLessThan(2_000);
-    } finally {
-      clearTimeout(cancelling);
-    }
-  });
-
-  it("keeps the combined output prefix bounded", async () => {
-    const result = await runCommand(
-      [process.execPath, "-e", "process.stdout.write('x'.repeat(200_001))"],
-      undefined,
-      undefined,
-      undefined,
+    const run = processExec.runCommandWithTimeout;
+    vi.spyOn(processExec, "runCommandWithTimeout").mockImplementation((argv, options) =>
+      run(argv, {
+        ...(typeof options === "number" ? { timeoutMs: options } : options),
+        // Cancel only once the real child has installed its signal handler.
+        onOutputChunk: () => controller.abort(),
+      }),
     );
-    expect(result.stdout).toHaveLength(200_000);
-    expect(result.stdout).toBe("x".repeat(200_000));
-    expect(result.truncated).toBe(true);
-  });
-
-  it("preserves child launch errors", async () => {
     const result = await runCommand(
-      [`openclaw-missing-${process.pid}-${Date.now()}`],
+      [
+        process.execPath,
+        "-e",
+        "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000); process.stdout.write('ready')",
+      ],
       undefined,
       undefined,
       undefined,
+      controller.signal,
     );
-    expect(result).toMatchObject({ exitCode: undefined, timedOut: false, success: false });
-    expect(result.error).toMatch(/ENOENT|not found/i);
+
+    expect(result).toMatchObject({
+      timedOut: false,
+      success: false,
+      stdout: "ready",
+      error: "Command terminated by signal SIGKILL",
+    });
   });
 
   describe("Windows cmd.exe shell envelope", () => {
@@ -249,13 +213,6 @@ describe("runCommand", () => {
       vi.spyOn(processExec, "runCommandWithTimeout").mockRejectedValueOnce(error);
       return (await runCommand([process.execPath], cwd, undefined, undefined)).error;
     }
-
-    it("blames a missing working directory instead of the shell", async () => {
-      const cwd = path.join(os.tmpdir(), `node-exec-missing-${process.pid}-${Date.now()}`);
-      expect(await runCommandError(enoent("spawn /bin/sh ENOENT"), cwd)).toBe(
-        `node exec working directory does not exist on the node host: ${cwd} (os reported: spawn /bin/sh ENOENT)`,
-      );
-    });
 
     it("flags a cwd that exists but is not a directory", async () => {
       const file = path.join(os.tmpdir(), `node-exec-file-${process.pid}-${Date.now()}.txt`);

@@ -29,6 +29,7 @@ import {
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import * as workerAdmission from "../../infra/sqlite-worker-operation-admission.js";
+import { sqliteWorkerOwnerProbe as probe } from "../../infra/sqlite-worker-owner-probe.test-support.js";
 import * as sessionLifecycle from "../../sessions/session-lifecycle-admission.js";
 import {
   isSessionStoreTopologyChange,
@@ -223,10 +224,10 @@ test("catalog reload releases the agent writer while preserving same-session ord
     const clockSpy = vi.spyOn(performance, "now").mockImplementation(() => clock);
     const catalogTrace = createDiagnosticTraceContext();
     const successorTrace = createDiagnosticTraceContext();
-    const records: Array<{ traceId: string | undefined; metadata: unknown }> = [];
-    const logSpy = vi.spyOn(sessionLog, "info").mockImplementation((message, metadata) => {
-      if (message === "slow session patch") {
-        records.push({ traceId: getActiveDiagnosticTraceContext()?.traceId, metadata });
+    const records: Array<{ traceId: string | undefined; message: string }> = [];
+    const logSpy = vi.spyOn(sessionLog, "info").mockImplementation((message) => {
+      if (message.startsWith("slow session patch ")) {
+        records.push({ traceId: getActiveDiagnosticTraceContext()?.traceId, message });
       }
     });
     const catalogPatch = runWithDiagnosticTraceContext(catalogTrace, () =>
@@ -279,18 +280,11 @@ test("catalog reload releases the agent writer while preserving same-session ord
       expect.any(Number),
     );
     expect(records).toHaveLength(2);
-    expect(records.find((record) => record.traceId === catalogTrace.traceId)?.metadata).toEqual(
-      expect.objectContaining({
-        method: "sessions.patch",
-        phaseDurationsMs: expect.objectContaining({ catalog: 1_500 }),
-        phaseCounts: expect.objectContaining({ catalog: 1 }),
-      }),
+    expect(records.find((record) => record.traceId === catalogTrace.traceId)?.message).toMatch(
+      /^slow session patch 1500ms method=sessions\.patch .* catalog=1500ms(?: |$)/,
     );
-    expect(records.find((record) => record.traceId === successorTrace.traceId)?.metadata).toEqual(
-      expect.objectContaining({
-        method: "sessions.patch",
-        phaseDurationsMs: expect.objectContaining({ lifecycleAdmission: 1_500 }),
-      }),
+    expect(records.find((record) => record.traceId === successorTrace.traceId)?.message).toMatch(
+      /^slow session patch 1500ms method=sessions\.patch .* lifecycleAdmission=1500ms(?: |$)/,
     );
   });
 });
@@ -461,10 +455,10 @@ test("patchMany prepares singleton agent groups without blocking another session
     setDiagnosticsEnabledForProcess(true);
     let clock = performance.now();
     const clockSpy = vi.spyOn(performance, "now").mockImplementation(() => clock);
-    const timingRecords: unknown[] = [];
-    const logSpy = vi.spyOn(sessionLog, "info").mockImplementation((message, metadata) => {
-      if (message === "slow session patch") {
-        timingRecords.push(metadata);
+    const timingRecords: string[] = [];
+    const logSpy = vi.spyOn(sessionLog, "info").mockImplementation((message) => {
+      if (message.startsWith("slow session patch ")) {
+        timingRecords.push(message);
       }
     });
     const batch = sessionMutationHandlers["sessions.patchMany"]!({
@@ -515,12 +509,9 @@ test("patchMany prepares singleton agent groups without blocking another session
       expect.any(Number),
     );
     expect(timingRecords).toEqual([
-      expect.objectContaining({
-        method: "sessions.patchMany",
-        elapsedMs: 1_500,
-        phaseDurationsMs: expect.objectContaining({ catalog: 3_000 }),
-        phaseCounts: expect.objectContaining({ catalog: 2 }),
-      }),
+      expect.stringMatching(
+        /^slow session patch 1500ms method=sessions\.patchMany .* catalog=3000ms(?: |$)/,
+      ),
     ]);
   });
 });
@@ -700,19 +691,18 @@ test("patch timing covers preparation and lifecycle finalization before cleanup"
     try {
       await patchRequest(patchContext(async () => []))({ key, pinned: true }, response);
       expect(response).toHaveBeenCalledWith(true, expect.any(Object), undefined);
-      expect(log).toHaveBeenCalledWith(
-        "slow session patch",
-        expect.objectContaining({
-          elapsedMs: 1_200,
-          phaseDurationsMs: expect.objectContaining({
-            lifecycleAdmission: 700,
-            lifecycleFinalize: 500,
-            cleanup: 0,
-            snapshot: 0,
-            commit: 0,
-          }),
-        }),
-      );
+      const timing = log.mock.calls.find(([message]) =>
+        message.startsWith("slow session patch 1200ms method=sessions.patch "),
+      )?.[0];
+      for (const phase of [
+        "lifecycleAdmission=700ms",
+        "lifecycleFinalize=500ms",
+        "cleanup=0ms",
+        "snapshot=0ms",
+        "commit=0ms",
+      ]) {
+        expect(timing).toContain(` ${phase}`);
+      }
     } finally {
       lifecycle.mockRestore();
       log.mockRestore();
@@ -913,25 +903,20 @@ test("patchMany excludes a revoked cold-store promotion while its independent st
       errorShape(ErrorCodes.FORBIDDEN, "Original cold-store source was revoked"),
     );
     const source = new AbortController();
-    const createAdmission = workerAdmission.createSqliteWorkerOperationAdmission;
     let failedOpenAdmissions = 0;
-    const admissionObserver = vi
-      .spyOn(workerAdmission, "createSqliteWorkerOperationAdmission")
-      .mockImplementation((admit, attachment) =>
-        createAdmission((request, grant) => {
-          if (
-            request.stage === "open" &&
-            isRecord(request.facts) &&
-            request.facts.databasePath === failedPath &&
-            isRecord(request.facts.creatingIdentity) &&
-            request.facts.creatingIdentity.key === `path:${failedPath}`
-          ) {
-            failedOpenAdmissions++;
-            source.abort(revoked);
-          }
-          admit(request, grant);
-        }, attachment),
-      );
+    const admissionObserver = probe.admission(workerAdmission, (request, grant, admit) => {
+      if (
+        request.stage === "open" &&
+        isRecord(request.facts) &&
+        request.facts.databasePath === failedPath &&
+        isRecord(request.facts.creatingIdentity) &&
+        request.facts.creatingIdentity.key === `path:${failedPath}`
+      ) {
+        failedOpenAdmissions++;
+        source.abort(revoked);
+      }
+      admit(request, grant);
+    });
     const writers = vi.spyOn(sessionReplacement, "applySessionEntryCanonicalReplacements");
     const respond = vi.fn();
     const params = { targets, patch: { model: "openai/gpt-5.6-sol" } };

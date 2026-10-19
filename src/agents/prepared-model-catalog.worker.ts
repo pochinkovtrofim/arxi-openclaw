@@ -24,7 +24,10 @@ import { planRuntimePluginDiscovery } from "../plugins/provider-discovery.js";
 import { restorePreparedSyntheticAuthFacts } from "../plugins/provider-synthetic-auth.js";
 import { manifestPluginResolvesRuntimeModelCatalogAugment } from "../plugins/providers.js";
 import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
-import { resolveRuntimeSyntheticAuthProviderRefs } from "../plugins/synthetic-auth.runtime.js";
+import {
+  listManifestSyntheticAuthProviderRefs,
+  resolveRuntimeSyntheticAuthProviderRefs,
+} from "../plugins/synthetic-auth.runtime.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { AsyncWorkScope } from "../shared/async-work-scope.js";
 import { freezeJsonSnapshot } from "../shared/immutable-data.js";
@@ -40,8 +43,10 @@ import {
 } from "./agent-dir-registry.js";
 import { overlayExternalAuthProfiles } from "./auth-profiles/external-auth-runtime.js";
 import { listExternalCliSyncProviderIds } from "./auth-profiles/external-cli-sync.js";
+import { noteCommittedSharedAuthStoreOwnership } from "./auth-profiles/path-resolve.js";
 import { resolveAuthStorePathForDisplay } from "./auth-profiles/paths.js";
 import { mergeRuntimeExternalProfileReferences } from "./auth-profiles/runtime-external-profile-references.js";
+import { withWorkerAuthProfileWrites } from "./auth-profiles/runtime-scope.js";
 import { replaceRuntimeAuthProfileStoreSnapshots } from "./auth-profiles/runtime-snapshots.js";
 import { loadAuthProfileStoreWithoutExternalProfiles } from "./auth-profiles/store-runtime.js";
 import { preserveResolvedSecretBackedCredentials } from "./auth-profiles/store.js";
@@ -52,11 +57,11 @@ import { resolveImplicitProviderDiscoveryScope } from "./models-config.providers
 import { prepareImplicitProviderStaticCatalog } from "./models-config.providers.implicit.js";
 import { createModelCatalogIdentityKeyResolver } from "./openai-model-routes.js";
 import {
-  PREPARED_MODEL_CATALOG_WORKER_TIMEOUT_MS,
   fingerprintPreparedModelCatalogGeneration,
   fingerprintPreparedModelCatalogPluginContext,
   fingerprintPreparedModelWorkerRequest,
-} from "./prepared-model-catalog-worker.js";
+} from "./prepared-model-catalog-fingerprints.js";
+import { PREPARED_MODEL_CATALOG_WORKER_TIMEOUT_MS } from "./prepared-model-catalog-worker.js";
 import type { PreparedModelCatalogWorkerData } from "./prepared-model-catalog-worker.pool.js";
 import type {
   PreparedModelCatalogWorkerInput,
@@ -220,6 +225,9 @@ async function runCatalogRequest(
   let prepared: WorkerGeneration | undefined;
   let acquiredGeneration: WorkerGeneration | undefined;
   try {
+    if (value.sharedAuthStoreOwnership) {
+      noteCommittedSharedAuthStoreOwnership(value.sharedAuthStoreOwnership, value.input.env);
+    }
     if (directoryOwner) {
       registeredDirectoryOwner = registerResolvedAgentDir(directoryOwner);
       if (
@@ -277,6 +285,9 @@ async function runCatalogRequest(
           syntheticAuthProviderRefs: scopeSyntheticAuthProviderRefs(
             [
               ...new Set([
+                ...listManifestSyntheticAuthProviderRefs(
+                  pluginGenerationScope.metadataSnapshot.index,
+                ),
                 ...resolveRuntimeSyntheticAuthProviderRefs(),
                 ...request.syntheticAuth.map(({ providerRef }) => providerRef),
               ]),
@@ -406,12 +417,14 @@ async function runCatalogRequest(
       value: source,
       providerExpiries,
       providerModels,
-    } = await captureProviderCatalogExpiries(() =>
-      prepareAgentCatalogSource(exactAgentFacts, catalogGeneration, "live", false, {
-        authStore,
-        providerDiscoveryProviderIds: request.providerIds,
-        providerDiscoveryTimeoutMs: PREPARED_MODEL_CATALOG_WORKER_TIMEOUT_MS,
-      }),
+    } = await captureProviderCatalogExpiries(
+      () =>
+        prepareAgentCatalogSource(exactAgentFacts, catalogGeneration, "live", false, {
+          authStore,
+          providerDiscoveryProviderIds: request.providerIds,
+          providerDiscoveryTimeoutMs: PREPARED_MODEL_CATALOG_WORKER_TIMEOUT_MS,
+        }),
+      { refresh: request.refresh },
     );
     const facts = await prepareFullCatalogFacts(
       exactAgentFacts,
@@ -438,10 +451,7 @@ async function runCatalogRequest(
       ...credentials,
     };
     const runtimeModels = new Map<string, Model[]>();
-    // Lazy normalization must keep provider hooks on the selected catalog generation.
-    const catalogModels = withPluginRuntimeGenerationScope(pluginGenerationScope, () =>
-      facts.templateModelRegistry.getAll(),
-    );
+    const { catalogModels } = facts;
     const hookRows = withPluginRuntimeGenerationScope(pluginGenerationScope, () => {
       const normalizeProvider = createPreparedModelCatalogProviderNormalizer(
         pluginMetadataSnapshot,
@@ -520,10 +530,7 @@ async function runCatalogRequest(
     await work.runWhenIdle(() => undefined);
     if (acquiredGeneration) {
       const releasePrevious = prepared.release;
-      prepared.pluginGeneration = acquiredGeneration.pluginGeneration;
-      prepared.pluginIds = acquiredGeneration.pluginIds;
-      prepared.staticProviderIds = acquiredGeneration.staticProviderIds;
-      prepared.release = acquiredGeneration.release;
+      Object.assign(prepared, acquiredGeneration);
       acquiredGeneration = undefined;
       await releasePrevious();
     }
@@ -550,6 +557,10 @@ async function runCatalogRequest(
   }
 }
 
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
 function isWorkerRequest(value: unknown): value is PreparedModelWorkerRequest {
   return (
     isRecord(value) &&
@@ -558,15 +569,11 @@ function isWorkerRequest(value: unknown): value is PreparedModelWorkerRequest {
     typeof value.clawInstallSchemaVersions.path === "string" &&
     isRecord(value.clawInstallSchemaVersions.snapshot) &&
     ((value.kind === "catalog" &&
-      (value.providerIds === undefined ||
-        (Array.isArray(value.providerIds) &&
-          value.providerIds.every((id) => typeof id === "string")))) ||
+      (value.refresh === undefined || typeof value.refresh === "boolean") &&
+      (value.providerIds === undefined || isStringArray(value.providerIds))) ||
       (value.kind === "auth-refresh" &&
-        Array.isArray(value.providerIds) &&
-        value.providerIds.every((providerId) => typeof providerId === "string") &&
-        (value.profileIds === undefined ||
-          (Array.isArray(value.profileIds) &&
-            value.profileIds.every((profileId) => typeof profileId === "string")))))
+        isStringArray(value.providerIds) &&
+        (value.profileIds === undefined || isStringArray(value.profileIds))))
   );
 }
 
@@ -586,19 +593,13 @@ if (parentPort) {
     }
     let reportAfter = 0;
     let reportedPlugin: string | undefined;
-    let reportedActive: boolean | undefined;
     const reportProgress = (notification: unknown) => {
       // SAFETY: The native-reference owner publishes this internal diagnostic payload.
       const progress = notification as NativeReferenceProgress;
       const now = performance.now();
-      if (
-        now >= reportAfter ||
-        progress.pluginId !== reportedPlugin ||
-        progress.active !== reportedActive
-      ) {
+      if (now >= reportAfter || progress.pluginId !== reportedPlugin) {
         reportAfter = now + 1_000;
         reportedPlugin = progress.pluginId;
-        reportedActive = progress.active;
         channel?.notify(progress);
       }
     };
@@ -613,11 +614,11 @@ if (parentPort) {
           let previous = contexts.get(workspaceDir);
           const fingerprint = fingerprintPreparedModelCatalogPluginContext(value);
           let attempted: WorkerGeneration | undefined;
+          let replacing = false;
           try {
             const work = new AsyncWorkScope();
-            const result = await withClawInstallSchemaVersionFacts(
-              request.clawInstallSchemaVersions,
-              () =>
+            const result = await withWorkerAuthProfileWrites(value.input.env, work, () =>
+              withClawInstallSchemaVersionFacts(request.clawInstallSchemaVersions, () =>
                 work.run(() =>
                   runCatalogRequest(
                     value,
@@ -627,6 +628,7 @@ if (parentPort) {
                       if (previous?.fingerprint === fingerprint) {
                         return previous.prepared;
                       }
+                      replacing = true;
                       return (attempted = await prepareWorkerGeneration(value));
                     },
                     async () => {
@@ -641,10 +643,12 @@ if (parentPort) {
                     },
                   ),
                 ),
+              ),
             );
             if (attempted && result.status === "ok") {
               contexts.set(workspaceDir, { fingerprint, prepared: attempted });
               attempted = undefined;
+              replacing = false;
               // Acquire the replacement before releasing shared source registrations.
               await previous?.prepared.release();
               // Registry custody can retain this request's async context until retirement.
@@ -653,7 +657,16 @@ if (parentPort) {
             }
             return result;
           } finally {
-            await attempted?.release();
+            try {
+              if (replacing) {
+                // Registration can replace module-level API handles before a refresh fails.
+                // Re-register the requested config next time instead of reusing that context.
+                contexts.delete(workspaceDir);
+                await previous?.prepared.release();
+              }
+            } finally {
+              await attempted?.release();
+            }
           }
         },
         data.sourceCaptureManagedRoot,

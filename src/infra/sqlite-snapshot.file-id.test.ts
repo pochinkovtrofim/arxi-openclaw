@@ -7,7 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { configureFsSafeNative, getFsSafeNativeConfig } from "@openclaw/fs-safe/config";
 import { afterEach, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../test/helpers/temp-dir.js";
-import { createVerifiedSqliteSnapshot, publishVerifiedSqliteFile } from "./sqlite-snapshot.js";
+import { publishVerifiedSqliteFile, createVerifiedSqliteSnapshot } from "./sqlite-snapshot.js";
 import { prepareUpdateDatabaseRestoreSourceInProcess } from "./update-database-restore-source.js";
 
 const directories: string[] = [];

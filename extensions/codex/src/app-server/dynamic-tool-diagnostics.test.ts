@@ -5,10 +5,7 @@ import {
   type DiagnosticEventPayload,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { describe, expect, it } from "vitest";
-import {
-  emitDynamicToolStartedDiagnostic,
-  emitDynamicToolTerminalDiagnostic,
-} from "./dynamic-tool-diagnostics.js";
+import { createCodexDynamicToolDiagnostics } from "./dynamic-tool-diagnostics.js";
 
 async function captureToolEvents(emit: () => void): Promise<DiagnosticEventPayload[]> {
   const events: DiagnosticEventPayload[] = [];
@@ -37,13 +34,10 @@ const call = (tool: string, args: unknown) => ({
 describe("Codex dynamic tool diagnostics", () => {
   it("labels exec calls with the content-free command class only", async () => {
     const context = { call: call("exec", { command: "/usr/bin/python3 /home/owner/secret.py" }) };
+    const diagnostics = createCodexDynamicToolDiagnostics(context);
     const events = await captureToolEvents(() => {
-      emitDynamicToolStartedDiagnostic(context);
-      emitDynamicToolTerminalDiagnostic({
-        ...context,
-        durationMs: 12,
-        response: { success: true, contentItems: [] } as never,
-      });
+      diagnostics.started();
+      diagnostics.terminal({ success: true, contentItems: [] } as never, 12);
     });
 
     expect(events.map((event) => event.type)).toEqual([
@@ -58,7 +52,7 @@ describe("Codex dynamic tool diagnostics", () => {
 
   it("leaves other tools without a command class", async () => {
     const events = await captureToolEvents(() =>
-      emitDynamicToolStartedDiagnostic({ call: call("read", { command: "ls" }) }),
+      createCodexDynamicToolDiagnostics({ call: call("read", { command: "ls" }) }).started(),
     );
 
     expect(events).toHaveLength(1);

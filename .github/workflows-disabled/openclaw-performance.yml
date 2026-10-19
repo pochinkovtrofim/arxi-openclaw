@@ -89,9 +89,9 @@ env:
   OCM_VERSION: v0.2.48
   OCM_LINUX_X64_SHA256: d0bdb49d69fa8bf3c3487ff04f4be82126828876f81690afdc002c427e22c1ac
   KOVA_REPOSITORY: openclaw/Kova
-  KOVA_CANONICAL_CONFIG_REF: ae41f747d7e109851b27c236d78e192c5a77f478
+  KOVA_CANONICAL_CONFIG_REF: d5242c0b9920b236102bc853d08734eb928f8478
   KOVA_LEGACY_LIST_CONFIG_REF: d69b2209905195bea06980721a92ad8b70808c5d
-  KOVA_TRUSTED_LIVE_REF: ae41f747d7e109851b27c236d78e192c5a77f478
+  KOVA_TRUSTED_LIVE_REF: d5242c0b9920b236102bc853d08734eb928f8478
   PERFORMANCE_MODEL_ID: gpt-5.6-luna
   # Release matrices cold-build the candidate runtime before measurement.
   KOVA_SCENARIO_TIMEOUT_MS: ${{ inputs.profile == 'release' && '900000' || '300000' }}
@@ -1818,9 +1818,9 @@ jobs:
           set -euo pipefail
           pnpm_prefix="$RUNNER_TEMP/vitest-pair-pnpm"
           npm_config_cache="$RUNNER_TEMP/vitest-pair-npm-cache" \
-            npm install --global --prefix "$pnpm_prefix" pnpm@12.5.1
+            npm install --global --prefix "$pnpm_prefix" pnpm@12.9.0
           pnpm_bin="$pnpm_prefix/bin/pnpm"
-          [[ "$("$pnpm_bin" --version)" == "12.5.1" ]]
+          [[ "$("$pnpm_bin" --version)" == "12.9.0" ]]
           echo "VITEST_PAIR_PNPM_BIN=$pnpm_bin" >> "$GITHUB_ENV"
 
       - name: Run Vitest pair benchmark

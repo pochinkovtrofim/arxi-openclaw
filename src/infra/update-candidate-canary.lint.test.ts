@@ -290,33 +290,47 @@ describe("update candidate Doctor lint", () => {
     );
   });
 
-  it("retains posture warnings without admitting blocking lint errors", async () => {
-    lintReport = {
-      ok: false,
-      checksRun: 1,
-      findings: [{ checkId: "core/config", severity: "error", message: "Invalid configuration." }],
-      warnings: [
-        {
-          checkId: "core/doctor/security",
-          severity: "warning",
-          message: "Open group policy permits mention-gated requests.",
+  it.each([0, 3])(
+    "shows a passing lint with budget-deferred inspections as advisory after %i checks",
+    async (checksRun) => {
+      lintReport = {
+        ok: true,
+        checksRun,
+        findings: [],
+        warnings: [
+          {
+            checkId: "core/doctor/agent-scopes",
+            source: "doctor",
+            severity: "warning",
+            errorCode: "update-inspection-deferred",
+            requirement: "update-validation-budget",
+            message: "Agent scopes deferred until after activation.",
+            fixHint: "Run `openclaw doctor --fix` after activation.",
+          },
+        ],
+      };
+      stubHealthyGateway();
+      const result = await validateUpdateCandidateCanary(canaryStateOptions());
+      expect(result.status).toBe("ok");
+      const step = result.steps.find((entry) => entry.name === "candidate-doctor-lint")!;
+      expect(step).toMatchObject({
+        exitCode: 0,
+        advisory: {
+          kind: "recoverable-maintenance",
+          message: `Doctor deferred 1 inspection until after activation (${checksRun} ran). Run \`openclaw doctor --fix\` after the update.`,
         },
-      ],
-    };
-    stubHealthyGateway();
-    const result = await validateUpdateCandidateCanary(canaryStateOptions());
-    expect(result).toMatchObject({ status: "error", phase: "lint", reason: "doctor-failed" });
-    expect(
-      updateRunWarningMessages(result.steps.flatMap(updateRunStepsFromResultStep)),
-    ).toContainEqual(expect.stringContaining("Open group policy permits mention-gated requests."));
-    expect(
-      result.steps.find((step) => step.name === "candidate-doctor-lint")?.doctorLintFindings,
-    ).toEqual([...lintReport.findings, ...lintReport.warnings]);
-  });
+      });
+      expect(step.failureFacts).toBeUndefined();
+      const printed = renderSteps([step]);
+      expect(printed).toMatch(/! candidate-doctor-lint/u);
+      expect(printed).not.toContain("✓");
+      expect(printed).toContain("Doctor deferred 1 inspection");
+    },
+  );
+
   it.each([
     { name: "signal", exitCode: null, signal: "SIGTERM", outputLimitExceeded: false },
     { name: "output limit after exit zero", exitCode: 0, signal: null, outputLimitExceeded: true },
-    { name: "output limit after exit one", exitCode: 1, signal: null, outputLimitExceeded: true },
   ])("retains physical $name facts without accepting policy output", async (physical) => {
     const spawnNormally = mocks.spawn.getMockImplementation()!;
     mocks.spawn.mockImplementation((command, args: string[], options) => {

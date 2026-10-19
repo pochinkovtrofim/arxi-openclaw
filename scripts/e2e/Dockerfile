@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.27.0
+# syntax=docker/dockerfile:1.27.1
 #
 # Shared Docker E2E image.
 # `bare` is a clean Node/Git runner for install/update lanes. `functional`
@@ -32,8 +32,8 @@ INSTALL_TYPESCRIPT
 
 COPY --chmod=0644 scripts/prepublish-plugin-registry-artifact.mjs /opt/openclaw-e2e/scripts/
 COPY --chmod=0755 scripts/e2e/lib/prepublish-plugin-registry.sh /opt/openclaw-e2e/scripts/e2e/lib/
-COPY --chmod=0644 scripts/e2e/lib/plugins/npm-registry-server.mjs /opt/openclaw-e2e/scripts/e2e/lib/plugins/
-COPY --chmod=0644 scripts/lib/bounded-response.mjs /opt/openclaw-e2e/scripts/lib/
+COPY scripts/e2e/lib/plugins/npm-registry-server.mjs /opt/openclaw-e2e/scripts/e2e/lib/plugins/
+COPY scripts/lib/bounded-response.mjs /opt/openclaw-e2e/scripts/lib/
 
 # COPY --chmod can also set modes on newly created parent directories.
 RUN find /opt/openclaw-e2e -type d -exec chmod 0755 {} +

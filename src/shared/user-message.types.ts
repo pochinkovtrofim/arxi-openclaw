@@ -37,6 +37,7 @@ export type UserMessageEvent =
         | "output_limit"
         | "overloaded"
         | "preflight_compaction_failed"
+        | "prompt_size_limit"
         | "provider_internal"
         | "provider_network"
         | "rate_limit"

@@ -1,10 +1,7 @@
 import type { TriageFailureContext } from "../../commands/triage-prompt.js";
 import { readConfigFileSnapshot } from "../../config/config.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import {
-  buildControlPlaneUpdateRestartHealthPendingResult,
-  resolveManagedServiceUpdateFailureExitCode,
-} from "../../infra/update-control-plane-sentinel.js";
+import { buildControlPlaneUpdateRestartHealthPendingResult } from "../../infra/update-control-plane-sentinel.js";
 import { recordUpdateRunStep } from "../../infra/update-run-ledger.js";
 import { isUpdateGatewayReadinessPending } from "../../infra/update-run-step.js";
 import type { UpdateRunResult } from "../../infra/update-runner-types.js";
@@ -35,6 +32,7 @@ import {
   UpdateCommandPendingRecoveryFailure,
   recordUpdateResultNextAction,
   writeControlPlaneUpdateRestartSentinelBestEffort,
+  withUpdateStateRead,
 } from "./update-command-result.js";
 import { rollbackFailedUpdate } from "./update-command-rollback.js";
 import type { UpdateServiceDefinitionRecovery } from "./update-command-service-context-types.js";
@@ -97,6 +95,7 @@ async function finishSettledUpdate(
     assertCurrent,
     originalRun,
     compensate,
+    forward,
     recordPhase,
     sentinelOptions,
   } = captured;
@@ -192,26 +191,16 @@ async function finishSettledUpdate(
       const rollback = await compensate(() =>
         withOwnedManagedUpdateEnv(params.ownedManagedUpdateEnv, () =>
           rollbackFailedUpdate({
+            ...params,
             result,
             previousRoot: params.root,
-            packageTransaction: params.packageTransaction,
             databaseBackup:
               beganSuccessfully && !gatewayStartAttempted ? params.databaseBackup : undefined,
-            rollbackBlockedReason: params.rollbackBlockedReason,
-            schemaVersions: params.schemaVersions,
-            candidateSchemaVersions: params.candidateSchemaVersions,
-            previousSchemaVersions: params.previousSchemaVersions,
-            previousVerified: params.previousVerified,
-            originalManagedServiceRuntime: params.originalManagedServiceRuntime,
             allowGatewayRestart: params.shouldRestart,
             onGatewayStartAttempted,
-            configSnapshot: params.configSnapshot,
-            activationConfig: params.activationConfig,
-            opts: params.opts,
             preManagedServiceStop: currentServiceStop(),
             timeoutMs: params.updateStepTimeoutMs,
             nodeRunner: params.packageUpdateNodeRunner,
-            invocationCwd: params.invocationCwd,
             definitionRecovery,
           }),
         ),
@@ -268,10 +257,8 @@ async function finishSettledUpdate(
     initialRestoreFailure?: { cause: unknown },
     notify = true,
   ): Promise<UpdateRunResult> => {
-    const { result, recoverService } = await recoverFailedResult(
-      initialResult,
-      initialRecoverService,
-    );
+    const input = captured.interruptedResult(initialResult);
+    const { result, recoverService } = await recoverFailedResult(input, initialRecoverService);
     assertCurrent();
     let restoreFailure = initialRestoreFailure;
     let finalResult = completeUpdateCommandResult(params, result, currentServiceStop());
@@ -379,8 +366,9 @@ async function finishSettledUpdate(
     const cleanupFailure = await recordUpdatePackageCompletion(params, finalResult, assertCurrent);
     assertCurrent();
     finalResult = cleanupFailure?.result ?? finalResult;
-    // Compensation of the original service is not proof of the requested installation.
-    if ((finalResult.status === "error" || cleanupFailure) && !originalServiceRecoveryHandled) {
+    // Rollback already verified its Gateway; cleanup failure needs a fresh observation.
+    const needsObservation = cleanupFailure || (!rolledBack && finalResult.status === "error");
+    if (needsObservation && !originalServiceRecoveryHandled) {
       finalResult = await verifyUpdateFailureRecovery({
         result: finalResult,
         root,
@@ -398,7 +386,7 @@ async function finishSettledUpdate(
       triageAllowed &&= !isUpdateGatewayReadinessPending(finalResult);
       rolledBack &&= isVerifiedUpdateRollback(finalResult);
     }
-    pendingResult = completeUpdateCommandResult(params, finalResult);
+    pendingResult = completeUpdateCommandResult(params, captured.interruptedResult(finalResult));
     terminalRecord = deferredTerminal
       ? await captureUpdateCommandTerminalRecord(params, pendingResult, assertCurrent)
       : undefined;
@@ -420,12 +408,7 @@ async function finishSettledUpdate(
             cause: restoreFailure.cause,
           })
         : restoreFailure.cause;
-      throw createFailure(
-        reportedResult,
-        resolveManagedServiceUpdateFailureExitCode(reportedResult),
-        detail,
-        { cause },
-      );
+      throw createFailure(reportedResult, detail, { cause });
     }
     return reportedResult;
   };
@@ -449,12 +432,7 @@ async function finishSettledUpdate(
           { ...params.result, status: "error" },
           params.result.recovery?.serviceRestartSafe === true,
         );
-        throw createFailure(
-          reported,
-          resolveManagedServiceUpdateFailureExitCode(reported),
-          params.failure?.detail,
-          params.failure,
-        );
+        throw createFailure(reported, params.failure?.detail, params.failure);
       }
 
       if (params.result.status === "skipped" && !params.coreAlreadyCurrent) {
@@ -464,9 +442,9 @@ async function finishSettledUpdate(
         );
         throw createFailure(
           reported,
-          classifyUpdateOutcome(reported) === "failed"
-            ? resolveManagedServiceUpdateFailureExitCode(reported)
-            : 0,
+          undefined,
+          undefined,
+          classifyUpdateOutcome(reported) === "failed" ? undefined : 0,
         );
       }
 
@@ -479,15 +457,11 @@ async function finishSettledUpdate(
           assertCurrent,
           candidateRuntime,
         };
-        const convergence = await convergeUpdatePlugins(pluginParams);
+        const convergence = await forward(() => convergeUpdatePlugins(pluginParams));
         if (convergence.resultWithPostUpdate.status === "error") {
           triageAllowed = !convergence.cancelled;
           const reported = await reportResult(convergence.resultWithPostUpdate);
-          throw createFailure(
-            reported,
-            resolveManagedServiceUpdateFailureExitCode(reported),
-            convergence.detail,
-          );
+          throw createFailure(reported, convergence.detail);
         }
         return convergence;
       };
@@ -523,17 +497,25 @@ async function finishSettledUpdate(
       const restartConfigSnapshot =
         postUpdateConfigSnapshot ??
         (await withOwnedManagedUpdateEnv(params.ownedManagedUpdateEnv, async () =>
-          readConfigFileSnapshot({
-            observe: false,
-            skipPluginValidation: true,
-            suppressFutureVersionWarning: true,
-          }),
+          withUpdateStateRead(
+            () =>
+              readConfigFileSnapshot({
+                observe: false,
+                skipPluginValidation: true,
+                suppressFutureVersionWarning: true,
+              }),
+            params.updateStepTimeoutMs,
+          ),
         ));
       let restartContext: Awaited<ReturnType<typeof prepareUpdateRestart>>;
       try {
-        restartContext = await prepareUpdateRestart(
-          { ...params, shouldRestart, result: resultWithPostUpdate, assertCurrent },
-          restartConfigSnapshot,
+        restartContext = await withUpdateStateRead(
+          () =>
+            prepareUpdateRestart(
+              { ...params, shouldRestart, result: resultWithPostUpdate, assertCurrent },
+              restartConfigSnapshot,
+            ),
+          params.updateStepTimeoutMs,
         );
       } catch (error) {
         const message =
@@ -546,14 +528,7 @@ async function finishSettledUpdate(
           status: "error",
           reason: "service-revalidation-failed",
         });
-        throw createFailure(
-          reported,
-          resolveManagedServiceUpdateFailureExitCode(reported),
-          message,
-          {
-            cause: error,
-          },
-        );
+        throw createFailure(reported, message, { cause: error });
       }
       const notifyRestart = () =>
         writeRestartSentinel(
@@ -565,11 +540,13 @@ async function finishSettledUpdate(
       }
       let verificationFailure = "restart-unhealthy";
       const restart = async () => {
-        const restarted = await withOwnedManagedUpdateEnv(params.ownedManagedUpdateEnv, async () =>
+        const restarted = await forward(() =>
           maybeRestartService({
             onGatewayStartAttempted,
             originalManagedServiceRuntime: params.originalManagedServiceRuntime,
             shouldRestart: shouldRestart && restartContext.serviceMutationAllowed,
+            observePackageReplacement:
+              params.opts.restart === false && currentServiceStop()?.running === true,
             result: resultWithPostUpdate,
             opts: params.opts,
             refreshServiceEnv: restartContext.refreshGatewayServiceEnv,
@@ -624,7 +601,7 @@ async function finishSettledUpdate(
             reason: recovered.result.reason ?? verificationFailure,
           });
           const reported = await reportResult(recovered.result, false, undefined, false);
-          throw createFailure(reported, resolveManagedServiceUpdateFailureExitCode(reported));
+          throw createFailure(reported);
         }
         resultWithPostUpdate = recovered.result;
         return true;
@@ -699,7 +676,7 @@ async function finishSettledUpdate(
       );
       if (maintenanceFailure) {
         const reported = await reportResult(maintenanceFailure.result, false, undefined, false);
-        throw createFailure(reported, 1, maintenanceFailure.detail);
+        throw createFailure(reported, maintenanceFailure.detail, undefined, 1);
       }
 
       return resultWithPostUpdate;
@@ -719,9 +696,7 @@ async function finishSettledUpdate(
       const { result, message } = createPostUpdateFailureResult(params, error);
       defaultRuntime.error(`Post-update verification failed: ${message}`);
       const reported = await reportResult(result);
-      throw createFailure(reported, resolveManagedServiceUpdateFailureExitCode(reported), message, {
-        cause: error,
-      });
+      throw createFailure(reported, message, { cause: error });
     }
   };
   // Reporting cannot revoke verified activation or authorize another native rollback.

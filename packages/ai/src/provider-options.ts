@@ -3,14 +3,10 @@ import type { OpenAIReasoningEffort } from "./providers/openai-reasoning-effort.
 import type { OpenAICompletionsToolChoice } from "./providers/openai-tool-projection.js";
 import type { StreamOptions } from "./types.js";
 
-/** Identity of a provider compaction checkpoint the server rejected on replay. */
-export type CompactionReplayRejection = {
+export type OpenAIResponsesCompactionRejection = {
   data: string;
   id?: string;
 };
-
-/** @deprecated Use CompactionReplayRejection. */
-export type OpenAIResponsesCompactionRejection = CompactionReplayRejection;
 
 export type CodeModeToolSurfaceObservation = {
   beforeToolIdentities: readonly string[];
@@ -76,8 +72,6 @@ export type AnthropicContextManagementOptions = {
   anthropicServerCompaction?: boolean;
   anthropicCompactThreshold?: number;
   cacheTtlPruning?: { tools?: { allow?: string[]; deny?: string[] } };
-  /** Internal owner notification after Anthropic rejects a replayed compaction checkpoint. */
-  onCompactionRejected?: (checkpoint: CompactionReplayRejection) => void;
 };
 
 /** Provider options shared by the Anthropic provider and canonical transport. */
@@ -133,7 +127,7 @@ export type BaseOpenAIStreamOptions = StreamOptions & {
   firstEventTimeoutMs?: number;
   onFirstEventTimeout?: (reason: Error) => void;
   /** Internal owner notification after a server rejects a persisted compaction checkpoint. */
-  onCompactionRejected?: (checkpoint: CompactionReplayRejection) => void;
+  onCompactionRejected?: (checkpoint: OpenAIResponsesCompactionRejection) => void;
   openclawCodeModeToolSurface?: boolean;
   openclawCodeModeAllowedHostedToolTypes?: Set<string>;
   frequencyPenalty?: number;
@@ -143,6 +137,7 @@ export type BaseOpenAIStreamOptions = StreamOptions & {
 
 /** Superset retained under the provider's published compatibility type name. */
 export type OpenAICompletionsOptions = BaseOpenAIStreamOptions & {
+  streaming?: boolean;
   toolChoice?: OpenAICompletionsToolChoice;
   reasoning?: OpenAIReasoningEffort | "off";
   reasoningEffort?: OpenAIReasoningEffort | "off";

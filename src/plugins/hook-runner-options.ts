@@ -14,7 +14,6 @@ export const DEFAULT_VOID_HOOK_TIMEOUT_MS_BY_HOOK: Partial<Record<PluginHookName
   before_compaction: 30_000,
   after_compaction: 30_000,
   skill_changed: 30_000,
-  skill_proposal_changed: 30_000,
   // Shutdown hooks share the Gateway's five-second teardown budget.
   gateway_stop: 5_000,
 };
@@ -29,5 +28,4 @@ export const DEFAULT_MODIFYING_HOOK_TIMEOUT_MS_BY_HOOK: Partial<Record<PluginHoo
   message_sending: 15_000,
   reply_payload_sending: 15_000,
   resolve_exec_env: 15_000,
-  skill_proposal_evaluate: 120_000,
 };

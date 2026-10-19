@@ -58,12 +58,9 @@ const publishedUpgradeSurvivorCommand = upgradeSurvivorScriptCommand(
   "OPENCLAW_UPGRADE_SURVIVOR_PUBLISHED_BASELINE=1 OPENCLAW_UPGRADE_SURVIVOR_COMMAND_TIMEOUT=1500s",
   'export OPENCLAW_UPGRADE_SURVIVOR_BASELINE_SPEC="${OPENCLAW_UPGRADE_SURVIVOR_BASELINE_SPEC:-openclaw@latest}"; export OPENCLAW_UPGRADE_SURVIVOR_DOCKER_RUN_TIMEOUT="${OPENCLAW_UPGRADE_SURVIVOR_DOCKER_RUN_TIMEOUT:-2280s}"',
 );
-// The root-managed update spends up to ~866s in update-candidate on hosted runners
-// (release checks 38020418926) and was killed at the 900s default after reporting
-// success; share the published survivor's measured 1500s command / 2280s run budget.
 const rootManagedVpsUpgradeCommand = upgradeSurvivorScriptCommand(
-  "OPENCLAW_UPGRADE_SURVIVOR_PUBLISHED_BASELINE=1 OPENCLAW_UPGRADE_SURVIVOR_ROOT_MANAGED_VPS=1 OPENCLAW_UPGRADE_SURVIVOR_COMMAND_TIMEOUT=1500s",
-  'export OPENCLAW_UPGRADE_SURVIVOR_BASELINE_SPEC="${OPENCLAW_UPGRADE_SURVIVOR_BASELINE_SPEC:-openclaw@latest}"; export OPENCLAW_UPGRADE_SURVIVOR_DOCKER_RUN_TIMEOUT="${OPENCLAW_UPGRADE_SURVIVOR_DOCKER_RUN_TIMEOUT:-2280s}"',
+  "OPENCLAW_UPGRADE_SURVIVOR_PUBLISHED_BASELINE=1 OPENCLAW_UPGRADE_SURVIVOR_ROOT_MANAGED_VPS=1",
+  'export OPENCLAW_UPGRADE_SURVIVOR_BASELINE_SPEC="${OPENCLAW_UPGRADE_SURVIVOR_BASELINE_SPEC:-openclaw@latest}"; export OPENCLAW_UPGRADE_SURVIVOR_DOCKER_RUN_TIMEOUT="${OPENCLAW_UPGRADE_SURVIVOR_DOCKER_RUN_TIMEOUT:-1500s}"',
 );
 // Hosted release checks on 2026-10-06/07 passed in 1678-2290s (runs 37541402736,
 // 37559852628, 37589651386) and were killed at the old 2280s inner cap in
@@ -200,15 +197,6 @@ const bundledPluginInstallUninstallLanes = Array.from(
       stateScenario: "empty",
     }),
 );
-
-export const fleetCacheLane = lane("fleet-cache", {
-  command: "pnpm test:docker:fleet-cache",
-  e2eImageKind: false,
-  needsPackage: true,
-  resources: ["docker", "service", "npm"],
-  timeoutMs: 30 * 60 * 1000,
-  weight: 4,
-});
 
 export const mainLanes: DockerE2eLane[] = [
   lane("container-image-upgrade", {
@@ -435,7 +423,7 @@ export const mainLanes: DockerE2eLane[] = [
   npmLane("root-managed-vps-upgrade", {
     command: rootManagedVpsUpgradeCommand,
     stateScenario: "upgrade-survivor",
-    timeoutMs: 2580 * 1000,
+    timeoutMs: 25 * 60 * 1000,
     upgradeSurvivorScenario: "base",
     weight: 3,
   }),

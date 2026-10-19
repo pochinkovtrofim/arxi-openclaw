@@ -10,13 +10,13 @@ import {
 } from "../../../llm/types.js";
 import { INTER_SESSION_PROMPT_PREFIX_BASE } from "../../../sessions/input-provenance.js";
 import { hasPersistedMedia, MEDIA_ONLY_USER_TEXT } from "../../../sessions/user-turn-media.js";
-import { getUserTurnTranscriptAdmissionOwner } from "../../../sessions/user-turn-transcript-admission.js";
 import { buildLateMediaAttachedProjection } from "../../../sessions/user-turn-transcript.js";
 import {
   readModelPromptProjection,
   projectRecordedModelPrompt,
 } from "../../../sessions/user-turn-transcript.message.js";
 import type { UserTurnTranscriptRecorder } from "../../../sessions/user-turn-transcript.types.js";
+import { isTextContentBlock } from "../../content-blocks.js";
 import {
   escapeInternalRuntimeContextDelimiters,
   isOpenClawSystemUpdateMessage,
@@ -33,7 +33,6 @@ import {
   contentMatchesTimestampOverride,
   findActiveUserMessageIndex,
   hasNonBlankUserText,
-  isUserTextBlock,
   projectPersistedSenderContext,
   resolveUserTranscriptMessages,
   type CurrentUserTimestampMatch,
@@ -274,10 +273,7 @@ export function installRuntimeContextMessageForPrompt(params: {
       return;
     }
     const canonicalUser = owner.transcriptUser ?? owner.user;
-    const canonicalKey =
-      typeof canonicalUser === "object" && canonicalUser !== null
-        ? Reflect.get(canonicalUser, "idempotencyKey")
-        : undefined;
+    const canonicalKey = asOptionalObjectRecord(canonicalUser)?.idempotencyKey;
     const userIdempotencyKey =
       owner.transcriptUser === undefined
         ? (params.persistedUserIdempotencyKey ?? canonicalKey)
@@ -347,6 +343,28 @@ export function installRuntimeContextMessageForPrompt(params: {
     }
     session.agent.state.messages = session.messages.filter((candidate) => candidate !== message);
   };
+}
+
+function transformUserTextContent(
+  content: unknown,
+  transform: (text: string) => string | undefined,
+): { content: unknown; changed: boolean } {
+  if (typeof content === "string") {
+    const replacement = transform(content);
+    return { content: replacement ?? content, changed: replacement !== undefined };
+  }
+  let changed = false;
+  const projected = Array.isArray(content)
+    ? content.map((block) => {
+        const text = isTextContentBlock(block) ? transform(block.text) : undefined;
+        if (text === undefined) {
+          return block;
+        }
+        changed = true;
+        return Object.assign({}, block, { text });
+      })
+    : content;
+  return { content: changed ? projected : content, changed };
 }
 
 function composeModelPromptContext(params: {
@@ -429,7 +447,7 @@ export function installModelPromptProjection(params: {
         const firstText =
           typeof target.content === "string"
             ? target.content
-            : target.content.find(isUserTextBlock)?.text;
+            : target.content.find(isTextContentBlock)?.text;
         const targetProjection = readModelPromptProjection(target);
         const frozen = readModelPromptProjection(canonicalPrompt) ?? targetProjection;
         let text =
@@ -444,9 +462,9 @@ export function installModelPromptProjection(params: {
                   appendContext: params.appendContext,
                 }));
         // Inter-session input keeps its stored source-provenance envelope as the model-facing
-        // text, now and in history. Comparing whole stored text also covers forwarded bodies
-        // with their own envelope. A shorter routed body would either drop the safety text from
-        // replayed history or make the next request rewrite this turn's bytes.
+        // text, now and in history. A shorter routed body would either drop that safety text
+        // from replayed history or make the next request rewrite this turn's bytes. Comparing
+        // the whole stored text also covers forwarded bodies that carry their own envelope.
         if (
           frozen === undefined &&
           text !== undefined &&
@@ -457,13 +475,7 @@ export function installModelPromptProjection(params: {
         }
         if (text !== undefined && (frozen !== undefined || text !== firstText)) {
           const captureProjection = params.recorder?.captureModelPromptProjection;
-          // A fallback retry can change the prompt after the turn already reached a provider
-          // unprojected. Its text stays request-local; history keeps the bytes first sent.
-          const requestLocal =
-            frozen === undefined &&
-            params.recorder !== undefined &&
-            getUserTurnTranscriptAdmissionOwner(params.recorder)?.sentToProvider() === true;
-          if (frozen === undefined && captureProjection && !requestLocal) {
+          if (frozen === undefined && captureProjection) {
             const pendingText = text;
             const capture = () => captureProjection(pendingText, assertCurrent);
             const captured = await (params.withTranscriptWrite
@@ -488,7 +500,7 @@ export function installModelPromptProjection(params: {
             promptMessages = messages.map((message) =>
               message === target ? projectedTarget : message,
             );
-            if (agent.state && !requestLocal) {
+            if (agent.state) {
               agent.state.messages = agent.state.messages.map((message) =>
                 message === target ? projectedTarget : message,
               );
@@ -513,7 +525,7 @@ function canonicalizeTextOnlyUserContent(content: unknown): unknown {
     return content;
   }
   const block = content[0];
-  return isUserTextBlock(block) ? block.text : content;
+  return isTextContentBlock(block) ? block.text : content;
 }
 
 // Stamp from the message's fixed timestamp so current and historical turns share
@@ -607,40 +619,23 @@ function normalizeUserMessagesForLlmBoundary(
       );
     };
 
-    const canonical = canonicalizeTextOnlyUserContent(content);
-    if (typeof canonical === "string") {
-      const next = transformText(canonical);
-      if (next === content) {
-        return message;
-      }
-      changed = true;
-      return { ...message, content: next } as AgentMessage;
-    }
-
-    if (!Array.isArray(content)) {
-      return message;
-    }
-
     // Stamp only the first text block; preserve all later blocks verbatim.
-    let contentChanged = false;
     let processedFirstText = false;
-    const nextContent = content.map((block) => {
-      if (!isUserTextBlock(block)) {
-        return block;
-      }
-      const nextText = processedFirstText ? block.text : transformText(block.text);
-      processedFirstText = true;
-      if (nextText === block.text) {
-        return block;
-      }
-      contentChanged = true;
-      return Object.assign({}, block, { text: nextText });
-    });
-    if (!processedFirstText && injectMediaText) {
-      nextContent.unshift({ type: "text", text: transformText("") });
-      contentChanged = true;
+    const transformed = transformUserTextContent(
+      canonicalizeTextOnlyUserContent(content),
+      (text) => {
+        const nextText = processedFirstText ? text : transformText(text);
+        processedFirstText = true;
+        return nextText === text ? undefined : nextText;
+      },
+    );
+    let nextContent = transformed.content;
+    if (Array.isArray(nextContent) && !processedFirstText && injectMediaText) {
+      const withPlaceholder = nextContent.slice();
+      withPlaceholder.unshift({ type: "text", text: transformText("") });
+      nextContent = withPlaceholder;
     }
-    if (!contentChanged) {
+    if (nextContent === content) {
       return message;
     }
     changed = true;
@@ -652,16 +647,11 @@ function normalizeUserMessagesForLlmBoundary(
 function stripUnsafeBlockedRunMetadata(messages: AgentMessage[]): AgentMessage[] {
   let changed = false;
   const nextMessages = messages.map((message) => {
-    const openclaw = Reflect.get(message, "__openclaw");
-    if (!openclaw || typeof openclaw !== "object") {
+    const openclaw = asOptionalObjectRecord(Reflect.get(message, "__openclaw"));
+    const blocked = asOptionalObjectRecord(openclaw?.beforeAgentRunBlocked);
+    if (!blocked) {
       return message;
     }
-    const beforeAgentRunBlocked = (openclaw as { beforeAgentRunBlocked?: unknown })
-      .beforeAgentRunBlocked;
-    if (!beforeAgentRunBlocked || typeof beforeAgentRunBlocked !== "object") {
-      return message;
-    }
-    const blocked = beforeAgentRunBlocked as Record<string, unknown>;
     const safeBlocked: Record<string, unknown> = {};
     if (typeof blocked.blockedBy === "string") {
       safeBlocked.blockedBy = blocked.blockedBy;
@@ -670,7 +660,7 @@ function stripUnsafeBlockedRunMetadata(messages: AgentMessage[]): AgentMessage[]
       safeBlocked.blockedAt = blocked.blockedAt;
     }
     const nextOpenClaw = {
-      ...(openclaw as Record<string, unknown>),
+      ...openclaw,
       beforeAgentRunBlocked: safeBlocked,
     };
     changed = true;

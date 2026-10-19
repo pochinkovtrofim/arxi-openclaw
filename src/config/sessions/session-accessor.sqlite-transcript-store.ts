@@ -215,9 +215,6 @@ export function appendTranscriptEventInTransaction(
     preparedPayload: options.preparedPayload,
   });
   cursor.nextSeq = seq + 1;
-  if (options.touchMutation !== false) {
-    touchTranscriptMutationInTransaction(database, scope.sessionId);
-  }
   cursor.appendToIndex ??= createTranscriptIndexAppenderInTransaction(database.db, scope.sessionId);
   const projectionNeedsRebuild = cursor.appendToIndex({
     seq,
@@ -249,6 +246,9 @@ export function appendTranscriptEventInTransaction(
     cursor.insertIdentity({ ...identity, seq, createdAt });
   }
   advanceCliHistoryBoundaryInTransaction(database, scope, seq);
+  if (options.touchMutation !== false) {
+    touchTranscriptMutationInTransaction(database, scope.sessionId);
+  }
   scheduleTranscriptProjectionReconcile(database, scope.sessionId, projectionNeedsRebuild, options);
   return eventJson;
 }
@@ -410,13 +410,13 @@ export function replaceSqliteTranscriptEventsInTransaction(
   }
   pruneTranscriptReactionsInTransaction(database, resolved);
   if (deleted || seq > 0) {
-    recordTranscriptReplacementMutation(database, resolved.sessionId, preservedTranscriptUpdatedAt);
     if (rebuildSynchronously) {
       reconcileSessionTranscriptIndexInTransaction(database.db, resolved.sessionId);
     } else {
       options.onProjectionReconcileNeeded?.();
       scheduleTranscriptProjectionReconcile(database, resolved.sessionId, true, options);
     }
+    recordTranscriptReplacementMutation(database, resolved.sessionId, preservedTranscriptUpdatedAt);
   }
 }
 
@@ -508,7 +508,6 @@ export function rewriteSqliteTranscriptEventRowsInTransaction(
   if (!rewrites.every((row) => isSteerConfirmationRewrite(row.expectedEventJson, row.eventJson))) {
     rotateTranscriptGenerationInTransaction(database, resolved.sessionId);
   }
-  touchTranscriptMutationInTransaction(database, resolved.sessionId);
   if (!projectionUnchanged) {
     if (options.legacyTextStorage) {
       // Media Doctor rebuilds after the physical storage migration; schema-22 readers
@@ -518,6 +517,7 @@ export function rewriteSqliteTranscriptEventRowsInTransaction(
       reconcileRewrittenTranscriptIndex(database, resolved.sessionId, rebuildSynchronously);
     }
   }
+  touchTranscriptMutationInTransaction(database, resolved.sessionId);
 }
 
 function isSteerConfirmationRewrite(beforeJson: string, afterJson: string): boolean {
@@ -584,7 +584,6 @@ function reconcileRewrittenTranscriptIndex(
   }
 }
 
-// Payload-only transcript repair preserves row identity and creation time.
 // Preserves seq, created_at, session_key, and session activity recency; rotates the transcript
 // generation and rebuilds bounded projections immediately or defers large projections.
 export function updateSqliteTranscriptEventJsonInTransaction(

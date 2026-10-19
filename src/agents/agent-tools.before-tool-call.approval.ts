@@ -5,7 +5,6 @@ import { isDeepStrictEqual } from "node:util";
  * timeout classification, and owner-provided approval outcomes.
  */
 import { addTimerTimeoutGraceMs } from "@openclaw/normalization-core/number-coercion";
-import { getRuntimeConfig } from "../config/config.js";
 import { GatewayClientRequestError } from "../gateway/client.js";
 import { sanitizeApprovalScope } from "../infra/approval-scope.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
@@ -29,11 +28,12 @@ import {
   type PluginApprovalResolution,
   type PluginHookBeforeToolCallResult,
 } from "../plugins/types.js";
-import { resolveSkillWorkshopToolApproval } from "../skills/workshop/policy.js";
 import { isPlainObject } from "../utils.js";
 import { resolveToolErrorDiagnostic } from "./agent-tools.before-tool-call.diagnostics.js";
 import type {
+  BeforeToolCallFailureDisposition,
   DeferredPluginToolApproval,
+  HookBlockedReason,
   HookContext,
   HookOutcome,
   PendingApprovedPluginToolExecution,
@@ -44,20 +44,27 @@ import { callGatewayTool } from "./tools/gateway.js";
 
 type PluginApprovalRequest = NonNullable<PluginHookBeforeToolCallResult["requireApproval"]>;
 const log = createSubsystemLogger("agents/tools");
+
+function pluginApprovalFailure(
+  params: unknown,
+  reason: string,
+  disposition: BeforeToolCallFailureDisposition,
+  deniedReason: HookBlockedReason = "plugin-approval",
+): HookOutcome {
+  return { blocked: true, kind: "failure", disposition, deniedReason, reason, params };
+}
+
 function pluginApprovalDeniedOutcome(baseParams: unknown): HookOutcome {
-  return {
-    blocked: true,
-    kind: "failure",
-    disposition: "blocked",
-    deniedReason: "plugin-approval",
-    reason: [
+  return pluginApprovalFailure(
+    baseParams,
+    [
       "Denied by user. The tool call did not run.",
       "This denial is final: the approval request is closed. Do not mention /approve or any other approval command to the user.",
       "Do not run the tool call again or ask the user to approve it again.",
       "If the user still wants the action, explain that a new tool call will trigger a fresh approval request.",
     ].join("\n"),
-    params: baseParams,
-  };
+    "blocked",
+  );
 }
 
 function resolvePluginToolApprovalTimeoutMs(approval: PluginApprovalRequest): number {
@@ -71,21 +78,15 @@ function resolvePluginToolApprovalTimeoutMs(approval: PluginApprovalRequest): nu
   return Math.min(Math.floor(approval.timeoutMs), MAX_PLUGIN_APPROVAL_TIMEOUT_MS);
 }
 
-function resolvePluginToolApprovalGatewayTimeoutMs(timeoutMs: number): number {
-  return addTimerTimeoutGraceMs(timeoutMs, 10_000) ?? DEFAULT_PLUGIN_APPROVAL_TIMEOUT_MS + 10_000;
-}
-
 export function mergeParamsWithApprovalOverrides(
   originalParams: unknown,
   approvalParams?: unknown,
 ): unknown {
-  if (approvalParams && isPlainObject(approvalParams)) {
-    if (isPlainObject(originalParams)) {
-      return { ...originalParams, ...approvalParams };
-    }
-    return approvalParams;
-  }
-  return originalParams;
+  return isPlainObject(approvalParams)
+    ? isPlainObject(originalParams)
+      ? { ...originalParams, ...approvalParams }
+      : approvalParams
+    : originalParams;
 }
 
 function notifyPluginApprovalResolution(
@@ -301,7 +302,8 @@ async function requestPluginToolApprovalDecision(
     ? { pluginKey: params.ctx.toolOwnerPluginId, tool: params.toolName }
     : undefined;
   const timeoutMs = resolvePluginToolApprovalTimeoutMs(approval);
-  const gatewayTimeoutMs = resolvePluginToolApprovalGatewayTimeoutMs(timeoutMs);
+  const gatewayTimeoutMs =
+    addTimerTimeoutGraceMs(timeoutMs, 10_000) ?? DEFAULT_PLUGIN_APPROVAL_TIMEOUT_MS + 10_000;
   const allowedDecisions = resolveCanonicalPluginApprovalRequestAllowedDecisions(approval);
   const resolveDecision = (decision: unknown, approvalId: string): HookOutcome | undefined => {
     const resolution = resolvePermittedPluginApprovalResolution(decision, allowedDecisions);
@@ -342,6 +344,17 @@ async function requestPluginToolApprovalDecision(
   };
   let gatewayApprovalPhase: "none" | "request" | "wait" = "none";
   try {
+    const requestIdentity = {
+      toolName: params.toolName,
+      toolCallId: params.toolCallId,
+      ...(policySubject ? { policySubject } : {}),
+      agentId: params.ctx?.agentId,
+      sessionKey: params.ctx?.sessionKey,
+      turnSourceChannel: params.ctx?.turnSourceChannel,
+      turnSourceTo: params.ctx?.turnSourceTo,
+      turnSourceAccountId: params.ctx?.turnSourceAccountId,
+      turnSourceThreadId: params.ctx?.turnSourceThreadId,
+    };
     const embeddedApprovalBroker = isEmbeddedMode() ? getEmbeddedPluginApprovalBroker() : null;
     if (embeddedApprovalBroker) {
       const result = await embeddedApprovalBroker.request({
@@ -353,15 +366,7 @@ async function requestPluginToolApprovalDecision(
           ...(approval.scope ? { scope: sanitizeApprovalScope(approval.scope) } : {}),
           severity: approval.severity,
           allowedDecisions: approval.allowedDecisions,
-          toolName: params.toolName,
-          toolCallId: params.toolCallId,
-          ...(policySubject ? { policySubject } : {}),
-          agentId: params.ctx?.agentId,
-          sessionKey: params.ctx?.sessionKey,
-          turnSourceChannel: params.ctx?.turnSourceChannel,
-          turnSourceTo: params.ctx?.turnSourceTo,
-          turnSourceAccountId: params.ctx?.turnSourceAccountId,
-          turnSourceThreadId: params.ctx?.turnSourceThreadId,
+          ...requestIdentity,
         },
         timeoutMs,
         signal: params.signal,
@@ -380,33 +385,23 @@ async function requestPluginToolApprovalDecision(
             reason: approval.timeoutReason,
             params: params.baseParams,
           }
-        : {
-            blocked: true,
-            kind: "failure",
-            disposition: "timed_out",
-            deniedReason: "plugin-approval",
-            reason: "Approval timed out",
-            params: params.baseParams,
-          };
+        : pluginApprovalFailure(params.baseParams, "Approval timed out", "timed_out");
     }
 
     const unavailableSurfaceReason = resolveUnavailablePluginApprovalSurfaceReason(params.ctx);
     if (unavailableSurfaceReason) {
       notifyPluginApprovalResolution(approval, PluginApprovalResolutions.CANCELLED);
-      return {
-        blocked: true,
-        kind: "failure",
-        disposition: "failed",
-        deniedReason: "plugin-approval-unavailable",
-        reason: unavailableSurfaceReason,
-        params: params.baseParams,
-      };
+      return pluginApprovalFailure(
+        params.baseParams,
+        unavailableSurfaceReason,
+        "failed",
+        "plugin-approval-unavailable",
+      );
     }
 
     gatewayApprovalPhase = "request";
     const requestResult: {
       id?: string;
-      status?: string;
       decision?: unknown;
       deliveryRoute?: string;
     } = await withGatewayToolApprovalOwner(
@@ -424,18 +419,10 @@ async function requestPluginToolApprovalDecision(
             ...(approval.scope ? { scope: approval.scope } : {}),
             severity: approval.severity,
             allowedDecisions: approval.allowedDecisions,
-            toolName: params.toolName,
-            toolCallId: params.toolCallId,
-            ...(policySubject ? { policySubject } : {}),
-            agentId: params.ctx?.agentId,
-            sessionKey: params.ctx?.sessionKey,
+            ...requestIdentity,
             ...(params.ctx?.approvalReviewerDeviceId
               ? { approvalReviewerDeviceIds: [params.ctx.approvalReviewerDeviceId] }
               : {}),
-            turnSourceChannel: params.ctx?.turnSourceChannel,
-            turnSourceTo: params.ctx?.turnSourceTo,
-            turnSourceAccountId: params.ctx?.turnSourceAccountId,
-            turnSourceThreadId: params.ctx?.turnSourceThreadId,
             timeoutMs,
             twoPhase: true,
           },
@@ -446,14 +433,11 @@ async function requestPluginToolApprovalDecision(
     const id = requestResult?.id;
     if (!id) {
       notifyPluginApprovalResolution(approval, PluginApprovalResolutions.CANCELLED);
-      return {
-        blocked: true,
-        kind: "failure",
-        disposition: "failed",
-        deniedReason: "plugin-approval",
-        reason: approval.description || "Plugin approval request failed",
-        params: params.baseParams,
-      };
+      return pluginApprovalFailure(
+        params.baseParams,
+        approval.description || "Plugin approval request failed",
+        "failed",
+      );
     }
     const hasImmediateDecision = Object.hasOwn(requestResult ?? {}, "decision");
     let decision: unknown;
@@ -461,18 +445,15 @@ async function requestPluginToolApprovalDecision(
       decision = requestResult?.decision;
       if (decision === null) {
         notifyPluginApprovalResolution(approval, PluginApprovalResolutions.CANCELLED);
-        return {
-          blocked: true,
-          kind: "failure",
-          disposition: "failed",
-          deniedReason: "plugin-approval",
-          reason: buildPluginApprovalFailureReason({
+        return pluginApprovalFailure(
+          params.baseParams,
+          buildPluginApprovalFailureReason({
             fallbackReason: "Plugin approval unavailable (no approval route)",
             ctx: params.ctx,
             noRoute: true,
           }),
-          params: params.baseParams,
-        };
+          "failed",
+        );
       }
     } else {
       // Wait for the decision, but abort early if the agent run is cancelled
@@ -523,14 +504,11 @@ async function requestPluginToolApprovalDecision(
           (err.name === "AbortError" || ("cause" in err && err.cause === signal.reason))));
     if (abortCancelled) {
       log.warn(`plugin approval wait cancelled by run abort: ${String(err)}`);
-      return {
-        blocked: true,
-        kind: "failure",
-        disposition: resolveToolErrorDiagnostic(err, signal).terminalReason,
-        deniedReason: "plugin-approval",
-        reason: "Approval cancelled (run aborted)",
-        params: params.baseParams,
-      };
+      return pluginApprovalFailure(
+        params.baseParams,
+        "Approval cancelled (run aborted)",
+        resolveToolErrorDiagnostic(err, signal).terminalReason,
+      );
     }
     // INVALID_REQUEST means different things before and after registration.
     const invalidRequest =
@@ -542,14 +520,11 @@ async function requestPluginToolApprovalDecision(
           ? `Plugin approval no longer available: ${formatErrorMessage(err)}`
           : "Plugin approval required (gateway unavailable)";
     log.warn(`plugin approval gateway request failed; blocking tool call: ${String(err)}`);
-    return {
-      blocked: true,
-      kind: "failure",
-      disposition: resolveToolErrorDiagnostic(err, signal).terminalReason,
-      deniedReason: "plugin-approval",
+    return pluginApprovalFailure(
+      params.baseParams,
       reason,
-      params: params.baseParams,
-    };
+      resolveToolErrorDiagnostic(err, signal).terminalReason,
+    );
   }
 }
 
@@ -579,7 +554,6 @@ export async function requestDeferredPluginToolApproval(params: {
   );
 }
 
-/** Notify plugin approval callbacks that a deferred approval was cancelled. */
 export function cancelDeferredPluginToolApproval(
   deferredApproval: DeferredPluginToolApproval,
 ): void {
@@ -622,14 +596,11 @@ export async function resolveBeforeToolCallApprovalOutcome(params: {
   }
   if (params.approvalMode === "report") {
     notifyPluginApprovalResolution(approval, PluginApprovalResolutions.CANCELLED);
-    return {
-      blocked: true,
-      kind: "failure",
-      disposition: "blocked",
-      deniedReason: "plugin-approval",
-      reason: approval.description || approval.title || "Plugin approval required",
-      params: baseParamsSnapshot,
-    };
+    return pluginApprovalFailure(
+      baseParamsSnapshot,
+      approval.description || approval.title || "Plugin approval required",
+      "blocked",
+    );
   }
   if (params.approvalMode === "deny") {
     notifyPluginApprovalResolution(approval, PluginApprovalResolutions.DENY);
@@ -649,34 +620,5 @@ export async function resolveBeforeToolCallApprovalOutcome(params: {
     signal: params.signal,
     baseParams: baseParamsSnapshot,
     overrideParams: overrideParamsSnapshot,
-  });
-}
-
-export async function resolveSkillWorkshopApprovalForFinalParams(params: {
-  toolName: string;
-  params: unknown;
-  approvalMode?: "request" | "report" | "deny" | "defer";
-  toolCallId?: string;
-  ctx?: HookContext;
-  signal?: AbortSignal;
-}): Promise<HookOutcome | undefined> {
-  if (params.toolName !== "skill_workshop") {
-    return undefined;
-  }
-  const result = await resolveSkillWorkshopToolApproval({
-    toolName: params.toolName,
-    toolParams: isPlainObject(params.params) ? params.params : {},
-    config: params.ctx?.config ?? getRuntimeConfig(),
-    ...(params.ctx?.agentId ? { agentId: params.ctx.agentId } : {}),
-    ...(params.ctx?.workspaceDir ? { workspaceDir: params.ctx.workspaceDir } : {}),
-  });
-  return await resolveBeforeToolCallApprovalOutcome({
-    result,
-    approvalMode: params.approvalMode,
-    toolName: params.toolName,
-    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
-    ...(params.ctx ? { ctx: params.ctx } : {}),
-    signal: params.signal,
-    baseParams: params.params,
   });
 }

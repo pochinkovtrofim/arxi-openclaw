@@ -1,6 +1,7 @@
 import { theme } from "../../../packages/terminal-core/src/theme.js";
 import { resolveStateDir } from "../../config/paths.js";
 import { resolveGatewayRestartLogPath } from "../../daemon/restart-logs.js";
+import type { SystemdServiceStartRefusal } from "../../daemon/service-inspection-error.js";
 import type { GatewayServiceRuntime } from "../../daemon/service-runtime.js";
 import { resolveGatewayService } from "../../daemon/service.js";
 import {
@@ -137,6 +138,9 @@ export async function verifyPreviousManagedGatewayForUpdate(
       ...params,
       expectedVersion: identity?.version ?? undefined,
       gatewayPort: params.service.servicePort,
+      // This untouched incumbent is advisory rollback evidence. Retained-service
+      // certification and post-restart recovery still wait in the shared verifier.
+      waitForStartup: false,
     });
     params.onVerification(verified);
     if (verified && identity?.version) {
@@ -186,7 +190,7 @@ function updateGatewayHealthFacts(
       ...(health.activatedPluginErrors?.map((error) => JSON.stringify(error)) ?? []),
       ...(health.unavailablePlugins?.map((error) => JSON.stringify(error)) ?? []),
     ],
-    channelsReady: health.healthy && !health.channelProbeErrors?.length,
+    channelsReady: health.healthy,
     settled: health.healthy,
     readyz,
   };
@@ -198,18 +202,27 @@ export async function verifyUpdatedGateway(
     result: UpdateRunResult;
     opts: UpdateCommandOptions;
     onVerified?: (verifiedAtMs: number) => void;
-    purpose?: "recovery";
+    purpose?: "recovery" | "package-replacement";
   },
-): Promise<UpdateRepairValidation & { pluginWarnings?: PluginUpdateWarning[] }> {
+): Promise<
+  UpdateRepairValidation & {
+    pluginWarnings?: PluginUpdateWarning[];
+    serviceDefinitionRefusal?: SystemdServiceStartRefusal;
+  }
+> {
   const startedAtMs = Date.now();
   const { proofOptions, assertCurrent } = captureUpdateGatewayReadinessOwner(params);
   const { health, readyz, http, launchAgentRecovery } = await observeUpdateGatewayReadiness({
     ...params,
     assertCurrent,
   });
-  const channelWarnings = (health.channelRuntimeWarnings ?? []).map(({ id, error }) =>
+  const channelWarnings = [
+    ...(health.channelProbeErrors ?? []),
+    ...(health.channelProbeTimeouts ?? []),
+    ...(health.channelRuntimeWarnings ?? []),
+  ].map(({ id, error }) =>
     redactSupportDiagnosticLine(
-      `Channel health warning (${id}: ${error}). Run openclaw health --json to inspect it.`,
+      `Channel health warning (${id}: ${error}). Run openclaw channels status --probe or openclaw health --json to inspect it.`,
       { env: params.serviceEnv, stateDir: resolveStateDir(params.serviceEnv) },
     ),
   );
@@ -228,6 +241,19 @@ export async function verifyUpdatedGateway(
       updateGatewayHealthFacts(health, params.gatewayPort, readyz),
       { env: proofOptions.run.env },
     );
+  }
+  const serviceDefinitionRefusal = health.runtime?.systemd?.startRefusal;
+  if (
+    params.purpose !== "package-replacement" &&
+    serviceDefinitionRefusal &&
+    (!health.healthy || !serviceRunning || !readyz)
+  ) {
+    return {
+      ok: false,
+      score: 0,
+      summary: serviceDefinitionRefusal.message,
+      serviceDefinitionRefusal,
+    };
   }
   const recordVerificationStep = (
     failureFacts?: UpdateFailureFact[],
@@ -252,7 +278,9 @@ export async function verifyUpdatedGateway(
         : {}),
       ...(warning
         ? {
-            termination: "timeout" as const,
+            ...(params.purpose === "package-replacement"
+              ? {}
+              : { termination: "timeout" as const }),
             advisory: { kind: "recoverable-maintenance" as const, message: warning },
           }
         : {}),
@@ -318,7 +346,7 @@ export async function verifyUpdatedGateway(
       ...(pluginWarnings.length > 0 ? { pluginWarnings } : {}),
     };
   }
-  if (gatewayReadinessPending(health)) {
+  if (params.purpose !== "package-replacement" && gatewayReadinessPending(health)) {
     const detail = [
       "Gateway readiness is pending; leaving the observed running process starting without another recovery restart or rollback.",
       ...renderRestartDiagnostics(health),
@@ -337,9 +365,11 @@ export async function verifyUpdatedGateway(
   }
   const httpFailed = http !== undefined && !readyz;
   const diagnosticLines: [string, ...string[]] = [
-    params.purpose === "recovery"
-      ? "Gateway recovery probe did not verify serving health."
-      : "Gateway did not become healthy after restart.",
+    params.purpose === "package-replacement"
+      ? "Package update installed; Gateway readiness remains unverified with --no-restart. Its replacement restart may still be starting."
+      : params.purpose === "recovery"
+        ? "Gateway recovery check did not verify serving health."
+        : "Gateway did not become healthy after restart.",
     ...(httpFailed ? ["Gateway /readyz did not return HTTP 200."] : []),
     ...(health.healthy && params.requireRunningService
       ? ["Gateway responded, but the managed service did not report running after restart."]
@@ -362,13 +392,11 @@ export async function verifyUpdatedGateway(
       ? "build-id-mismatch"
       : health.activatedPluginErrors?.length
         ? "plugin-errors"
-        : health.channelProbeErrors?.length
-          ? "channel-errors"
-          : httpFailed
-            ? "readyz-unhealthy"
-            : !serviceRunning
-              ? "service-not-running"
-              : (health.waitOutcome ?? "restart-unhealthy");
+        : httpFailed
+          ? "readyz-unhealthy"
+          : !serviceRunning
+            ? "service-not-running"
+            : (health.waitOutcome ?? "restart-unhealthy");
   const facts: UpdateFailureFact[] = [];
   for (const [mismatch, label, code] of [
     [health.versionMismatch, "version", "version-mismatch"],
@@ -396,13 +424,8 @@ export async function verifyUpdatedGateway(
       message: `Managed Gateway service status: ${health.runtime.status ?? "unknown"}.`,
     });
   }
-  for (const [errors, check, code] of [
-    [health.activatedPluginErrors, "pluginErrors", "plugin-errors"],
-    [health.channelProbeErrors, "channelsReady", "channel-errors"],
-  ] as const) {
-    for (const error of errors ?? []) {
-      facts.push({ check, code, pluginId: error.id, message: error.error });
-    }
+  for (const { id: pluginId, error: message } of health.activatedPluginErrors ?? []) {
+    facts.push({ check: "pluginErrors", code: "plugin-errors", pluginId, message });
   }
   if (!facts.length || health.waitOutcome === "timeout") {
     facts.push({
@@ -414,8 +437,11 @@ export async function verifyUpdatedGateway(
     });
   }
   recordVerificationStep(
-    normalizeUpdateFailureFacts(facts, params.serviceEnv),
+    params.purpose === "package-replacement"
+      ? undefined
+      : normalizeUpdateFailureFacts(facts, params.serviceEnv),
     httpFailed ? "Gateway /readyz did not return HTTP 200." : reason,
+    params.purpose === "package-replacement" ? diagnosticLines.join("\n") : undefined,
   );
   if (params.opts.json) {
     defaultRuntime.error(diagnosticLines.join("\n"));
@@ -434,7 +460,7 @@ export async function verifyUpdatedGateway(
     health.healthy,
     readyz,
   ].filter(Boolean).length;
-  return { ok: false, score, summary: reason };
+  return { ok: params.purpose === "package-replacement", score, summary: reason };
 }
 
 export { verifyPreviousGatewayForUpdate } from "./update-command-readiness.js";

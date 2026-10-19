@@ -26,6 +26,10 @@ import { consumeHostPluginUsageDiagnosticEvent } from "./diagnostic-plugin-usage
 import type {
   DiagnosticMemoryUsage,
   DiagnosticChildProcessSpawnFields,
+  DiagnosticMemoryPressureFields,
+  DiagnosticAsyncQueueDroppedFields,
+  DiagnosticRuntimeMeasurementFields,
+  DiagnosticWorkerRequestFields,
 } from "./diagnostic-process-types.js";
 import type { DiagnosticGatewayRpcFields } from "./diagnostic-rpc-types.js";
 import type {
@@ -377,7 +381,7 @@ type DiagnosticSessionTurnCreatedEvent = DiagnosticSessionEvent & {
   runId: string;
   agentId?: string;
   channel?: string;
-  trigger: "user" | "heartbeat";
+  trigger: "user" | "event" | "heartbeat";
 };
 
 type DiagnosticLaneEnqueueEvent = DiagnosticBaseEvent & {
@@ -426,17 +430,6 @@ type DiagnosticRunExecutionPhaseEvent = DiagnosticBaseEvent & {
   toolCallId?: string;
   itemId?: string;
   firstModelCallStarted?: boolean;
-};
-
-type DiagnosticGatewayEventLoopSampleEvent = DiagnosticBaseEvent & {
-  type: "gateway.event_loop.sample";
-  intervalMs: number;
-  delayMaxMs: number;
-};
-
-type DiagnosticGcEvent = DiagnosticBaseEvent & {
-  type: "diagnostic.gc";
-  durationMs: number;
 };
 
 type DiagnosticHeartbeatEvent = DiagnosticBaseEvent & {
@@ -796,15 +789,7 @@ export type DiagnosticMemorySampleEvent = DiagnosticBaseEvent & {
   uptimeMs?: number;
 };
 
-export type DiagnosticMemoryPressureEvent = DiagnosticBaseEvent & {
-  type: "diagnostic.memory.pressure";
-  level: "warning" | "critical";
-  reason: "rss_threshold" | "heap_threshold" | "rss_growth";
-  memory: DiagnosticMemoryUsage;
-  thresholdBytes?: number;
-  rssGrowthBytes?: number;
-  windowMs?: number;
-};
+export type DiagnosticMemoryPressureEvent = DiagnosticBaseEvent & DiagnosticMemoryPressureFields;
 
 type DiagnosticPayloadLargeEvent = DiagnosticBaseEvent & {
   type: "payload.large";
@@ -847,20 +832,11 @@ type DiagnosticTelemetryExporterEvent = DiagnosticBaseEvent & {
   errorCategory?: string;
 };
 
-type DiagnosticAsyncQueueDroppedEvent = DiagnosticBaseEvent & {
-  type: "diagnostic.async_queue.dropped";
-  droppedEvents: number;
-  droppedTrustedEvents?: number;
-  droppedUntrustedEvents?: number;
-  droppedPriorityEvents?: number;
-  queueLength: number;
-  maxQueueLength: number;
-  drainBatchSize: number;
-};
-
 export type DiagnosticEventPayload =
   | DiagnosticGatewayRpcEvent
   | DiagnosticMemorySearchCompletedEvent
+  | (DiagnosticBaseEvent & DiagnosticRuntimeMeasurementFields)
+  | (DiagnosticBaseEvent & DiagnosticWorkerRequestFields)
   | DiagnosticUsageEvent
   | DiagnosticWebhookReceivedEvent
   | DiagnosticWebhookProcessedEvent
@@ -886,8 +862,6 @@ export type DiagnosticEventPayload =
   | DiagnosticRunAttemptEvent
   | DiagnosticRunProgressEvent
   | DiagnosticRunExecutionPhaseEvent
-  | DiagnosticGatewayEventLoopSampleEvent
-  | DiagnosticGcEvent
   | DiagnosticHeartbeatEvent
   | DiagnosticLivenessWarningEvent
   | DiagnosticPhaseCompletedEvent
@@ -918,7 +892,7 @@ export type DiagnosticEventPayload =
   | DiagnosticLogRecordEvent
   | DiagnosticSecurityEvent
   | DiagnosticTelemetryExporterEvent
-  | DiagnosticAsyncQueueDroppedEvent
+  | (DiagnosticBaseEvent & DiagnosticAsyncQueueDroppedFields)
   | DiagnosticFailoverEvent;
 
 type DiagnosticNonSecurityEventPayload = Exclude<DiagnosticEventPayload, DiagnosticSecurityEvent>;
@@ -1040,8 +1014,10 @@ const MAX_ASYNC_DIAGNOSTIC_EVENTS = 10_000;
 const MAX_ASYNC_DIAGNOSTIC_EVENTS_PER_TURN = 100;
 const DIAGNOSTIC_EVENTS_STATE_KEY = Symbol.for("openclaw.diagnosticEvents.state.v1");
 const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
+  "worker.request",
   "diagnostic.gc",
   "gateway.event_loop.sample",
+  "gateway.http.cancelled",
   "gateway.rpc",
   "memory.search.completed",
   "tool.execution.started",
@@ -1080,25 +1056,6 @@ const PRIORITY_ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["ty
   "harness.run.error",
 ]);
 
-function createDiagnosticEventsState(): DiagnosticEventsGlobalState {
-  return {
-    marker: DIAGNOSTIC_EVENTS_STATE_KEY,
-    enabled: true,
-    seq: 0,
-    listeners: new Map(),
-    trustedListeners: new Map(),
-    toolExecutionListeners: new Set<TrustedToolExecutionEventListener>(),
-    toolExecutionSeq: 0,
-    dispatchDepth: 0,
-    asyncQueue: [],
-    asyncDrainScheduled: false,
-    asyncDroppedEvents: 0,
-    asyncDroppedTrustedEvents: 0,
-    asyncDroppedUntrustedEvents: 0,
-    asyncDroppedPriorityEvents: 0,
-  };
-}
-
 function isDiagnosticEventsState(value: unknown): value is DiagnosticEventsGlobalState {
   if (!value || typeof value !== "object") {
     return false;
@@ -1130,7 +1087,22 @@ function getDiagnosticEventsState(): DiagnosticEventsGlobalState {
     existing.toolExecutionSeq ??= 0;
     return existing;
   }
-  const state = createDiagnosticEventsState();
+  const state: DiagnosticEventsGlobalState = {
+    marker: DIAGNOSTIC_EVENTS_STATE_KEY,
+    enabled: true,
+    seq: 0,
+    listeners: new Map(),
+    trustedListeners: new Map(),
+    toolExecutionListeners: new Set<TrustedToolExecutionEventListener>(),
+    toolExecutionSeq: 0,
+    dispatchDepth: 0,
+    asyncQueue: [],
+    asyncDrainScheduled: false,
+    asyncDroppedEvents: 0,
+    asyncDroppedTrustedEvents: 0,
+    asyncDroppedUntrustedEvents: 0,
+    asyncDroppedPriorityEvents: 0,
+  };
   Object.defineProperty(globalThis, DIAGNOSTIC_EVENTS_STATE_KEY, {
     configurable: true,
     enumerable: false,
@@ -1270,10 +1242,7 @@ function scheduleAsyncDiagnosticDrain(state: DiagnosticEventsGlobalState): void 
     state.asyncDrainScheduled = false;
     const batch = state.asyncQueue.splice(0, MAX_ASYNC_DIAGNOSTIC_EVENTS_PER_TURN);
     for (const entry of batch) {
-      dispatchDiagnosticEvent(state, entry.event, entry.metadata, entry.privateData, {
-        hostPluginId: entry.hostPluginId,
-        trustedListenersOnly: entry.trustedListenersOnly,
-      });
+      dispatchDiagnosticEvent(state, entry.event, entry.metadata, entry.privateData, entry);
     }
     if (state.asyncQueue.length > 0) {
       scheduleAsyncDiagnosticDrain(state);
@@ -1556,18 +1525,13 @@ export function emitTrustedDiagnosticEventWithPrivateData(
   privateData?: DiagnosticEventPrivateData,
 ) {
   const coreModelRequestLifecycle = consumeCoreModelRequestLifecycleDiagnosticEvent(event);
-  if (!privateData || !Object.hasOwn(privateData, "hostPluginId")) {
-    emitDiagnosticEventWithTrust(event, true, { coreModelRequestLifecycle, privateData });
-    return;
+  let sanitized = privateData;
+  if (privateData && Object.hasOwn(privateData, "hostPluginId")) {
+    // Host attribution is reserved for object-identity provenance, not private content.
+    sanitized = { ...privateData };
+    Reflect.deleteProperty(sanitized, "hostPluginId");
   }
-  // Plugin-facing emitters may provide trusted private content, but host attribution
-  // is reserved for the object-identity provenance consumed above.
-  const sanitized = { ...privateData };
-  Reflect.deleteProperty(sanitized, "hostPluginId");
-  emitDiagnosticEventWithTrust(event, true, {
-    coreModelRequestLifecycle,
-    privateData: sanitized,
-  });
+  emitDiagnosticEventWithTrust(event, true, { coreModelRequestLifecycle, privateData: sanitized });
 }
 
 /** Emits a trusted canonical security event from core-owned enforcement boundaries. */
@@ -1672,7 +1636,15 @@ export function onDiagnosticEvent(listener: (evt: DiagnosticEventPayload) => voi
       }
       listener(event);
     },
-    { exclude: ["log.record", "gateway.rpc", "gateway.event_loop.sample", "diagnostic.gc"] },
+    {
+      exclude: [
+        "log.record",
+        "gateway.rpc",
+        "gateway.event_loop.sample",
+        "gateway.http.cancelled",
+        "diagnostic.gc",
+      ],
+    },
   );
 }
 
