@@ -641,9 +641,9 @@ describe("Codex app-server native code mode config", () => {
     // Codex defers native collab tools behind tool_search or code mode; the
     // instructions must teach both retrieval paths or models fall back to the
     // always-direct sessions_spawn.
-    expect(instructions).toContain("Use `tool_search` when directly callable");
+    expect(instructions).toContain("Use `tool_search` to find a tool that is not listed");
     expect(instructions).toContain(
-      "On code-mode-only models, use `exec` instead: filter `ALL_TOOLS` by name and description",
+      "if `tool_search` is not directly callable, use `exec` to filter `ALL_TOOLS` by name and description",
     );
     expect(instructions).toContain("call the matching entry through `tools`");
     expect(instructions).toContain(

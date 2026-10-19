@@ -5,6 +5,7 @@ import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.
 import { upsertTaskFlowAutomationObligationInStateTransaction } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { createManagedTaskFlow } from "../../tasks/task-flow-registry.js";
 import { resetTaskFlowRegistryForTests } from "../../tasks/task-runtime.test-helpers.js";
+import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
 import {
   createGatewaySchedulerClock,
   createTestGatewayScheduler,
@@ -26,8 +27,10 @@ const { logger, makeStorePath } = setupCronServiceSuite({ prefix: "cron-suspend-
 const EVERY_MS = 5 * 60_000;
 const HOUR_MS = 3_600_000;
 
-afterEach(() => {
+afterEach(async () => {
   resetTaskFlowRegistryForTests();
+  // The cron receipt authority is an async state resource; a sync close leaves it stale.
+  await closeStateDatabaseForTest();
 });
 
 function watchJob(params: {

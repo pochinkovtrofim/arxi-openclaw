@@ -9,6 +9,7 @@ import type { CronJob } from "../../cron/types.js";
 import { claimAgentRunContext, clearAgentRunContext } from "../../infra/agent-run-registry.js";
 import { openOpenClawStateDatabase } from "../../state/openclaw-state-db.js";
 import { listTaskFlowAutomationObligationsForCronJobFromSqlite } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
+import { closeStateDatabaseForTest } from "../../test-utils/database-cleanup.js";
 import { resetRuntimeTaskTestState } from "./runtime-task-test-harness.js";
 import { createRuntimeTaskFlow } from "./runtime-taskflow.js";
 
@@ -60,8 +61,10 @@ beforeEach(async () => {
 
 afterEach(async () => {
   clearAgentRunContext(runId);
-  resetRuntimeTaskTestState();
   await saveCronJobsStore(storePath, { version: 1, jobs: [] });
+  resetRuntimeTaskTestState();
+  // The cron receipt authority is an async state resource; a sync close leaves it stale.
+  await closeStateDatabaseForTest();
 });
 
 function bound() {

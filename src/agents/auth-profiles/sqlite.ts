@@ -28,6 +28,7 @@ import {
 import { resolveUserPath } from "../../utils.js";
 import { resolveRegisteredAgentIdForDir } from "../agent-dir-registry.js";
 import { resolveSharedAuthStoreOwnership, resolveSharedAuthStorePath } from "./path-resolve.js";
+import { resolveSharedMainAuthAgentDir } from "./shared-main-dir.js";
 import { prepareFreshSharedAuthStoreWriteAsync } from "./shared-store-bootstrap-async.js";
 import { prepareFreshSharedAuthStoreWrite } from "./shared-store-bootstrap.js";
 import {
@@ -123,11 +124,15 @@ function resolveAuthProfileDatabaseOptions(
   const dir = resolveUserPath(agentDir);
   const configuredAuthDir = env.ARXI_AUTH_AGENT_DIR?.trim();
   const ownerDir = configuredAuthDir ? resolveUserPath(configuredAuthDir, env) : dir;
+  // Callers that pass the resolved shared-main directory address the same
+  // relocated legacy store as the implicit path above, so it stays owned by main.
+  const sharedMainDir = path.resolve(resolveSharedMainAuthAgentDir(env)) === path.resolve(ownerDir);
   return {
     kind: "agent",
     agentId: configuredAuthDir
       ? LEGACY_IMPLICIT_AGENT_ID
-      : (resolveRegisteredAgentIdForDir(ownerDir) ?? inferAgentIdFromDir(ownerDir)),
+      : (resolveRegisteredAgentIdForDir(ownerDir) ??
+        (sharedMainDir ? LEGACY_IMPLICIT_AGENT_ID : inferAgentIdFromDir(ownerDir))),
     path: path.join(ownerDir, "openclaw-agent.sqlite"),
     env,
   };

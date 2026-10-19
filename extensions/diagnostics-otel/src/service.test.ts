@@ -2778,6 +2778,13 @@ describe("diagnostics-otel service", () => {
       resultClassification: "reasoning-only",
       yieldDetected: true,
       itemLifecycle: { startedCount: 3, completedCount: 2, activeCount: 1 },
+      replyDisposition: "silent",
+      timing: {
+        clock: "process-monotonic",
+        elapsedMs: 90,
+        startedAtUnixMs: 1_788_696_000_000,
+        endedAtUnixMs: 1_788_696_000_090,
+      },
     });
     await emitEventAndFlush("tool.execution.error", {
       toolCallId: "tool-1",
