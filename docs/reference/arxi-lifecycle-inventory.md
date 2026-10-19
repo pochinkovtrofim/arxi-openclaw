@@ -19,11 +19,13 @@ Active work is covered by the canonical Gateway snapshot in
 `src/gateway/server-active-work.ts`:
 
 - command queue and reply delivery;
-- embedded agent runs and background exec sessions;
-- cron runs, cron-owned watcher work, and registered tasks;
+- embedded agent runs, admitted agent run contexts, ACP turns, media generation,
+  and background exec sessions;
+- cron runs (including cron task runs) and cron-owned watcher work;
 - Gateway root requests, session work admission, and session mutations;
 - active or queued chat turns;
-- terminal persistence and open terminal sessions.
+- terminal persistence and open terminal sessions;
+- migration and backup write custody.
 
 External ingress reaches one of the root/session/queue/reply boundaries above;
 prepared suspension closes that admission before inspection. The reviewed
