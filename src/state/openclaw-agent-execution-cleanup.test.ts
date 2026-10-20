@@ -1,3 +1,6 @@
+import { mkdtemp, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
 import type { SqliteWorkerStore } from "../infra/sqlite-worker-contract.js";
 import {
@@ -9,7 +12,10 @@ import {
   clearOpenClawAgentDatabaseValidationCache,
   getOpenClawAgentDatabaseValidationForTransfer,
 } from "./openclaw-agent-db-validation-cache.js";
-import { cleanupRetiredAgentDatabaseLease } from "./openclaw-agent-execution-cleanup.js";
+import {
+  cleanupRetiredAgentDatabaseLease,
+  readAgentDatabaseClosedReceipt,
+} from "./openclaw-agent-execution-cleanup.js";
 import {
   assertOpenClawStateSchemaRepairAllowed,
   getExistingOpenClawStateSchemaPath,
@@ -185,4 +191,74 @@ it("revokes retired reader validation when shared cleanup admission fails", asyn
   expect(getOpenClawAgentDatabaseValidationForTransfer(target)).toBeUndefined();
   expect(Atomics.load(new Int32Array(valid), 0)).toBe(0);
   expect(edge.close).not.toHaveBeenCalled();
+});
+
+it("completes a confirmed native retirement after another file replaces the shared database", async () => {
+  const root = await realpath(await mkdtemp(path.join(tmpdir(), "openclaw-retired-lease-")));
+  try {
+    const databasePath = path.join(root, "openclaw.sqlite");
+    await writeFile(databasePath, "");
+    const leased = await stat(databasePath, { bigint: true });
+    // A remount over the state directory leaves a different file at the leased path.
+    const replacement = path.join(root, "replacement.sqlite");
+    await writeFile(replacement, "");
+    await rename(replacement, databasePath);
+    const context: OpenClawStateWorkerContext = {
+      environment: { OPENCLAW_STATE_DIR: root },
+      admission: {
+        coordinationKey: `file:${leased.dev}:${leased.ino}`,
+        databasePath,
+        identity: { key: `file:${leased.dev}:${leased.ino}`, canonicalPath: databasePath },
+        assertCurrent() {},
+      },
+    };
+    const lease = {
+      leaseId: "synthetic-closed-lease",
+      agentId: "main",
+      path: path.join(root, "agents/main.sqlite"),
+      ownerPid: process.pid,
+      ownerStartTime: null,
+      sharedStatePath: databasePath,
+      sharedStateIdentity: `file:${leased.dev}:${leased.ino}`,
+    };
+
+    const incarnation = "synthetic-incarnation";
+    const closed = readAgentDatabaseClosedReceipt(
+      {
+        identity: { key: "file:1:2", canonicalPath: lease.path },
+        incarnation,
+        checkpoint: {
+          health: {
+            state: "complete",
+            observedAtMs: 0,
+            walBytes: 0,
+            databaseBytes: 0,
+            logFrames: 0,
+            checkpointedFrames: 0,
+            lastCompletedAtMs: 0,
+            consecutiveBlocked: 0,
+            warning: false,
+          },
+          observedAtNs: 0n,
+        },
+      },
+      { kind: "file", physicalIdentity: "1:2", incarnation, nativeLocation: lease.path },
+      lease,
+    );
+    expect(closed).toBeDefined();
+
+    await expect(
+      cleanupRetiredAgentDatabaseLease({
+        context,
+        stopped: Promise.resolve(),
+        assertOwned() {},
+        lease,
+        closed: () => closed,
+      }),
+    ).resolves.toBeUndefined();
+    expect(edge.repairs).toEqual([]);
+    expect(edge.close).not.toHaveBeenCalled();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
