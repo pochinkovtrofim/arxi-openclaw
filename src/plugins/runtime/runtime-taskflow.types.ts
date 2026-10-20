@@ -125,6 +125,17 @@ export type BoundTaskFlowRuntime = {
     stateJson?: JsonValue | null;
     updatedAt?: number;
   }) => ManagedTaskFlowMutationResult;
+  /**
+   * Revises an owned Flow's existing Automation receipt atomically, without
+   * creating or changing its cron authority. Undefined means no existing receipt
+   * and no mutation; the caller may then use the ordinary Flow mutation.
+   */
+  commitWithExistingAutomationObligation?: (params: {
+    flowId: string;
+    expectedRevision: number;
+    mutation: ManagedTaskFlowAutomationObligationMutation;
+    obligation: { triggerAtMs: number; triggerKind: string; triggerDigest: string };
+  }) => ManagedTaskFlowAutomationObligationResult | undefined;
   finish: (params: {
     flowId: string;
     expectedRevision: number;

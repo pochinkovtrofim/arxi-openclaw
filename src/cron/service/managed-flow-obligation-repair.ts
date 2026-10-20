@@ -2,6 +2,7 @@
 import { createSqliteWorkerWriteAdmission } from "../../infra/sqlite-worker-store.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { runOpenClawStateWorkerOperation } from "../../state/openclaw-state-worker-store.js";
+import { managedFlowObligationSnapshotEpoch } from "../../tasks/task-flow-automation-obligation-invalidation.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import { cronStoreKey } from "../store/key.js";
 import type {
@@ -14,10 +15,11 @@ import type { CronServiceState } from "./state.js";
 import type { TimedCronRunOutcome } from "./timer-execution-timeout.js";
 
 type ObservedReceipts = {
+  epoch: number;
   /** Schedule identity of every paced job the repair pass read, valid or not. */
   observed: Map<string, string>;
   invalidJobIds: Set<string>;
-  earliest: Map<string, { scheduleIdentity: string; scheduledAtMs: number }>;
+  earliest: Map<string, { scheduleIdentity: string; wakeAtMs: number }>;
 };
 
 // The suspend-wake snapshot is synchronous; it reads the last committed repair pass.
@@ -34,8 +36,8 @@ function isEligible(state: CronServiceState): boolean {
 }
 
 /**
- * Reinstates only a missing or later timer slot from the persisted, already-paced
- * receipt. It never recomputes pacing, enables a job, or changes a paused scheduler.
+ * Restores missing/later slots and rebinds accepted triggers after cadence edits.
+ * It never enables a job or changes a paused scheduler.
  * Returns true when job rows changed and the caller must reload the store.
  */
 export async function repairManagedFlowAutomationObligations(
@@ -46,6 +48,7 @@ export async function repairManagedFlowAutomationObligations(
   }
   // One prompt pass per consumption: a failing pass falls back to the ordinary cadence.
   repairDueStates.delete(state);
+  const epoch = managedFlowObligationSnapshotEpoch();
   const storeKey = cronStoreKey(state.deps.storePath);
   const observed = new Map<string, string>();
   for (const job of state.store.jobs) {
@@ -57,6 +60,7 @@ export async function repairManagedFlowAutomationObligations(
   const jobIds = [...observed.keys()];
   if (jobIds.length === 0) {
     earliestReceiptsByState.set(state, {
+      epoch,
       observed,
       invalidJobIds: new Set(),
       earliest: new Map(),
@@ -81,7 +85,7 @@ export async function repairManagedFlowAutomationObligations(
       (scope) =>
         scope.execute({
           type: "cron.repairManagedFlowObligations",
-          input: { storeKey, jobIds },
+          input: { storeKey, jobIds, now: state.deps.nowMs() },
         }),
       {
         assertCurrent,
@@ -101,12 +105,13 @@ export async function repairManagedFlowAutomationObligations(
     );
   }
   earliestReceiptsByState.set(state, {
+    epoch,
     observed,
     invalidJobIds: new Set(result.invalidJobIds),
     earliest: new Map(
       result.earliest.map((entry) => [
         entry.jobId,
-        { scheduleIdentity: entry.scheduleIdentity, scheduledAtMs: entry.scheduledAtMs },
+        { scheduleIdentity: entry.scheduleIdentity, wakeAtMs: entry.wakeAtMs },
       ]),
     ),
   });
@@ -129,7 +134,7 @@ export function earliestManagedFlowObligationAtMs(
   jobs: readonly CronJob[],
 ): number | undefined {
   const receipts = earliestReceiptsByState.get(state);
-  if (!receipts) {
+  if (!receipts || receipts.epoch !== managedFlowObligationSnapshotEpoch()) {
     throw new Error("managed Flow receipts have not been observed since the last run");
   }
   let earliest: number | undefined;
@@ -148,8 +153,8 @@ export function earliestManagedFlowObligationAtMs(
     if (!receipt || receipt.scheduleIdentity !== scheduleIdentity) {
       continue;
     }
-    if (earliest === undefined || receipt.scheduledAtMs < earliest) {
-      earliest = receipt.scheduledAtMs;
+    if (earliest === undefined || receipt.wakeAtMs < earliest) {
+      earliest = receipt.wakeAtMs;
     }
   }
   return earliest;
@@ -164,7 +169,8 @@ export function earliestManagedFlowObligationAtMs(
 export function managedFlowRepairDue(state: CronServiceState): boolean {
   // Only deferred jobs make the snapshot read the receipts.
   return (
-    repairDueStates.has(state) &&
+    (repairDueStates.has(state) ||
+      earliestReceiptsByState.get(state)?.epoch !== managedFlowObligationSnapshotEpoch()) &&
     (state.store?.jobs.some((job) => isJobEnabled(job) && isSuspendWakeDeferredJob(job)) ?? false)
   );
 }
@@ -176,5 +182,10 @@ export function managedFlowConsumedRuns(
 ): CronManagedFlowConsumedRun[] {
   earliestReceiptsByState.delete(state);
   repairDueStates.add(state);
-  return outcomes.map((outcome) => ({ jobId: outcome.jobId, startedAt: outcome.startedAt }));
+  return outcomes.map((outcome) => ({
+    jobId: outcome.jobId,
+    startedAt: outcome.startedAt,
+    endedAt: outcome.endedAt,
+    served: outcome.status === "ok" && outcome.triggerEval?.fired !== false,
+  }));
 }

@@ -121,6 +121,23 @@ function requireLiveManagedFlow(
   }
 }
 
+export function getTaskFlowAutomationObligationFromSqlite(
+  db: DatabaseSync,
+  flowId: string,
+): TaskFlowAutomationObligation | undefined {
+  if (!tableExists(db, "task_flow_automation_obligations")) {
+    return undefined;
+  }
+  const row = executeSqliteQueryTakeFirstSync<ObligationRow>(
+    db,
+    getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
+      .selectFrom("task_flow_automation_obligations")
+      .selectAll()
+      .where("flow_id", "=", requireText(flowId, "flow id")),
+  );
+  return row ? rowToObligation(row) : undefined;
+}
+
 /** Must run inside the caller's existing state write transaction with its Flow CAS. */
 export function upsertTaskFlowAutomationObligationInStateTransaction(
   db: DatabaseSync,
@@ -237,6 +254,33 @@ export function transitionTaskFlowAutomationObligationPhaseInStateTransaction(
       .where("phase", "=", params.from),
   );
   return (result.numAffectedRows ?? 0n) > 0n;
+}
+
+/** Retains an unserved trigger after its earlier paced slot was consumed. */
+export function rescheduleTaskFlowAutomationObligationInStateTransaction(
+  db: DatabaseSync,
+  params: {
+    flowId: string;
+    expectedFlowRevision: number;
+    from: TaskFlowAutomationObligationPhase;
+    scheduledAtMs: number;
+    now: number;
+    scheduleIdentity?: string;
+  },
+): void {
+  executeSqliteQuerySync(
+    db,
+    getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
+      .updateTable("task_flow_automation_obligations")
+      .set({
+        scheduled_at_ms: requireInteger(params.scheduledAtMs, "scheduled time"),
+        updated_at_ms: requireInteger(params.now, "clock"),
+        ...(params.scheduleIdentity ? { cron_schedule_identity: params.scheduleIdentity } : {}),
+      })
+      .where("flow_id", "=", params.flowId)
+      .where("flow_revision", "=", params.expectedFlowRevision)
+      .where("phase", "=", params.from),
+  );
 }
 
 /** Lists only live receipts for the exact scheduler store and existing job. */

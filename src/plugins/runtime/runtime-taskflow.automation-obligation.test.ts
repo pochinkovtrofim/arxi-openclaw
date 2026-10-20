@@ -114,6 +114,113 @@ describe("current Automation atomic managed Flow contract", () => {
     ).toBeUndefined();
   });
 
+  it("owner chat moves an existing wake without a current Automation run", () => {
+    const flows = bound();
+    const created = flows.createManagedWithCurrentAutomationObligation({
+      flow: { controllerId, goal: "owner work", status: "waiting" },
+      obligation: trigger(),
+    });
+    const before = receipts()[0];
+    clearAgentRunContext(runId);
+    const ownerFlows = createRuntimeTaskFlow().bindSession({ sessionKey: ownerKey });
+    const movedTrigger = trigger(7_200_000);
+    const moved = ownerFlows.commitWithExistingAutomationObligation?.({
+      flowId: created.flow.flowId,
+      expectedRevision: created.flow.revision,
+      mutation: { kind: "setWaiting", stateJson: { nextTrigger: movedTrigger.triggerAtMs } },
+      obligation: movedTrigger,
+    });
+    expect(moved?.flow.revision).toBe(created.flow.revision + 1);
+    expect(receipts()).toEqual([
+      expect.objectContaining({
+        obligationId: before?.obligationId,
+        sourceRunId: runId,
+        cronJobId: job.id,
+        cronScheduleIdentity: before?.cronScheduleIdentity,
+        flowRevision: moved?.flow.revision,
+        triggerAtMs: movedTrigger.triggerAtMs,
+        scheduledAtMs: movedTrigger.triggerAtMs,
+        phase: "bound",
+      }),
+    ]);
+    const unbound = ownerFlows.createManaged({ controllerId, goal: "no scheduler authority" });
+    expect(
+      ownerFlows.commitWithExistingAutomationObligation?.({
+        flowId: unbound.flowId,
+        expectedRevision: unbound.revision,
+        mutation: { kind: "resume", stateJson: { shouldNotPersist: true } },
+        obligation: trigger(),
+      }),
+    ).toBeUndefined();
+    expect(ownerFlows.get(unbound.flowId)).toEqual(unbound);
+    expect(receipts()).toHaveLength(1);
+  });
+
+  it("owner wake changes reject foreign, stale, blocked, paused and changed job authority atomically", async () => {
+    const flows = bound();
+    const created = flows.createManagedWithCurrentAutomationObligation({
+      flow: { controllerId, goal: "protected owner work", status: "waiting" },
+      obligation: trigger(),
+    });
+    const before = receipts();
+    clearAgentRunContext(runId);
+    const input = {
+      flowId: created.flow.flowId,
+      expectedRevision: created.flow.revision,
+      mutation: { kind: "resume" as const, stateJson: { shouldNotPersist: true } },
+      obligation: trigger(),
+    };
+    const ownerFlows = bound();
+    const mutate = () => ownerFlows.commitWithExistingAutomationObligation?.(input);
+    const foreign = createRuntimeTaskFlow().bindSession({ sessionKey: "agent:other:main" });
+    expect(() => foreign.commitWithExistingAutomationObligation?.(input)).toThrow();
+    expect(() =>
+      ownerFlows.commitWithExistingAutomationObligation?.({
+        ...input,
+        expectedRevision: input.expectedRevision + 1,
+      }),
+    ).toThrow();
+    paused = true;
+    expect(mutate).toThrow();
+    paused = false;
+    for (const changed of [
+      { ...job, enabled: false },
+      { ...job, sessionKey: "agent:other:main" },
+      { ...job, schedule: { kind: "every" as const, everyMs: 120_000 } },
+    ]) {
+      await saveCronJobsStore(storePath, { version: 1, jobs: [changed] });
+      expect(mutate).toThrow();
+      expect(ownerFlows.get(created.flow.flowId)).toEqual(created.flow);
+      expect(receipts()).toEqual(before);
+    }
+    await saveCronJobsStore(storePath, { version: 1, jobs: [job] });
+    const db = openOpenClawStateDatabase().db;
+    db.prepare("UPDATE task_flow_automation_obligations SET phase='blocked' WHERE flow_id=?").run(
+      created.flow.flowId,
+    );
+    expect(mutate).toThrow();
+    expect(ownerFlows.get(created.flow.flowId)).toEqual(created.flow);
+    db.prepare("UPDATE task_flow_automation_obligations SET phase='suspended' WHERE flow_id=?").run(
+      created.flow.flowId,
+    );
+    const moved = ownerFlows.commitWithExistingAutomationObligation?.(input);
+    expect(moved).toBeDefined();
+    expect(receipts()[0]?.phase).toBe("bound");
+    if (!moved) {
+      throw new Error("Expected retained wake");
+    }
+    expect(
+      ownerFlows.finish({ flowId: input.flowId, expectedRevision: moved.flow.revision }).applied,
+    ).toBe(true);
+    expect(receipts()).toHaveLength(0);
+    expect(() =>
+      ownerFlows.commitWithExistingAutomationObligation?.({
+        ...input,
+        expectedRevision: moved.flow.revision + 1,
+      }),
+    ).toThrow();
+  });
+
   it("rolls back Flow and history when receipt validation fails after the Flow write", () => {
     const flows = bound();
     const history = flows.registerHistoryController({ controllerId });

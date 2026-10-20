@@ -1,6 +1,7 @@
 // A suspendWake "never" cadence stays on the in-process timer, leaves the host
 // wake deadline, keeps due managed-Flow work as a wake, and catches up once.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createRuntimeTaskFlow } from "../../plugins/runtime/runtime-taskflow.js";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import { upsertTaskFlowAutomationObligationInStateTransaction } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { createManagedTaskFlow } from "../../tasks/task-flow-registry.js";
@@ -17,6 +18,10 @@ import { loadCronStore } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
 import type { CronJob } from "../types.js";
 import { summarizeCronJobSchedule } from "./jobs-scheduling.js";
+import {
+  repairManagedFlowAutomationObligations,
+  managedFlowRepairDue,
+} from "./managed-flow-obligation-repair.js";
 import { pauseScheduling, resumeScheduling, start, stop } from "./ops-lifecycle.js";
 import { getSuspendWakeSnapshot } from "./ops-read.js";
 import { createCronServiceState } from "./state.js";
@@ -137,27 +142,88 @@ describe("cron suspend wake policy", () => {
     }
   });
 
-  it("keeps a due managed-Flow receipt as the host wake of a never job", async () => {
+  it.each([false, true])(
+    "keeps a future Flow wake across sleep (cadence edited: %s)",
+    async (editCadence) => {
+      const { storePath } = await makeStorePath();
+      const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
+      const due = clock.now + 2 * HOUR_MS;
+      const steward = watchJob({
+        now: clock.now,
+        nextRunAtMs: clock.now + EVERY_MS,
+        id: "steward",
+        suspendWake: "never",
+        pacing: { min: "5m", max: "5m" },
+      });
+      await writeCronStoreSnapshot({ storePath, jobs: [steward] });
+      const flow = createManagedTaskFlow({
+        ownerKey: "agent:main:main",
+        controllerId: "tests/suspend-wake",
+        goal: "exact reminder",
+        status: "waiting",
+      });
+      const identity = tryCronScheduleIdentity(steward);
+      if (!flow || !identity) {
+        throw new Error("expected a managed Flow and a schedule identity");
+      }
+      runOpenClawStateWriteTransaction(({ db }) => {
+        upsertTaskFlowAutomationObligationInStateTransaction(db, {
+          flowId: flow.flowId,
+          expectedFlowRevision: flow.revision,
+          controllerId: "tests/suspend-wake",
+          cronStoreKey: cronStoreKey(storePath),
+          cronJobId: steward.id,
+          cronScheduleIdentity: identity,
+          sourceRunId: "paced-run",
+          triggerAtMs: due,
+          scheduledAtMs: clock.now + EVERY_MS,
+          triggerKind: "check",
+          triggerDigest: "a".repeat(64),
+        });
+      });
+      if (editCadence) {
+        vi.setSystemTime(clock.now);
+        steward.schedule = { kind: "every", everyMs: 120_000 };
+        steward.pacing = { min: "2m", max: "2m" };
+        await writeCronStoreSnapshot({ storePath, jobs: [steward] });
+      }
+      const service = await startedService(storePath, clock);
+      try {
+        // The real binding clamps the slot to pacing. The host still wakes at the later trigger.
+        expect(service.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: due });
+        expect((await service.list({ includeDisabled: true }))[0]?.state.nextRunAtMs).toBe(
+          clock.now + (editCadence ? 120_000 : EVERY_MS),
+        );
+      } finally {
+        service.stop();
+      }
+    },
+  );
+
+  it("rejects a stale sleep snapshot after owner chat moves a wake and repairs before sleeping", async () => {
     const { storePath } = await makeStorePath();
     const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
-    const due = clock.now + 2 * HOUR_MS;
-    const steward = watchJob({
-      now: clock.now,
-      nextRunAtMs: clock.now + EVERY_MS,
-      id: "steward",
-      suspendWake: "never",
-      pacing: { min: "5m", max: "5m" },
-    });
+    vi.setSystemTime(clock.now);
+    const ownerKey = "agent:main:main";
+    const steward = {
+      ...watchJob({
+        now: clock.now,
+        nextRunAtMs: clock.now + EVERY_MS,
+        suspendWake: "never",
+        pacing: { min: "5m", max: "5m" },
+      }),
+      sessionKey: ownerKey,
+    };
     await writeCronStoreSnapshot({ storePath, jobs: [steward] });
     const flow = createManagedTaskFlow({
-      ownerKey: "agent:main:main",
+      ownerKey,
       controllerId: "tests/suspend-wake",
-      goal: "exact reminder",
+      goal: "goal without further coaching",
       status: "waiting",
     });
     const identity = tryCronScheduleIdentity(steward);
     if (!flow || !identity) {
-      throw new Error("expected a managed Flow and a schedule identity");
+      throw new Error("Expected managed flow and schedule");
     }
     runOpenClawStateWriteTransaction(({ db }) => {
       upsertTaskFlowAutomationObligationInStateTransaction(db, {
@@ -167,22 +233,35 @@ describe("cron suspend wake policy", () => {
         cronStoreKey: cronStoreKey(storePath),
         cronJobId: steward.id,
         cronScheduleIdentity: identity,
-        sourceRunId: "paced-run",
-        triggerAtMs: due,
-        scheduledAtMs: due,
+        sourceRunId: "initial-goal",
+        triggerAtMs: clock.now + 2 * HOUR_MS,
+        scheduledAtMs: clock.now + EVERY_MS,
         triggerKind: "check",
         triggerDigest: "a".repeat(64),
       });
     });
-    const service = await startedService(storePath, clock);
+    const { state } = await startedState(storePath, clock);
+    // The CronService facade marks this only after lifecycle startup completes.
+    state.schedulerStarted = true;
     try {
-      // The 5-minute slot stays earlier than the receipt, so only the store knows the due time.
-      expect(service.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: due });
-      expect((await service.list({ includeDisabled: true }))[0]?.state.nextRunAtMs).toBe(
-        clock.now + EVERY_MS,
-      );
+      expect(getSuspendWakeSnapshot(state)).toEqual({
+        complete: true,
+        nextWakeAtMs: clock.now + 2 * HOUR_MS,
+      });
+      const movedDue = clock.now + HOUR_MS;
+      const ownerFlows = createRuntimeTaskFlow().bindSession({ sessionKey: ownerKey });
+      ownerFlows.commitWithExistingAutomationObligation?.({
+        flowId: flow.flowId,
+        expectedRevision: flow.revision,
+        mutation: { kind: "setWaiting", stateJson: { moved: true } },
+        obligation: { triggerAtMs: movedDue, triggerKind: "check", triggerDigest: "b".repeat(64) },
+      });
+      expect(getSuspendWakeSnapshot(state).complete).toBe(false);
+      expect(managedFlowRepairDue(state)).toBe(true);
+      await repairManagedFlowAutomationObligations(state);
+      expect(getSuspendWakeSnapshot(state)).toEqual({ complete: true, nextWakeAtMs: movedDue });
     } finally {
-      service.stop();
+      stop(state);
     }
   });
 
