@@ -32,6 +32,27 @@ export type CronManagedFlowConsumedRun = {
   served?: boolean;
 };
 
+// A due trigger whose runs stay unserved (a failed run, or a gate that declines
+// the same due work at night) must not wake a sleeping host at every paced slot.
+// The wake waits as long as the trigger is already overdue, so retries double up
+// to this cap. A future trigger keeps its own time.
+const MAX_OVERDUE_WAKE_DELAY_MS = 2 * 60 * 60_000;
+
+/** Host wake for live receipts; the paced slot alone is only an early check. */
+export function managedFlowObligationWakeAtMs(
+  receipts: ReadonlyArray<{ triggerAtMs: number; scheduledAtMs: number }>,
+  now: number,
+): number {
+  return Math.min(
+    ...receipts.map((entry) => {
+      const slot = Math.max(entry.triggerAtMs, entry.scheduledAtMs);
+      return entry.triggerAtMs > now
+        ? slot
+        : Math.max(slot, now + Math.min(now - entry.triggerAtMs, MAX_OVERDUE_WAKE_DELAY_MS));
+    }),
+  );
+}
+
 // Changing an enabled interval's cadence does not revoke the Flow's accepted
 // trigger. Other identity changes still block the receipt until explicit repair.
 function cadenceOnlyChange(previous: string, current: string): boolean {
@@ -133,10 +154,7 @@ export function repairManagedFlowObligationsInDatabase(
           scheduleIdentity,
           scheduledAtMs: earliest.scheduledAtMs,
           // The paced slot may be hours before the actual accepted trigger.
-          // After a failed due run the refreshed slot supplies retry backoff.
-          wakeAtMs: Math.min(
-            ...live.map((entry) => Math.max(entry.triggerAtMs, entry.scheduledAtMs)),
-          ),
+          wakeAtMs: managedFlowObligationWakeAtMs(live, input.now),
         });
         const current = job.state.nextRunAtMs;
         if (

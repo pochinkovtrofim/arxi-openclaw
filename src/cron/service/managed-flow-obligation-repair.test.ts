@@ -8,7 +8,10 @@ import {
 } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import { cronStoreKey } from "../store/key.js";
-import { suspendConsumedManagedFlowObligationsInDatabase } from "../store/managed-flow-obligations.kernel.js";
+import {
+  managedFlowObligationWakeAtMs,
+  suspendConsumedManagedFlowObligationsInDatabase,
+} from "../store/managed-flow-obligations.kernel.js";
 import type { CronJob } from "../types.js";
 
 const databases: DatabaseSync[] = [];
@@ -160,5 +163,38 @@ describe("managed Flow Automation obligation repair", () => {
     expect(read().scheduledAtMs).toBe(10_920_100);
     consume(10_920_100, true);
     expect(read().phase).toBe("suspended");
+  });
+  it("backs off a sleeping host's wake for an overdue trigger instead of every paced slot", () => {
+    const minute = 60_000;
+    const trigger = 3 * 60 * minute;
+    // A future trigger wakes at its own time, not at the early paced slot.
+    expect(
+      managedFlowObligationWakeAtMs([{ triggerAtMs: trigger, scheduledAtMs: 10 * minute }], 0),
+    ).toBe(trigger);
+    // An unserved due trigger: each retry waits as long as it is already overdue.
+    const wakes: number[] = [];
+    let now = trigger + minute;
+    while (now < trigger + 8 * 60 * minute) {
+      now = managedFlowObligationWakeAtMs(
+        [{ triggerAtMs: trigger, scheduledAtMs: now + 2 * minute }],
+        now,
+      );
+      wakes.push(now);
+    }
+    // Ten wakes over an eight-hour night instead of 240 at a two-minute cadence.
+    expect(wakes.map((at) => (at - trigger) / minute)).toEqual([
+      3, 6, 12, 24, 48, 96, 192, 312, 432, 552,
+    ]);
+    expect(Math.max(...wakes.slice(1).map((at, index) => at - wakes[index]!))).toBe(120 * minute);
+    // The earliest live receipt still wins.
+    expect(
+      managedFlowObligationWakeAtMs(
+        [
+          { triggerAtMs: trigger, scheduledAtMs: trigger + 10 * minute },
+          { triggerAtMs: trigger + 15 * minute, scheduledAtMs: trigger + 10 * minute },
+        ],
+        trigger + 9 * minute,
+      ),
+    ).toBe(trigger + 15 * minute);
   });
 });
