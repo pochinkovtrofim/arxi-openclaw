@@ -241,6 +241,8 @@ describe("cron suspend wake policy", () => {
       });
     });
     const { state } = await startedState(storePath, clock);
+    // The CronService facade marks this only after lifecycle startup completes.
+    state.schedulerStarted = true;
     try {
       expect(getSuspendWakeSnapshot(state)).toEqual({
         complete: true,
