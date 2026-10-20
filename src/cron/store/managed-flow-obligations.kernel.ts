@@ -1,9 +1,12 @@
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 /** Durable managed-Flow Automation receipts bound to paced cron jobs; worker transaction only. */
 import type { DatabaseSync } from "node:sqlite";
 import {
   listTaskFlowAutomationObligationsForCronJobFromSqlite,
   transitionTaskFlowAutomationObligationPhaseInStateTransaction,
+  rescheduleTaskFlowAutomationObligationInStateTransaction,
 } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
+import { resolvePacedNextRunAtMs } from "../pacing.js";
 import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import type { CronJob } from "../types.js";
 import { mutateCronRuntimeRowsInDatabase } from "./runtime-rows.kernel.js";
@@ -13,11 +16,22 @@ export type CronManagedFlowRepairInput = { storeKey: string; jobIds: string[] };
 export type CronManagedFlowRepairOutput = {
   changed: boolean;
   /** Earliest live receipt per job under its current schedule identity. */
-  earliest: Array<{ jobId: string; scheduleIdentity: string; scheduledAtMs: number }>;
+  earliest: Array<{ jobId: string; scheduleIdentity: string; scheduledAtMs: number; wakeAtMs: number }>;
   invalidJobIds: string[];
 };
 
-export type CronManagedFlowConsumedRun = { jobId: string; startedAt: number };
+export type CronManagedFlowConsumedRun = { jobId: string; startedAt: number; endedAt?: number; served?: boolean };
+
+// Changing an enabled interval's cadence does not revoke the Flow's accepted
+// trigger. Other identity changes still block the receipt until explicit repair.
+function cadenceOnlyChange(previous: string, current: string): boolean {
+  try {
+    const before: unknown = JSON.parse(previous), after: unknown = JSON.parse(current);
+    if (!isRecord(before) || !isRecord(after) || before.enabled !== true || after.enabled !== true ||
+        !isRecord(before.schedule) || !isRecord(after.schedule) || before.schedule.kind !== "every" || after.schedule.kind !== "every") return false;
+    return JSON.stringify({ ...before, schedule: after.schedule, pacing: after.pacing }) === current;
+  } catch { return false; }
+}
 
 /**
  * Reinstates only a missing or later timer slot from the persisted, already-paced
@@ -52,18 +66,26 @@ export function repairManagedFlowObligationsInDatabase(
           invalidJobIds.push(job.id);
           continue;
         }
-        const earliest = receipts.find((entry) => entry.cronScheduleIdentity === scheduleIdentity);
-        for (const stale of receipts) {
-          if (stale.cronScheduleIdentity === scheduleIdentity) {
-            continue;
+        const live = [];
+        for (const receipt of receipts) {
+          if (receipt.cronScheduleIdentity === scheduleIdentity) { live.push(receipt); continue; }
+          if (cadenceOnlyChange(receipt.cronScheduleIdentity, scheduleIdentity)) {
+            const now = Date.now();
+            const scheduledAtMs = resolvePacedNextRunAtMs({ nowMs: now, delayMs: receipt.triggerAtMs - now, pacing: job.pacing });
+            if (scheduledAtMs !== undefined) {
+              rescheduleTaskFlowAutomationObligationInStateTransaction(database, {
+                flowId: receipt.flowId, expectedFlowRevision: receipt.flowRevision, from: receipt.phase,
+                scheduledAtMs, now, scheduleIdentity,
+              });
+              live.push({ ...receipt, cronScheduleIdentity: scheduleIdentity, scheduledAtMs });
+              continue;
+            }
           }
           transitionTaskFlowAutomationObligationPhaseInStateTransaction(database, {
-            flowId: stale.flowId,
-            expectedFlowRevision: stale.flowRevision,
-            from: stale.phase,
-            to: "blocked",
+            flowId: receipt.flowId, expectedFlowRevision: receipt.flowRevision, from: receipt.phase, to: "blocked",
           });
         }
+        const earliest = live.sort((a, b) => a.scheduledAtMs - b.scheduledAtMs)[0];
         if (!earliest) {
           continue;
         }
@@ -71,6 +93,10 @@ export function repairManagedFlowObligationsInDatabase(
           jobId: job.id,
           scheduleIdentity,
           scheduledAtMs: earliest.scheduledAtMs,
+          // The paced slot may be hours before the actual accepted trigger.
+          // After a failed due run the refreshed slot supplies retry backoff.
+          wakeAtMs: Math.min(...live
+            .map(entry => Math.max(entry.triggerAtMs, entry.scheduledAtMs))),
         });
         const current = job.state.nextRunAtMs;
         if (
@@ -102,8 +128,8 @@ export function repairManagedFlowObligationsInDatabase(
 }
 
 /**
- * A scheduled receipt is one timer opportunity. Once that timer run reaches a
- * terminal outcome, suspend it unless the run itself atomically replaced it.
+ * An early paced check does not consume a future trigger. Keep the obligation
+ * and advance its slot until a due run succeeds or replaces it atomically.
  */
 export function suspendConsumedManagedFlowObligationsInDatabase(params: {
   database: DatabaseSync;
@@ -133,10 +159,17 @@ export function suspendConsumedManagedFlowObligationsInDatabase(params: {
       const phase =
         obligation.cronScheduleIdentity !== scheduleIdentity
           ? "blocked"
-          : obligation.scheduledAtMs <= run.startedAt
+          : obligation.triggerAtMs <= run.startedAt && run.served !== false
             ? "suspended"
             : undefined;
       if (!phase) {
+        if (job.pacing && obligation.scheduledAtMs <= run.startedAt) {
+          const now = run.endedAt ?? run.startedAt;
+          const scheduledAtMs = resolvePacedNextRunAtMs({ nowMs: now, delayMs: obligation.triggerAtMs - now, pacing: job.pacing });
+          if (scheduledAtMs !== undefined) rescheduleTaskFlowAutomationObligationInStateTransaction(params.database, {
+            flowId: obligation.flowId, expectedFlowRevision: obligation.flowRevision, from: obligation.phase, scheduledAtMs, now,
+          });
+        }
         continue;
       }
       transitionTaskFlowAutomationObligationPhaseInStateTransaction(params.database, {

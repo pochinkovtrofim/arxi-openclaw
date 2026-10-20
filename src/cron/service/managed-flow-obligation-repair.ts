@@ -17,7 +17,7 @@ type ObservedReceipts = {
   /** Schedule identity of every paced job the repair pass read, valid or not. */
   observed: Map<string, string>;
   invalidJobIds: Set<string>;
-  earliest: Map<string, { scheduleIdentity: string; scheduledAtMs: number }>;
+  earliest: Map<string, { scheduleIdentity: string; wakeAtMs: number }>;
 };
 
 // The suspend-wake snapshot is synchronous; it reads the last committed repair pass.
@@ -106,7 +106,7 @@ export async function repairManagedFlowAutomationObligations(
     earliest: new Map(
       result.earliest.map((entry) => [
         entry.jobId,
-        { scheduleIdentity: entry.scheduleIdentity, scheduledAtMs: entry.scheduledAtMs },
+        { scheduleIdentity: entry.scheduleIdentity, wakeAtMs: entry.wakeAtMs },
       ]),
     ),
   });
@@ -148,8 +148,8 @@ export function earliestManagedFlowObligationAtMs(
     if (!receipt || receipt.scheduleIdentity !== scheduleIdentity) {
       continue;
     }
-    if (earliest === undefined || receipt.scheduledAtMs < earliest) {
-      earliest = receipt.scheduledAtMs;
+    if (earliest === undefined || receipt.wakeAtMs < earliest) {
+      earliest = receipt.wakeAtMs;
     }
   }
   return earliest;
@@ -176,5 +176,6 @@ export function managedFlowConsumedRuns(
 ): CronManagedFlowConsumedRun[] {
   earliestReceiptsByState.delete(state);
   repairDueStates.add(state);
-  return outcomes.map((outcome) => ({ jobId: outcome.jobId, startedAt: outcome.startedAt }));
+  return outcomes.map((outcome) => ({ jobId: outcome.jobId, startedAt: outcome.startedAt, endedAt: outcome.endedAt,
+    served: outcome.status === "ok" && outcome.triggerEval?.fired !== false }));
 }

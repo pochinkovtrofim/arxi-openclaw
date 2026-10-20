@@ -101,4 +101,29 @@ describe("managed Flow Automation obligation repair", () => {
       ["flow-c", "bound"],
     ]);
   });
+  it("retains a future trigger through early checks and a failed due run", () => {
+    const db = database();
+    const job = { id: "steward", enabled: true, schedule: { kind: "every", everyMs: 600_000 },
+      pacing: { min: "10m", max: "10m" }, state: {} } as CronJob;
+    const storeKey = cronStoreKey("/synthetic/cron");
+    const identity = tryCronScheduleIdentity(job)!;
+    insertFlow(db, "future", 1);
+    upsertTaskFlowAutomationObligationInStateTransaction(db, { flowId: "future", expectedFlowRevision: 1,
+      controllerId: "controller", cronStoreKey: storeKey, cronJobId: job.id, cronScheduleIdentity: identity,
+      sourceRunId: "initial-goal", triggerAtMs: 10_800_000, scheduledAtMs: 600_000,
+      triggerKind: "next-check", triggerDigest: "b".repeat(64), now: 0 });
+    const read = () => listTaskFlowAutomationObligationsForCronJobFromSqlite(db, { cronStoreKey: storeKey, cronJobId: job.id })[0];
+    const consume = (startedAt: number, served: boolean) => suspendConsumedManagedFlowObligationsInDatabase({
+      database: db, storeKey, jobs: new Map([[job.id, job]]), consumed: [{ jobId: job.id, startedAt, endedAt: startedAt + 100, served }] });
+    consume(600_000, false);
+    expect(read().phase).toBe("bound");
+    expect(read().scheduledAtMs).toBe(1_200_100);
+    expect(read().triggerAtMs).toBe(10_800_000);
+    consume(10_800_000, false);
+    expect(read().phase).toBe("bound");
+    expect(read().scheduledAtMs).toBe(11_400_100);
+    consume(11_400_100, true);
+    expect(read().phase).toBe("suspended");
+  });
+
 });

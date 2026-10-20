@@ -169,14 +169,14 @@ describe("cron suspend wake policy", () => {
         cronScheduleIdentity: identity,
         sourceRunId: "paced-run",
         triggerAtMs: due,
-        scheduledAtMs: due,
+        scheduledAtMs: clock.now + EVERY_MS,
         triggerKind: "check",
         triggerDigest: "a".repeat(64),
       });
     });
     const service = await startedService(storePath, clock);
     try {
-      // The 5-minute slot stays earlier than the receipt, so only the store knows the due time.
+      // The real binding clamps the slot to pacing. The host still wakes at the later trigger.
       expect(service.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: due });
       expect((await service.list({ includeDisabled: true }))[0]?.state.nextRunAtMs).toBe(
         clock.now + EVERY_MS,
