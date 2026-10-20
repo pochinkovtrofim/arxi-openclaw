@@ -121,8 +121,12 @@ describe("memory index", () => {
       onPartialResults: (results) => snapshots.push(results),
     });
     try {
+      // Lexical retrieval runs alongside the query embedding, so its snapshot
+      // may land after the provider is entered but before the failure settles.
       await queryEntered.promise;
-      expect(snapshots).toEqual([[expect.objectContaining({ path: "memory/2026-01-12.md" })]]);
+      await vi.waitFor(() => {
+        expect(snapshots).toEqual([[expect.objectContaining({ path: "memory/2026-01-12.md" })]]);
+      });
       failQuery.resolve();
       await vi.waitFor(() => {
         expect(providerFixture.providerCalls.at(-1)?.provider).toBe("fallback-provider");

@@ -372,7 +372,8 @@ describe("managed llama-server", () => {
       });
       const preset = await fs.readFile(presetPath, "utf8");
       expect(preset).toBe(
-        "version = 1\n\n[*]\ncache-type-k = q8_0\n\n[embeddinggemma-300m-qat-q8_0]\nmodel = /models/custom-embedding.gguf\nembedding = true\nparallel = 1\nctx-size = 2048\nubatch-size = 2048\n",
+        "version = 1\n\n[*]\ncache-type-k = q8_0\n\n[embeddinggemma-300m-qat-q8_0]\nmodel = /models/custom-embedding.gguf\nembedding = true\nparallel = 1\nctx-size = 2048\nubatch-size = 2048\n\n" +
+          "[embeddinggemma-300m-qat-q8_0-query]\nmodel = /models/custom-embedding.gguf\nembedding = true\nparallel = 1\nctx-size = 512\nubatch-size = 512\nthreads = 2\n",
       );
       expect(preset).not.toContain("jinja");
     } finally {

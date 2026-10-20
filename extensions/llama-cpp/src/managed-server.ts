@@ -22,6 +22,7 @@ import {
   DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SIZE_BYTES,
   DEFAULT_LLAMA_CPP_MODEL_CACHE_FILE,
   DEFAULT_LLAMA_CPP_MODEL_URI,
+  DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID,
   LLAMA_CPP_DEFAULT_PORT,
   resolveCachedLlamaCppModelPath,
   resolveHomePath,
@@ -42,6 +43,7 @@ import {
 } from "./llama-server-install.js";
 import {
   buildLlamaServerPreset,
+  presetHasQueryLane,
   type LlamaServerPresetOptions,
   type ManagedLlamaChatModel,
 } from "./llama-server-preset.js";
@@ -60,6 +62,8 @@ export type ManagedLlamaServer = {
   baseUrl: string;
   healthUrl: string;
   args: string[];
+  /** The router model for search queries, when the managed preset carries one. */
+  queryEmbeddingModel?: string;
 };
 
 export type LlamaServerRuntimeFacts = {
@@ -374,8 +378,8 @@ async function writePreset(presetPath: string, contents: string): Promise<void> 
 async function updatePreset(
   presetPath: string,
   params: LlamaServerPresetOptions & { reconcileOrigin?: string },
-): Promise<void> {
-  await runPresetTransition(async () => {
+): Promise<string> {
+  return await runPresetTransition(async () => {
     const existing = await fsp.readFile(presetPath, "utf8").catch((error: unknown) => {
       if (asOptionalRecord(error)?.code === "ENOENT") {
         return undefined;
@@ -390,6 +394,7 @@ async function updatePreset(
       // A revision becomes applied only after llama.cpp acknowledges reload; failures stay dirty.
       presetState.desiredRevisions.set(params.reconcileOrigin, `${presetPath}\0${next}`);
     }
+    return next;
   });
 }
 
@@ -514,7 +519,7 @@ export async function prepareManagedLlamaServer(params: {
   const presetPath = params.isolated
     ? path.join(path.dirname(defaultPreset), `models-${randomUUID()}.ini`)
     : defaultPreset;
-  await updatePreset(presetPath, {
+  const preset = await updatePreset(presetPath, {
     chatModel: params.chatModel,
     configuredChatModelIds: params.configuredChatModelIds,
     embeddingModelPath: params.embeddingModelPath,
@@ -529,6 +534,9 @@ export async function prepareManagedLlamaServer(params: {
   params.signal?.throwIfAborted();
   return {
     ...endpoint,
+    ...(presetHasQueryLane(preset)
+      ? { queryEmbeddingModel: DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID }
+      : {}),
     args:
       params.localService && !params.isolated
         ? (params.localService.args ?? [])

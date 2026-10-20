@@ -237,4 +237,56 @@ describe("memory MMR", () => {
       expect(actual, `lambda=${lambda}`).toEqual(expected);
     }
   });
+
+  it("orders like the string-set Jaccard reference", () => {
+    let seed = 7;
+    const next = () => (seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32;
+    const words = ["смета", "дом", "крыша", "окно", "meeting", "budget", "roof", "и", "в", "план"];
+    const items = Array.from({ length: 60 }, (_, index) => ({
+      path: `memory/${index}.md`,
+      score: Math.round(next() * 20) / 20,
+      snippet: Array.from(
+        { length: 1 + Math.floor(next() * 8) },
+        () => words[Math.floor(next() * words.length)],
+      ).join(" "),
+    }));
+    // The pre-optimization greedy order over Set<string> tokens.
+    const reference = (lambda: number) => {
+      const relevance = (score: number) => {
+        const scores = items.map((item) => item.score);
+        const [min, max] = [Math.min(...scores), Math.max(...scores)];
+        return max === min ? 1 : (score - min) / (max - min);
+      };
+      const remaining = new Set(items);
+      const maxSimilarity = new Map(items.map((item) => [item, 0]));
+      const order: string[] = [];
+      while (remaining.size > 0) {
+        let best: (typeof items)[number] | undefined;
+        let bestScore = -Infinity;
+        for (const item of remaining) {
+          const value =
+            lambda * relevance(item.score) - (1 - lambda) * (maxSimilarity.get(item) ?? 0);
+          if (value > bestScore || (value === bestScore && item.score > (best?.score ?? -1))) {
+            bestScore = value;
+            best = item;
+          }
+        }
+        if (!best) {
+          break;
+        }
+        order.push(best.path);
+        remaining.delete(best);
+        for (const item of remaining) {
+          const similarity = jaccardSimilarity(tokenize(item.snippet), tokenize(best.snippet));
+          maxSimilarity.set(item, Math.max(maxSimilarity.get(item) ?? 0, similarity));
+        }
+      }
+      return order;
+    };
+    for (const lambda of [0, 0.3, 0.7]) {
+      expect(applyMMRToHybridResults(items, lambda).map((item) => item.path)).toEqual(
+        reference(lambda),
+      );
+    }
+  });
 });
