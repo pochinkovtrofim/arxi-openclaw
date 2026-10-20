@@ -304,17 +304,16 @@ describe("memory runtime handles", () => {
   });
 
   it("closes managers before suspension without retiring the memory runtime", async () => {
-    const { registry, runtime } = createRegistry();
-    mocks.loadPluginRegistryHandle.mockReturnValue(registry);
+    const runtime = createRuntime();
+    mocks.getMemoryRuntime.mockReturnValue(runtime);
 
     await getActiveMemorySearchManagerCore({ cfg: memoryConfig, agentId: "main" });
     await closeMemorySearchManagersForSuspendCore();
+    await getActiveMemorySearchManagerCore({ cfg: memoryConfig, agentId: "main" });
 
     expect(runtime.closeAllMemorySearchManagers).toHaveBeenCalledOnce();
-    expect(hasMemoryRuntime()).toBe(true);
-    await getActiveMemorySearchManagerCore({ cfg: memoryConfig, agentId: "main" });
-    expect(mocks.loadPluginRegistryHandle).toHaveBeenCalledOnce();
     expect(runtime.getMemorySearchManager).toHaveBeenCalledTimes(2);
+    expect(mocks.loadPluginRegistryHandle).not.toHaveBeenCalled();
   });
 
   it.each(["present", "missing"] as const)(
