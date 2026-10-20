@@ -49,6 +49,17 @@ export function captureExistingOpenClawAgentDatabaseExecution(
   );
 }
 
+/** Retire idle native generations now; borrowed owners keep their Workers. */
+export async function closeIdleOpenClawAgentDatabaseExecutions(): Promise<void> {
+  const results = await Promise.allSettled(
+    [...executionState.idle].map((owner) => owner.closeIdle()),
+  );
+  const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length > 0) {
+    throw new AggregateError(errors, "Idle agent database execution close failed");
+  }
+}
+
 /** Borrow before callers yield; native opening stays lazy and release joins owned work. */
 function captureFileAgentDatabaseExecution(
   options: OpenClawAgentDatabaseOptions,

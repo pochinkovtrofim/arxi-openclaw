@@ -374,6 +374,31 @@ export function refreshAgentDatabaseIdleTimer(database: OpenClawAgentDatabase): 
   });
 }
 
+/**
+ * A suspended process can be discarded without exit hooks. Retire settled,
+ * unborrowed handles now so the next process inherits their clean-close receipts.
+ */
+export function closeIdleOpenClawAgentDatabases(): void {
+  for (const database of [...cache.databases.values()]) {
+    if (
+      cache.incognito.has(database) ||
+      !database.db.isOpen ||
+      database.db.isTransaction ||
+      cache.borrowers.get(database.db)?.size
+    ) {
+      continue;
+    }
+    try {
+      closeCachedOpenClawAgentDatabase(database, { eviction: true });
+      cache.databases.delete(database.path);
+      cache.failures.delete(database.path);
+    } catch (error) {
+      logResourceCloseFailure(database.path, error);
+    }
+  }
+  unregisterUnusedAgentDatabaseExitClose();
+}
+
 /** Dispose only this publication; a later admission at the same path is independent. */
 export async function closeMaintenanceAgentDatabase(
   database: OpenClawAgentDatabase,

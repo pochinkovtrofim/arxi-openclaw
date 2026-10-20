@@ -16,7 +16,10 @@ import {
   claimOpenClawAgentDatabaseLease,
   releaseOpenClawAgentDatabaseLease,
 } from "./openclaw-agent-db-lease.js";
-import { closeCachedOpenClawAgentDatabase } from "./openclaw-agent-db-lifecycle.js";
+import {
+  closeCachedOpenClawAgentDatabase,
+  closeIdleOpenClawAgentDatabases,
+} from "./openclaw-agent-db-lifecycle.js";
 import * as schema from "./openclaw-agent-db-schema.js";
 import {
   closeOpenClawAgentDatabaseByPath,
@@ -103,6 +106,35 @@ it("certifies idle handles after grace and borrowed handles only after their fin
     await borrowed;
     resetGatewayWorkAdmission();
     vi.useRealTimers();
+  }
+});
+
+it("certifies idle handles before suspension and keeps borrowed handles open", async () => {
+  const env = { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-suspend-idle-") };
+  const options = { agentId: "idle", env };
+  const heldOptions = { agentId: "held", env };
+  const idle = openOpenClawAgentDatabase(options);
+  const held = openOpenClawAgentDatabase(heldOptions);
+  const entered = createDeferredCore();
+  const release = createDeferredCore();
+  const borrowed = withOpenClawAgentDatabaseAsync(heldOptions, async () => {
+    entered.resolve();
+    await release.promise;
+  });
+  try {
+    await entered.promise;
+    closeIdleOpenClawAgentDatabases();
+    expect(idle.db.isOpen).toBe(false);
+    expect(readOpenClawAgentIntegrityVerification(idle.path, env)?.clean_close).toBe(1);
+    expect(held.db.isOpen).toBe(true);
+    expect(readOpenClawAgentIntegrityVerification(held.path, env)?.clean_close).toBe(0);
+    await withOpenClawAgentDatabaseAsync(options, async (reopened) => {
+      expect(reopened.db.isOpen).toBe(true);
+      expect(readOpenClawAgentIntegrityVerification(idle.path, env)?.clean_close).toBe(0);
+    });
+  } finally {
+    release.resolve();
+    await borrowed;
   }
 });
 
