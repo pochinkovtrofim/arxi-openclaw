@@ -57,6 +57,7 @@ import {
   classifyActiveMemoryWorkspacePaths,
   closeActiveMemorySearchManagerCore,
   closeActiveMemorySearchManagersCore,
+  closeMemorySearchManagersForSuspendCore,
   getActiveMemorySearchManagerCore,
   resolveActiveMemoryBackendConfig,
 } from "./memory-runtime.js";
@@ -300,6 +301,20 @@ describe("memory runtime handles", () => {
     await closeActiveMemorySearchManagersCore();
     expect(runtime.closeAllMemorySearchManagers).toHaveBeenCalledTimes(2);
     expect(hasMemoryRuntime()).toBe(false);
+  });
+
+  it("closes managers before suspension without retiring the memory runtime", async () => {
+    const { registry, runtime } = createRegistry();
+    mocks.loadPluginRegistryHandle.mockReturnValue(registry);
+
+    await getActiveMemorySearchManagerCore({ cfg: memoryConfig, agentId: "main" });
+    await closeMemorySearchManagersForSuspendCore();
+
+    expect(runtime.closeAllMemorySearchManagers).toHaveBeenCalledOnce();
+    expect(hasMemoryRuntime()).toBe(true);
+    await getActiveMemorySearchManagerCore({ cfg: memoryConfig, agentId: "main" });
+    expect(mocks.loadPluginRegistryHandle).toHaveBeenCalledOnce();
+    expect(runtime.getMemorySearchManager).toHaveBeenCalledTimes(2);
   });
 
   it.each(["present", "missing"] as const)(

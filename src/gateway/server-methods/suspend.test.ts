@@ -10,7 +10,11 @@ const coordinator = vi.hoisted(() => ({
   resume: vi.fn(),
 }));
 const outbound = vi.hoisted(() => ({ inspect: vi.fn() }));
-const agentDatabases = vi.hoisted(() => ({ closeIdle: vi.fn(), closeIdleExecutions: vi.fn() }));
+const agentDatabases = vi.hoisted(() => ({
+  closeIdle: vi.fn(),
+  closeIdleExecutions: vi.fn(),
+  closeMemoryManagers: vi.fn(),
+}));
 
 vi.mock("../../infra/gateway-suspend-coordinator.js", () => ({
   prepareGatewaySuspend: coordinator.prepare,
@@ -29,6 +33,10 @@ vi.mock("../../state/openclaw-agent-db-lifecycle.js", () => ({
 
 vi.mock("../../state/openclaw-agent-execution.js", () => ({
   closeIdleOpenClawAgentDatabaseExecutions: agentDatabases.closeIdleExecutions,
+}));
+
+vi.mock("../../plugins/memory-runtime.js", () => ({
+  closeMemorySearchManagersForSuspendCore: agentDatabases.closeMemoryManagers,
 }));
 
 vi.mock("../server-active-work.js", () => ({
@@ -257,6 +265,9 @@ describe("gateway suspend handlers", () => {
       order.push("status");
       return ready;
     });
+    agentDatabases.closeMemoryManagers.mockImplementation(async () => {
+      order.push("memory");
+    });
     agentDatabases.closeIdleExecutions.mockImplementation(async () => {
       order.push("executions");
       return { closed: 1, busy: 0 };
@@ -270,15 +281,17 @@ describe("gateway suspend handlers", () => {
       suspensionId: "suspension-ready",
     });
 
-    expect(order).toEqual(["status", "status", "executions", "handles", "status"]);
+    expect(order).toEqual(["status", "status", "memory", "executions", "handles", "status"]);
     expect(respond).toHaveBeenCalledWith(true, ready);
     expect(info).toHaveBeenCalledWith(
       "idle agent databases closed before suspension: executions closed=1 busy=0; handles closed=1 borrowed=1 transaction=0 failed=0",
     );
 
+    agentDatabases.closeMemoryManagers.mockClear();
     agentDatabases.closeIdleExecutions.mockClear();
     coordinator.status.mockReturnValue({ status: "running" });
     await invoke("gateway.suspend.status", { suspensionId: "suspension-ready" });
+    expect(agentDatabases.closeMemoryManagers).not.toHaveBeenCalled();
     expect(agentDatabases.closeIdleExecutions).not.toHaveBeenCalled();
   });
 

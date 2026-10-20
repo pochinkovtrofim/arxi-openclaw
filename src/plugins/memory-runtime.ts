@@ -423,6 +423,15 @@ export async function closeActiveMemorySearchManagersCore(cfg?: OpenClawConfig):
   setStandaloneMemoryManagerActive(false);
 }
 
+/** Releases memory managers' agent database borrows before host suspension; the next use reopens them. */
+export async function closeMemorySearchManagersForSuspendCore(): Promise<void> {
+  await Promise.all(
+    listCurrentMemoryRuntimes().map(async (runtime) =>
+      runPluginCleanup(runtime, () => runtime.closeAllMemorySearchManagers?.()),
+    ),
+  );
+}
+
 /** Closes the plugin-backed memory search manager for one agent. */
 export async function closeActiveMemorySearchManagerCore(params: {
   cfg: OpenClawConfig;

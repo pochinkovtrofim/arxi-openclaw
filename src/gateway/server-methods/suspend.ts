@@ -18,6 +18,7 @@ import {
 } from "../../infra/gateway-suspend-coordinator.js";
 import { getNextDeferredOutboundDeliveryAtMs } from "../../infra/outbound/delivery-queue-deferred-wake.js";
 import { OUTBOUND_DELIVERY_QUEUE_NAME } from "../../infra/outbound/delivery-queue-namespaces.js";
+import { closeMemorySearchManagersForSuspendCore } from "../../plugins/memory-runtime.js";
 import { closeIdleOpenClawAgentDatabases } from "../../state/openclaw-agent-db-lifecycle.js";
 import { closeIdleOpenClawAgentDatabaseExecutions } from "../../state/openclaw-agent-execution.js";
 import { getGatewayProcessInstanceId } from "../process-instance.js";
@@ -102,11 +103,13 @@ const SUSPEND_AGENT_DATABASE_CLOSE_TIMEOUT_MS = 5_000;
 /**
  * A ready suspension may end in VM eviction without exit hooks. Closing idle
  * agent databases first leaves clean-close receipts, so the next process skips
- * dead-owner WAL recovery and its full integrity check.
+ * dead-owner WAL recovery and its full integrity check. Memory managers borrow
+ * their agent database for their whole life, so they close first.
  */
 async function closeIdleAgentDatabasesForSuspend(context: GatewayRequestContext): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const close = (async () => {
+    await closeMemorySearchManagersForSuspendCore();
     const executions = await closeIdleOpenClawAgentDatabaseExecutions();
     const handles = closeIdleOpenClawAgentDatabases();
     // Busy or borrowed owners keep their leases; the next process sees them as dirty.
