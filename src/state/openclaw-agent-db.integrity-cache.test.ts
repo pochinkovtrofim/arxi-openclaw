@@ -123,7 +123,12 @@ it("certifies idle handles before suspension and keeps borrowed handles open", a
   });
   try {
     await entered.promise;
-    closeIdleOpenClawAgentDatabases();
+    expect(closeIdleOpenClawAgentDatabases()).toEqual({
+      closed: 1,
+      borrowed: 1,
+      transaction: 0,
+      failed: 0,
+    });
     expect(idle.db.isOpen).toBe(false);
     expect(readOpenClawAgentIntegrityVerification(idle.path, env)?.clean_close).toBe(1);
     expect(held.db.isOpen).toBe(true);

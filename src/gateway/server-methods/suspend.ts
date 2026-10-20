@@ -7,6 +7,7 @@ import {
   validateGatewaySuspendStatusParams,
   validateGatewaySuspendHandoffParams,
 } from "../../../packages/gateway-protocol/src/index.js";
+import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { CronSuspendWakeSnapshot } from "../../cron/service-contract.js";
 import { inspectPendingDeliveryQueueDeferrals } from "../../infra/delivery-queue-sqlite.js";
 import { waitForGatewayDrain } from "../../infra/gateway-drain.js";
@@ -18,6 +19,7 @@ import {
 } from "../../infra/gateway-suspend-coordinator.js";
 import { getNextDeferredOutboundDeliveryAtMs } from "../../infra/outbound/delivery-queue-deferred-wake.js";
 import { OUTBOUND_DELIVERY_QUEUE_NAME } from "../../infra/outbound/delivery-queue-namespaces.js";
+import { suspendMemorySearchManagersCore } from "../../plugins/memory-runtime.js";
 import { closeIdleOpenClawAgentDatabases } from "../../state/openclaw-agent-db-lifecycle.js";
 import { closeIdleOpenClawAgentDatabaseExecutions } from "../../state/openclaw-agent-execution.js";
 import { getGatewayProcessInstanceId } from "../process-instance.js";
@@ -99,16 +101,41 @@ function respondSuspendStatus(
 
 const SUSPEND_AGENT_DATABASE_CLOSE_TIMEOUT_MS = 5_000;
 
+// Memory indexes closed for a ready suspension reopen when this process resumes.
+let pendingMemoryResume:
+  | Promise<((params: { cfg: OpenClawConfig }) => void) | undefined>
+  | undefined;
+
+function resumeMemoryAfterSuspension(context: GatewayRequestContext): void {
+  const pending = pendingMemoryResume;
+  pendingMemoryResume = undefined;
+  void pending
+    ?.then((resume) => resume?.({ cfg: context.getRuntimeConfig() }))
+    .catch((error: unknown) => {
+      context.logGateway.warn(`memory resume after suspension failed: ${String(error)}`);
+    });
+}
+
 /**
  * A ready suspension may end in VM eviction without exit hooks. Closing idle
  * agent databases first leaves clean-close receipts, so the next process skips
- * dead-owner WAL recovery and its full integrity check.
+ * dead-owner WAL recovery and its full integrity check. Memory managers borrow
+ * their agent database for their whole life, so they close first.
  */
 async function closeIdleAgentDatabasesForSuspend(context: GatewayRequestContext): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const close = (async () => {
-    await closeIdleOpenClawAgentDatabaseExecutions();
-    closeIdleOpenClawAgentDatabases();
+    const memory = suspendMemorySearchManagersCore();
+    pendingMemoryResume ??= memory.then(({ resume }) => resume);
+    for (const error of (await memory).errors) {
+      context.logGateway.warn(`memory close before suspension failed: ${String(error)}`);
+    }
+    const executions = await closeIdleOpenClawAgentDatabaseExecutions();
+    const handles = closeIdleOpenClawAgentDatabases();
+    // Busy or borrowed owners keep their leases; the next process sees them as dirty.
+    context.logGateway.info(
+      `idle agent databases closed before suspension: executions closed=${executions.closed} busy=${executions.busy}; handles closed=${handles.closed} borrowed=${handles.borrowed} transaction=${handles.transaction} failed=${handles.failed}`,
+    );
   })();
   try {
     await Promise.race([
@@ -177,7 +204,10 @@ export const suspendHandlers: GatewayRequestHandlers = {
       terminalPolicy: params.terminalPolicy ?? "preserve",
       ...(params.drain === true ? { drain: true } : {}),
       pauseScheduling: () => context.cron.pauseScheduling(),
-      resumeScheduling: () => context.cron.resumeScheduling(),
+      resumeScheduling: () => {
+        context.cron.resumeScheduling();
+        resumeMemoryAfterSuspension(context);
+      },
       inspect: createGatewayServerActiveWorkInspectors(context),
       inspectWakeRequirement: () =>
         combineGatewaySuspendWakeSnapshot(context.cron.getSuspendWakeSnapshot()),

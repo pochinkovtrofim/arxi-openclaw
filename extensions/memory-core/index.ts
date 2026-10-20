@@ -214,8 +214,42 @@ export default definePluginEntry({
     } satisfies MemoryCoreRuntimeHost;
     configureMemoryCoreDreamingState(openKeyedStore);
     publishMemoryWorkspaceWriteLock();
-    const memoryRuntime = createLazyMemoryRuntime(host);
     let indexStartup: Promise<void> | undefined;
+    // Restarts and resumed suspensions after a manager ran restore watching without a search.
+    const restoreIndexes = (config: OpenClawConfig, warn: (message: string) => void) => {
+      if (!hasMemoryIndexingBeenLive()) {
+        return;
+      }
+      const activate = async () => {
+        await Promise.all(
+          listAgentIds(config).map(async (agentId) => {
+            const { error } = await memoryRuntime
+              .getMemorySearchManager({ cfg: config, agentId })
+              .catch((cause: unknown) => ({ error: String(cause) }));
+            if (error) {
+              warn(`memory-core: index startup failed for ${agentId}: ${error}`);
+            }
+          }),
+        );
+      };
+      // Database preparation starts after services return; joining here deadlocks startup.
+      indexStartup = api.lifecycle.runInBackgroundContext
+        ? api.lifecycle.runInBackgroundContext(activate)
+        : activate();
+      // Forced retirement may reject before the cleanup owner reaches this task.
+      void indexStartup.catch(() => {});
+    };
+    const memoryRuntime: MemoryPluginRuntime = {
+      ...createLazyMemoryRuntime(host),
+      async suspendMemorySearchManagers() {
+        // Closing releases each index's agent database borrow, so the database can close cleanly.
+        // A failed close may still have closed other indexes; resume restores them either way.
+        await memoryRuntime.closeAllMemorySearchManagers?.().catch((error: unknown) => {
+          api.logger.warn(`memory-core: index close before suspension failed: ${String(error)}`);
+        });
+        return { resume: ({ cfg }) => restoreIndexes(cfg, (message) => api.logger.warn(message)) };
+      },
+    };
     const stopIndex = async (close: () => Promise<void> | undefined) => {
       const errors: unknown[] = [];
       for (const settle of [() => indexStartup, close]) {
@@ -251,28 +285,7 @@ export default definePluginEntry({
         start({ config, logger }) {
           // Cold start stays demand-driven: opening every agent's index starts its
           // transcript and index workers before any search or turn needs them.
-          // Restarts after a manager ran restore watching without a search.
-          if (!hasMemoryIndexingBeenLive()) {
-            return;
-          }
-          const activate = async () => {
-            await Promise.all(
-              listAgentIds(config).map(async (agentId) => {
-                const { error } = await memoryRuntime
-                  .getMemorySearchManager({ cfg: config, agentId })
-                  .catch((cause: unknown) => ({ error: String(cause) }));
-                if (error) {
-                  logger.warn(`memory-core: index startup failed for ${agentId}: ${error}`);
-                }
-              }),
-            );
-          };
-          // Database preparation starts after services return; joining here deadlocks startup.
-          indexStartup = api.lifecycle.runInBackgroundContext
-            ? api.lifecycle.runInBackgroundContext(activate)
-            : activate();
-          // Forced retirement may reject before the cleanup owner reaches this task.
-          void indexStartup.catch(() => {});
+          restoreIndexes(config, (message) => logger.warn(message));
         },
         stop: () => stopIndex(() => memoryRuntime.closeAllMemorySearchManagers?.()),
       });
