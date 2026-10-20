@@ -137,60 +137,63 @@ describe("cron suspend wake policy", () => {
     }
   });
 
-  it.each([false, true])("keeps a future Flow wake across sleep (cadence edited: %s)", async (editCadence) => {
-    const { storePath } = await makeStorePath();
-    const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
-    const due = clock.now + 2 * HOUR_MS;
-    const steward = watchJob({
-      now: clock.now,
-      nextRunAtMs: clock.now + EVERY_MS,
-      id: "steward",
-      suspendWake: "never",
-      pacing: { min: "5m", max: "5m" },
-    });
-    await writeCronStoreSnapshot({ storePath, jobs: [steward] });
-    const flow = createManagedTaskFlow({
-      ownerKey: "agent:main:main",
-      controllerId: "tests/suspend-wake",
-      goal: "exact reminder",
-      status: "waiting",
-    });
-    const identity = tryCronScheduleIdentity(steward);
-    if (!flow || !identity) {
-      throw new Error("expected a managed Flow and a schedule identity");
-    }
-    runOpenClawStateWriteTransaction(({ db }) => {
-      upsertTaskFlowAutomationObligationInStateTransaction(db, {
-        flowId: flow.flowId,
-        expectedFlowRevision: flow.revision,
-        controllerId: "tests/suspend-wake",
-        cronStoreKey: cronStoreKey(storePath),
-        cronJobId: steward.id,
-        cronScheduleIdentity: identity,
-        sourceRunId: "paced-run",
-        triggerAtMs: due,
-        scheduledAtMs: clock.now + EVERY_MS,
-        triggerKind: "check",
-        triggerDigest: "a".repeat(64),
+  it.each([false, true])(
+    "keeps a future Flow wake across sleep (cadence edited: %s)",
+    async (editCadence) => {
+      const { storePath } = await makeStorePath();
+      const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
+      const due = clock.now + 2 * HOUR_MS;
+      const steward = watchJob({
+        now: clock.now,
+        nextRunAtMs: clock.now + EVERY_MS,
+        id: "steward",
+        suspendWake: "never",
+        pacing: { min: "5m", max: "5m" },
       });
-    });
-    if (editCadence) {
-      vi.setSystemTime(clock.now);
-      steward.schedule = { kind: "every", everyMs: 120_000 };
-      steward.pacing = { min: "2m", max: "2m" };
       await writeCronStoreSnapshot({ storePath, jobs: [steward] });
-    }
-    const service = await startedService(storePath, clock);
-    try {
-      // The real binding clamps the slot to pacing. The host still wakes at the later trigger.
-      expect(service.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: due });
-      expect((await service.list({ includeDisabled: true }))[0]?.state.nextRunAtMs).toBe(
-        clock.now + (editCadence ? 120_000 : EVERY_MS),
-      );
-    } finally {
-      service.stop();
-    }
-  });
+      const flow = createManagedTaskFlow({
+        ownerKey: "agent:main:main",
+        controllerId: "tests/suspend-wake",
+        goal: "exact reminder",
+        status: "waiting",
+      });
+      const identity = tryCronScheduleIdentity(steward);
+      if (!flow || !identity) {
+        throw new Error("expected a managed Flow and a schedule identity");
+      }
+      runOpenClawStateWriteTransaction(({ db }) => {
+        upsertTaskFlowAutomationObligationInStateTransaction(db, {
+          flowId: flow.flowId,
+          expectedFlowRevision: flow.revision,
+          controllerId: "tests/suspend-wake",
+          cronStoreKey: cronStoreKey(storePath),
+          cronJobId: steward.id,
+          cronScheduleIdentity: identity,
+          sourceRunId: "paced-run",
+          triggerAtMs: due,
+          scheduledAtMs: clock.now + EVERY_MS,
+          triggerKind: "check",
+          triggerDigest: "a".repeat(64),
+        });
+      });
+      if (editCadence) {
+        vi.setSystemTime(clock.now);
+        steward.schedule = { kind: "every", everyMs: 120_000 };
+        steward.pacing = { min: "2m", max: "2m" };
+        await writeCronStoreSnapshot({ storePath, jobs: [steward] });
+      }
+      const service = await startedService(storePath, clock);
+      try {
+        // The real binding clamps the slot to pacing. The host still wakes at the later trigger.
+        expect(service.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: due });
+        expect((await service.list({ includeDisabled: true }))[0]?.state.nextRunAtMs).toBe(
+          clock.now + (editCadence ? 120_000 : EVERY_MS),
+        );
+      } finally {
+        service.stop();
+      }
+    },
+  );
 
   it("keeps the snapshot complete when a paced never job is added after startup", async () => {
     const { storePath } = await makeStorePath();
