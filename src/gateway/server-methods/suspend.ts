@@ -18,6 +18,8 @@ import {
 } from "../../infra/gateway-suspend-coordinator.js";
 import { getNextDeferredOutboundDeliveryAtMs } from "../../infra/outbound/delivery-queue-deferred-wake.js";
 import { OUTBOUND_DELIVERY_QUEUE_NAME } from "../../infra/outbound/delivery-queue-namespaces.js";
+import { closeIdleOpenClawAgentDatabases } from "../../state/openclaw-agent-db-lifecycle.js";
+import { closeIdleOpenClawAgentDatabaseExecutions } from "../../state/openclaw-agent-execution.js";
 import { getGatewayProcessInstanceId } from "../process-instance.js";
 import { createGatewayServerActiveWorkInspectors } from "../server-active-work.js";
 import type { GatewayRequestContext } from "./shared-types.js";
@@ -93,6 +95,38 @@ function respondSuspendStatus(
     }
     respond(true, result);
   }
+}
+
+const SUSPEND_AGENT_DATABASE_CLOSE_TIMEOUT_MS = 5_000;
+
+/**
+ * A ready suspension may end in VM eviction without exit hooks. Closing idle
+ * agent databases first leaves clean-close receipts, so the next process skips
+ * dead-owner WAL recovery and its full integrity check.
+ */
+async function closeIdleAgentDatabasesForSuspend(context: GatewayRequestContext): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const close = (async () => {
+    await closeIdleOpenClawAgentDatabaseExecutions();
+    closeIdleOpenClawAgentDatabases();
+  })();
+  try {
+    await Promise.race([
+      close,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          context.logGateway.warn("idle agent database close before suspension is still running");
+          resolve();
+        }, SUSPEND_AGENT_DATABASE_CLOSE_TIMEOUT_MS);
+        timer.unref?.();
+      }),
+    ]);
+  } catch (error) {
+    context.logGateway.warn(`idle agent database close before suspension failed: ${String(error)}`);
+  } finally {
+    clearTimeout(timer);
+  }
+  void close.catch(() => {});
 }
 
 export const suspendHandlers: GatewayRequestHandlers = {
@@ -199,8 +233,12 @@ export const suspendHandlers: GatewayRequestHandlers = {
       15_000,
       { pollMs: 250 },
     );
-    // Lease expiry, replacement, and new writes can race the awaited observation.
-    const result = getGatewaySuspendStatus(suspensionId, params.includeLifecycle === true);
+    let result = getGatewaySuspendStatus(suspensionId, params.includeLifecycle === true);
+    if (result.status === "ready") {
+      await closeIdleAgentDatabasesForSuspend(context);
+      // Lease expiry, replacement, and new writes can race the awaited close.
+      result = getGatewaySuspendStatus(suspensionId, params.includeLifecycle === true);
+    }
     respondSuspendStatus(result, context, respond, "a different gateway suspension is prepared");
   },
   "gateway.suspend.resume": async ({ respond, params }) => {

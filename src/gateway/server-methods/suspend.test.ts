@@ -10,6 +10,7 @@ const coordinator = vi.hoisted(() => ({
   resume: vi.fn(),
 }));
 const outbound = vi.hoisted(() => ({ inspect: vi.fn() }));
+const agentDatabases = vi.hoisted(() => ({ closeIdle: vi.fn(), closeIdleExecutions: vi.fn() }));
 
 vi.mock("../../infra/gateway-suspend-coordinator.js", () => ({
   prepareGatewaySuspend: coordinator.prepare,
@@ -21,6 +22,14 @@ vi.mock("../../infra/delivery-queue-sqlite.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../infra/delivery-queue-sqlite.js")>();
   return { ...actual, inspectPendingDeliveryQueueDeferrals: outbound.inspect };
 });
+
+vi.mock("../../state/openclaw-agent-db-lifecycle.js", () => ({
+  closeIdleOpenClawAgentDatabases: agentDatabases.closeIdle,
+}));
+
+vi.mock("../../state/openclaw-agent-execution.js", () => ({
+  closeIdleOpenClawAgentDatabaseExecutions: agentDatabases.closeIdleExecutions,
+}));
 
 vi.mock("../server-active-work.js", () => ({
   createGatewayServerActiveWorkInspectors: vi.fn(() => ({ getChatRuns: vi.fn(() => 0) })),
@@ -239,6 +248,33 @@ describe("gateway suspend handlers", () => {
     expect(info).toHaveBeenCalledWith(
       'DRAINING activeCount=2 blockers=root-request:1,terminal-persistence:1 holders=["1 active gateway request(s): http:openai","1 pending terminal session write(s): run=run-1 session=agent:main:chat-1"] custody=held',
     );
+  });
+
+  it("closes idle agent databases before confirming a ready suspension", async () => {
+    const ready = { status: "ready", suspensionId: "suspension-ready", expiresAtMs: 123_000 };
+    const order: string[] = [];
+    coordinator.status.mockImplementation(() => {
+      order.push("status");
+      return ready;
+    });
+    agentDatabases.closeIdleExecutions.mockImplementation(async () => {
+      order.push("executions");
+    });
+    agentDatabases.closeIdle.mockImplementation(() => {
+      order.push("handles");
+    });
+
+    const { respond } = await invoke("gateway.suspend.status", {
+      suspensionId: "suspension-ready",
+    });
+
+    expect(order).toEqual(["status", "status", "executions", "handles", "status"]);
+    expect(respond).toHaveBeenCalledWith(true, ready);
+
+    agentDatabases.closeIdleExecutions.mockClear();
+    coordinator.status.mockReturnValue({ status: "running" });
+    await invoke("gateway.suspend.status", { suspensionId: "suspension-ready" });
+    expect(agentDatabases.closeIdleExecutions).not.toHaveBeenCalled();
   });
 
   it("maps prepare and status recovery to the same retryable unavailable error", async () => {
