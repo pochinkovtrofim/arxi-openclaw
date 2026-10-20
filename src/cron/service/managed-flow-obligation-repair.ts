@@ -176,6 +176,10 @@ export function managedFlowConsumedRuns(
 ): CronManagedFlowConsumedRun[] {
   earliestReceiptsByState.delete(state);
   repairDueStates.add(state);
-  return outcomes.map((outcome) => ({ jobId: outcome.jobId, startedAt: outcome.startedAt, endedAt: outcome.endedAt,
-    served: outcome.status === "ok" && outcome.triggerEval?.fired !== false }));
+  return outcomes.map((outcome) => ({
+    jobId: outcome.jobId,
+    startedAt: outcome.startedAt,
+    endedAt: outcome.endedAt,
+    served: outcome.status === "ok" && outcome.triggerEval?.fired !== false,
+  }));
 }

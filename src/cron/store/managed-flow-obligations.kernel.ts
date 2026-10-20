@@ -1,6 +1,6 @@
-import { isRecord } from "@openclaw/normalization-core/record-coerce";
 /** Durable managed-Flow Automation receipts bound to paced cron jobs; worker transaction only. */
 import type { DatabaseSync } from "node:sqlite";
+import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import {
   listTaskFlowAutomationObligationsForCronJobFromSqlite,
   transitionTaskFlowAutomationObligationPhaseInStateTransaction,
@@ -16,26 +16,50 @@ export type CronManagedFlowRepairInput = { storeKey: string; jobIds: string[] };
 export type CronManagedFlowRepairOutput = {
   changed: boolean;
   /** Earliest live receipt per job under its current schedule identity. */
-  earliest: Array<{ jobId: string; scheduleIdentity: string; scheduledAtMs: number; wakeAtMs: number }>;
+  earliest: Array<{
+    jobId: string;
+    scheduleIdentity: string;
+    scheduledAtMs: number;
+    wakeAtMs: number;
+  }>;
   invalidJobIds: string[];
 };
 
-export type CronManagedFlowConsumedRun = { jobId: string; startedAt: number; endedAt?: number; served?: boolean };
+export type CronManagedFlowConsumedRun = {
+  jobId: string;
+  startedAt: number;
+  endedAt?: number;
+  served?: boolean;
+};
 
 // Changing an enabled interval's cadence does not revoke the Flow's accepted
 // trigger. Other identity changes still block the receipt until explicit repair.
 function cadenceOnlyChange(previous: string, current: string): boolean {
   try {
-    const before: unknown = JSON.parse(previous), after: unknown = JSON.parse(current);
-    if (!isRecord(before) || !isRecord(after) || before.enabled !== true || after.enabled !== true ||
-        !isRecord(before.schedule) || !isRecord(after.schedule) || before.schedule.kind !== "every" || after.schedule.kind !== "every") return false;
-    return JSON.stringify({ ...before, schedule: after.schedule, pacing: after.pacing }) === current;
-  } catch { return false; }
+    const before: unknown = JSON.parse(previous),
+      after: unknown = JSON.parse(current);
+    if (
+      !isRecord(before) ||
+      !isRecord(after) ||
+      before.enabled !== true ||
+      after.enabled !== true ||
+      !isRecord(before.schedule) ||
+      !isRecord(after.schedule) ||
+      before.schedule.kind !== "every" ||
+      after.schedule.kind !== "every"
+    )
+      return false;
+    return (
+      JSON.stringify({ ...before, schedule: after.schedule, pacing: after.pacing }) === current
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Reinstates only a missing or later timer slot from the persisted, already-paced
- * receipt. It never recomputes pacing, enables a job, or changes a paused scheduler.
+ * Restores missing/later slots and rebinds accepted triggers after cadence edits.
+ * It never enables a job or changes a paused scheduler.
  */
 export function repairManagedFlowObligationsInDatabase(
   database: DatabaseSync,
@@ -68,21 +92,35 @@ export function repairManagedFlowObligationsInDatabase(
         }
         const live = [];
         for (const receipt of receipts) {
-          if (receipt.cronScheduleIdentity === scheduleIdentity) { live.push(receipt); continue; }
+          if (receipt.cronScheduleIdentity === scheduleIdentity) {
+            live.push(receipt);
+            continue;
+          }
           if (cadenceOnlyChange(receipt.cronScheduleIdentity, scheduleIdentity)) {
             const now = Date.now();
-            const scheduledAtMs = resolvePacedNextRunAtMs({ nowMs: now, delayMs: receipt.triggerAtMs - now, pacing: job.pacing });
+            const scheduledAtMs = resolvePacedNextRunAtMs({
+              nowMs: now,
+              delayMs: receipt.triggerAtMs - now,
+              pacing: job.pacing,
+            });
             if (scheduledAtMs !== undefined) {
               rescheduleTaskFlowAutomationObligationInStateTransaction(database, {
-                flowId: receipt.flowId, expectedFlowRevision: receipt.flowRevision, from: receipt.phase,
-                scheduledAtMs, now, scheduleIdentity,
+                flowId: receipt.flowId,
+                expectedFlowRevision: receipt.flowRevision,
+                from: receipt.phase,
+                scheduledAtMs,
+                now,
+                scheduleIdentity,
               });
               live.push({ ...receipt, cronScheduleIdentity: scheduleIdentity, scheduledAtMs });
               continue;
             }
           }
           transitionTaskFlowAutomationObligationPhaseInStateTransaction(database, {
-            flowId: receipt.flowId, expectedFlowRevision: receipt.flowRevision, from: receipt.phase, to: "blocked",
+            flowId: receipt.flowId,
+            expectedFlowRevision: receipt.flowRevision,
+            from: receipt.phase,
+            to: "blocked",
           });
         }
         const earliest = live.sort((a, b) => a.scheduledAtMs - b.scheduledAtMs)[0];
@@ -95,8 +133,9 @@ export function repairManagedFlowObligationsInDatabase(
           scheduledAtMs: earliest.scheduledAtMs,
           // The paced slot may be hours before the actual accepted trigger.
           // After a failed due run the refreshed slot supplies retry backoff.
-          wakeAtMs: Math.min(...live
-            .map(entry => Math.max(entry.triggerAtMs, entry.scheduledAtMs))),
+          wakeAtMs: Math.min(
+            ...live.map((entry) => Math.max(entry.triggerAtMs, entry.scheduledAtMs)),
+          ),
         });
         const current = job.state.nextRunAtMs;
         if (
@@ -165,10 +204,19 @@ export function suspendConsumedManagedFlowObligationsInDatabase(params: {
       if (!phase) {
         if (job.pacing && obligation.scheduledAtMs <= run.startedAt) {
           const now = run.endedAt ?? run.startedAt;
-          const scheduledAtMs = resolvePacedNextRunAtMs({ nowMs: now, delayMs: obligation.triggerAtMs - now, pacing: job.pacing });
-          if (scheduledAtMs !== undefined) rescheduleTaskFlowAutomationObligationInStateTransaction(params.database, {
-            flowId: obligation.flowId, expectedFlowRevision: obligation.flowRevision, from: obligation.phase, scheduledAtMs, now,
+          const scheduledAtMs = resolvePacedNextRunAtMs({
+            nowMs: now,
+            delayMs: obligation.triggerAtMs - now,
+            pacing: job.pacing,
           });
+          if (scheduledAtMs !== undefined)
+            rescheduleTaskFlowAutomationObligationInStateTransaction(params.database, {
+              flowId: obligation.flowId,
+              expectedFlowRevision: obligation.flowRevision,
+              from: obligation.phase,
+              scheduledAtMs,
+              now,
+            });
         }
         continue;
       }

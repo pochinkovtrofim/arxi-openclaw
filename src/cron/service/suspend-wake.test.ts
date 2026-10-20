@@ -137,7 +137,7 @@ describe("cron suspend wake policy", () => {
     }
   });
 
-  it("keeps a due managed-Flow receipt as the host wake of a never job", async () => {
+  it.each([false, true])("keeps a future Flow wake across sleep (cadence edited: %s)", async (editCadence) => {
     const { storePath } = await makeStorePath();
     const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
     const due = clock.now + 2 * HOUR_MS;
@@ -174,12 +174,18 @@ describe("cron suspend wake policy", () => {
         triggerDigest: "a".repeat(64),
       });
     });
+    if (editCadence) {
+      vi.setSystemTime(clock.now);
+      steward.schedule = { kind: "every", everyMs: 120_000 };
+      steward.pacing = { min: "2m", max: "2m" };
+      await writeCronStoreSnapshot({ storePath, jobs: [steward] });
+    }
     const service = await startedService(storePath, clock);
     try {
       // The real binding clamps the slot to pacing. The host still wakes at the later trigger.
       expect(service.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: due });
       expect((await service.list({ includeDisabled: true }))[0]?.state.nextRunAtMs).toBe(
-        clock.now + EVERY_MS,
+        clock.now + (editCadence ? 120_000 : EVERY_MS),
       );
     } finally {
       service.stop();
