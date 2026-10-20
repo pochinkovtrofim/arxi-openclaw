@@ -132,7 +132,9 @@ describe("managed Flow Automation obligation repair", () => {
         cronStoreKey: storeKey,
         cronJobId: job.id,
       })[0];
-      if (!receipt) { throw new Error("Expected durable receipt"); }
+      if (!receipt) {
+        throw new Error("Expected durable receipt");
+      }
       return receipt;
     };
     const consume = (startedAt: number, served: boolean) =>

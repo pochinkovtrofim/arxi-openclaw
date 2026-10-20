@@ -18,7 +18,10 @@ import { loadCronStore } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
 import type { CronJob } from "../types.js";
 import { summarizeCronJobSchedule } from "./jobs-scheduling.js";
-import { repairManagedFlowAutomationObligations, managedFlowRepairDue } from "./managed-flow-obligation-repair.js";
+import {
+  repairManagedFlowAutomationObligations,
+  managedFlowRepairDue,
+} from "./managed-flow-obligation-repair.js";
 import { pauseScheduling, resumeScheduling, start, stop } from "./ops-lifecycle.js";
 import { getSuspendWakeSnapshot } from "./ops-read.js";
 import { createCronServiceState } from "./state.js";
@@ -202,34 +205,62 @@ describe("cron suspend wake policy", () => {
     const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
     vi.setSystemTime(clock.now);
     const ownerKey = "agent:main:main";
-    const steward = { ...watchJob({ now: clock.now, nextRunAtMs: clock.now + EVERY_MS,
-      suspendWake: "never", pacing: { min: "5m", max: "5m" } }), sessionKey: ownerKey };
+    const steward = {
+      ...watchJob({
+        now: clock.now,
+        nextRunAtMs: clock.now + EVERY_MS,
+        suspendWake: "never",
+        pacing: { min: "5m", max: "5m" },
+      }),
+      sessionKey: ownerKey,
+    };
     await writeCronStoreSnapshot({ storePath, jobs: [steward] });
-    const flow = createManagedTaskFlow({ ownerKey, controllerId: "tests/suspend-wake",
-      goal: "goal without further coaching", status: "waiting" });
+    const flow = createManagedTaskFlow({
+      ownerKey,
+      controllerId: "tests/suspend-wake",
+      goal: "goal without further coaching",
+      status: "waiting",
+    });
     const identity = tryCronScheduleIdentity(steward);
-    if (!flow || !identity) { throw new Error("Expected managed flow and schedule"); }
+    if (!flow || !identity) {
+      throw new Error("Expected managed flow and schedule");
+    }
     runOpenClawStateWriteTransaction(({ db }) => {
       upsertTaskFlowAutomationObligationInStateTransaction(db, {
-        flowId: flow.flowId, expectedFlowRevision: flow.revision, controllerId: "tests/suspend-wake",
-        cronStoreKey: cronStoreKey(storePath), cronJobId: steward.id, cronScheduleIdentity: identity,
-        sourceRunId: "initial-goal", triggerAtMs: clock.now + 2 * HOUR_MS,
-        scheduledAtMs: clock.now + EVERY_MS, triggerKind: "check", triggerDigest: "a".repeat(64),
+        flowId: flow.flowId,
+        expectedFlowRevision: flow.revision,
+        controllerId: "tests/suspend-wake",
+        cronStoreKey: cronStoreKey(storePath),
+        cronJobId: steward.id,
+        cronScheduleIdentity: identity,
+        sourceRunId: "initial-goal",
+        triggerAtMs: clock.now + 2 * HOUR_MS,
+        scheduledAtMs: clock.now + EVERY_MS,
+        triggerKind: "check",
+        triggerDigest: "a".repeat(64),
       });
     });
     const { state } = await startedState(storePath, clock);
     try {
-      expect(getSuspendWakeSnapshot(state)).toEqual({ complete: true, nextWakeAtMs: clock.now + 2 * HOUR_MS });
+      expect(getSuspendWakeSnapshot(state)).toEqual({
+        complete: true,
+        nextWakeAtMs: clock.now + 2 * HOUR_MS,
+      });
       const movedDue = clock.now + HOUR_MS;
       const ownerFlows = createRuntimeTaskFlow().bindSession({ sessionKey: ownerKey });
-      ownerFlows.commitWithExistingAutomationObligation?.({ flowId: flow.flowId, expectedRevision: flow.revision,
+      ownerFlows.commitWithExistingAutomationObligation?.({
+        flowId: flow.flowId,
+        expectedRevision: flow.revision,
         mutation: { kind: "setWaiting", stateJson: { moved: true } },
-        obligation: { triggerAtMs: movedDue, triggerKind: "check", triggerDigest: "b".repeat(64) } });
+        obligation: { triggerAtMs: movedDue, triggerKind: "check", triggerDigest: "b".repeat(64) },
+      });
       expect(getSuspendWakeSnapshot(state).complete).toBe(false);
       expect(managedFlowRepairDue(state)).toBe(true);
       await repairManagedFlowAutomationObligations(state);
       expect(getSuspendWakeSnapshot(state)).toEqual({ complete: true, nextWakeAtMs: movedDue });
-    } finally { stop(state); }
+    } finally {
+      stop(state);
+    }
   });
 
   it("keeps the snapshot complete when a paced never job is added after startup", async () => {

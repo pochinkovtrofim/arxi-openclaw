@@ -60,7 +60,7 @@ export async function repairManagedFlowAutomationObligations(
   const jobIds = [...observed.keys()];
   if (jobIds.length === 0) {
     earliestReceiptsByState.set(state, {
-    epoch,
+      epoch,
       observed,
       invalidJobIds: new Set(),
       earliest: new Map(),
@@ -169,7 +169,8 @@ export function earliestManagedFlowObligationAtMs(
 export function managedFlowRepairDue(state: CronServiceState): boolean {
   // Only deferred jobs make the snapshot read the receipts.
   return (
-    (repairDueStates.has(state) || earliestReceiptsByState.get(state)?.epoch !== managedFlowObligationSnapshotEpoch()) &&
+    (repairDueStates.has(state) ||
+      earliestReceiptsByState.get(state)?.epoch !== managedFlowObligationSnapshotEpoch()) &&
     (state.store?.jobs.some((job) => isJobEnabled(job) && isSuspendWakeDeferredJob(job)) ?? false)
   );
 }

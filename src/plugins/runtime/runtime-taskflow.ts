@@ -9,13 +9,13 @@ import {
   recordManagedFlowAutomationObligationProposal,
 } from "../../infra/agent-run-registry.js";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
+import { invalidateManagedFlowObligationSnapshots } from "../../tasks/task-flow-automation-obligation-invalidation.js";
 import {
   getTaskFlowAutomationObligationFromSqlite,
   listTaskFlowAutomationObligationsForCronJobFromSqlite,
   removeTaskFlowAutomationObligationForTerminalFlowInStateTransaction,
   upsertTaskFlowAutomationObligationInStateTransaction,
 } from "../../tasks/task-flow-automation-obligation.store.sqlite.js";
-import { invalidateManagedFlowObligationSnapshots } from "../../tasks/task-flow-automation-obligation-invalidation.js";
 import {
   findLatestTaskFlowForOwner,
   getTaskFlowByIdForOwner,
@@ -147,7 +147,10 @@ function assertCurrentManagedAutomationRun(params: {
 function readBoundAutomationJob(params: {
   db: DatabaseSync;
   ownerKey: string;
-  binding: Pick<NonNullable<ReturnType<typeof getCurrentPacedCronRunBinding>>, "cronStoreKey" | "jobId" | "cronScheduleIdentity">;
+  binding: Pick<
+    NonNullable<ReturnType<typeof getCurrentPacedCronRunBinding>>,
+    "cronStoreKey" | "jobId" | "cronScheduleIdentity"
+  >;
 }) {
   const binding = params.binding;
   if (!binding) {
@@ -285,62 +288,100 @@ function createBoundTaskFlowRuntime(params: {
     };
   };
 
-  const commitWithExistingAutomationObligation: NonNullable<BoundTaskFlowRuntime["commitWithExistingAutomationObligation"]> = (input) => {
-    const managed = assertManagedFlow(getTaskFlowByIdForOwner({ flowId: input.flowId, callerOwnerKey: ownerKey }));
-    if (managed.endedAt != null || managed.cancelRequestedAt != null ||
-        ["succeeded", "failed", "cancelled", "lost"].includes(managed.status)) {
+  const commitWithExistingAutomationObligation: NonNullable<
+    BoundTaskFlowRuntime["commitWithExistingAutomationObligation"]
+  > = (input) => {
+    const managed = assertManagedFlow(
+      getTaskFlowByIdForOwner({ flowId: input.flowId, callerOwnerKey: ownerKey }),
+    );
+    if (
+      managed.endedAt != null ||
+      managed.cancelRequestedAt != null ||
+      ["succeeded", "failed", "cancelled", "lost"].includes(managed.status)
+    ) {
       throw new Error("Managed Flow obligation cannot revive a terminal or cancelled Flow.");
     }
     const prepared = prepareManagedTaskFlowMutation({
-      ownerKey, controllerId: managed.controllerId, flowId: managed.flowId,
-      expectedRevision: input.expectedRevision, patch: managedObligationPatch(input.mutation),
+      ownerKey,
+      controllerId: managed.controllerId,
+      flowId: managed.flowId,
+      expectedRevision: input.expectedRevision,
+      patch: managedObligationPatch(input.mutation),
     });
     if (!isPreparedManagedTaskFlowMutation(prepared)) {
       throw new Error("Managed Flow obligation mutation was rejected.");
     }
     const now = Date.now();
-    const committed = runOpenClawStateWriteTransaction(({ db }) => {
-      const receipt = getTaskFlowAutomationObligationFromSqlite(db, managed.flowId);
-      // No existing authority: leave both Flow and scheduler untouched for the caller.
-      if (!receipt) {
-        return undefined;
-      }
-      if (receipt.controllerId !== managed.controllerId || receipt.phase === "blocked") {
-        throw new Error("Managed Flow obligation binding is unavailable.");
-      }
-      if (params.getRuntimeConfig?.()?.cron?.enabled === false) {
-        throw new Error("Managed Flow obligation is unavailable while Automations are paused.");
-      }
-      if (!Number.isSafeInteger(input.obligation.triggerAtMs) || input.obligation.triggerAtMs <= now) {
-        throw new Error("Managed Flow obligation trigger must be strictly future.");
-      }
-      const job = readBoundAutomationJob({ db, ownerKey, binding: {
-        cronStoreKey: receipt.cronStoreKey, jobId: receipt.cronJobId,
-        cronScheduleIdentity: receipt.cronScheduleIdentity,
-      } });
-      if (!job.pacing) {
-        throw new Error("Managed Flow obligation current Automation pacing is unavailable.");
-      }
-      const scheduledAtMs = resolvePacedNextRunAtMs({ nowMs: now,
-        delayMs: input.obligation.triggerAtMs - now, pacing: job.pacing });
-      if (typeof scheduledAtMs !== "number" || !Number.isSafeInteger(scheduledAtMs) || scheduledAtMs <= now) {
-        throw new Error("Managed Flow obligation cannot resolve a paced next run.");
-      }
-      commitPreparedManagedTaskFlowMutationInStateTransaction(db, prepared);
-      return upsertTaskFlowAutomationObligationInStateTransaction(db, {
-        flowId: managed.flowId, expectedFlowRevision: prepared.flow.revision,
-        controllerId: managed.controllerId, cronStoreKey: receipt.cronStoreKey,
-        cronJobId: receipt.cronJobId, cronScheduleIdentity: receipt.cronScheduleIdentity,
-        sourceRunId: receipt.sourceRunId, ...input.obligation, scheduledAtMs, now,
-      });
-    }, {}, { operationLabel: "task-flow.existing-automation-obligation-commit" });
+    const committed = runOpenClawStateWriteTransaction(
+      ({ db }) => {
+        const receipt = getTaskFlowAutomationObligationFromSqlite(db, managed.flowId);
+        // No existing authority: leave both Flow and scheduler untouched for the caller.
+        if (!receipt) {
+          return undefined;
+        }
+        if (receipt.controllerId !== managed.controllerId || receipt.phase === "blocked") {
+          throw new Error("Managed Flow obligation binding is unavailable.");
+        }
+        if (params.getRuntimeConfig?.()?.cron?.enabled === false) {
+          throw new Error("Managed Flow obligation is unavailable while Automations are paused.");
+        }
+        if (
+          !Number.isSafeInteger(input.obligation.triggerAtMs) ||
+          input.obligation.triggerAtMs <= now
+        ) {
+          throw new Error("Managed Flow obligation trigger must be strictly future.");
+        }
+        const job = readBoundAutomationJob({
+          db,
+          ownerKey,
+          binding: {
+            cronStoreKey: receipt.cronStoreKey,
+            jobId: receipt.cronJobId,
+            cronScheduleIdentity: receipt.cronScheduleIdentity,
+          },
+        });
+        if (!job.pacing) {
+          throw new Error("Managed Flow obligation current Automation pacing is unavailable.");
+        }
+        const scheduledAtMs = resolvePacedNextRunAtMs({
+          nowMs: now,
+          delayMs: input.obligation.triggerAtMs - now,
+          pacing: job.pacing,
+        });
+        if (
+          typeof scheduledAtMs !== "number" ||
+          !Number.isSafeInteger(scheduledAtMs) ||
+          scheduledAtMs <= now
+        ) {
+          throw new Error("Managed Flow obligation cannot resolve a paced next run.");
+        }
+        commitPreparedManagedTaskFlowMutationInStateTransaction(db, prepared);
+        return upsertTaskFlowAutomationObligationInStateTransaction(db, {
+          flowId: managed.flowId,
+          expectedFlowRevision: prepared.flow.revision,
+          controllerId: managed.controllerId,
+          cronStoreKey: receipt.cronStoreKey,
+          cronJobId: receipt.cronJobId,
+          cronScheduleIdentity: receipt.cronScheduleIdentity,
+          sourceRunId: receipt.sourceRunId,
+          ...input.obligation,
+          scheduledAtMs,
+          now,
+        });
+      },
+      {},
+      { operationLabel: "task-flow.existing-automation-obligation-commit" },
+    );
     if (!committed) {
       return undefined;
     }
     invalidateManagedFlowObligationSnapshots();
-    return { flow: assertManagedFlow(publishPreparedManagedTaskFlowMutation(prepared)),
-      obligationId: committed.obligationId, boundJobId: committed.cronJobId,
-      nextRunAtMs: committed.scheduledAtMs };
+    return {
+      flow: assertManagedFlow(publishPreparedManagedTaskFlowMutation(prepared)),
+      obligationId: committed.obligationId,
+      boundJobId: committed.cronJobId,
+      nextRunAtMs: committed.scheduledAtMs,
+    };
   };
 
   const createManagedWithCurrentAutomationObligation = (input: {

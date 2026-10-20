@@ -196,7 +196,8 @@ export function suspendConsumedManagedFlowObligationsInDatabase(params: {
       continue;
     }
     for (const obligation of scheduled) {
-      const changedCadence = obligation.cronScheduleIdentity !== scheduleIdentity &&
+      const changedCadence =
+        obligation.cronScheduleIdentity !== scheduleIdentity &&
         cadenceOnlyChange(obligation.cronScheduleIdentity, scheduleIdentity);
       const phase =
         obligation.cronScheduleIdentity !== scheduleIdentity && !changedCadence
