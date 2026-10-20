@@ -311,7 +311,8 @@ describe("memory runtime handles", () => {
     };
     mocks.getMemoryRuntime.mockReturnValue(runtime);
 
-    const resumeAll = await suspendMemorySearchManagersCore();
+    const { resume: resumeAll, errors } = await suspendMemorySearchManagersCore();
+    expect(errors).toEqual([]);
     expect(runtime.suspendMemorySearchManagers).toHaveBeenCalledOnce();
     expect(runtime.closeAllMemorySearchManagers).not.toHaveBeenCalled();
     expect(resume).not.toHaveBeenCalled();
@@ -325,9 +326,32 @@ describe("memory runtime handles", () => {
     const runtime = createRuntime();
     mocks.getMemoryRuntime.mockReturnValue(runtime);
 
-    (await suspendMemorySearchManagersCore())({ cfg: memoryConfig });
+    (await suspendMemorySearchManagersCore()).resume({ cfg: memoryConfig });
 
     expect(runtime.closeAllMemorySearchManagers).not.toHaveBeenCalled();
+  });
+
+  it("resumes the other memory runtimes when one fails to suspend", async () => {
+    const failure = new Error("suspend failed");
+    const standalone = createRegistry({
+      ...createRuntime(),
+      suspendMemorySearchManagers: vi.fn(async () => {
+        throw failure;
+      }),
+    });
+    mocks.loadPluginRegistryHandle.mockReturnValue(standalone.registry);
+    await getActiveMemorySearchManagerCore({ cfg: memoryConfig, agentId: "main" });
+    const resume = vi.fn();
+    mocks.getMemoryRuntime.mockReturnValue({
+      ...createRuntime(),
+      suspendMemorySearchManagers: vi.fn(async () => ({ resume })),
+    });
+
+    const suspension = await suspendMemorySearchManagersCore();
+    suspension.resume({ cfg: memoryConfig });
+
+    expect(suspension.errors).toEqual([failure]);
+    expect(resume).toHaveBeenCalledWith({ cfg: memoryConfig });
   });
 
   it.each(["present", "missing"] as const)(

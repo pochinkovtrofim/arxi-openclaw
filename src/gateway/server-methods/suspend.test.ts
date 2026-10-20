@@ -269,7 +269,7 @@ describe("gateway suspend handlers", () => {
     });
     agentDatabases.suspendMemory.mockImplementation(async () => {
       order.push("memory");
-      return vi.fn();
+      return { resume: vi.fn(), errors: [] };
     });
     agentDatabases.closeIdleExecutions.mockImplementation(async () => {
       order.push("executions");
@@ -309,13 +309,13 @@ describe("gateway suspend handlers", () => {
     agentDatabases.closeIdleExecutions.mockResolvedValue({ closed: 0, busy: 0 });
     agentDatabases.closeIdle.mockReturnValue({ closed: 0, borrowed: 0, transaction: 0, failed: 0 });
     const resumeMemory = vi.fn();
-    let finishSuspend!: (resume: typeof resumeMemory) => void;
+    let finishSuspend!: (suspension: { resume: typeof resumeMemory; errors: unknown[] }) => void;
     agentDatabases.suspendMemory.mockReturnValueOnce(
       new Promise((resolve) => {
         finishSuspend = resolve;
       }),
     );
-    agentDatabases.suspendMemory.mockResolvedValue(vi.fn());
+    agentDatabases.suspendMemory.mockResolvedValue({ resume: vi.fn(), errors: [] });
 
     vi.useFakeTimers();
     const status = invoke("gateway.suspend.status", { suspensionId: "s" });
@@ -326,7 +326,7 @@ describe("gateway suspend handlers", () => {
     options.resumeScheduling();
     expect(resumeMemory).not.toHaveBeenCalled();
 
-    finishSuspend(resumeMemory);
+    finishSuspend({ resume: resumeMemory, errors: [] });
     await vi.waitFor(() => expect(resumeMemory).toHaveBeenCalledWith({ cfg: runtimeConfig }));
     options.resumeScheduling();
     expect(resumeMemory).toHaveBeenCalledOnce();

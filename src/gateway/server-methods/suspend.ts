@@ -126,8 +126,10 @@ async function closeIdleAgentDatabasesForSuspend(context: GatewayRequestContext)
   let timer: ReturnType<typeof setTimeout> | undefined;
   const close = (async () => {
     const memory = suspendMemorySearchManagersCore();
-    pendingMemoryResume ??= memory.catch(() => undefined);
-    await memory;
+    pendingMemoryResume ??= memory.then(({ resume }) => resume);
+    for (const error of (await memory).errors) {
+      context.logGateway.warn(`memory close before suspension failed: ${String(error)}`);
+    }
     const executions = await closeIdleOpenClawAgentDatabaseExecutions();
     const handles = closeIdleOpenClawAgentDatabases();
     // Busy or borrowed owners keep their leases; the next process sees them as dirty.

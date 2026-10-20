@@ -243,7 +243,10 @@ export default definePluginEntry({
       ...createLazyMemoryRuntime(host),
       async suspendMemorySearchManagers() {
         // Closing releases each index's agent database borrow, so the database can close cleanly.
-        await memoryRuntime.closeAllMemorySearchManagers?.();
+        // A failed close may still have closed other indexes; resume restores them either way.
+        await memoryRuntime.closeAllMemorySearchManagers?.().catch((error: unknown) => {
+          api.logger.warn(`memory-core: index close before suspension failed: ${String(error)}`);
+        });
         return { resume: ({ cfg }) => restoreIndexes(cfg, (message) => api.logger.warn(message)) };
       },
     };

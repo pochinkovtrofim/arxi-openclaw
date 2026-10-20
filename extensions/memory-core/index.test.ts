@@ -569,6 +569,19 @@ describe("memory-core plugin runtime registration", () => {
     ]);
   });
 
+  it("restores indexes after a partly failed close before suspension", async () => {
+    markMemoryIndexingLive();
+    const config: OpenClawConfig = { agents: { entries: { main: {} } } };
+    const { suspend, backgroundTasks } = registerSuspendableRuntime(config);
+    closeAllMemorySearchManagersMock.mockRejectedValueOnce(new Error("one index close failed"));
+
+    const suspension = await suspend();
+    suspension.resume({ cfg: config });
+    await Promise.all(backgroundTasks);
+
+    expect(getMemorySearchManagerMock.mock.calls).toEqual([[{ cfg: config, agentId: "main" }]]);
+  });
+
   it.each([
     { cleanupOwner: "stop", cleanupFails: false },
     { cleanupOwner: "stop", cleanupFails: true },

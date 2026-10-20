@@ -424,23 +424,26 @@ export async function closeActiveMemorySearchManagersCore(cfg?: OpenClawConfig):
 }
 
 /** Releases memory managers' agent database borrows before host suspension. */
-export async function suspendMemorySearchManagersCore(): Promise<
-  (params: { cfg: OpenClawConfig }) => void
-> {
-  const suspended = await Promise.all(
-    listCurrentMemoryRuntimes().map(async (runtime) => {
-      const suspension = await runPluginCleanup(runtime, () =>
-        runtime.suspendMemorySearchManagers?.(),
-      );
-      return suspension ? { runtime, suspension } : undefined;
-    }),
+export async function suspendMemorySearchManagersCore(): Promise<{
+  resume(params: { cfg: OpenClawConfig }): void;
+  errors: unknown[];
+}> {
+  const results = await Promise.allSettled(
+    listCurrentMemoryRuntimes().map(async (runtime) => ({
+      runtime,
+      suspension: await runPluginCleanup(runtime, () => runtime.suspendMemorySearchManagers?.()),
+    })),
   );
-  return (params) => {
+  // One runtime's failure must not cost the others their resume.
+  const suspended = results.flatMap((result) =>
+    result.status === "fulfilled" ? [result.value] : [],
+  );
+  const resume = (params: { cfg: OpenClawConfig }) => {
     const errors: unknown[] = [];
-    for (const entry of suspended) {
+    for (const { runtime, suspension } of suspended) {
       try {
-        if (entry) {
-          runPluginCleanup(entry.runtime, () => entry.suspension.resume(params));
+        if (suspension) {
+          runPluginCleanup(runtime, () => suspension.resume(params));
         }
       } catch (error) {
         errors.push(error);
@@ -449,6 +452,10 @@ export async function suspendMemorySearchManagersCore(): Promise<
     if (errors.length > 0) {
       throw new AggregateError(errors, "Memory resume after suspension failed");
     }
+  };
+  return {
+    resume,
+    errors: results.flatMap((result) => (result.status === "rejected" ? [result.reason] : [])),
   };
 }
 
