@@ -127,11 +127,14 @@ describe("managed Flow Automation obligation repair", () => {
       triggerDigest: "b".repeat(64),
       now: 0,
     });
-    const read = () =>
-      listTaskFlowAutomationObligationsForCronJobFromSqlite(db, {
+    const read = () => {
+      const receipt = listTaskFlowAutomationObligationsForCronJobFromSqlite(db, {
         cronStoreKey: storeKey,
         cronJobId: job.id,
       })[0];
+      if (!receipt) { throw new Error("Expected durable receipt"); }
+      return receipt;
+    };
     const consume = (startedAt: number, served: boolean) =>
       suspendConsumedManagedFlowObligationsInDatabase({
         database: db,
@@ -143,10 +146,17 @@ describe("managed Flow Automation obligation repair", () => {
     expect(read().phase).toBe("bound");
     expect(read().scheduledAtMs).toBe(1_200_100);
     expect(read().triggerAtMs).toBe(10_800_000);
+    // A cadence edit can land while an earlier check is running, before repair.
+    job.schedule = { kind: "every", everyMs: 120_000 };
+    job.pacing = { min: "2m", max: "2m" };
+    consume(1_200_100, true);
+    expect(read().phase).toBe("bound");
+    expect(read().cronScheduleIdentity).toBe(tryCronScheduleIdentity(job));
+    expect(read().scheduledAtMs).toBe(1_320_200);
     consume(10_800_000, false);
     expect(read().phase).toBe("bound");
-    expect(read().scheduledAtMs).toBe(11_400_100);
-    consume(11_400_100, true);
+    expect(read().scheduledAtMs).toBe(10_920_100);
+    consume(10_920_100, true);
     expect(read().phase).toBe("suspended");
   });
 });

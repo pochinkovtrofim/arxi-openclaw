@@ -47,8 +47,9 @@ function cadenceOnlyChange(previous: string, current: string): boolean {
       !isRecord(after.schedule) ||
       before.schedule.kind !== "every" ||
       after.schedule.kind !== "every"
-    )
+    ) {
       return false;
+    }
     return (
       JSON.stringify({ ...before, schedule: after.schedule, pacing: after.pacing }) === current
     );
@@ -123,7 +124,7 @@ export function repairManagedFlowObligationsInDatabase(
             to: "blocked",
           });
         }
-        const earliest = live.sort((a, b) => a.scheduledAtMs - b.scheduledAtMs)[0];
+        const earliest = live.toSorted((a, b) => a.scheduledAtMs - b.scheduledAtMs)[0];
         if (!earliest) {
           continue;
         }
@@ -195,28 +196,32 @@ export function suspendConsumedManagedFlowObligationsInDatabase(params: {
       continue;
     }
     for (const obligation of scheduled) {
+      const changedCadence = obligation.cronScheduleIdentity !== scheduleIdentity &&
+        cadenceOnlyChange(obligation.cronScheduleIdentity, scheduleIdentity);
       const phase =
-        obligation.cronScheduleIdentity !== scheduleIdentity
+        obligation.cronScheduleIdentity !== scheduleIdentity && !changedCadence
           ? "blocked"
           : obligation.triggerAtMs <= run.startedAt && run.served !== false
             ? "suspended"
             : undefined;
       if (!phase) {
-        if (job.pacing && obligation.scheduledAtMs <= run.startedAt) {
+        if (job.pacing && (changedCadence || obligation.scheduledAtMs <= run.startedAt)) {
           const now = run.endedAt ?? run.startedAt;
           const scheduledAtMs = resolvePacedNextRunAtMs({
             nowMs: now,
             delayMs: obligation.triggerAtMs - now,
             pacing: job.pacing,
           });
-          if (scheduledAtMs !== undefined)
+          if (scheduledAtMs !== undefined) {
             rescheduleTaskFlowAutomationObligationInStateTransaction(params.database, {
               flowId: obligation.flowId,
               expectedFlowRevision: obligation.flowRevision,
               from: obligation.phase,
               scheduledAtMs,
               now,
+              ...(changedCadence ? { scheduleIdentity } : {}),
             });
+          }
         }
         continue;
       }

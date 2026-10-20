@@ -121,6 +121,23 @@ function requireLiveManagedFlow(
   }
 }
 
+export function getTaskFlowAutomationObligationFromSqlite(
+  db: DatabaseSync,
+  flowId: string,
+): TaskFlowAutomationObligation | undefined {
+  if (!tableExists(db, "task_flow_automation_obligations")) {
+    return undefined;
+  }
+  const row = executeSqliteQueryTakeFirstSync<ObligationRow>(
+    db,
+    getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
+      .selectFrom("task_flow_automation_obligations")
+      .selectAll()
+      .where("flow_id", "=", requireText(flowId, "flow id")),
+  );
+  return row ? rowToObligation(row) : undefined;
+}
+
 /** Must run inside the caller's existing state write transaction with its Flow CAS. */
 export function upsertTaskFlowAutomationObligationInStateTransaction(
   db: DatabaseSync,
