@@ -2,6 +2,9 @@ import {
   DEFAULT_LLAMA_CPP_CONTEXT_SIZE,
   DEFAULT_LLAMA_CPP_EMBEDDING_CONTEXT_SIZE,
   DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID,
+  DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_CONTEXT_SIZE,
+  DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID,
+  DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_THREADS,
 } from "./defaults.js";
 
 export type ManagedLlamaChatModel =
@@ -81,6 +84,8 @@ const PRESET_KEY_ALIASES: Record<string, string> = {
   np: "parallel",
   LLAMA_ARG_N_PARALLEL: "parallel",
   LLAMA_ARG_KV_UNIFIED_PER_SLOT: "kv-unified-per-slot",
+  t: "threads",
+  LLAMA_ARG_THREADS: "threads",
 };
 
 const PRESET_SETTING_PATTERN =
@@ -110,6 +115,29 @@ function readServiceSettingKeys(service: LlamaServerPresetOptions["serviceSettin
       .map((arg) => (arg.startsWith("--") ? arg.slice(2).replaceAll("_", "-") : arg.slice(1))),
   ];
   return new Set(keys.map((key) => PRESET_KEY_ALIASES[key] ?? key));
+}
+
+// Resident router models: the managed launch passes --models-max 2.
+function readRouterModelCapacity(service: LlamaServerPresetOptions["serviceSettings"]): number {
+  const args = service?.args ?? [];
+  const index = args.findLastIndex((arg) => arg === "--models-max" || arg === "--models_max");
+  // Windows reads environment names case-insensitively, as readServiceSettingKeys does.
+  const envValue = Object.entries(service?.env ?? {}).find(([key, value]) =>
+    value === undefined
+      ? false
+      : process.platform === "win32"
+        ? key.toUpperCase() === "LLAMA_ARG_MODELS_MAX"
+        : key === "LLAMA_ARG_MODELS_MAX",
+  )?.[1];
+  const configured = index >= 0 ? args[index + 1] : envValue;
+  const capacity = Number(configured ?? 2);
+  // Zero means unlimited in llama.cpp.
+  return capacity === 0 ? Number.POSITIVE_INFINITY : Number.isFinite(capacity) ? capacity : 2;
+}
+
+/** Whether a managed preset carries the search query lane model. */
+export function presetHasQueryLane(contents: string): boolean {
+  return readModelSections(contents).sections.has(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID);
 }
 
 function updateModelSection(
@@ -159,6 +187,7 @@ export function buildLlamaServerPreset(
     if (
       id !== "*" &&
       id !== DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID &&
+      id !== DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID &&
       (params.chatModel.mode === "remove" ||
         (configuredIds && !configuredIds.has(normalizePresetName(id))))
     ) {
@@ -178,51 +207,92 @@ export function buildLlamaServerPreset(
       newline,
     );
   }
+  // The router keeps two models resident. A local chat model needs the second
+  // place, so the query lane only exists while embeddings have the router alone.
+  const queryLane =
+    ![...sections.keys()].some(
+      (id) =>
+        id !== "*" &&
+        id !== DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID &&
+        id !== DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID,
+    ) && readRouterModelCapacity(params.serviceSettings) >= 2;
+  if (!queryLane) {
+    sections.delete(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID);
+  }
   const embeddingPath =
     params.embeddingModelPath ??
     (!sections.has(DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID)
       ? params.defaultEmbeddingModelPath
       : undefined);
   if (embeddingPath) {
-    const configured = new Set([
-      ...readSettingKeys(sections.get(DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID)),
+    const shared = [
       ...readSettingKeys(sections.get("*")),
       ...readServiceSettingKeys(params.serviceSettings),
-    ]);
-    // One slot bounds the vocabulary-sized output buffer to one input (ggml-org/llama.cpp#29388).
-    const defaults: Record<string, string> = {
-      parallel: "1",
-      "ctx-size": String(DEFAULT_LLAMA_CPP_EMBEDDING_CONTEXT_SIZE),
-      "ubatch-size": String(DEFAULT_LLAMA_CPP_EMBEDDING_CONTEXT_SIZE),
+    ];
+    const capacityDefaults = (id: string, defaults: Record<string, string>) => {
+      const configured = new Set([...readSettingKeys(sections.get(id)), ...shared]);
+      // Explicit slots can divide total context; a per-slot cap can also auto-size it.
+      if (configured.has("parallel") || configured.has("kv-unified-per-slot")) {
+        delete defaults["ctx-size"];
+      }
+      for (const key of configured) {
+        delete defaults[key];
+      }
+      return defaults;
     };
-    // Explicit slots can divide total context; a per-slot cap can also auto-size it.
-    if (configured.has("parallel") || configured.has("kv-unified-per-slot")) {
-      delete defaults["ctx-size"];
-    }
-    for (const key of configured) {
-      delete defaults[key];
-    }
+    const model = assertIniValue(embeddingPath, "llama.cpp embedding model path");
+    // One slot bounds the vocabulary-sized output buffer to one input (ggml-org/llama.cpp#29388).
     updateModelSection(
       sections,
       DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID,
       {
-        model: assertIniValue(embeddingPath, "llama.cpp embedding model path"),
+        model,
         embedding: "true",
-        ...defaults,
+        ...capacityDefaults(DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID, {
+          parallel: "1",
+          "ctx-size": String(DEFAULT_LLAMA_CPP_EMBEDDING_CONTEXT_SIZE),
+          "ubatch-size": String(DEFAULT_LLAMA_CPP_EMBEDDING_CONTEXT_SIZE),
+        }),
       },
       newline,
     );
+    // The query lane follows the embedding weights with a short context and few threads.
+    if (queryLane) {
+      updateModelSection(
+        sections,
+        DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID,
+        {
+          model,
+          embedding: "true",
+          ...capacityDefaults(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID, {
+            parallel: "1",
+            "ctx-size": String(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_CONTEXT_SIZE),
+            "ubatch-size": String(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_CONTEXT_SIZE),
+          }),
+          // More threads queue behind index work on the same cores; only this section overrides it.
+          ...(readSettingKeys(sections.get(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID)).has(
+            "threads",
+          )
+            ? {}
+            : { threads: String(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_THREADS) }),
+        },
+        newline,
+      );
+    }
   }
   const embeddingSection = sections.get(DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID);
   if (!embeddingSection) {
     throw new Error("llama.cpp embedding model path is required for a new managed preset");
   }
+  const querySection = sections.get(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID);
   sections.delete(DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID);
+  sections.delete(DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID);
   const orderedSections = [
     ...[...sections]
       .toSorted(([left], [right]) => Number(left > right) - Number(left < right))
       .map(([, section]) => section),
     embeddingSection,
+    ...(querySection ? [querySection] : []),
   ];
   return (
     header +

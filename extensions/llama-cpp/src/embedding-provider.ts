@@ -37,6 +37,8 @@ type LocalServiceAwareOptions = EmbeddingProviderCreateOptions & {
 };
 
 const LOCAL_EMBEDDING_RUNTIME_FACTS = Symbol.for("openclaw.localEmbeddingRuntimeFacts");
+// A failed query lane serves nothing for this long; queries use the main model meanwhile.
+const QUERY_LANE_RETRY_MS = 5 * 60_000;
 let verifiedDefaultFile: { fingerprint: string; path: string } | undefined;
 
 function resolveVerifiedDefaultFile(cachePath: string): string | undefined {
@@ -155,7 +157,7 @@ function resolveProviderPort(provider: ModelProviderConfig): number {
 async function prepareEmbeddingServer(
   options: EmbeddingProviderCreateOptions,
   embeddingSource: string,
-): Promise<void> {
+): Promise<{ queryEmbeddingModel?: string }> {
   const provider = resolveManagedLlamaCppProviderConfig(options.config);
   const cacheDir = resolveLlamaCppModelCacheDir(provider);
   const embeddingModelPath = await ensureLlamaCppModel({
@@ -163,7 +165,7 @@ async function prepareEmbeddingServer(
     cacheDir,
     download: true,
   });
-  await prepareManagedLlamaServer({
+  return await prepareManagedLlamaServer({
     chatModel: { mode: "preserve" },
     configuredChatModelIds: provider.models.map((model) => model.id),
     embeddingModelPath,
@@ -175,10 +177,28 @@ async function prepareEmbeddingServer(
 
 function wrapProvider(params: {
   provider: EmbeddingProvider;
+  queryProvider?: EmbeddingProvider;
   canonicalModel: string;
   baseUrl: string;
 }): EmbeddingProvider {
   let runtimeFacts: LlamaServerRuntimeFacts | undefined;
+  let queryLaneRetryAt = 0;
+  const embedQuery: EmbeddingProvider["embed"] = async (input, callOptions) => {
+    const lane = params.queryProvider;
+    if (lane && Date.now() >= queryLaneRetryAt) {
+      try {
+        return await lane.embed(input, callOptions);
+      } catch (error) {
+        if (callOptions?.signal?.aborted) {
+          throw error;
+        }
+        // The lane only adds speed; an overlong query or a lane that cannot
+        // load is answered by the main model, which accepts the full context.
+        queryLaneRetryAt = Date.now() + QUERY_LANE_RETRY_MS;
+      }
+    }
+    return await params.provider.embed(input, callOptions);
+  };
   const schedule = resolveLocalEmbeddingSchedule(params.baseUrl);
   const refreshFacts = async (loadError?: string) => {
     runtimeFacts = await inspectLlamaServerRuntime({
@@ -205,7 +225,7 @@ function wrapProvider(params: {
     maxInputTokens: params.provider.maxInputTokens ?? DEFAULT_LLAMA_CPP_EMBEDDING_CONTEXT_SIZE - 4,
     embed: async (input, callOptions) =>
       await schedule.runQuery(
-        async () => await withFacts(async () => await params.provider.embed(input, callOptions)),
+        async () => await withFacts(async () => await embedQuery(input, callOptions)),
       ),
     embedBatch: async (inputs, callOptions) =>
       await withFacts(
@@ -239,30 +259,37 @@ export const llamaCppEmbeddingProviderAdapter: EmbeddingProviderAdapter = {
     const local = readIdentityLocalOptions(options);
     const embeddingModel = resolveLlamaCppEmbeddingModel(local);
     const identity = resolveModelIdentity(local, options.dimensions);
-    await prepareEmbeddingServer(options, embeddingModel.source);
+    const server = await prepareEmbeddingServer(options, embeddingModel.source);
     const genericAdapter = getEmbeddingProvider("openai-compatible", options.config);
     if (!genericAdapter) {
       throw new Error("OpenAI-compatible embedding transport is unavailable.");
     }
     const acquireLocalService = (options as LocalServiceAwareOptions).acquireLocalService; // SAFETY: core runtime owns this injected option.
-    const result = await genericAdapter.create({
-      ...options,
-      provider: LLAMA_CPP_PROVIDER_ID,
-      model: DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID,
-      remote: undefined,
-      ...(acquireLocalService
-        ? {
-            acquireLocalService: (...[target, signal]: Parameters<AcquireLocalService>) =>
-              acquireLocalService({ ...target, reconcile: reconcileLocalService }, signal),
-          }
-        : {}),
-    });
+    const createTransport = async (model: string) =>
+      await genericAdapter.create({
+        ...options,
+        provider: LLAMA_CPP_PROVIDER_ID,
+        model,
+        remote: undefined,
+        ...(acquireLocalService
+          ? {
+              acquireLocalService: (...[target, signal]: Parameters<AcquireLocalService>) =>
+                acquireLocalService({ ...target, reconcile: reconcileLocalService }, signal),
+            }
+          : {}),
+      });
+    const result = await createTransport(DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID);
     if (!result.provider) {
       return result;
     }
+    // Only a managed preset with room for a second model carries the query lane.
+    const queryProvider = server?.queryEmbeddingModel
+      ? (await createTransport(server.queryEmbeddingModel)).provider
+      : undefined;
     return {
       provider: wrapProvider({
         provider: result.provider,
+        ...(queryProvider ? { queryProvider } : {}),
         canonicalModel: identity.model,
         baseUrl: resolveManagedLlamaCppProviderConfig(options.config).baseUrl ?? "",
       }),

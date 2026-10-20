@@ -126,6 +126,48 @@ describe("managed llama.cpp embedding provider", () => {
     expect(mocks.inspectRuntime).toHaveBeenCalledTimes(2);
   });
 
+  it("embeds queries on the query lane of a managed preset and falls back to the main model", async () => {
+    mocks.prepareServer.mockResolvedValue({
+      queryEmbeddingModel: "embeddinggemma-300m-qat-q8_0-query",
+    });
+    const lane = {
+      ...generic,
+      model: "embeddinggemma-300m-qat-q8_0-query",
+      embed: vi.fn(async () => [0, 1]),
+    };
+    mocks.genericCreate.mockImplementation(async ({ model }: { model: string }) => ({
+      provider: model.endsWith("-query") ? lane : generic,
+      runtime: { id: "openai-compatible" },
+    }));
+    const provider = (await llamaCppEmbeddingProviderAdapter.create(managedOptions(19462)))
+      .provider;
+    expect(provider).toBeDefined();
+    if (!provider) {
+      return;
+    }
+    expect(mocks.genericCreate.mock.calls.map(([options]) => options.model)).toEqual([
+      "embeddinggemma-300m-qat-q8_0",
+      "embeddinggemma-300m-qat-q8_0-query",
+    ]);
+
+    expect(await provider.embed("q", { inputType: "query" })).toEqual([0, 1]);
+    expect(generic.embed).not.toHaveBeenCalled();
+
+    lane.embed.mockRejectedValueOnce(new Error("input is too large"));
+    expect(await provider.embed("long", { inputType: "query" })).toEqual([0.6, 0.8]);
+    // A failed lane rests; the next query goes straight to the main model.
+    expect(await provider.embed("next", { inputType: "query" })).toEqual([0.6, 0.8]);
+    expect(lane.embed).toHaveBeenCalledTimes(2);
+    expect(generic.embed).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps queries on the main model when the preset has no query lane", async () => {
+    const provider = (await llamaCppEmbeddingProviderAdapter.create(managedOptions(19463)))
+      .provider;
+    expect(await provider?.embed("q", { inputType: "query" })).toEqual([0.6, 0.8]);
+    expect(mocks.genericCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("serializes index batches from every manager that shares the same server", async () => {
     const first = (await llamaCppEmbeddingProviderAdapter.create(managedOptions(19461))).provider;
     const second = (await llamaCppEmbeddingProviderAdapter.create(managedOptions(19461))).provider;

@@ -17,7 +17,7 @@ import {
 import { WorkerTaskError } from "openclaw/plugin-sdk/process-runtime";
 import { redactSensitiveText } from "openclaw/plugin-sdk/security-runtime";
 import { uniqueValues } from "openclaw/plugin-sdk/string-coerce-runtime";
-import { mergeHybridResults, selectHybridSearchResults } from "./hybrid.js";
+import { rankHybridResults, selectHybridSearchResults } from "./hybrid.js";
 import { runMemoryVectorFallback } from "./manager-cpu-worker-runtime.js";
 import { isMemoryEmbeddingOperationError } from "./manager-embedding-errors.js";
 import { acquireMemoryIndexReadGeneration } from "./manager-index-generation-lease.js";
@@ -481,7 +481,8 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       }
       let semanticProvider = this.provider;
       let vectorProviderIdentity: { model: string; aliases: string[] };
-      let keywordResults: Awaited<ReturnType<typeof loadKeywordResults>> = [];
+      let keywordResults: Awaited<ReturnType<typeof loadKeywordResults>>;
+      let pendingKeywordResults: ReturnType<typeof loadKeywordResults>;
       let queryVec: number[];
       for (let fallbackAttempt = false; ; fallbackAttempt = true) {
         const semanticProviderRuntime = this.providerRuntime;
@@ -493,7 +494,10 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         };
         const releaseProvider = this.acquireProviderUse(semanticProvider);
         try {
-          keywordResults = await loadKeywordResults();
+          // Lexical retrieval runs on the worker pool while the query embeds. A
+          // lexical failure still surfaces as itself, never as an embedding error.
+          const keywordPending = loadKeywordResults();
+          keywordPending.catch(() => undefined);
           try {
             queryVec = await timed("embedQueryMs", () =>
               this.embedQueryWithRetry(
@@ -504,8 +508,10 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
                 opts?.[MEMORY_SEARCH_DEADLINE_CONTROL],
               ),
             );
+            pendingKeywordResults = keywordPending;
             break;
           } catch (err) {
+            keywordResults = await keywordPending;
             releaseProvider();
             // Cancellation leaves the provider healthy. A fallback failure is final;
             // only the first attempt can change provider and invalidate lexical recall.
@@ -545,8 +551,9 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         }
       }
       const hasVector = queryVec.some((v) => v !== 0);
-      const vectorResults = hasVector
-        ? await this.searchVector(
+      // Vector retrieval overlaps any lexical work still running.
+      const vectorPending = hasVector
+        ? this.searchVector(
             queryVec,
             candidates,
             sourceFilterList,
@@ -554,7 +561,10 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
             indexState,
             opts?.signal,
           ).catch((error: unknown) => handleRetrievalError("vector", error))
-        : [];
+        : Promise.resolve([]);
+      vectorPending.catch(() => undefined);
+      keywordResults = await pendingKeywordResults;
+      const vectorResults = await vectorPending;
 
       if (!hybrid.enabled || !this.fts.enabled || !this.fts.available) {
         const decayed = await applyTemporalDecayToHybridResults({
@@ -579,7 +589,7 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       }
 
       const matchExactPath = prepareExactPathMatcher(normalizedQuery);
-      const merged = await mergeHybridResults({
+      const merged = await rankHybridResults({
         vector: vectorResults.map((entry) => ({
           ...entry,
           vectorScore: entry.score,

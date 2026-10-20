@@ -3,7 +3,11 @@ import path from "node:path";
 import { useAutoCleanupTempDirTracker } from "openclaw/plugin-sdk/test-env";
 import { withMockedPlatform } from "openclaw/plugin-sdk/test-node-mocks";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildLlamaServerPreset, type LlamaServerPresetOptions } from "./llama-server-preset.js";
+import {
+  buildLlamaServerPreset,
+  presetHasQueryLane,
+  type LlamaServerPresetOptions,
+} from "./llama-server-preset.js";
 import { prepareManagedLlamaServer } from "./managed-server.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
@@ -12,6 +16,12 @@ afterEach(() => {
 });
 const EMBEDDING = "[embeddinggemma-300m-qat-q8_0]";
 const CAPACITY = "parallel = 1\nctx-size = 2048\nubatch-size = 2048\n";
+const QUERY = "[embeddinggemma-300m-qat-q8_0-query]";
+const QUERY_CAPACITY = "parallel = 1\nctx-size = 512\nubatch-size = 512\n";
+const queryLane = (model: string) =>
+  `\n${QUERY}\nmodel = ${model}\nembedding = true\n${QUERY_CAPACITY}threads = 2\n`;
+// The query lane keeps its own capacity; main-model policy checks read the sections before it.
+const withoutQueryLane = (preset: string) => preset.split(`\n${QUERY}\n`)[0] ?? preset;
 
 function refreshEmbedding(
   existing: string | undefined,
@@ -31,16 +41,56 @@ describe("managed embedding capacity defaults", () => {
       const options = { embeddingModelPath: `/models/${filename}` };
       const preset = refreshEmbedding(undefined, options);
       expect(preset).toBe(
-        `version = 1\n\n${EMBEDDING}\nmodel = /models/${filename}\nembedding = true\n${CAPACITY}`,
+        `version = 1\n\n${EMBEDDING}\nmodel = /models/${filename}\nembedding = true\n${CAPACITY}${queryLane(`/models/${filename}`)}`,
       );
       expect(refreshEmbedding(preset, options)).toBe(preset);
     },
   );
 
+  it("keeps a retuned query lane on the current embedding weights", () => {
+    const existing = `version = 1\n\n${EMBEDDING}\nmodel = /models/old.gguf\nembedding = true\n${CAPACITY}\n${QUERY}\nmodel = /models/old.gguf\nt = 3\nflash-attn = on\n`;
+    expect(refreshEmbedding(existing)).toBe(
+      `version = 1\n\n${EMBEDDING}\nmodel = /models/embedding.gguf\nembedding = true\n${CAPACITY}\n${QUERY}\nmodel = /models/embedding.gguf\nt = 3\nflash-attn = on\nembedding = true\n${QUERY_CAPACITY}`,
+    );
+  });
+
+  it("leaves the router's second place to a local chat model", () => {
+    const withLane = refreshEmbedding(undefined);
+    const preset = refreshEmbedding(withLane, {
+      chatModel: { mode: "configure", id: "chat", path: "/models/chat.gguf" },
+    });
+    expect(preset).toContain("[chat]");
+    expect(presetHasQueryLane(withLane)).toBe(true);
+    expect(presetHasQueryLane(preset)).toBe(false);
+    expect(preset).not.toContain(QUERY);
+  });
+
+  it.each([
+    { label: "--models-max 1", serviceSettings: { args: ["--models-max", "1"] }, lane: false },
+    {
+      label: "LLAMA_ARG_MODELS_MAX=1",
+      serviceSettings: { env: { LLAMA_ARG_MODELS_MAX: "1" } },
+      lane: false,
+    },
+    { label: "unlimited models", serviceSettings: { args: ["--models-max", "0"] }, lane: true },
+  ])("adds the query lane only when the router has room: $label", ({ serviceSettings, lane }) => {
+    expect(presetHasQueryLane(refreshEmbedding(undefined, { serviceSettings }))).toBe(lane);
+  });
+
+  it.each([
+    { platform: "win32", lane: false },
+    { platform: "linux", lane: true },
+  ] as const)("reads a lowercase models-max name on $platform", ({ platform, lane }) => {
+    withMockedPlatform(platform, () => {
+      const serviceSettings = { env: { llama_arg_models_max: "1" } };
+      expect(presetHasQueryLane(refreshEmbedding(undefined, { serviceSettings }))).toBe(lane);
+    });
+  });
+
   it("adds missing capacity bounds to an old section while preserving tuning", () => {
     const existing = `version = 1\n\n${EMBEDDING}\nmodel = /models/old.gguf\nubatch-size = 2048\nembedding = true\nflash-attn = on\n`;
     expect(refreshEmbedding(existing)).toBe(
-      `version = 1\n\n${EMBEDDING}\nmodel = /models/embedding.gguf\nubatch-size = 2048\nembedding = true\nflash-attn = on\nparallel = 1\nctx-size = 2048\n`,
+      `version = 1\n\n${EMBEDDING}\nmodel = /models/embedding.gguf\nubatch-size = 2048\nembedding = true\nflash-attn = on\nparallel = 1\nctx-size = 2048\n${queryLane("/models/embedding.gguf")}`,
     );
   });
 
@@ -51,7 +101,7 @@ describe("managed embedding capacity defaults", () => {
     { label: "[*] default", global: "[*]\nparallel = 2\n\n", section: "" },
   ])("keeps a preset $label slot count without shrinking its context", ({ global, section }) => {
     const existing = `version = 1\n\n${global}${EMBEDDING}\nmodel = /models/old.gguf\n${section}embedding = true\n`;
-    const preset = refreshEmbedding(existing);
+    const preset = withoutQueryLane(refreshEmbedding(existing));
     expect(preset).not.toContain("parallel = 1");
     expect(preset).not.toContain("ctx-size");
     expect(preset).toContain(`${global}${EMBEDDING}\nmodel = /models/embedding.gguf\n${section}`);
@@ -68,7 +118,7 @@ describe("managed embedding capacity defaults", () => {
     },
   ])("keeps explicit context and physical batch settings", ({ global, section }) => {
     const existing = `version = 1\n\n${global}${EMBEDDING}\nmodel = /models/old.gguf\n${section}`;
-    const preset = refreshEmbedding(existing);
+    const preset = withoutQueryLane(refreshEmbedding(existing));
     expect(preset).toContain(`${global}${EMBEDDING}\nmodel = /models/embedding.gguf\n${section}`);
     expect(preset).toContain("parallel = 1");
     expect(preset).not.toMatch(/ctx-size|ubatch-size/u);

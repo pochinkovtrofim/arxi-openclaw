@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   mergeHybridResults,
+  rankHybridResults,
   scoreExactPathTieForTemporalDecay,
   selectHybridSearchResults,
 } from "./hybrid.js";
@@ -126,6 +127,80 @@ describe("memory hybrid helpers", () => {
     });
 
     expect(selected).toEqual([overlapping]);
+  });
+
+  it("stops reading the ranked order once strict and keyword windows are full", async () => {
+    const keyword = keywordHit("keyword-only", 0.2, { endLine: 1, snippet: "lexical topic" });
+    const ranked = await rankHybridResults({
+      vectorWeight: 0.7,
+      textWeight: 0.3,
+      mmr: { enabled: true, lambda: 0.7 },
+      vector: [
+        vectorHit("strict", 1, { endLine: 1, snippet: "semantic topic" }),
+        ...Array.from({ length: 40 }, (_, index) =>
+          vectorHit(`weak-${index}`, 0.1, { endLine: 1, snippet: `weak tail ${index}` }),
+        ),
+      ],
+      keyword: [keyword],
+    });
+    let read = 0;
+    const counted = {
+      candidates: ranked.candidates,
+      *[Symbol.iterator]() {
+        for (const entry of ranked) {
+          read += 1;
+          yield entry;
+        }
+      },
+    };
+
+    const selected = selectHybridSearchResults({
+      merged: counted,
+      keyword: [keyword],
+      maxResults: 2,
+      minScore: 0.35,
+    });
+
+    expect(selected.map((entry) => entry.path)).toEqual([
+      "memory/strict.md",
+      "memory/keyword-only.md",
+    ]);
+    expect(read).toBeLessThan(10);
+    // The eager order selects the same window.
+    expect(
+      selectHybridSearchResults({
+        merged: Array.from(ranked),
+        keyword: [keyword],
+        maxResults: 2,
+        minScore: 0.35,
+      }),
+    ).toEqual(selected);
+  });
+
+  it("never fills with a range that a later strict result already holds", () => {
+    const range = { source: "memory", path: "memory/a.md", startLine: 1, endLine: 1 };
+    const entry = (path: string, score: number, vectorScore = 0) => ({
+      ...range,
+      path,
+      score,
+      vectorScore,
+      textScore: score,
+      snippet: path,
+    });
+    const strictFirst = entry("memory/c.md", 0.9, 0.9);
+    const weakTwin = entry("memory/a.md", 0.2);
+    const strictTwin = entry("memory/a.md", 0.8, 0.8);
+    const other = entry("memory/b.md", 0.1);
+    const order = [strictFirst, weakTwin, strictTwin, other];
+    const keyword = [weakTwin, other];
+
+    for (const merged of [order, { candidates: order, [Symbol.iterator]: () => order.values() }]) {
+      expect(
+        selectHybridSearchResults({ merged, keyword, maxResults: 3, minScore: 0.5 }).map(
+          (result) => result.path,
+        ),
+      ).toEqual(["memory/c.md", "memory/a.md", "memory/b.md"]);
+    }
   });
 
   it("keeps null importance neutral and deterministically boosts important entries", async () => {

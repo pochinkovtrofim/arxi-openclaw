@@ -55,6 +55,7 @@ import type {
 import { logMemoryVectorDegradedWrite } from "./manager-vector-warning.js";
 import { resolveMemoryPathClassification } from "./memory-path-provenance.js";
 import { runEmbeddingOperationWithTimeout } from "./paused-deadline.js";
+import { readCachedQueryEmbedding, writeCachedQueryEmbedding } from "./query-embedding-cache.js";
 
 const EMBEDDING_BATCH_MAX_TOKENS = 8000;
 const EMBEDDING_INDEX_CONCURRENCY = 4;
@@ -465,37 +466,20 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerEmbeddingCa
     if (!provider) {
       throw new Error("Cannot embed query in FTS-only mode (no embedding provider)");
     }
+    const cached = readCachedQueryEmbedding(provider, text);
+    if (cached) {
+      return cached;
+    }
     try {
-      return await this.withProviderUse(
+      const vector = await this.embedQueryUncached(
+        text,
         provider,
-        async () =>
-          await runMemoryEmbeddingRetryLoop({
-            profile: "query",
-            run: async () => {
-              signal?.throwIfAborted();
-              const timeoutMs = this.resolveEmbeddingTimeout("query", provider, providerRuntime);
-              log.debug("memory embeddings: query start", { provider: provider.id, timeoutMs });
-              return await runEmbeddingOperationWithTimeout({
-                timeoutMs,
-                message: `memory embeddings query timed out after ${Math.round(timeoutMs / 1000)}s`,
-                signal,
-                deadlineControl,
-                run: async (opSignal) =>
-                  await provider.embed(formatEmbeddingModelInput(text, provider.model, "query"), {
-                    signal: opSignal,
-                    inputType: "query",
-                    ...(deadlineControl
-                      ? { [MEMORY_SEARCH_DEADLINE_CONTROL]: deadlineControl }
-                      : {}),
-                  }),
-              });
-            },
-            signal,
-            waitForRetry: async (delayMs) => {
-              await this.waitForEmbeddingRetry(delayMs, "retrying query", signal);
-            },
-          }),
+        providerRuntime,
+        signal,
+        deadlineControl,
       );
+      writeCachedQueryEmbedding(provider, text, vector);
+      return [...vector];
     } catch (err) {
       throw createMemoryEmbeddingOperationError({
         operation: "query",
@@ -503,6 +487,43 @@ export abstract class MemoryManagerEmbeddingOps extends MemoryManagerEmbeddingCa
         cause: err,
       });
     }
+  }
+
+  private async embedQueryUncached(
+    text: string,
+    provider: EmbeddingProvider,
+    providerRuntime: MemoryEmbeddingProviderRuntime | undefined,
+    signal?: AbortSignal,
+    deadlineControl?: MemorySearchDeadlineControl,
+  ): Promise<number[]> {
+    return await this.withProviderUse(
+      provider,
+      async () =>
+        await runMemoryEmbeddingRetryLoop({
+          profile: "query",
+          run: async () => {
+            signal?.throwIfAborted();
+            const timeoutMs = this.resolveEmbeddingTimeout("query", provider, providerRuntime);
+            log.debug("memory embeddings: query start", { provider: provider.id, timeoutMs });
+            return await runEmbeddingOperationWithTimeout({
+              timeoutMs,
+              message: `memory embeddings query timed out after ${Math.round(timeoutMs / 1000)}s`,
+              signal,
+              deadlineControl,
+              run: async (opSignal) =>
+                await provider.embed(formatEmbeddingModelInput(text, provider.model, "query"), {
+                  signal: opSignal,
+                  inputType: "query",
+                  ...(deadlineControl ? { [MEMORY_SEARCH_DEADLINE_CONTROL]: deadlineControl } : {}),
+                }),
+            });
+          },
+          signal,
+          waitForRetry: async (delayMs) => {
+            await this.waitForEmbeddingRetry(delayMs, "retrying query", signal);
+          },
+        }),
+    );
   }
 
   protected async withTimeout<T>(

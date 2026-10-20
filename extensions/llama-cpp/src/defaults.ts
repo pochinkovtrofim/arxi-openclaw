@@ -34,6 +34,11 @@ export const DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_REVISION =
   "66f974f8cd48cc3b9c41c516b95508e75b4bee64";
 export const DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID = "embeddinggemma-300m-qat-q8_0";
 export const DEFAULT_LLAMA_CPP_EMBEDDING_CONTEXT_SIZE = 2048;
+// A second router model over the same weights serves search queries on two
+// threads, so a query never queues behind index batches on the main model.
+export const DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_MODEL_ID = `${DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_ID}-query`;
+export const DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_CONTEXT_SIZE = 512;
+export const DEFAULT_LLAMA_CPP_QUERY_EMBEDDING_THREADS = 2;
 export const DEFAULT_LLAMA_CPP_EMBEDDING_CACHE_FILE =
   "hf_ggml-org_embeddinggemma-300m-qat-Q8_0.gguf";
 export const DEFAULT_LLAMA_CPP_EMBEDDING_MODEL_SIZE_BYTES = 328_577_056;

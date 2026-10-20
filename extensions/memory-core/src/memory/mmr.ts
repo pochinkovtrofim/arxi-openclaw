@@ -1,6 +1,6 @@
 import type { ResolvedMemorySearchConfig } from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
 import { normalizeLowercaseStringOrEmpty } from "openclaw/plugin-sdk/string-coerce-runtime";
-import { jaccardSimilarity, tokenize } from "./tokenize.js";
+import { tokenize } from "./tokenize.js";
 
 // Carbonell & Goldstein (1998): maximize λ * relevance - (1-λ) * similarity.
 
@@ -19,31 +19,49 @@ export const DEFAULT_MMR_CONFIG: MMRConfig = {
 type PreparedMMRItem<T extends MMRItem> = {
   item: T;
   score: number;
-  tokens: Set<string>;
+  /** Sorted token ids: Jaccard by merge instead of string-set lookups. */
+  tokens: Int32Array;
   emptyTokenText: string | undefined;
   relevance: number;
   maxSimilarity: number;
 };
 
 export function applyMMRToHybridResults<T extends MMRItem>(items: T[], lambda: number): T[] {
-  if (items.length === 0) {
-    return items;
-  }
-  if (items.length === 1) {
-    return [...items];
+  return Array.from(iterateMMR(items, lambda));
+}
+
+/**
+ * Yield items in MMR order. Greedy selection fixes each position before the
+ * next is chosen, so a caller that needs only the first results stops after
+ * those instead of paying the full quadratic ordering.
+ */
+export function* iterateMMR<T extends MMRItem>(items: T[], lambda: number): Generator<T> {
+  if (items.length <= 1) {
+    yield* items;
+    return;
   }
   const clampedLambda = Math.max(0, Math.min(1, lambda));
   if (clampedLambda === 1) {
-    return items.toSorted((a, b) => b.score - a.score);
+    yield* items.toSorted((a, b) => b.score - a.score);
+    return;
   }
+  const tokenIds = new Map<string, number>();
   const prepared: PreparedMMRItem<T>[] = items.map((item) => {
     const snippet = item.snippet;
-    const tokens = tokenize(snippet);
+    const words = tokenize(snippet);
+    const tokens = Int32Array.from(words, (word) => {
+      let id = tokenIds.get(word);
+      if (id === undefined) {
+        id = tokenIds.size;
+        tokenIds.set(word, id);
+      }
+      return id;
+    }).toSorted();
     return {
       item,
       score: item.score,
       tokens,
-      emptyTokenText: tokens.size === 0 ? normalizeLowercaseStringOrEmpty(snippet) : undefined,
+      emptyTokenText: words.size === 0 ? normalizeLowercaseStringOrEmpty(snippet) : undefined,
       relevance: 0,
       maxSimilarity: 0,
     };
@@ -55,7 +73,6 @@ export function applyMMRToHybridResults<T extends MMRItem>(items: T[], lambda: n
     item.relevance = scoreRange === 0 ? 1 : (item.score - minScore) / scoreRange;
   }
   const remaining = new Set(prepared);
-  const selected: T[] = [];
   while (remaining.size > 0) {
     let bestItem: PreparedMMRItem<T> | null = null;
     let bestMMRScore = -Infinity;
@@ -73,19 +90,38 @@ export function applyMMRToHybridResults<T extends MMRItem>(items: T[], lambda: n
     if (!bestItem) {
       break;
     }
-    selected.push(bestItem.item);
+    yield bestItem.item;
     remaining.delete(bestItem);
     // A selected item's contribution never changes, so update each candidate's
     // running maximum once per pair instead of rescanning selected items.
     for (const candidate of remaining) {
       const similarity =
-        candidate.tokens.size === 0 && bestItem.tokens.size === 0
+        candidate.tokens.length === 0 && bestItem.tokens.length === 0
           ? Number(candidate.emptyTokenText === bestItem.emptyTokenText)
-          : jaccardSimilarity(candidate.tokens, bestItem.tokens);
+          : sortedJaccard(candidate.tokens, bestItem.tokens);
       if (similarity > candidate.maxSimilarity) {
         candidate.maxSimilarity = similarity;
       }
     }
   }
-  return selected;
+}
+
+// Same value as jaccardSimilarity over the original token sets.
+function sortedJaccard(left: Int32Array, right: Int32Array): number {
+  let shared = 0;
+  for (let i = 0, j = 0; i < left.length && j < right.length;) {
+    // SAFETY: the loop condition keeps both indexes inside their arrays.
+    const a = left[i]!;
+    const b = right[j]!;
+    if (a === b) {
+      shared += 1;
+      i += 1;
+      j += 1;
+    } else if (a < b) {
+      i += 1;
+    } else {
+      j += 1;
+    }
+  }
+  return shared / (left.length + right.length - shared);
 }

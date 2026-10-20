@@ -1,5 +1,5 @@
 import type { MemoryEntryProvenance } from "openclaw/plugin-sdk/memory-core-host-engine-storage";
-import { applyMMRToHybridResults, type MMRConfig, DEFAULT_MMR_CONFIG } from "./mmr.js";
+import { applyMMRToHybridResults, iterateMMR, type MMRConfig, DEFAULT_MMR_CONFIG } from "./mmr.js";
 import {
   applyRetrievalRanking,
   prepareActiveProjectKeys,
@@ -52,7 +52,22 @@ export function scoreExactPathTieForTemporalDecay(contentScore: number): number 
   return (1 + Math.max(0, Math.min(1, contentScore))) / 2;
 }
 
-export async function mergeHybridResults<TSource extends HybridSource>(params: {
+type MergeHybridParams<TSource extends HybridSource> = Parameters<
+  typeof rankHybridResults<TSource>
+>[0];
+
+export async function mergeHybridResults<TSource extends HybridSource>(
+  params: MergeHybridParams<TSource>,
+): Promise<HybridSearchResult<TSource>[]> {
+  return Array.from(await rankHybridResults(params));
+}
+
+/**
+ * Merge and rank like mergeHybridResults, but yield the final order lazily so
+ * selection can stop once it has its results instead of ordering every
+ * candidate through MMR.
+ */
+export async function rankHybridResults<TSource extends HybridSource>(params: {
   vector: HybridVectorResult<TSource>[];
   keyword: HybridKeywordResult<TSource>[];
   vectorWeight: number;
@@ -68,7 +83,7 @@ export async function mergeHybridResults<TSource extends HybridSource>(params: {
   activeProjectKeys?: readonly string[];
   /** Test hook for deterministic time-dependent behavior */
   nowMs?: number;
-}): Promise<HybridSearchResult<TSource>[]> {
+}): Promise<RankedHybridResults<TSource>> {
   const createCandidate = (r: HybridCandidate<TSource>) => ({
     ...r,
     vectorScore: 0,
@@ -230,21 +245,31 @@ export async function mergeHybridResults<TSource extends HybridSource>(params: {
     const pathOnly = tier.filter((entry) => !(entry.contentScore > 0) && entry.lexicalRank === 0);
     return rerankExactGroup(contentBacked).concat(rerankExactGroup(pathOnly));
   });
-  const ranked = [
-    ...exact,
-    ...(mmrConfig.enabled ? applyMMRToHybridResults(nonExact, mmrConfig.lambda) : nonExact),
-  ];
-
-  return ranked.map(
-    ({
-      exactPathSpecificity: _exactPathSpecificity,
-      rankingScore: _rankingScore,
-      contentScore: _contentScore,
-      lexicalRank: _lexicalRank,
-      ...entry
-    }) => entry,
-  );
+  function* ranked() {
+    yield* exact;
+    yield* mmrConfig.enabled ? iterateMMR(nonExact, mmrConfig.lambda) : nonExact;
+  }
+  return {
+    // MMR reorders but never rescores, so every public score is known up front.
+    candidates: [...exact, ...nonExact],
+    *[Symbol.iterator]() {
+      for (const {
+        exactPathSpecificity: _exactPathSpecificity,
+        rankingScore: _rankingScore,
+        contentScore: _contentScore,
+        lexicalRank: _lexicalRank,
+        ...entry
+      } of ranked()) {
+        yield entry;
+      }
+    },
+  };
 }
+
+/** Ranked results in final order, with every public score known before ordering. */
+export type RankedHybridResults<TSource extends HybridSource = HybridSource> = Iterable<
+  HybridSearchResult<TSource>
+> & { candidates?: readonly (HybridResultRange<TSource> & { score: number })[] };
 
 type HybridResultRange<TSource extends HybridSource = HybridSource> = Pick<
   HybridSearchResult<TSource>,
@@ -256,43 +281,47 @@ function hybridResultRangeKey(entry: HybridResultRange): string {
 }
 
 export function selectHybridSearchResults<TSource extends HybridSource>(params: {
-  merged: HybridSearchResult<TSource>[];
+  merged: RankedHybridResults<TSource>;
   keyword: HybridResultRange<TSource>[];
   maxResults: number;
   minScore: number;
 }): HybridSearchResult<TSource>[] {
-  const strict = params.merged.filter((entry) => entry.score >= params.minScore);
-  const selected = strict.slice(0, params.maxResults);
-  if (params.keyword.length === 0 || selected.length === params.maxResults) {
-    return selected;
-  }
-
   const keywordKeys = new Set(params.keyword.map((entry) => hybridResultRangeKey(entry)));
-  if (strict.length === 0) {
-    // Preserve the established all-lexical fallback when every weighted score
-    // is below the configured threshold.
-    return params.merged
-      .filter((entry) => entry.score >= 0 && keywordKeys.has(hybridResultRangeKey(entry)))
-      .slice(0, params.maxResults);
-  }
-
+  // Without known scores the strict set is learned by ordering every candidate.
+  const strictRanges = (params.merged.candidates ?? Array.from(params.merged))
+    .filter((entry) => entry.score >= params.minScore)
+    .map((entry) => hybridResultRangeKey(entry));
+  const strictTotal = strictRanges.length;
+  const strictWanted = Math.min(params.maxResults, strictTotal);
   // Strict recall owns the result window. MMR-ranked keyword-only hits may use
-  // spare capacity, but must never displace a qualifying result.
-  const seen = new Set(selected.map((entry) => hybridResultRangeKey(entry)));
+  // spare capacity, but must never displace a qualifying result. When nothing
+  // qualifies, keep the established all-lexical fallback.
+  const fillWanted = params.keyword.length === 0 ? 0 : params.maxResults - strictWanted;
+  const strict: HybridSearchResult<TSource>[] = [];
+  const fill: HybridSearchResult<TSource>[] = [];
+  // Fill only runs when every strict result fits, so all their ranges are taken.
+  const seen = new Set(strictRanges);
+  // Consume the ranked order only until both windows are full; MMR then never
+  // orders the candidates nobody reads.
   for (const entry of params.merged) {
-    if (selected.length === params.maxResults) {
+    if (strict.length === strictWanted && fill.length === fillWanted) {
       break;
     }
     const key = hybridResultRangeKey(entry);
-    if (
-      entry.score < params.minScore &&
-      entry.vectorScore === 0 &&
-      keywordKeys.has(key) &&
-      !seen.has(key)
-    ) {
+    if (entry.score >= params.minScore) {
+      if (strict.length < strictWanted) {
+        strict.push(entry);
+      }
+      continue;
+    }
+    const eligible =
+      strictTotal === 0
+        ? entry.score >= 0 && keywordKeys.has(key)
+        : entry.vectorScore === 0 && keywordKeys.has(key) && !seen.has(key);
+    if (eligible && fill.length < fillWanted) {
       seen.add(key);
-      selected.push(entry);
+      fill.push(entry);
     }
   }
-  return selected;
+  return [...strict, ...fill];
 }
