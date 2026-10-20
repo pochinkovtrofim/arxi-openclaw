@@ -57,7 +57,7 @@ import {
   classifyActiveMemoryWorkspacePaths,
   closeActiveMemorySearchManagerCore,
   closeActiveMemorySearchManagersCore,
-  closeMemorySearchManagersForSuspendCore,
+  suspendMemorySearchManagersCore,
   getActiveMemorySearchManagerCore,
   resolveActiveMemoryBackendConfig,
 } from "./memory-runtime.js";
@@ -303,17 +303,31 @@ describe("memory runtime handles", () => {
     expect(hasMemoryRuntime()).toBe(false);
   });
 
-  it("closes managers before suspension without retiring the memory runtime", async () => {
+  it("suspends memory managers through the runtime and resumes them with the current config", async () => {
+    const resume = vi.fn();
+    const runtime = {
+      ...createRuntime(),
+      suspendMemorySearchManagers: vi.fn(async () => ({ resume })),
+    };
+    mocks.getMemoryRuntime.mockReturnValue(runtime);
+
+    const resumeAll = await suspendMemorySearchManagersCore();
+    expect(runtime.suspendMemorySearchManagers).toHaveBeenCalledOnce();
+    expect(runtime.closeAllMemorySearchManagers).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+
+    resumeAll({ cfg: memoryConfig });
+    expect(resume).toHaveBeenCalledWith({ cfg: memoryConfig });
+    expect(mocks.loadPluginRegistryHandle).not.toHaveBeenCalled();
+  });
+
+  it("keeps managers of runtimes without suspension support open", async () => {
     const runtime = createRuntime();
     mocks.getMemoryRuntime.mockReturnValue(runtime);
 
-    await getActiveMemorySearchManagerCore({ cfg: memoryConfig, agentId: "main" });
-    await closeMemorySearchManagersForSuspendCore();
-    await getActiveMemorySearchManagerCore({ cfg: memoryConfig, agentId: "main" });
+    (await suspendMemorySearchManagersCore())({ cfg: memoryConfig });
 
-    expect(runtime.closeAllMemorySearchManagers).toHaveBeenCalledOnce();
-    expect(runtime.getMemorySearchManager).toHaveBeenCalledTimes(2);
-    expect(mocks.loadPluginRegistryHandle).not.toHaveBeenCalled();
+    expect(runtime.closeAllMemorySearchManagers).not.toHaveBeenCalled();
   });
 
   it.each(["present", "missing"] as const)(

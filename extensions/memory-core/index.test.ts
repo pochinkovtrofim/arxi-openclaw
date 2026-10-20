@@ -430,6 +430,43 @@ describe("memory-core plugin runtime registration", () => {
     expect(getMemorySearchManagerMock).not.toHaveBeenCalled();
   });
 
+  function registerSuspendableRuntime(config: OpenClawConfig) {
+    const backgroundTasks: unknown[] = [];
+    let runtime: MemoryPluginRuntime | undefined;
+    const api = createTestPluginApi({
+      id: "memory-core",
+      config,
+      runtime: hostRuntime,
+      registerMemoryCapability(capability) {
+        runtime = capability.runtime;
+      },
+    });
+    api.lifecycle.runInBackgroundContext = (run) => {
+      const task = run();
+      backgroundTasks.push(task);
+      return task;
+    };
+    plugin.register(api);
+    if (!runtime?.suspendMemorySearchManagers) {
+      throw new Error("Expected memory suspension support");
+    }
+    return { suspend: runtime.suspendMemorySearchManagers, backgroundTasks };
+  }
+
+  // Runs before any case below marks process-wide indexing live.
+  it("keeps a resumed suspension demand-driven until a manager has run", async () => {
+    const config: OpenClawConfig = { agents: { entries: { main: {} } } };
+    const { suspend, backgroundTasks } = registerSuspendableRuntime(config);
+
+    const suspension = await suspend();
+    expect(closeAllMemorySearchManagersMock).toHaveBeenCalledOnce();
+    suspension.resume({ cfg: config });
+
+    expect(hasMemoryIndexingBeenLive()).toBe(false);
+    expect(backgroundTasks).toEqual([]);
+    expect(getMemorySearchManagerMock).not.toHaveBeenCalled();
+  });
+
   // Runs before any case below marks process-wide indexing live.
   it("leaves cold-start indexing demand-driven until a manager has run", async () => {
     const config: OpenClawConfig = {
@@ -514,6 +551,23 @@ describe("memory-core plugin runtime registration", () => {
       );
     },
   );
+
+  it("restores watched indexes when a suspension resumes", async () => {
+    markMemoryIndexingLive();
+    const config: OpenClawConfig = { agents: { entries: { main: {}, research: {} } } };
+    const { suspend, backgroundTasks } = registerSuspendableRuntime(config);
+
+    const suspension = await suspend();
+    expect(closeAllMemorySearchManagersMock).toHaveBeenCalledOnce();
+    expect(getMemorySearchManagerMock).not.toHaveBeenCalled();
+    suspension.resume({ cfg: config });
+    await Promise.all(backgroundTasks);
+
+    expect(getMemorySearchManagerMock.mock.calls).toEqual([
+      [{ cfg: config, agentId: "main" }],
+      [{ cfg: config, agentId: "research" }],
+    ]);
+  });
 
   it.each([
     { cleanupOwner: "stop", cleanupFails: false },

@@ -13,8 +13,9 @@ const outbound = vi.hoisted(() => ({ inspect: vi.fn() }));
 const agentDatabases = vi.hoisted(() => ({
   closeIdle: vi.fn(),
   closeIdleExecutions: vi.fn(),
-  closeMemoryManagers: vi.fn(),
+  suspendMemory: vi.fn(),
 }));
+const runtimeConfig = vi.hoisted(() => ({ agents: {} }));
 
 vi.mock("../../infra/gateway-suspend-coordinator.js", () => ({
   prepareGatewaySuspend: coordinator.prepare,
@@ -36,7 +37,7 @@ vi.mock("../../state/openclaw-agent-execution.js", () => ({
 }));
 
 vi.mock("../../plugins/memory-runtime.js", () => ({
-  closeMemorySearchManagersForSuspendCore: agentDatabases.closeMemoryManagers,
+  suspendMemorySearchManagersCore: agentDatabases.suspendMemory,
 }));
 
 vi.mock("../server-active-work.js", () => ({
@@ -57,6 +58,7 @@ function invoke(method: keyof typeof suspendHandlers, params: unknown) {
       context: {
         cron: { pauseScheduling, resumeScheduling },
         logGateway: { warn, info },
+        getRuntimeConfig: () => runtimeConfig,
         chatAbortControllers: new Map(),
         chatQueuedTurns: new Map(),
       },
@@ -265,8 +267,9 @@ describe("gateway suspend handlers", () => {
       order.push("status");
       return ready;
     });
-    agentDatabases.closeMemoryManagers.mockImplementation(async () => {
+    agentDatabases.suspendMemory.mockImplementation(async () => {
       order.push("memory");
+      return vi.fn();
     });
     agentDatabases.closeIdleExecutions.mockImplementation(async () => {
       order.push("executions");
@@ -287,12 +290,46 @@ describe("gateway suspend handlers", () => {
       "idle agent databases closed before suspension: executions closed=1 busy=0; handles closed=1 borrowed=1 transaction=0 failed=0",
     );
 
-    agentDatabases.closeMemoryManagers.mockClear();
+    agentDatabases.suspendMemory.mockClear();
     agentDatabases.closeIdleExecutions.mockClear();
     coordinator.status.mockReturnValue({ status: "running" });
     await invoke("gateway.suspend.status", { suspensionId: "suspension-ready" });
-    expect(agentDatabases.closeMemoryManagers).not.toHaveBeenCalled();
+    expect(agentDatabases.suspendMemory).not.toHaveBeenCalled();
     expect(agentDatabases.closeIdleExecutions).not.toHaveBeenCalled();
+  });
+
+  it("reopens memory closed for a ready suspension when the process resumes", async () => {
+    coordinator.prepare.mockReturnValueOnce({ status: "busy", reason: "active-work" });
+    await invoke("gateway.suspend.prepare", { requestId: "request-memory" });
+    const options = coordinator.prepare.mock.calls[0]?.[0];
+    // Drop a resume left by an earlier suspension in this module.
+    options.resumeScheduling();
+    await Promise.resolve();
+    coordinator.status.mockReturnValue({ status: "ready", suspensionId: "s", expiresAtMs: 1 });
+    agentDatabases.closeIdleExecutions.mockResolvedValue({ closed: 0, busy: 0 });
+    agentDatabases.closeIdle.mockReturnValue({ closed: 0, borrowed: 0, transaction: 0, failed: 0 });
+    const resumeMemory = vi.fn();
+    let finishSuspend!: (resume: typeof resumeMemory) => void;
+    agentDatabases.suspendMemory.mockReturnValueOnce(
+      new Promise((resolve) => {
+        finishSuspend = resolve;
+      }),
+    );
+    agentDatabases.suspendMemory.mockResolvedValue(vi.fn());
+
+    vi.useFakeTimers();
+    const status = invoke("gateway.suspend.status", { suspensionId: "s" });
+    await vi.advanceTimersByTimeAsync(5_000);
+    await status;
+    // The ready answer did not wait for memory; a repeated status keeps the first resume.
+    await invoke("gateway.suspend.status", { suspensionId: "s" });
+    options.resumeScheduling();
+    expect(resumeMemory).not.toHaveBeenCalled();
+
+    finishSuspend(resumeMemory);
+    await vi.waitFor(() => expect(resumeMemory).toHaveBeenCalledWith({ cfg: runtimeConfig }));
+    options.resumeScheduling();
+    expect(resumeMemory).toHaveBeenCalledOnce();
   });
 
   it("maps prepare and status recovery to the same retryable unavailable error", async () => {

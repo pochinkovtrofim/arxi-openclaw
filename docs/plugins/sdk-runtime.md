@@ -362,6 +362,17 @@ method, when provided, if the runtime or an embedding adapter retires. This clos
 all of that runtime's managers as best-effort cleanup; it cannot identify dependent
 managers or prevent concurrent manager acquisition.
 
+### Memory runtime suspension
+
+Before a host suspends the Gateway process, OpenClaw calls
+`suspendMemorySearchManagers()` when a memory runtime provides it. Close the
+managers so their agent database borrows end and the database can record a clean
+close; the next process then skips crash recovery. Return `resume({ cfg })`. The
+Gateway calls it when the same process continues: the suspension is cancelled or
+expires, or the host resumes it. Restore what a running process would keep, such
+as watched indexes. Runtimes without this method keep their managers open during
+suspension.
+
 ## Browser meeting transport builders
 
 `MeetingPlatformAdapter.createBrowserAdapterOptions` builds the `browser` and

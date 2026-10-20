@@ -423,13 +423,33 @@ export async function closeActiveMemorySearchManagersCore(cfg?: OpenClawConfig):
   setStandaloneMemoryManagerActive(false);
 }
 
-/** Releases memory managers' agent database borrows before host suspension; the next use reopens them. */
-export async function closeMemorySearchManagersForSuspendCore(): Promise<void> {
-  await Promise.all(
-    listCurrentMemoryRuntimes().map(async (runtime) =>
-      runPluginCleanup(runtime, () => runtime.closeAllMemorySearchManagers?.()),
-    ),
+/** Releases memory managers' agent database borrows before host suspension. */
+export async function suspendMemorySearchManagersCore(): Promise<
+  (params: { cfg: OpenClawConfig }) => void
+> {
+  const suspended = await Promise.all(
+    listCurrentMemoryRuntimes().map(async (runtime) => {
+      const suspension = await runPluginCleanup(runtime, () =>
+        runtime.suspendMemorySearchManagers?.(),
+      );
+      return suspension ? { runtime, suspension } : undefined;
+    }),
   );
+  return (params) => {
+    const errors: unknown[] = [];
+    for (const entry of suspended) {
+      try {
+        if (entry) {
+          runPluginCleanup(entry.runtime, () => entry.suspension.resume(params));
+        }
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, "Memory resume after suspension failed");
+    }
+  };
 }
 
 /** Closes the plugin-backed memory search manager for one agent. */
