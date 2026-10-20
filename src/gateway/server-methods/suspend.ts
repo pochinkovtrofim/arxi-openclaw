@@ -107,8 +107,12 @@ const SUSPEND_AGENT_DATABASE_CLOSE_TIMEOUT_MS = 5_000;
 async function closeIdleAgentDatabasesForSuspend(context: GatewayRequestContext): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const close = (async () => {
-    await closeIdleOpenClawAgentDatabaseExecutions();
-    closeIdleOpenClawAgentDatabases();
+    const executions = await closeIdleOpenClawAgentDatabaseExecutions();
+    const handles = closeIdleOpenClawAgentDatabases();
+    // Busy or borrowed owners keep their leases; the next process sees them as dirty.
+    context.logGateway.info(
+      `idle agent databases closed before suspension: executions closed=${executions.closed} busy=${executions.busy}; handles closed=${handles.closed} borrowed=${handles.borrowed} transaction=${handles.transaction} failed=${handles.failed}`,
+    );
   })();
   try {
     await Promise.race([

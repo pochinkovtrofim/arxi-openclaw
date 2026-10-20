@@ -259,17 +259,22 @@ describe("gateway suspend handlers", () => {
     });
     agentDatabases.closeIdleExecutions.mockImplementation(async () => {
       order.push("executions");
+      return { closed: 1, busy: 0 };
     });
     agentDatabases.closeIdle.mockImplementation(() => {
       order.push("handles");
+      return { closed: 1, borrowed: 1, transaction: 0, failed: 0 };
     });
 
-    const { respond } = await invoke("gateway.suspend.status", {
+    const { respond, info } = await invoke("gateway.suspend.status", {
       suspensionId: "suspension-ready",
     });
 
     expect(order).toEqual(["status", "status", "executions", "handles", "status"]);
     expect(respond).toHaveBeenCalledWith(true, ready);
+    expect(info).toHaveBeenCalledWith(
+      "idle agent databases closed before suspension: executions closed=1 busy=0; handles closed=1 borrowed=1 transaction=0 failed=0",
+    );
 
     agentDatabases.closeIdleExecutions.mockClear();
     coordinator.status.mockReturnValue({ status: "running" });

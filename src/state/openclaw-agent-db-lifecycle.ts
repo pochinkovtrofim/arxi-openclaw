@@ -378,25 +378,37 @@ export function refreshAgentDatabaseIdleTimer(database: OpenClawAgentDatabase): 
  * A suspended process can be discarded without exit hooks. Retire settled,
  * unborrowed handles now so the next process inherits their clean-close receipts.
  */
-export function closeIdleOpenClawAgentDatabases(): void {
+export function closeIdleOpenClawAgentDatabases(): {
+  closed: number;
+  borrowed: number;
+  transaction: number;
+  failed: number;
+} {
+  const outcome = { closed: 0, borrowed: 0, transaction: 0, failed: 0 };
   for (const database of [...cache.databases.values()]) {
-    if (
-      cache.incognito.has(database) ||
-      !database.db.isOpen ||
-      database.db.isTransaction ||
-      cache.borrowers.get(database.db)?.size
-    ) {
+    if (cache.incognito.has(database) || !database.db.isOpen) {
+      continue;
+    }
+    if (cache.borrowers.get(database.db)?.size) {
+      outcome.borrowed += 1;
+      continue;
+    }
+    if (database.db.isTransaction) {
+      outcome.transaction += 1;
       continue;
     }
     try {
       closeCachedOpenClawAgentDatabase(database, { eviction: true });
       cache.databases.delete(database.path);
       cache.failures.delete(database.path);
+      outcome.closed += 1;
     } catch (error) {
       logResourceCloseFailure(database.path, error);
+      outcome.failed += 1;
     }
   }
   unregisterUnusedAgentDatabaseExitClose();
+  return outcome;
 }
 
 /** Dispose only this publication; a later admission at the same path is independent. */
