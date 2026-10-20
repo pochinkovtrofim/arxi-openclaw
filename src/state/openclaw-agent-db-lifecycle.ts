@@ -332,23 +332,8 @@ export function refreshAgentDatabaseIdleTimer(database: OpenClawAgentDatabase): 
       cache.idleTimers.delete(database.db);
       return;
     }
-    // Awaiting operations own the exact connection; final release rearms eviction.
-    if (database.db.isOpen && cache.borrowers.get(database.db)?.size) {
-      return;
-    }
-    if (database.db.isOpen && database.db.isTransaction) {
-      timer.refresh();
-      return;
-    }
-    try {
-      // Registry discovery metadata survives eviction; only explicit disposal removes it.
-      closeCachedOpenClawAgentDatabase(database, { eviction: true });
-      cache.databases.delete(database.path);
-      cache.failures.delete(database.path);
-      unregisterUnusedAgentDatabaseExitClose();
-    } catch (error) {
-      // Keep native/lease custody on the original entry until cleanup succeeds.
-      logResourceCloseFailure(database.path, error);
+    // Borrowed handles rearm on final release; transactions and failed closes retry.
+    if (["transaction", "failed"].includes(evictIdleAgentDatabase(database))) {
       timer.refresh();
     }
   };
@@ -374,40 +359,41 @@ export function refreshAgentDatabaseIdleTimer(database: OpenClawAgentDatabase): 
   });
 }
 
+type AgentDatabaseEviction = "closed" | "borrowed" | "transaction" | "failed";
+
+function evictIdleAgentDatabase(database: OpenClawAgentDatabase): AgentDatabaseEviction {
+  // Awaiting operations own the exact connection; final release rearms eviction.
+  if (database.db.isOpen && cache.borrowers.get(database.db)?.size) {
+    return "borrowed";
+  }
+  if (database.db.isOpen && database.db.isTransaction) {
+    return "transaction";
+  }
+  try {
+    // Registry discovery metadata survives eviction; only explicit disposal removes it.
+    closeCachedOpenClawAgentDatabase(database, { eviction: true });
+    cache.databases.delete(database.path);
+    cache.failures.delete(database.path);
+    unregisterUnusedAgentDatabaseExitClose();
+    return "closed";
+  } catch (error) {
+    // Keep native/lease custody on the original entry until cleanup succeeds.
+    logResourceCloseFailure(database.path, error);
+    return "failed";
+  }
+}
+
 /**
  * A suspended process can be discarded without exit hooks. Retire settled,
  * unborrowed handles now so the next process inherits their clean-close receipts.
  */
-export function closeIdleOpenClawAgentDatabases(): {
-  closed: number;
-  borrowed: number;
-  transaction: number;
-  failed: number;
-} {
+export function closeIdleOpenClawAgentDatabases(): Record<AgentDatabaseEviction, number> {
   const outcome = { closed: 0, borrowed: 0, transaction: 0, failed: 0 };
-  for (const database of [...cache.databases.values()]) {
-    if (cache.incognito.has(database) || !database.db.isOpen) {
-      continue;
-    }
-    if (cache.borrowers.get(database.db)?.size) {
-      outcome.borrowed += 1;
-      continue;
-    }
-    if (database.db.isTransaction) {
-      outcome.transaction += 1;
-      continue;
-    }
-    try {
-      closeCachedOpenClawAgentDatabase(database, { eviction: true });
-      cache.databases.delete(database.path);
-      cache.failures.delete(database.path);
-      outcome.closed += 1;
-    } catch (error) {
-      logResourceCloseFailure(database.path, error);
-      outcome.failed += 1;
+  for (const database of cache.databases.values()) {
+    if (!cache.incognito.has(database) && database.db.isOpen) {
+      outcome[evictIdleAgentDatabase(database)] += 1;
     }
   }
-  unregisterUnusedAgentDatabaseExitClose();
   return outcome;
 }
 

@@ -102,7 +102,9 @@ function respondSuspendStatus(
 const SUSPEND_AGENT_DATABASE_CLOSE_TIMEOUT_MS = 5_000;
 
 // Memory indexes closed for a ready suspension reopen when this process resumes.
-let pendingMemoryResume: Promise<((params: { cfg: OpenClawConfig }) => void) | undefined> | undefined;
+let pendingMemoryResume:
+  | Promise<((params: { cfg: OpenClawConfig }) => void) | undefined>
+  | undefined;
 
 function resumeMemoryAfterSuspension(context: GatewayRequestContext): void {
   const pending = pendingMemoryResume;

@@ -325,7 +325,10 @@ export type MemoryPluginRuntime = {
 /** Additive runtime; lifecycle hooks share the existing memory runtime cleanup owner. */
 export type MemoryProviderRuntime = Pick<
   MemoryPluginRuntime,
-  "prepareReload" | "closeMemorySearchManager" | "closeAllMemorySearchManagers"
+  | "prepareReload"
+  | "closeMemorySearchManager"
+  | "closeAllMemorySearchManagers"
+  | "suspendMemorySearchManagers"
 > & {
   open(params: MemoryProviderOpenParams): Promise<MemoryProviderOpenResult>;
 };
