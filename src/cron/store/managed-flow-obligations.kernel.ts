@@ -11,7 +11,7 @@ import { tryCronScheduleIdentity } from "../schedule-identity.js";
 import type { CronJob } from "../types.js";
 import { mutateCronRuntimeRowsInDatabase } from "./runtime-rows.kernel.js";
 
-export type CronManagedFlowRepairInput = { storeKey: string; jobIds: string[] };
+export type CronManagedFlowRepairInput = { storeKey: string; jobIds: string[]; now: number };
 
 export type CronManagedFlowRepairOutput = {
   changed: boolean;
@@ -97,7 +97,7 @@ export function repairManagedFlowObligationsInDatabase(
             continue;
           }
           if (cadenceOnlyChange(receipt.cronScheduleIdentity, scheduleIdentity)) {
-            const now = Date.now();
+            const now = input.now;
             const scheduledAtMs = resolvePacedNextRunAtMs({
               nowMs: now,
               delayMs: receipt.triggerAtMs - now,

@@ -34,8 +34,8 @@ function isEligible(state: CronServiceState): boolean {
 }
 
 /**
- * Reinstates only a missing or later timer slot from the persisted, already-paced
- * receipt. It never recomputes pacing, enables a job, or changes a paused scheduler.
+ * Restores missing/later slots and rebinds accepted triggers after cadence edits.
+ * It never enables a job or changes a paused scheduler.
  * Returns true when job rows changed and the caller must reload the store.
  */
 export async function repairManagedFlowAutomationObligations(
@@ -81,7 +81,7 @@ export async function repairManagedFlowAutomationObligations(
       (scope) =>
         scope.execute({
           type: "cron.repairManagedFlowObligations",
-          input: { storeKey, jobIds },
+          input: { storeKey, jobIds, now: state.deps.nowMs() },
         }),
       {
         assertCurrent,
