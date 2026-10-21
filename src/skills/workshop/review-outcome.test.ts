@@ -128,6 +128,12 @@ describe("readSkillReviewUserLine", () => {
       ),
     ).toBeUndefined();
     expect(
+      readSkillReviewUserLine([{ text: "TELL_USER: Fixed Actual-Budget-Operations." }], changed),
+    ).toBeUndefined();
+    expect(
+      readSkillReviewUserLine([{ text: "TELL_USER: Added a step to SKILL.md." }], changed),
+    ).toBeUndefined();
+    expect(
       readSkillReviewUserLine([{ text: `TELL_USER: ${"Запомнила. ".repeat(20)}` }], changed),
     ).toBeUndefined();
     expect(readSkillReviewUserLine([{ text: "TELL_USER:   " }], changed)).toBeUndefined();

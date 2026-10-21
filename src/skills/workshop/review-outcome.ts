@@ -74,9 +74,13 @@ export function readSkillReviewUserLine(
         .replaceAll("`", "")
         .replace(/\s+/g, " ")
         .trim();
-      const namesSkill = changes.some(
-        ({ skillName }) => skillName.includes("-") && line.includes(skillName),
-      );
+      // Only the first marked line counts; one naming a skill or its file is dropped.
+      const lower = line.toLowerCase();
+      const namesSkill =
+        /\.md\b/.test(lower) ||
+        changes.some(
+          ({ skillName }) => skillName.includes("-") && lower.includes(skillName.toLowerCase()),
+        );
       return line && line.length <= MAX_USER_LINE_CHARS && !namesSkill ? line : undefined;
     }
   }

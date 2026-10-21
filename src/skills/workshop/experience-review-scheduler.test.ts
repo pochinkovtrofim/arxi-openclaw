@@ -188,13 +188,31 @@ describe("skill experience review scheduler", () => {
       EXPERIENCE_REVIEW_SESSION_QUIET_MS,
       EXPERIENCE_REVIEW_SESSION_QUIET_MS,
     ]);
-    expect(EXPERIENCE_REVIEW_SESSION_QUIET_MS).toBeGreaterThanOrEqual(5 * 60_000);
+    expect(delays[0]).toBe(5 * 60_000);
     fireTimers();
     await vi.waitFor(() => expect(runReview).toHaveBeenCalledTimes(1));
     await setImmediate();
     expect(runReview).toHaveBeenCalledTimes(1);
     // The one review forks the conversation through the latest turn.
     expect(runReview.mock.calls[0]?.[0]).toMatchObject({ ctx: { runId: "run-7" } });
+  });
+
+  it("moves a queued review on to a short later turn, where corrections usually come", async () => {
+    const { turn, fireTimers, runReview, timers } = createHarness();
+    const laterSource = { ...source, entryId: "entry-2" } as TranscriptEntryAnchor;
+
+    turn(10);
+    // "No, send it as one table from now on": two iterations and no learned skill read.
+    turn(2, { source: laterSource });
+    fireTimers();
+    await vi.waitFor(() => expect(runReview).toHaveBeenCalledTimes(1));
+    expect(runReview.mock.calls[0]?.[0]).toMatchObject({
+      source: laterSource,
+      ctx: { runId: "run-2" },
+    });
+    // That review covered both turns; their iterations do not count again.
+    turn(9);
+    expect(timers).toHaveLength(0);
   });
 
   it("ignores errored turns and sessions while Workshop is off", () => {

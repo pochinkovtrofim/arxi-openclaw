@@ -253,7 +253,13 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
       }
       const iterations = (iterationsBySession.get(key) ?? 0) + resolveTurnModelIterations(params);
       iterationsBySession.delete(key);
-      if (iterations < EXPERIENCE_REVIEW_ITERATION_THRESHOLD && !usedWorkshopSkill(params)) {
+      // A queued review moves on to every later turn, however short, so it sees
+      // the whole exchange (a correction usually comes in a one-line reply).
+      if (
+        !existing &&
+        iterations < EXPERIENCE_REVIEW_ITERATION_THRESHOLD &&
+        !usedWorkshopSkill(params)
+      ) {
         // Re-insert so the least recently active session is the one pruned.
         iterationsBySession.set(key, iterations);
         pruneMapToMaxSize(iterationsBySession, EXPERIENCE_REVIEW_MAX_COUNTERS);
@@ -276,6 +282,7 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
           pendingBySession.delete(oldest[0]);
         }
       }
+      const usedSkills = [...(existing?.candidate.usedSkills ?? []), ...(params.usedSkills ?? [])];
       const candidate: ExperienceReviewCandidate = {
         ctx: {
           runId: params.ctx.runId,
@@ -287,7 +294,7 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
         },
         config: params.config,
         source: { ...source },
-        usedSkills: params.usedSkills ? [...params.usedSkills] : undefined,
+        usedSkills: usedSkills.length ? usedSkills : undefined,
         turnAborted: !params.event.success,
       };
       const pending = existing ?? { candidate, generation: 0 };
