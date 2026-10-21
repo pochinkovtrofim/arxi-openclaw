@@ -129,13 +129,15 @@ export async function prepareEmbeddedAttemptSessionRuntime(input: {
   const sessionPromptState = promptStateLease.state;
   const usesSystemPromptSeries =
     !input.isRawModelRun && attempt.operation !== "settled-tool-finalization";
-  // Append-only routes bind every earlier request byte, so a re-rendered system prompt
-  // (an edited workspace file, a new skill) would rewrite the whole conversation cache.
-  // Keep the admitted prompt and append changed sections; routes without an in-history
-  // system role receive that update as a user-role message.
+  // Append-only Claude routes bind every earlier request byte, so a re-rendered system
+  // prompt (an edited workspace file, a new skill) would rewrite the whole conversation
+  // cache. Keep the admitted prompt and append changed sections; without an in-history
+  // system role the update is a user-role message, which only Anthropic Messages accepts
+  // next to the user turn (Bedrock Converse requires strict alternation).
   const pinsSystemPrompt =
     transcriptPolicy.inHistorySystemUpdates === true ||
-    transcriptPolicy.appendOnlyRuntimeContext === true;
+    (transcriptPolicy.appendOnlyRuntimeContext === true &&
+      attempt.model.api === "anthropic-messages");
   const promptRouteKey = JSON.stringify([
     attempt.provider,
     attempt.modelId,

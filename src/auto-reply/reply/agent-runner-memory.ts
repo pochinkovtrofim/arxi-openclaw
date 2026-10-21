@@ -55,6 +55,7 @@ import {
 } from "../../context-engine/transcript-byte-limit.js";
 import { logVerbose } from "../../globals.js";
 import { isAbortError } from "../../infra/abort-signal.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import { emitAgentRunStatusEvent } from "../../infra/agent-run-status-events.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -381,6 +382,8 @@ export async function runSessionCompactionIfNeeded(params: {
   abortSignal?: AbortSignal;
   authorize?: () => boolean;
   beforeCompaction?: (entry: SessionEntry) => Promise<SessionEntry | undefined>;
+  /** Set on the replan after a memory checkpoint whose own model call re-dated the session. */
+  coldCacheDue?: boolean;
   onCompactionStart?: () => void;
   onCompactionCommitted?: (accepted: AcceptedCompactionSuccessor) => void;
   onSessionIdChanged?: (sessionId: string) => void;
@@ -581,8 +584,7 @@ export async function runSessionCompactionIfNeeded(params: {
   const shouldCompactColdCache =
     !params.isHeartbeat &&
     coldCache !== undefined &&
-    cacheIdleMs !== undefined &&
-    cacheIdleMs >= coldCache.ttlMs &&
+    (params.coldCacheDue === true || (cacheIdleMs !== undefined && cacheIdleMs >= coldCache.ttlMs)) &&
     (tokenCountForCompaction ?? 0) >= coldCache.minTokens;
 
   logVerbose(
@@ -612,6 +614,10 @@ export async function runSessionCompactionIfNeeded(params: {
   if (!shouldCompactByTokens && !shouldCompactByTranscriptBytes && !shouldCompactColdCache) {
     return entry;
   }
+  // A cold cache only makes compaction cheaper; the uncompacted turn still fits its window,
+  // so a failed attempt must not cost the reply.
+  const coldCacheOnly =
+    shouldCompactColdCache && !shouldCompactByTokens && !shouldCompactByTranscriptBytes;
 
   if (params.beforeCompaction) {
     const refreshed = await params.beforeCompaction(entry);
@@ -621,6 +627,7 @@ export async function runSessionCompactionIfNeeded(params: {
       ...params,
       sessionEntry: refreshed,
       beforeCompaction: undefined,
+      coldCacheDue: shouldCompactColdCache,
     });
   }
 
@@ -629,7 +636,7 @@ export async function runSessionCompactionIfNeeded(params: {
     `preflightCompaction triggered: sessionKey=${params.sessionKey} ` +
       `tokenCount=${tokenCountForCompaction ?? freshPersistedTokens ?? "undefined"} ` +
       `threshold=${threshold} trigger=${compactionTrigger} ` +
-      `coldCache=${shouldCompactColdCache && !shouldCompactByTokens} ` +
+      `coldCache=${coldCacheOnly} ` +
       `activeTranscriptBytes=${activeTranscriptBytes ?? "undefined"} ` +
       `maxActiveTranscriptBytes=${maxActiveTranscriptBytes ?? "undefined"}`,
   );
@@ -640,6 +647,7 @@ export async function runSessionCompactionIfNeeded(params: {
   let expectedSession = entry;
   let admissionTransition: AcceptedCompactionSuccessor["admissionTransition"];
   let hostAccountingCommitted = false;
+  let compactionCommitted = false;
   const recordCompactionAccounting = async (
     acceptedEntry: SessionEntry,
     tokensAfter: number | undefined,
@@ -792,6 +800,7 @@ export async function runSessionCompactionIfNeeded(params: {
           hostAccountingCommitted = true;
         },
         onCommitted: (accepted) => {
+          compactionCommitted = true;
           admissionTransition = accepted.admissionTransition;
           expectedSession = accepted.entry;
           entry = accepted.entry;
@@ -816,6 +825,10 @@ export async function runSessionCompactionIfNeeded(params: {
         assertActive();
         await notifyCompaction("context_bounded");
         return compactionStore[compactionSessionKey] ?? entry;
+      }
+      if (coldCacheOnly) {
+        preflightCompactionLog.warn(`cold-cache compaction failed; replying uncompacted: ${reason}`);
+        return entry;
       }
       await notifyCompaction("incomplete");
       throw new Error(`Preflight compaction required but failed: ${reason}`);
@@ -877,6 +890,14 @@ export async function runSessionCompactionIfNeeded(params: {
     }
     return entry;
   } catch (err) {
+    if (coldCacheOnly && !compactionCommitted && !params.abortSignal?.aborted && !isAbortError(err)) {
+      // Lost authority still throws here; a provider failure leaves the session as it was.
+      assertActive();
+      preflightCompactionLog.warn(
+        `cold-cache compaction failed; replying uncompacted: ${formatErrorMessage(err)}`,
+      );
+      return entry;
+    }
     if (!terminalCompactionNoticeSent && !params.abortSignal?.aborted) {
       await notifyCompaction("incomplete");
     }

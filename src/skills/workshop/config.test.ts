@@ -13,16 +13,23 @@ describe("resolveSkillWorkshopConfig", () => {
     ).toBe(mode);
   });
 
-  it("splits the review model into provider and model id", () => {
-    const read = (model: string) =>
-      resolveSkillWorkshopConfig({ skills: { workshop: { autonomous: { model } } } }).autonomous
-        .model;
-    expect(read(" anthropic/claude-sonnet-5-5 ")).toEqual({
-      provider: "anthropic",
-      model: "claude-sonnet-5-5",
-    });
-    expect(read("claude-sonnet-5-5")).toBeUndefined();
-    expect(read("anthropic/")).toBeUndefined();
+  it("keeps review model mappings within one provider", () => {
+    const { models } = resolveSkillWorkshopConfig({
+      skills: {
+        workshop: {
+          autonomous: {
+            models: {
+              " anthropic/claude-opus-5-5 ": "anthropic/claude-sonnet-5-5",
+              "anthropic/claude-haiku-5-5": "openai/gpt-review",
+              "claude-opus-5-5": "anthropic/claude-sonnet-5-5",
+            },
+          },
+        },
+      },
+    }).autonomous;
+    expect([...models]).toEqual([
+      ["anthropic/claude-opus-5-5", { provider: "anthropic", model: "claude-sonnet-5-5" }],
+    ]);
   });
 
   it("does not read the retired boolean key at runtime", () => {

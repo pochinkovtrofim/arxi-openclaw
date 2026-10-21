@@ -79,7 +79,7 @@ async function runAfterIdle(params: {
       },
     },
   };
-  await runSessionCompactionIfNeeded({
+  return await runSessionCompactionIfNeeded({
     followupRun,
     defaultModel: `${provider}/${model}`,
     sessionEntry: {
@@ -136,4 +136,17 @@ it("honors a configured threshold and its zero switch", async () => {
 it("leaves routes without a known prompt-cache lifetime alone", async () => {
   await runAfterIdle({ idleMs: 2 * 60 * MINUTE, provider: "openrouter", model: "some-model" });
   expect(compact).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["rejects", () => compact.mockRejectedValue(new Error("provider overloaded"))],
+  [
+    "reports failure",
+    () => compact.mockResolvedValue({ ok: false, compacted: false, reason: "provider overloaded" }),
+  ],
+] as const)("replies uncompacted when cold-cache compaction %s", async (_name, arrange) => {
+  arrange();
+  const entry = await runAfterIdle({ idleMs: 2 * 60 * MINUTE });
+  expect(compact).toHaveBeenCalledOnce();
+  expect(entry).toMatchObject({ sessionId: "session", totalTokens: 600_000 });
 });

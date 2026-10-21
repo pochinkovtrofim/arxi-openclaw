@@ -83,10 +83,10 @@ describe("runSkillExperienceReview", () => {
   });
 
   it.each([
-    { model: "openai/gpt-review", expected: { provider: "openai", model: "gpt-review" } },
-    // Another provider would need another sign-in; the turn's own model reviews instead.
-    { model: "anthropic/claude-review", expected: { provider: "openai", model: "gpt-test" } },
-  ])("reviews on the configured model $model only on the turn's provider", async (route) => {
+    { from: "openai/gpt-test", expected: { provider: "openai", model: "gpt-review" } },
+    // An unmapped turn model (Haiku-like cheap turns) keeps reviewing on itself.
+    { from: "openai/gpt-other", expected: { provider: "openai", model: "gpt-test" } },
+  ])("reviews a $from turn on its mapped model", async (route) => {
     const candidate = await createExperienceReviewCandidate(
       `review-model-${route.expected.model}`,
       [{ role: "user", content: "Reconcile the budget.", timestamp: 1 }],
@@ -94,7 +94,9 @@ describe("runSkillExperienceReview", () => {
     );
     candidate.config = {
       ...candidate.config,
-      skills: { workshop: { autonomous: { mode: "auto", model: route.model } } },
+      skills: {
+        workshop: { autonomous: { mode: "auto", models: { [route.from]: "openai/gpt-review" } } },
+      },
     };
     mocks.runSkillWorkshopReview.mockResolvedValue({ meta: { durationMs: 1 }, payloads: [] });
 

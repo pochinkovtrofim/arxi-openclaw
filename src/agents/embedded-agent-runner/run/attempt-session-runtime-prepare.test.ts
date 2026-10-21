@@ -537,14 +537,17 @@ describe("prepareEmbeddedAttemptSessionRuntime", () => {
   });
 
   it.each([
-    { appendOnlyRuntimeContext: true, pins: true },
-    { appendOnlyRuntimeContext: false, pins: false },
+    { api: "anthropic-messages", appendOnlyRuntimeContext: true, pins: true },
+    { api: "anthropic-messages", appendOnlyRuntimeContext: false, pins: false },
+    // Strict-alternation transports cannot carry a user-role update next to the user turn.
+    { api: "bedrock-converse-stream", appendOnlyRuntimeContext: true, pins: false },
   ])(
-    "pins the system prompt on an append-only route without in-history system messages: $pins",
-    async ({ appendOnlyRuntimeContext, pins }) => {
+    "pins the system prompt on an append-only $api route without in-history system messages: $pins",
+    async ({ api, appendOnlyRuntimeContext, pins }) => {
       // Claude 5.5 over OAuth or a proxy: an edited workspace file must not rewrite the cache.
       const fixture = createFixture();
       Object.assign(fixture.transcriptPolicy, { appendOnlyRuntimeContext });
+      fixture.input.attempt.model = { ...fixture.input.attempt.model, api };
       const entries: SessionEntry[] = [];
       const appendCustomEntryAsync = async (customType: string, data: unknown) => {
         entries.push({
