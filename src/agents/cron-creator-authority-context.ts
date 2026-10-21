@@ -3,6 +3,7 @@ import { isPromiseLike } from "@openclaw/normalization-core/promise-like";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { CronScheduledToolCallerOrigin } from "../cron/scheduled-tool-policy.js";
 import {
+  CRON_FAILURE_REPAIR_METHODS,
   CRON_MANAGEMENT_METHODS,
   createCronCreatorAuthorityRunScope,
   hasCronChannelRequester,
@@ -120,6 +121,8 @@ export function captureActiveCronManagementAuthority(params: {
   const sessionId = context?.sessionId;
   if (
     !scope?.managementEntitlement ||
+    // A repair entitlement belongs to its scheduler turn and never follows a yield.
+    scope.managementEntitlement.source === "failure-repair" ||
     scope.runId !== params.runId ||
     caller?.sessionKey !== params.sessionKey ||
     caller.agentId !== params.agentId ||
@@ -248,9 +251,17 @@ export function bindCronManagementGrant(runId: string | undefined) {
     return undefined;
   }
   const managementOnly = scope.callerOrigin.kind === "unknown" && !scope.callerScopedCreation;
+  const repairJobId =
+    scope.managementEntitlement.source === "failure-repair"
+      ? scope.managementEntitlement.jobId
+      : undefined;
   return {
     managementOnly,
+    ...(repairJobId ? { repairJobId } : {}),
     mint: (method: string, signal?: AbortSignal) => {
+      if (repairJobId && !CRON_FAILURE_REPAIR_METHODS.some((allowed) => allowed === method)) {
+        throw new Error(`This repair turn can only get, update, or run automation ${repairJobId}.`);
+      }
       if (!CRON_MANAGEMENT_METHODS.some((allowed) => allowed === method)) {
         if (managementOnly) {
           throw new Error(

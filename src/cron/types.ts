@@ -287,8 +287,8 @@ export type CronJobState = Omit<
   /**
    * Unresolved recovery scope and last notified signature, when an alert was requested.
    * `repair` records the owner-conversation repair request that replaced the streak's first
-   * alert, and `alerted` that its fallback alert was sent. It lasts until the job succeeds,
-   * so a streak is repaired at most once.
+   * alert, and `alerted` that the next failure's follow-up turn or fallback alert was sent.
+   * It lasts until the job succeeds, so a streak gets one repair request.
    */
   failureAlertIncident?: {
     signature?: string;

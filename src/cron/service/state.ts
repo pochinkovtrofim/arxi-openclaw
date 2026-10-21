@@ -260,6 +260,8 @@ export type CronServiceDeps = {
     job: CronNotificationJob;
     routing: CronNotificationRouting;
     payload: ReplyPayload;
+    /** The product worded the whole alert; add no scheduler detail lines. */
+    productCopy?: true;
     runAtMs?: number;
     channel: CronMessageChannel;
     to?: string;

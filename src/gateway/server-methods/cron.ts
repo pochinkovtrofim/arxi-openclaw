@@ -44,7 +44,9 @@ import {
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
 import { isRecord } from "../../utils.js";
 import {
+  assertCronFailureRepairRequest,
   getCronManagementAuthority,
+  readCronManagementGrantEntitlement,
   withCronManagementGrant,
 } from "../cron-creator-authority-grant.js";
 import { authorizeGatewaySessionCreation } from "../operator-role-policy.js";
@@ -801,6 +803,20 @@ for (const [method, handler] of Object.entries(cronHandlers)) {
       });
     };
     try {
+      const entitlement = grant ? readCronManagementGrantEntitlement(grant) : undefined;
+      if (entitlement?.source === "failure-repair") {
+        const current =
+          method === "cron.update" ? await args.context.cron.readJob(entitlement.jobId) : undefined;
+        const payload = current?.payload;
+        assertCronFailureRepairRequest(
+          entitlement,
+          method,
+          args.params,
+          payload && "toolsAllow" in payload && Array.isArray(payload.toolsAllow)
+            ? payload.toolsAllow
+            : undefined,
+        );
+      }
       await (grant ? withCronManagementGrant(grant, identity, method, run) : run());
     } catch (error) {
       if (!(error instanceof TypeError)) {

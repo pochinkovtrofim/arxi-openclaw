@@ -37,7 +37,95 @@ const activeManagement = new AsyncLocalStorage<{
 /** Admission fact, independent of a run lifetime so an authorized yield can transfer it. */
 export type CronManagementEntitlement =
   | Readonly<{ source: "control-ui-admin" }>
-  | Readonly<{ source: "channel-owner"; isCurrent: () => boolean }>;
+  | Readonly<{ source: "channel-owner"; isCurrent: () => boolean }>
+  /** The scheduler's repair turn: only its failing job, only its tools and on/off state. */
+  | Readonly<{ source: "failure-repair"; jobId: string }>;
+
+/** What a failure-repair turn may do to its job: read it, fix its tools, pause it, run it. */
+export const CRON_FAILURE_REPAIR_METHODS = ["cron.get", "cron.update", "cron.run"] as const;
+const CRON_FAILURE_REPAIR_PAYLOAD_FIELDS = new Set(["kind", "toolsAllow"]);
+const CRON_FAILURE_REPAIR_CONTROL_TOOLS = new Set(["automations", "cron", "gateway", "plugins"]);
+
+/** A repair adds exact tools; it never broadens a job to groups, * or the control plane. */
+export function isCronFailureRepairBroadTool(name: string): boolean {
+  const normalized = name.trim().toLowerCase();
+  return (
+    normalized === "*" ||
+    normalized.startsWith("group:") ||
+    CRON_FAILURE_REPAIR_CONTROL_TOOLS.has(normalized)
+  );
+}
+
+function failureRepairScopeError(message: string): TypeError {
+  return new TypeError(`Automation repair: ${message}`);
+}
+
+/** Server-side fence for the failure-repair entitlement; other entitlements are unaffected. */
+export function assertCronFailureRepairRequest(
+  entitlement: CronManagementEntitlement | undefined,
+  method: string,
+  params: unknown,
+  currentToolsAllow?: readonly string[],
+): void {
+  if (entitlement?.source !== "failure-repair") {
+    return;
+  }
+  if (!CRON_FAILURE_REPAIR_METHODS.some((allowed) => allowed === method)) {
+    throw failureRepairScopeError("only get, update, and run of the failing job are available.");
+  }
+  const request = params && typeof params === "object" ? (params as Record<string, unknown>) : {};
+  const id =
+    typeof request.id === "string"
+      ? request.id.trim()
+      : typeof request.jobId === "string"
+        ? request.jobId.trim()
+        : "";
+  if (id !== entitlement.jobId) {
+    throw failureRepairScopeError(`only job ${entitlement.jobId} can be changed.`);
+  }
+  if (method !== "cron.update") {
+    return;
+  }
+  const patch =
+    request.patch && typeof request.patch === "object"
+      ? (request.patch as Record<string, unknown>)
+      : {};
+  const kept = new Set((currentToolsAllow ?? []).map((tool) => tool.trim().toLowerCase()));
+  for (const [key, value] of Object.entries(patch)) {
+    if (key === "enabled" && value === false) {
+      continue;
+    }
+    const payload =
+      key === "payload" && value && typeof value === "object"
+        ? (value as Record<string, unknown>)
+        : undefined;
+    if (
+      !payload ||
+      Object.keys(payload).some((field) => !CRON_FAILURE_REPAIR_PAYLOAD_FIELDS.has(field)) ||
+      !Array.isArray(payload.toolsAllow)
+    ) {
+      throw failureRepairScopeError("only payload.toolsAllow or enabled:false can be changed.");
+    }
+    if (
+      payload.toolsAllow.some(
+        (tool) =>
+          typeof tool !== "string" ||
+          (isCronFailureRepairBroadTool(tool) && !kept.has(tool.trim().toLowerCase())),
+      )
+    ) {
+      throw failureRepairScopeError(
+        "payload.toolsAllow must list exact tool names; groups, * and automation tools cannot be added.",
+      );
+    }
+  }
+}
+
+/** The entitlement a still-unredeemed management grant carries, for the handler's request fence. */
+export function readCronManagementGrantEntitlement(
+  grant: CronCreatorAuthorityGrant,
+): CronManagementEntitlement | undefined {
+  return grantsByToken.get(grant.token)?.scope.managementEntitlement;
+}
 
 export type CronCreatorAuthorityRunScope = {
   readonly runId: string;

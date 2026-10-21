@@ -83,6 +83,8 @@ export type GatewayClient = Pick<
     internalDeliverySuppressText?: boolean;
     /** Host-owned: deliver only authored output, never runtime error payloads. */
     internalDeliverySuppressErrors?: boolean;
+    /** Scheduler-owned: this turn repairs exactly this failing automation. */
+    cronFailureRepairJobId?: string;
     /** Plugin-owned tools authorized for this internal subagent run. */
     runtimePluginToolGrant?: RuntimePluginToolGrant;
     /** Host-owned exact tool cap for a tracked plugin subagent run. */

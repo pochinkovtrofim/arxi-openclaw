@@ -13,6 +13,7 @@ import { normalizeAnyChannelId } from "../../channels/registry-normalize.js";
 import { sha256Hex } from "../../infra/crypto-digest.js";
 import { resolveTargetPrefixedChannel } from "../../infra/outbound/channel-target-prefix.js";
 import { normalizeTargetForProvider } from "../../infra/outbound/target-normalization.js";
+import { resolveUserMessage } from "../../shared/user-message.js";
 import { resolveCronDeliveryPlan, resolveFailureDestination } from "../delivery-plan.js";
 import { cronFailureDetailLines } from "../failure-notification-text.js";
 import { hasCanonicalCronDeliveryMode } from "../store/delivery-codec.js";
@@ -22,6 +23,7 @@ import type {
   CronFailureNotificationDetail,
   CronJob,
   CronMessageChannel,
+  CronRunErrorClassification,
 } from "../types.js";
 import { buildCronFailureRepairBrief } from "./failure-repair-brief.js";
 import { isJobEnabled } from "./jobs-scheduling.js";
@@ -94,6 +96,23 @@ function hasFailureRepairOwner(
     job.schedule &&
     job.schedule.kind !== "on-exit" &&
     job.schedule.kind !== "stream",
+  );
+}
+
+/**
+ * Whether failures of this job are told in the conversation that owns it, as turns there,
+ * instead of as scheduler text. That conversation speaks the owner's language and can fix
+ * the job; a run's own failure report is then not delivered, since the turn speaks for it.
+ */
+export function cronFailuresGoToOwnerConversation(
+  job: Partial<Pick<CronJob, "owner" | "payload" | "schedule" | "delivery" | "failureAlert">>,
+  alertConfig: ResolvedFailureAlert | null,
+): boolean {
+  return (
+    alertConfig?.mode === "announce" &&
+    hasFailureRepairOwner(job) &&
+    // Best-effort delivery suppresses inherited alerts, so nobody would speak for the failure.
+    !(job.delivery?.bestEffort === true && !job.failureAlert)
   );
 }
 
@@ -230,6 +249,18 @@ function buildFailureAlertPayload(params: {
 }) {
   const safeJobName = params.job.name || params.job.id;
   const errorReason = params.status === "error" ? params.errorReason : undefined;
+  // A chat route may carry the product's own wording in the owner's language.
+  const productText =
+    params.route.mode === "webhook"
+      ? undefined
+      : resolveUserMessage({
+          code: "automation_failed",
+          jobName: safeJobName,
+          count: params.consecutiveErrors,
+          ...(params.status === "skipped" ? { skipped: true as const } : {}),
+          ...(params.repairRequested ? { repairRequested: true as const } : {}),
+          ...(errorReason ? { reason: errorReason } : {}),
+        });
   // Keep alert bodies compact because they may route through chat channels
   // with notification previews and provider-specific message limits.
   const statusVerb = params.status === "skipped" ? "skipped" : "failed";
@@ -257,11 +288,11 @@ function buildFailureAlertPayload(params: {
         })
       : undefined;
   const payload: ReplyPayload = {
-    text: providerLoginRecovery ? `${text}\n${providerLoginRecovery.hint}` : text,
+    text: productText ?? (providerLoginRecovery ? `${text}\n${providerLoginRecovery.hint}` : text),
     ...(providerLoginRecovery ? { presentation: providerLoginRecovery.presentation } : {}),
   };
 
-  return payload;
+  return { payload, ...(productText ? { productCopy: true as const } : {}) };
 }
 
 function startFailureNotification(job: CronJob): void {
@@ -350,8 +381,10 @@ function failureIncident(params: {
 
 /**
  * Emits one alert per incident when threshold, best-effort, and cooldown policy allow it.
- * An owned job's first chat alert, or terminal one-shot failure, becomes a repair request.
- * A later failure alerts, naming the request, and the streak is never repaired twice.
+ * An owned job's first chat alert, or terminal one-shot failure, becomes a repair request;
+ * a run that reported its own task blocked requests it at once. A later failure of a job
+ * whose conversation owns its failures becomes a follow-up turn there, with the alert only
+ * as its fallback; other jobs alert, naming the request. A streak is never repaired twice.
  */
 export function maybeEmitFailureAlert(
   state: CronJobPolicyContext,
@@ -362,6 +395,8 @@ export function maybeEmitFailureAlert(
     error?: string;
     errorReason?: FailoverReason;
     failureNotificationDetail?: CronFailureNotificationDetail;
+    /** The run's final answer reported AUTOMATION_FAILED: retrying it alone repeats that turn. */
+    reportedByAgent?: boolean;
     runAtMs?: number;
     consecutiveCount: number;
     deferredNotifications: DeferredCronNotifications;
@@ -371,7 +406,16 @@ export function maybeEmitFailureAlert(
   const terminalOneShot =
     params.status === "error" && params.job.schedule.kind === "at" && !isJobEnabled(params.job);
   const alertConfig = params.alertConfig;
-  if (!alertConfig || (!terminalOneShot && params.consecutiveCount < alertConfig.after)) {
+  const repair = params.job.state.failureAlertIncident?.repair;
+  const conversationOwned =
+    params.status === "error" &&
+    (terminalOneShot || isJobEnabled(params.job)) &&
+    cronFailuresGoToOwnerConversation(params.job, alertConfig);
+  const immediateRepair = params.reportedByAgent === true && conversationOwned && !repair;
+  if (
+    !alertConfig ||
+    (!terminalOneShot && !immediateRepair && params.consecutiveCount < alertConfig.after)
+  ) {
     return;
   }
   // Best-effort delivery suppresses inherited alert noise, not an independently
@@ -381,7 +425,6 @@ export function maybeEmitFailureAlert(
   }
   const incident = failureIncident({ ...params, route: alertConfig });
   const now = state.deps.nowMs();
-  const repair = params.job.state.failureAlertIncident?.repair;
   // The repair request took this streak's alert and cooldown slot; if the job still
   // fails, the user gets that alert once.
   if (repair && !repair.alerted) {
@@ -393,7 +436,7 @@ export function maybeEmitFailureAlert(
   const alert: Extract<CronNotificationIntent, { kind: "failure-alert" }> = {
     kind: "failure-alert",
     job,
-    payload: buildFailureAlertPayload({
+    ...buildFailureAlertPayload({
       job,
       error: params.error,
       errorReason: params.errorReason,
@@ -416,20 +459,41 @@ export function maybeEmitFailureAlert(
   ) {
     const opened = params.job.state.failureAlertIncident ?? incident;
     params.job.state.failureAlertIncident = { ...opened, repair: { atMs: now } };
-    // A terminal job keeps its alert cycle open for fallback delivery if repair cannot start.
-    params.job.state.lastFailureNotificationDeliveryStatus = terminalOneShot
+    // A terminal job, or a run whose own report was withheld for this turn, keeps its
+    // alert cycle open for fallback delivery if repair cannot start.
+    const withFallback = terminalOneShot || immediateRepair;
+    params.job.state.lastFailureNotificationDeliveryStatus = withFallback
       ? "unknown"
       : "not-requested";
     params.deferredNotifications.push({
       kind: "failure-repair",
       job,
-      ...(terminalOneShot ? { fallback: alert } : {}),
+      ...(withFallback ? { fallback: alert } : {}),
       text: buildCronFailureRepairBrief({
         job: params.job,
         consecutiveErrors: params.consecutiveCount,
         error: params.error,
         errorReason: params.errorReason,
         terminal: terminalOneShot,
+        reportedByAgent: params.reportedByAgent,
+      }),
+    });
+    return;
+  }
+  if (repair && conversationOwned) {
+    // The alert cycle stays open so the fallback can record its delivery.
+    params.deferredNotifications.push({
+      kind: "failure-repair",
+      job,
+      fallback: alert,
+      text: buildCronFailureRepairBrief({
+        job: params.job,
+        consecutiveErrors: params.consecutiveCount,
+        error: params.error,
+        errorReason: params.errorReason,
+        terminal: terminalOneShot,
+        reportedByAgent: params.reportedByAgent,
+        followUp: true,
       }),
     });
     return;
@@ -460,6 +524,7 @@ export function finalizeCronFailureNotifications(
     result: {
       status: "ok" | "error" | "skipped";
       error?: string;
+      errorClassification?: CronRunErrorClassification;
       failureNotificationDetail?: CronFailureNotificationDetail;
       startedAt: number;
     };
@@ -492,6 +557,9 @@ export function finalizeCronFailureNotifications(
       error: params.result.error,
       errorReason: params.job.state.lastErrorReason,
       failureNotificationDetail: params.result.failureNotificationDetail,
+      reportedByAgent:
+        params.result.errorClassification?.kind === "permanent" &&
+        params.result.errorClassification.reportedByAgent === true,
       runAtMs: params.result.startedAt,
       consecutiveCount: params.job.state.consecutiveErrors ?? 0,
       deferredNotifications: params.deferredNotifications,
@@ -519,6 +587,10 @@ export function finalizeCronFailureNotifications(
     }
     const job = cronNotificationJob(params.job);
     const route = params.alertConfig;
+    const productText =
+      route.mode === "webhook"
+        ? undefined
+        : resolveUserMessage({ code: "automation_delivery_failed", jobName: job.name || job.id });
     const detailLines =
       route.mode === "webhook"
         ? [
@@ -526,12 +598,15 @@ export function finalizeCronFailureNotifications(
           ]
         : cronFailureDetailLines(params.job.state.lastErrorReason);
     const payload: ReplyPayload = {
-      text: [`Automation "${job.name || job.id}" delivery failed`, ...detailLines].join("\n"),
+      text:
+        productText ??
+        [`Automation "${job.name || job.id}" delivery failed`, ...detailLines].join("\n"),
     };
     params.deferredNotifications.push({
       kind: "failure-alert",
       job,
       payload,
+      ...(productText ? { productCopy: true as const } : {}),
       runAtMs: params.result.startedAt,
       route,
     });

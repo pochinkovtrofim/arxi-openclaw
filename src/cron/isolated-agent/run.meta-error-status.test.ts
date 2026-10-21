@@ -166,6 +166,36 @@ describe("runCronIsolatedAgentTurn - meta.error status propagation", () => {
     expectObjectFields(await runTurn(), testCase.expected);
   });
 
+  it.each([
+    { name: "owned by a conversation", owner: { sessionKey: "agent:main:telegram:direct:owner" } },
+    { name: "without an owner conversation", owner: undefined },
+  ])(
+    "delivers a reported failure only when no conversation speaks for it: $name",
+    async ({ owner }) => {
+      await useRealOutcome();
+      resolveCronDeliveryPlanMock.mockReturnValue({
+        requested: true,
+        mode: "announce",
+        channel: "messagechat",
+        to: "test-target",
+      });
+      const reply = "AUTOMATION_FAILED\nGoogle Sheets is not reachable from this run.";
+      mockAgentRun({ payloads: [{ text: reply }], meta: { finalAssistantVisibleText: reply } });
+      const result = await runTurn({
+        job: makeIsolatedAgentJobFixture({
+          delivery: { mode: "announce", channel: "messagechat", to: "test-target" },
+          ...(owner ? { owner } : {}),
+        }),
+      });
+      expectObjectFields(result, {
+        status: "error",
+        errorClassification: { kind: "permanent", reportedByAgent: true },
+      });
+      // The owner conversation's repair turn tells the owner in their language instead.
+      expect(dispatchCronDeliveryMock).toHaveBeenCalledTimes(owner ? 0 : 1);
+    },
+  );
+
   it("preserves a heartbeat-only accepted child handoff failure as a cron error", async () => {
     const heartbeatPayload = { text: "HEARTBEAT_OK" };
     const error = "cron child-session handoff timed out before producing a final assistant payload";

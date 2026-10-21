@@ -253,6 +253,7 @@ export function createGatewayInstanceRuntime(
           dispatchOptions.runtimeContextFragments ||
           dispatchOptions.internalDeliverySuppressText === true ||
           dispatchOptions.internalDeliverySuppressErrors === true ||
+          dispatchOptions.cronFailureRepairJobId ||
           delegatedToolPolicyHandoffId ||
           restoredOperator ||
           dispatchOptions.scopes ||
@@ -273,6 +274,7 @@ export function createGatewayInstanceRuntime(
                 runtimeContextFragments: dispatchOptions.runtimeContextFragments,
                 internalDeliverySuppressText: dispatchOptions.internalDeliverySuppressText,
                 internalDeliverySuppressErrors: dispatchOptions.internalDeliverySuppressErrors,
+                cronFailureRepairJobId: dispatchOptions.cronFailureRepairJobId,
                 delegatedToolPolicyHandoffId,
                 scopes: restoredOperator
                   ? [...restoredOperator.authority.scopes]
