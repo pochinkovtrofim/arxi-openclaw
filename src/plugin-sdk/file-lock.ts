@@ -93,8 +93,9 @@ function createCurrentProcessLockPayload(): Record<string, unknown> {
 
 // A VM snapshot restore or a deterministic boot resumes the same pid and start
 // time, so a sidecar left by an earlier incarnation of this process looks live
-// forever. This manager tracks every lock the process holds, so an unheld
-// sidecar that names this exact process was abandoned by that incarnation.
+// forever. Every definite-only sidecar is taken through this manager on the
+// main thread, so one it does not hold that names this exact process was
+// abandoned by that incarnation.
 function isAbandonedByThisProcess(payload: unknown, normalizedTargetPath: string): boolean {
   const owner = asNullableRecord(payload);
   const starttime = getCurrentProcessStartTime();
