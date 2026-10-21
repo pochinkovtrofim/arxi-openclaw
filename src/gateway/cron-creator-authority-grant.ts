@@ -10,6 +10,7 @@ import {
   validateAgentRunDelegatedAuthority,
   type AgentRunDelegatedAuthority,
 } from "../infra/agent-run-registry.js";
+import { GATEWAY_OWNER_ONLY_CORE_TOOLS } from "../security/dangerous-tools.js";
 import type {
   CronAuthenticatedChannelRequester,
   CronCreatorAuthorityGrant,
@@ -32,6 +33,7 @@ const activeManagement = new AsyncLocalStorage<{
   assertActive: () => void;
   callerOrigin?: CronScheduledToolCallerOrigin;
   channelRequester?: CronAuthenticatedChannelRequester;
+  repairJobId?: string;
 }>();
 
 /** Admission fact, independent of a run lifetime so an authorized yield can transfer it. */
@@ -44,15 +46,15 @@ export type CronManagementEntitlement =
 /** What a failure-repair turn may do to its job: read it, fix its tools, pause it, run it. */
 export const CRON_FAILURE_REPAIR_METHODS = ["cron.get", "cron.update", "cron.run"] as const;
 const CRON_FAILURE_REPAIR_PAYLOAD_FIELDS = new Set(["kind", "toolsAllow"]);
-const CRON_FAILURE_REPAIR_CONTROL_TOOLS = new Set(["automations", "cron", "gateway", "plugins"]);
+const CRON_FAILURE_REPAIR_OWNER_TOOLS = new Set<string>(["cron", ...GATEWAY_OWNER_ONLY_CORE_TOOLS]);
 
-/** A repair adds exact tools; it never broadens a job to groups, * or the control plane. */
+/** A repair adds exact tools; never groups, *, or the owner-only control and session tools. */
 export function isCronFailureRepairBroadTool(name: string): boolean {
   const normalized = name.trim().toLowerCase();
   return (
     normalized === "*" ||
     normalized.startsWith("group:") ||
-    CRON_FAILURE_REPAIR_CONTROL_TOOLS.has(normalized)
+    CRON_FAILURE_REPAIR_OWNER_TOOLS.has(normalized)
   );
 }
 
@@ -65,7 +67,7 @@ export function assertCronFailureRepairRequest(
   entitlement: CronManagementEntitlement | undefined,
   method: string,
   params: unknown,
-  currentToolsAllow?: readonly string[],
+  current?: Readonly<{ kind: string; toolsAllow?: readonly string[] | null }>,
 ): void {
   if (entitlement?.source !== "failure-repair") {
     return;
@@ -90,7 +92,7 @@ export function assertCronFailureRepairRequest(
     request.patch && typeof request.patch === "object"
       ? (request.patch as Record<string, unknown>)
       : {};
-  const kept = new Set((currentToolsAllow ?? []).map((tool) => tool.trim().toLowerCase()));
+  const kept = new Set((current?.toolsAllow ?? []).map((tool) => tool.trim().toLowerCase()));
   for (const [key, value] of Object.entries(patch)) {
     if (key === "enabled" && value === false) {
       continue;
@@ -102,6 +104,7 @@ export function assertCronFailureRepairRequest(
     if (
       !payload ||
       Object.keys(payload).some((field) => !CRON_FAILURE_REPAIR_PAYLOAD_FIELDS.has(field)) ||
+      (payload.kind !== undefined && payload.kind !== current?.kind) ||
       !Array.isArray(payload.toolsAllow)
     ) {
       throw failureRepairScopeError("only payload.toolsAllow or enabled:false can be changed.");
@@ -114,7 +117,7 @@ export function assertCronFailureRepairRequest(
       )
     ) {
       throw failureRepairScopeError(
-        "payload.toolsAllow must list exact tool names; groups, * and automation tools cannot be added.",
+        "payload.toolsAllow must list exact tool names; groups, * and owner-only tools cannot be added.",
       );
     }
   }
@@ -504,9 +507,22 @@ export async function withCronManagementGrant<T>(
         ? { callerOrigin: { kind: "local" as const } }
         : {}),
       channelRequester: channelRequestersByScope.get(entry.scope),
+      ...(entry.scope.managementEntitlement?.source === "failure-repair"
+        ? { repairJobId: entry.scope.managementEntitlement.jobId }
+        : {}),
     },
     run,
   );
+}
+
+/** The failing automation a scheduler repair call may fix, while that call runs. */
+export function getCronManagementRepairJobId(identity: CronManagementCaller): string | undefined {
+  const management = activeManagement.getStore();
+  if (management?.identity !== identity) {
+    return undefined;
+  }
+  management.assertActive();
+  return management.repairJobId;
 }
 
 export function getCronManagementAuthority(

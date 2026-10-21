@@ -618,6 +618,22 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
                   gatewayOpts,
                   callGateway: (method, callOpts, callParams) =>
                     callGateway(method, callOpts, callParams),
+                  ...(callerIdentity
+                    ? {
+                        withLentTools: (toolsAllow, run) =>
+                          withGatewayToolCallerIdentity(
+                            {
+                              ...callerIdentity,
+                              cronToolsAllowCapture: "final-executable-surface",
+                              cronMcpToolBindings: resolveCronCreatorMcpToolBindingsForToolsAllow(
+                                opts?.creatorToolAllowlist,
+                                toolsAllow,
+                              ),
+                            },
+                            run,
+                          ),
+                      }
+                    : {}),
                 }),
               );
             }

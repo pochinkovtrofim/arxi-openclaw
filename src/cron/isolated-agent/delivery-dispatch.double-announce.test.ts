@@ -679,6 +679,25 @@ describe("dispatchCronDelivery", () => {
     });
   });
 
+  it("withholds a settled child's AUTOMATION_FAILED answer that the owner conversation takes", async () => {
+    vi.mocked(readDescendantSubagentFallbackReply).mockResolvedValue(
+      "AUTOMATION_FAILED\nGoogle Sheets is not reachable from this run.",
+    );
+
+    const state = await dispatchCronDelivery({
+      ...emptyParams(true),
+      withholdReportedFailure: true,
+    });
+
+    expect(deliverOutboundPayloads).not.toHaveBeenCalled();
+    expect(state).toMatchObject({
+      disposition: { kind: "suppressed" },
+      delivered: false,
+      deliveryAttempted: true,
+      agentReportedFailure: "Google Sheets is not reachable from this run.",
+    });
+  });
+
   it.each([
     ["active threaded best-effort", true, "42", true],
     ["completed direct", false, undefined, false],

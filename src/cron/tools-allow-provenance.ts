@@ -3,6 +3,7 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
+import { normalizeToolPolicyName } from "../agents/tool-policy-shared.js";
 import type { CronAuthenticatedChannelRequester } from "../gateway/cron-creator-authority-grant.types.js";
 import { normalizeOptionalAccountId } from "../routing/account-id.js";
 import {
@@ -112,4 +113,34 @@ export function resolveCronAuthenticatedChannelRequester(
   }
   const requester = normalizeCronToolsAllowProvenance(job.toolsAllowProvenance)?.channelRequester;
   return requester?.accountId === policy.ownerAccountId ? requester : undefined;
+}
+
+/**
+ * A failure repair lends its owner conversation's tools to the job: the job keeps its own
+ * requester facts, and only names without a binding take the turn's MCP identities.
+ */
+export function resolveCronRepairToolsAllowProvenance(params: {
+  job: Pick<CronStoredJob, "toolsAllowProvenance">;
+  toolsAllow: readonly string[] | null | undefined;
+  lentMcpToolBindings: unknown;
+}): CronToolsAllowProvenance | undefined {
+  const existing = normalizeCronToolsAllowProvenance(params.job.toolsAllowProvenance);
+  const kept =
+    existing?.source === "final-executable-surface" ? (existing.mcpToolBindings ?? []) : [];
+  const bound = new Set(kept.map((binding) => binding.name));
+  const next = new Set((params.toolsAllow ?? []).map(normalizeToolPolicyName));
+  const lent = (normalizeCronScheduledMcpToolBindings(params.lentMcpToolBindings) ?? []).filter(
+    (binding) => next.has(binding.name) && !bound.has(binding.name),
+  );
+  if (existing?.source !== "final-executable-surface" && lent.length === 0) {
+    return existing;
+  }
+  const mcpToolBindings = [...kept, ...lent];
+  return {
+    version: 1,
+    source: "final-executable-surface",
+    callerOrigin: existing?.callerOrigin ?? { kind: "unknown" },
+    ...(existing?.channelRequester ? { channelRequester: existing.channelRequester } : {}),
+    ...(mcpToolBindings.length > 0 ? { mcpToolBindings } : {}),
+  };
 }

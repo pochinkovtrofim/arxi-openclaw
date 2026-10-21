@@ -58,6 +58,8 @@ export async function updateCronJobForRepair(params: {
     opts: GatewayCallOptions,
     params: Record<string, unknown>,
   ) => Promise<unknown>;
+  /** Signs the update with this turn's MCP identities for the tools it lends. */
+  withLentTools?: <T>(toolsAllow: readonly string[], run: () => Promise<T>) => Promise<T>;
 }): Promise<unknown> {
   const { payload, enabled, ...other } = params.patch;
   if (Object.keys(other).length > 0 || (enabled !== undefined && enabled !== false)) {
@@ -117,9 +119,14 @@ export async function updateCronJobForRepair(params: {
   if (Object.keys(patch).length === 0) {
     throw new Error("job patch required");
   }
-  return await params.callGateway("cron.update", params.gatewayOpts, {
-    id: params.id,
-    patch,
-    ...(expectedConfigRevision ? { expectedConfigRevision } : {}),
-  });
+  const update = () =>
+    params.callGateway("cron.update", params.gatewayOpts, {
+      id: params.id,
+      patch,
+      ...(expectedConfigRevision ? { expectedConfigRevision } : {}),
+    });
+  const toolsAllow = isRecord(patch.payload) ? patch.payload.toolsAllow : undefined;
+  return Array.isArray(toolsAllow) && params.withLentTools
+    ? await params.withLentTools(toolsAllow, update)
+    : await update();
 }

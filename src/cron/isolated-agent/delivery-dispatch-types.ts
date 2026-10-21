@@ -41,6 +41,8 @@ export type DispatchCronDeliveryParams = {
   /** Queues same-source fallback awareness only after a durable completion commit fails. */
   queueSourceSessionMessageToolAwareness?: () => Promise<void>;
   deliveryBestEffort: boolean;
+  /** A descendant's AUTOMATION_FAILED report goes to the owner conversation, not this route. */
+  withholdReportedFailure?: boolean;
   deliveryPayloadHasStructuredContent: boolean;
   deliveryPayloads: ReplyPayload[];
   synthesizedText?: string;

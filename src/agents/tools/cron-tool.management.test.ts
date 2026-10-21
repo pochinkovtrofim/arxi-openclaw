@@ -26,7 +26,11 @@ const jobId = "existing-job";
 const configRevision = "sha256:stored-job";
 
 async function withRepairTool(
-  run: (tool: ReturnType<typeof createCronTool>, calls: Array<[string, unknown]>) => Promise<void>,
+  run: (
+    tool: ReturnType<typeof createCronTool>,
+    calls: Array<[string, unknown]>,
+    bindings: Map<string, unknown>,
+  ) => Promise<void>,
   payload: Record<string, unknown> = {
     kind: "agentTurn",
     message: "scan",
@@ -49,6 +53,7 @@ async function withRepairTool(
     delegatedAuthority: { ...authority, kind: "local" },
   };
   const calls: Array<[method: string, params: unknown]> = [];
+  const bindings = new Map<string, unknown>();
   try {
     await runWithCronCreatorAuthorityCapability(capability, () =>
       withGatewayToolCallerIdentity({ ...identity, approvalAuthority: authority }, async () => {
@@ -61,7 +66,15 @@ async function withRepairTool(
               "browser",
               "read",
               "automations",
-              { name: "google_workspace__sheets_append", aliasName: "sheets_append" },
+              {
+                name: "google_workspace__sheets_append",
+                aliasName: "sheets_append",
+                mcp: {
+                  serverName: "google_workspace",
+                  operation: "tool",
+                  toolName: "sheets_append",
+                },
+              },
             ],
             creatorToolAllowlistCaptureRef: {
               value: { version: 1, source: "final-executable-surface" },
@@ -71,6 +84,7 @@ async function withRepairTool(
             callGatewayTool: async <T>(method: string, _options: unknown, params: unknown) => {
               const caller = getGatewayToolCallerIdentity();
               expect(caller?.cronManagementGrant).toBeDefined();
+              bindings.set(method, caller?.cronMcpToolBindings);
               return await withCronManagementGrant(
                 caller!.cronManagementGrant!,
                 identity,
@@ -85,7 +99,7 @@ async function withRepairTool(
             },
           },
         );
-        await run(tool, calls);
+        await run(tool, calls, bindings);
       }),
     );
   } finally {
@@ -210,7 +224,7 @@ describe("admin automation management", () => {
 
 describe("failure-repair automation access", () => {
   it("gives the failing job tools this conversation has, by canonical name", async () => {
-    await withRepairTool(async (tool, calls) => {
+    await withRepairTool(async (tool, calls, bindings) => {
       await tool.execute("repair-update", {
         action: "update",
         jobId,
@@ -231,6 +245,15 @@ describe("failure-repair automation access", () => {
             },
           },
         ],
+      ]);
+      // The update carries the lent MCP tool's identity, so its scheduled runs can bind it.
+      expect(bindings.get("cron.update")).toEqual([
+        {
+          name: "google_workspace__sheets_append",
+          serverName: "google_workspace",
+          operation: "tool",
+          toolName: "sheets_append",
+        },
       ]);
     });
   });

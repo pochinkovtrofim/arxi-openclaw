@@ -288,6 +288,7 @@ function buildFailureAlertPayload(params: {
         })
       : undefined;
   const payload: ReplyPayload = {
+    // Product copy words its own sign-in step; the presentation keeps the button.
     text: productText ?? (providerLoginRecovery ? `${text}\n${providerLoginRecovery.hint}` : text),
     ...(providerLoginRecovery ? { presentation: providerLoginRecovery.presentation } : {}),
   };
@@ -302,16 +303,39 @@ function startFailureNotification(job: CronJob): void {
   job.state.lastFailureNotificationDeliveryError = undefined;
 }
 
-function startFailureAlertCycle(job: CronJob, incident: FailureAlertSignal, now: number): void {
+function startFailureAlertCycle(
+  job: CronJob,
+  incident: FailureAlertSignal,
+  now: number,
+  repairStep: "followedUp" | "alerted" = "alerted",
+): void {
   startFailureNotification(job);
   job.state.lastFailureAlertAtMs = now;
   const current = job.state.failureAlertIncident;
+  const repair = current?.repair;
   job.state.failureAlertIncident = {
     ...incident,
     scope: current?.scope === "run" ? "run" : incident.scope,
-    // An alert after the repair request is its fallback; the marker lasts until success.
-    ...(current?.repair ? { repair: { atMs: current.repair.atMs, alerted: true } } : {}),
+    // The repair marker records each step after the request; it lasts until success.
+    ...(repair
+      ? {
+          repair:
+            repairStep === "followedUp"
+              ? { atMs: repair.atMs, followedUp: true }
+              : { ...repair, alerted: true },
+        }
+      : {}),
   };
+}
+
+function inFailureAlertCooldown(job: CronJob, alertConfig: ResolvedFailureAlert, now: number) {
+  const lastAlert = job.state.lastFailureAlertAtMs;
+  // Future timestamps cannot prove a recent prior alert.
+  return (
+    typeof lastAlert === "number" &&
+    lastAlert <= now &&
+    now - lastAlert < Math.max(0, alertConfig.cooldownMs)
+  );
 }
 
 function requestFailureNotification(
@@ -324,14 +348,9 @@ function requestFailureNotification(
     return false;
   }
   const now = state.deps.nowMs();
-  const lastAlert = job.state.lastFailureAlertAtMs;
   // Cooldown is stored on job state so process restarts and service reloads do
-  // not spam operators. Future timestamps cannot prove a recent prior alert.
-  const inCooldown =
-    typeof lastAlert === "number" &&
-    lastAlert <= now &&
-    now - lastAlert < Math.max(0, alertConfig.cooldownMs);
-  if (inCooldown) {
+  // not spam operators.
+  if (inFailureAlertCooldown(job, alertConfig, now)) {
     return false;
   }
   startFailureAlertCycle(job, incident, now);
@@ -357,10 +376,13 @@ function failureIncident(params: {
   error?: string;
   errorReason?: FailoverReason;
   failureNotificationDetail?: CronFailureNotificationDetail;
+  reportedByAgent?: boolean;
   route: ResolvedFailureAlert;
 }): FailureAlertSignal {
-  // Classified causes ignore changing provider prose; unknown errors stay private.
-  const cause = params.errorReason ?? params.failureNotificationDetail ?? params.error?.trim();
+  // Classified causes ignore changing provider or agent prose; unknown errors stay private.
+  const cause = params.reportedByAgent
+    ? "reported-by-agent"
+    : (params.errorReason ?? params.failureNotificationDetail ?? params.error?.trim());
   const scope = failureRecoveryScope(params.failureNotificationDetail);
   return {
     signature: sha256Hex(
@@ -382,9 +404,9 @@ function failureIncident(params: {
 /**
  * Emits one alert per incident when threshold, best-effort, and cooldown policy allow it.
  * An owned job's first chat alert, or terminal one-shot failure, becomes a repair request;
- * a run that reported its own task blocked requests it at once. A later failure of a job
- * whose conversation owns its failures becomes a follow-up turn there, with the alert only
- * as its fallback; other jobs alert, naming the request. A streak is never repaired twice.
+ * a run that reported its own task blocked requests it at once. If the job still fails, its
+ * conversation gets one follow-up turn, and the failure after that sends the plain alert,
+ * which needs no model: a repair turn that fails silently still ends in a notice.
  */
 export function maybeEmitFailureAlert(
   state: CronJobPolicyContext,
@@ -425,10 +447,15 @@ export function maybeEmitFailureAlert(
   }
   const incident = failureIncident({ ...params, route: alertConfig });
   const now = state.deps.nowMs();
-  // The repair request took this streak's alert and cooldown slot; if the job still
-  // fails, the user gets that alert once.
-  if (repair && !repair.alerted) {
-    startFailureAlertCycle(params.job, incident, now);
+  // A streak marked by an earlier build may carry an alert but no follow-up yet.
+  const followUp = repair !== undefined && !repair.followedUp && conversationOwned;
+  // Each step after the repair request skips dedupe but waits out the cooldown the previous
+  // step started, so a repair turn's own forced run cannot start a follow-up beside it.
+  if (followUp || (repair && !repair.alerted)) {
+    if (inFailureAlertCooldown(params.job, alertConfig, now)) {
+      return;
+    }
+    startFailureAlertCycle(params.job, incident, now, followUp ? "followedUp" : "alerted");
   } else if (!requestFailureNotification(state, params.job, alertConfig, incident)) {
     return;
   }
@@ -459,9 +486,9 @@ export function maybeEmitFailureAlert(
   ) {
     const opened = params.job.state.failureAlertIncident ?? incident;
     params.job.state.failureAlertIncident = { ...opened, repair: { atMs: now } };
-    // A terminal job, or a run whose own report was withheld for this turn, keeps its
-    // alert cycle open for fallback delivery if repair cannot start.
-    const withFallback = terminalOneShot || immediateRepair;
+    // A terminal job, or a run whose own report was withheld for this conversation, keeps
+    // its alert cycle open for fallback delivery if repair cannot start.
+    const withFallback = terminalOneShot || conversationOwned;
     params.job.state.lastFailureNotificationDeliveryStatus = withFallback
       ? "unknown"
       : "not-requested";
@@ -480,12 +507,12 @@ export function maybeEmitFailureAlert(
     });
     return;
   }
-  if (repair && conversationOwned) {
-    // The alert cycle stays open so the fallback can record its delivery.
+  if (followUp) {
+    // No fallback: if this turn cannot start, the next failure sends the alert.
+    params.job.state.lastFailureNotificationDeliveryStatus = "not-requested";
     params.deferredNotifications.push({
       kind: "failure-repair",
       job,
-      fallback: alert,
       text: buildCronFailureRepairBrief({
         job: params.job,
         consecutiveErrors: params.consecutiveCount,

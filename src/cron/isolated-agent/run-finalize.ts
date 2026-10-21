@@ -341,12 +341,11 @@ export async function finalizeCronRun(params: {
     isSilentReplyPayloadText(finalRunResult.meta?.finalAssistantVisibleText);
   // When the owner conversation answers for this job's failures, it tells the owner in their
   // language and can repair the job; the run's error text stays in cron state for that turn.
-  const failureOwnedByConversation =
-    hasFatalErrorPayload &&
-    cronFailuresGoToOwnerConversation(
-      prepared.input.job,
-      resolveFailureAlert({ deps: { cronConfig: prepared.input.cfg.cron } }, prepared.input.job),
-    );
+  const failuresGoToConversation = cronFailuresGoToOwnerConversation(
+    prepared.input.job,
+    resolveFailureAlert({ deps: { cronConfig: prepared.input.cfg.cron } }, prepared.input.job),
+  );
+  const failureOwnedByConversation = hasFatalErrorPayload && failuresGoToConversation;
   if (
     (hasFatalStructuredErrorPayload || failureOwnedByConversation) &&
     prepared.deliveryRequested
@@ -402,6 +401,7 @@ export async function finalizeCronRun(params: {
     sourceDeliveryOutcome,
     queueSourceSessionMessageToolAwareness,
     deliveryBestEffort: prepared.input.job.delivery?.bestEffort === true,
+    withholdReportedFailure: failuresGoToConversation,
     deliveryPayloadHasStructuredContent,
     deliveryPayloads,
     synthesizedText,

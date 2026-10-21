@@ -443,6 +443,10 @@ describe("runCronIsolatedAgentTurn delivery policy", () => {
       const prompt = runPrompt(embedded());
       expect(prompt).toContain("<safe-external>wrapped hook</safe-external>");
       expect(prompt).toContain("This is an unattended scheduled run.");
+      // A partial result is delivered; only a run that did nothing reports failure.
+      expect(prompt).toContain("If part of the work failed, still deliver what is ready");
+      expect(prompt).toContain("If you could do none of it, start with AUTOMATION_FAILED");
+      expect(prompt).not.toContain("what you tried");
       expect(prompt.indexOf("<safe-external>")).toBeLessThan(
         prompt.indexOf("This is an unattended scheduled run"),
       );

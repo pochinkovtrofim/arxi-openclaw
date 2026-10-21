@@ -1,5 +1,6 @@
 // The scheduler's repair turn may fix its failing automation, and nothing else.
 import { describe, expect, it } from "vitest";
+import { resolveCronRepairToolsAllowProvenance } from "../cron/tools-allow-provenance.js";
 import { assertCronFailureRepairRequest } from "./cron-creator-authority-grant.js";
 import type { AgentRunRequest } from "./server-methods/agent-request-types.js";
 import { resolveGatewayCronCreatorAuthorityAdmission } from "./server-methods/cron-creator-authority-admission.js";
@@ -45,7 +46,10 @@ describe("failure-repair automation authority", () => {
 
   it("fences the repair grant to its job's tools and on/off state", () => {
     const check = (method: string, params: unknown, current?: string[]) => () =>
-      assertCronFailureRepairRequest(repair, method, params, current);
+      assertCronFailureRepairRequest(repair, method, params, {
+        kind: "agentTurn",
+        toolsAllow: current,
+      });
     const update = (patch: unknown) => ({ id: "job-1", patch });
     const tools = (toolsAllow: unknown[]) => update({ payload: { kind: "agentTurn", toolsAllow } });
 
@@ -71,7 +75,20 @@ describe("failure-repair automation authority", () => {
     expect(
       check("cron.update", update({ payload: { kind: "agentTurn", message: "new task" } })),
     ).toThrow("only payload.toolsAllow");
-    for (const broad of ["*", "group:fs", "automations", "gateway"]) {
+    expect(
+      check("cron.update", update({ payload: { kind: "script", toolsAllow: ["browser"] } }), [
+        "browser",
+      ]),
+    ).toThrow("only payload.toolsAllow");
+    for (const broad of [
+      "*",
+      "group:fs",
+      "automations",
+      "cron",
+      "gateway",
+      "sessions",
+      "terminal",
+    ]) {
       expect(check("cron.update", tools(["browser", broad]), ["browser"])).toThrow(
         "cannot be added",
       );
@@ -80,5 +97,50 @@ describe("failure-repair automation authority", () => {
     expect(() =>
       assertCronFailureRepairRequest({ source: "control-ui-admin" }, "cron.remove", { id: "x" }),
     ).not.toThrow();
+  });
+
+  it("keeps a repaired job's requester facts and binds only names it lacks", () => {
+    const binding = (name: string, serverName: string) =>
+      ({ name, serverName, operation: "tool", toolName: name.split("__")[1]! }) as const;
+    const mail = binding("mail__read", "mail");
+    const sheets = binding("google_workspace__sheets_append", "google_workspace");
+    const surface = {
+      toolsAllowProvenance: {
+        version: 1 as const,
+        source: "final-executable-surface" as const,
+        callerOrigin: { kind: "local" as const },
+        mcpToolBindings: [mail],
+      },
+    };
+    expect(
+      resolveCronRepairToolsAllowProvenance({
+        job: surface,
+        toolsAllow: ["browser", mail.name, sheets.name],
+        // A turn cannot rebind a name the job already has, or bind one it does not list.
+        lentMcpToolBindings: [binding("mail__read", "other"), sheets, binding("x__y", "x")],
+      }),
+    ).toEqual({ ...surface.toolsAllowProvenance, mcpToolBindings: [mail, sheets] });
+
+    const requester = {
+      toolsAllowProvenance: {
+        version: 1 as const,
+        source: "authenticated-requester" as const,
+        callerOrigin: { kind: "external" as const, channel: "telegram" },
+      },
+    };
+    expect(
+      resolveCronRepairToolsAllowProvenance({
+        job: requester,
+        toolsAllow: ["browser", "read"],
+        lentMcpToolBindings: [],
+      }),
+    ).toEqual(requester.toolsAllowProvenance);
+    expect(
+      resolveCronRepairToolsAllowProvenance({
+        job: {},
+        toolsAllow: ["read"],
+        lentMcpToolBindings: undefined,
+      }),
+    ).toBeUndefined();
   });
 });

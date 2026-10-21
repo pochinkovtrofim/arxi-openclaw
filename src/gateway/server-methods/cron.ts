@@ -46,6 +46,7 @@ import { isRecord } from "../../utils.js";
 import {
   assertCronFailureRepairRequest,
   getCronManagementAuthority,
+  getCronManagementRepairJobId,
   readCronManagementGrantEntitlement,
   withCronManagementGrant,
 } from "../cron-creator-authority-grant.js";
@@ -550,7 +551,15 @@ export const cronHandlers: GatewayRequestHandlers = {
             defaultAgentId: context.cron.getDefaultAgentId(),
             job: nextJob,
           });
-          if (updateOptions) {
+          const identity = client?.internal?.agentRuntimeIdentity;
+          if (
+            updateOptions &&
+            identity &&
+            getCronManagementRepairJobId(identity) === lockedJob.id
+          ) {
+            // A repair keeps the job's requester facts and binds only the tools it lends.
+            updateOptions.repairLentMcpToolBindings = identity.cronMcpToolBindings ?? [];
+          } else if (updateOptions) {
             updateOptions.toolsAllowProvenance = resolveCronRequesterProvenanceForJob(
               lockedJob,
               readCronCallerScope(client),
@@ -812,9 +821,10 @@ for (const [method, handler] of Object.entries(cronHandlers)) {
           entitlement,
           method,
           args.params,
-          payload && "toolsAllow" in payload && Array.isArray(payload.toolsAllow)
-            ? payload.toolsAllow
-            : undefined,
+          payload && {
+            kind: payload.kind,
+            toolsAllow: "toolsAllow" in payload ? payload.toolsAllow : undefined,
+          },
         );
       }
       await (grant ? withCronManagementGrant(grant, identity, method, run) : run());

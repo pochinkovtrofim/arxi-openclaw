@@ -57,7 +57,7 @@ function repairPolicyFixture(overrides: Partial<CronJob>, nowMs = runningAtMs) {
 }
 
 describe("CronService failure repair", () => {
-  it("repairs once per failure streak, follows up in the conversation, and rearms after recovery", async () => {
+  it("repairs once per streak, follows up once, then alerts plainly, and rearms after recovery", async () => {
     await withRepair(
       async ({
         cron,
@@ -98,35 +98,52 @@ describe("CronService failure repair", () => {
         expect(brief).toMatch(/<untrusted-text[^>]*>[\s\S]*temporary upstream error/u);
         expect(cron.getJob(job.id)?.state.failureAlertIncident?.repair).toBeDefined();
 
-        // The conversation that owns the job speaks for its next failure too, in its own
-        // language; scheduler text is only the fallback when that turn cannot start.
+        // A failure while the repair turn may still be working (its own forced run) waits.
+        await cron.run(job.id, "force");
+        expect(runCronFailureRepair).toHaveBeenCalledOnce();
+        expect(sendCronFailureAlert).not.toHaveBeenCalled();
+
+        // After the cooldown the conversation that owns the job speaks for it once more, in
+        // its own language.
+        vi.setSystemTime(Date.now() + 60_000);
         await cron.run(job.id, "force");
         expect(sendCronFailureAlert).not.toHaveBeenCalled();
         expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
         expect(runCronFailureRepair.mock.calls[1]?.[0]?.message).toContain(
-          "still fails after a repair request: 3 consecutive runs",
+          "still fails after a repair request: 4 consecutive runs",
         );
+        await cron.run(job.id, "force");
+        expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
+        expect(sendCronFailureAlert).not.toHaveBeenCalled();
 
+        // Those turns may have failed silently (a broken model fails them too), so after the
+        // cooldown the plain alert speaks once; the same cause stays quiet after it.
         vi.setSystemTime(Date.now() + 60_000);
         await cron.run(job.id, "force");
         expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
+        expect(sendCronFailureAlert).toHaveBeenCalledOnce();
+        expectAlertTextContaining(sendCronFailureAlert, "automatic repair was requested");
+        vi.setSystemTime(Date.now() + 60_000);
+        await cron.run(job.id, "force");
+        expect(sendCronFailureAlert).toHaveBeenCalledOnce();
 
         vi.setSystemTime(Date.now() + 60_000);
         runIsolatedAgentJob.mockResolvedValue({ status: "error", error: "wrong model id" });
         await cron.run(job.id, "force");
-        expect(runCronFailureRepair).toHaveBeenCalledTimes(3);
-        expect(sendCronFailureAlert).not.toHaveBeenCalled();
+        expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
+        expect(sendCronFailureAlert).toHaveBeenCalledTimes(2);
 
         runIsolatedAgentJob.mockResolvedValueOnce({ status: "ok", delivered: true });
         await cron.run(job.id, "force");
         expect(cron.getJob(job.id)?.state.failureAlertIncident).toBeUndefined();
+        vi.setSystemTime(Date.now() + 60_000);
         await cron.run(job.id, "force");
         await cron.run(job.id, "force");
-        expect(runCronFailureRepair).toHaveBeenCalledTimes(4);
-        expect(runCronFailureRepair.mock.calls[3]?.[0]?.message).toContain(
+        expect(runCronFailureRepair).toHaveBeenCalledTimes(3);
+        expect(runCronFailureRepair.mock.calls[2]?.[0]?.message).toContain(
           "Automation repair request from the scheduler",
         );
-        expect(sendCronFailureAlert).not.toHaveBeenCalled();
+        expect(sendCronFailureAlert).toHaveBeenCalledTimes(2);
       },
     );
   });
@@ -441,21 +458,26 @@ describe("CronService failure repair", () => {
     });
   });
 
-  it("alerts when the follow-up turn cannot start either", async () => {
+  it("alerts when the owner conversation cannot take the repair", async () => {
     await withRepair(async ({ cron, sendCronFailureAlert, runCronFailureRepair, addJob }) => {
       runCronFailureRepair
         .mockRejectedValueOnce(new Error("owner session deleted"))
         .mockRejectedValueOnce(new Error("owner session deleted"));
       const job = await addJob("lost sync", owned);
       await cron.run(job.id, "force");
+      // The run's own report went to the conversation, so a refused request alerts at once.
       await cron.run(job.id, "force");
       expect(runCronFailureRepair).toHaveBeenCalledOnce();
-      expect(sendCronFailureAlert).not.toHaveBeenCalled();
-
-      await cron.run(job.id, "force");
       await vi.waitFor(() => expect(sendCronFailureAlert).toHaveBeenCalledOnce());
+
+      // A refused follow-up is not repeated as an alert; the next failure speaks.
+      await cron.run(job.id, "force");
       expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
-      expectAlertTextContaining(sendCronFailureAlert, "automatic repair was requested");
+      expect(sendCronFailureAlert).toHaveBeenCalledOnce();
+      await cron.run(job.id, "force");
+      await vi.waitFor(() => expect(sendCronFailureAlert).toHaveBeenCalledTimes(2));
+      expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
+      expectAlertTextContaining(sendCronFailureAlert, "automatic repair was requested", 1);
     });
   });
 
@@ -485,6 +507,46 @@ describe("CronService failure repair", () => {
     );
   });
 
+  it("gives a streak marked by an earlier build its follow-up, then one plain alert", () => {
+    const { state, job, deferredNotifications } = repairPolicyFixture({
+      state: {
+        consecutiveErrors: 3,
+        lastFailureAlertAtMs: runningAtMs - 86_400_000,
+        // An earlier build sent its English alert and never followed up in the conversation.
+        failureAlertIncident: {
+          scope: "run",
+          signature: "earlier-alert",
+          repair: { atMs: runningAtMs - 2 * 86_400_000, alerted: true },
+        },
+      },
+    });
+    const fail = (error: string) =>
+      maybeEmitFailureAlert(state, {
+        job,
+        alertConfig: resolveFailureAlert(state, job),
+        status: "error",
+        error,
+        reportedByAgent: true,
+        consecutiveCount: (job.state.consecutiveErrors = (job.state.consecutiveErrors ?? 0) + 1),
+        deferredNotifications,
+      });
+    fail("AUTOMATION_FAILED\nGoogle Sheets tools are not available in this run.");
+    expect(deferredNotifications.map((notification) => notification.kind)).toEqual([
+      "failure-repair",
+    ]);
+    const followUp = deferredNotifications[0];
+    expect(followUp?.kind === "failure-repair" ? followUp.text : "").toContain(
+      "still fails after a repair request: 4 consecutive runs",
+    );
+    fail("AUTOMATION_FAILED\nStill no Google Sheets in this run.");
+    // The agent's wording changes every run; it is still the same incident.
+    fail("AUTOMATION_FAILED\nNo Sheets again today.");
+    expect(deferredNotifications.map((notification) => notification.kind)).toEqual([
+      "failure-repair",
+      "failure-alert",
+    ]);
+  });
+
   it("words the fallback alert with the product's own copy", async () => {
     setUserMessageRenderer((event) =>
       event.code === "automation_failed"
@@ -497,15 +559,16 @@ describe("CronService failure repair", () => {
           .mockRejectedValueOnce(new Error("owner session deleted"))
           .mockRejectedValueOnce(new Error("owner session deleted"));
         const job = await addJob("lost sync", owned);
-        for (let run = 0; run < 3; run += 1) {
+        for (let run = 0; run < 4; run += 1) {
           await cron.run(job.id, "force");
         }
-        await vi.waitFor(() => expect(sendCronFailureAlert).toHaveBeenCalledOnce());
-        expect(sendCronFailureAlert).toHaveBeenCalledWith(
-          expect.objectContaining({
-            payload: expect.objectContaining({ text: "«lost sync» ×3 после починки" }),
-            productCopy: true,
-          }),
+        await vi.waitFor(() => expect(sendCronFailureAlert).toHaveBeenCalledTimes(2));
+        expect(sendCronFailureAlert.mock.calls.map(([call]) => call.payload.text)).toEqual([
+          "«lost sync» ×2",
+          "«lost sync» ×4 после починки",
+        ]);
+        expect(sendCronFailureAlert).toHaveBeenLastCalledWith(
+          expect.objectContaining({ productCopy: true }),
         );
       });
     } finally {
