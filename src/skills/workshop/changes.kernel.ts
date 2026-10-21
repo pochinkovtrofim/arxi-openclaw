@@ -39,6 +39,7 @@ export type WorkshopChangesQuery = {
   limit: number;
   beforeMs?: number;
   runId?: string;
+  sessionKey?: string;
 };
 
 /** Appends one change and keeps the newest rows per agent. */
@@ -107,6 +108,9 @@ export function listWorkshopChangesInDatabase(
   }
   if (query.runId !== undefined) {
     select = select.where("run_id", "=", query.runId);
+  }
+  if (query.sessionKey !== undefined) {
+    select = select.where("session_key", "=", query.sessionKey);
   }
   const rows = executeSqliteQuerySync(
     db,

@@ -10,9 +10,10 @@ describe("skillWriteAdvisories", () => {
   it.each([
     [
       "description-length",
-      /description is 161 bytes/,
+      /description is 161 characters/,
       skill("x".repeat(161), CLEAN_BODY),
-      skill("x".repeat(160), CLEAN_BODY),
+      // A description in the user's language counts characters: 160 Cyrillic ones are 320 bytes.
+      skill("ж".repeat(160), CLEAN_BODY),
     ],
     [
       "description-identity",

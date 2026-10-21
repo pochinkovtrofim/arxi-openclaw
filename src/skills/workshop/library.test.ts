@@ -81,6 +81,9 @@ describe("workshop library", () => {
     expect(changes[3]).toMatchObject({ summary: "created: Deploy staging builds" });
     expect(changes[3]?.versionId).toBeUndefined();
     expect(await listWorkshopChanges("main", { runId: "other-run" })).toEqual([]);
+    // A review reads what was already saved from the conversation it reviews.
+    expect(await listWorkshopChanges("main", { sessionKey: "agent:main:main" })).toHaveLength(4);
+    expect(await listWorkshopChanges("main", { sessionKey: "agent:main:other" })).toEqual([]);
   });
 
   it("archives into a restorable version and hides the skill from the live list", async () => {

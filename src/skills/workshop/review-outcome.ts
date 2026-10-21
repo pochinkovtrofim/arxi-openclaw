@@ -13,6 +13,7 @@ import {
   normalizeMessageChannel,
 } from "../../utils/message-channel.js";
 import type { WorkshopChange } from "./changes.kernel.js";
+import { SKILL_REVIEW_USER_LINE_PREFIX } from "./experience-review-prompt.js";
 
 const log = createSubsystemLogger("skills/workshop");
 
@@ -44,8 +45,46 @@ const ACTION_VERB: Record<WorkshopChange["action"], string> = {
   restore: "restored",
 };
 
-/** The notice keeps a creation or latest edit; undo keeps the version before the first edit. */
-function formatWorkshopChangeNotice(changes: readonly WorkshopChange[]) {
+const MAX_USER_LINE_CHARS = 160;
+
+/**
+ * The review's line for the user, or undefined. Changes are quiet by default and listed where
+ * the user manages learned skills; a review that saved an explicit correction from the user may
+ * confirm it in one short line it wrote in the user's language. A line that is long or names a
+ * changed skill is not the plain confirmation the review was asked for, so it is dropped.
+ */
+export function readSkillReviewUserLine(
+  payloads: EmbeddedAgentRunResult["payloads"],
+  changes: readonly WorkshopChange[],
+): string | undefined {
+  if (changes.length === 0) {
+    return undefined;
+  }
+  for (const payload of payloads ?? []) {
+    if (payload.isError || payload.isReasoning || typeof payload.text !== "string") {
+      continue;
+    }
+    for (const raw of payload.text.split("\n")) {
+      const marked = raw.trim();
+      if (!marked.startsWith(SKILL_REVIEW_USER_LINE_PREFIX)) {
+        continue;
+      }
+      const line = marked
+        .slice(SKILL_REVIEW_USER_LINE_PREFIX.length)
+        .replaceAll("`", "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const namesSkill = changes.some(
+        ({ skillName }) => skillName.includes("-") && line.includes(skillName),
+      );
+      return line && line.length <= MAX_USER_LINE_CHARS && !namesSkill ? line : undefined;
+    }
+  }
+  return undefined;
+}
+
+/** Undo keeps the version before the review's first edit of each skill; a creation is archived. */
+function formatWorkshopUndoContext(changes: readonly WorkshopChange[], userLine?: string) {
   const bySkill = new Map<string, WorkshopChange>();
   const firstBySkill = new Map<string, WorkshopChange>();
   for (const change of changes.toSorted((a, b) => a.createdAtMs - b.createdAtMs)) {
@@ -58,26 +97,25 @@ function formatWorkshopChangeNotice(changes: readonly WorkshopChange[]) {
   }
   const parts = [...bySkill.values()].map((change) => {
     const summary = change.summary.trim();
-    return `${ACTION_VERB[change.action]} \`${change.skillName}\`${summary ? ` (${summary})` : ""}`;
+    return `${ACTION_VERB[change.action]} ${change.skillName}${summary ? ` (${summary})` : ""}`;
   });
-  const text = `💾 Learned: ${parts.join("; ")}. Say "undo" to revert this skill change.`;
   // No prior version means the review created the skill, so undo archives it.
   const reverts = [...firstBySkill.values()].map(({ skillName, versionId }) =>
     versionId
       ? `skill_workshop action=restore name=${skillName} version=${versionId}`
       : `skill_workshop action=archive name=${skillName} reason="undo"`,
   );
-  return {
-    text,
-    undoContext: `A background skill review just changed your learned skills and told the user: ${text} If the user asks to undo or revert it, call ${reverts.join("; then ")}.`,
-  };
+  const told = userLine
+    ? `You told the user: "${userLine}"`
+    : "The user was not told in chat; do not bring it up yourself.";
+  return `A background skill review just changed your learned skills: ${parts.join("; ")}. ${told} If the user asks to undo or revert it, call ${reverts.join("; then ")}.`;
 }
 
 /**
- * Posts the notice into the originating conversation: external channels get a durable send
- * mirrored into the session transcript; channel-less sessions (Control UI) get a transcript
- * entry. The next foreground turn also gets a system event naming the exact revert call,
- * because an assistant line the model did not write is weak evidence that "undo" means it.
+ * Hands a review's changes to the originating conversation. The next foreground turn gets a
+ * system event naming the exact revert call, so "undo" works whether or not the user was told.
+ * Only the review's own user line is posted: external channels get a durable send mirrored
+ * into the session transcript; channel-less sessions (Control UI) get a transcript entry.
  * A conversation reset or replaced since the review started gets none of it.
  */
 export async function postWorkshopChangeNotice(params: {
@@ -86,6 +124,8 @@ export async function postWorkshopChangeNotice(params: {
   generation: SessionDeliveryGeneration;
   runId: string;
   changes: readonly WorkshopChange[];
+  /** From {@link readSkillReviewUserLine}; without it the change stays out of the chat. */
+  userLine?: string;
 }): Promise<void> {
   if (params.changes.length === 0) {
     return;
@@ -109,10 +149,14 @@ export async function postWorkshopChangeNotice(params: {
     log.debug(`skill workshop notice skipped: session ${sessionKey} was reset`);
     return;
   }
-  const { text, undoContext } = formatWorkshopChangeNotice(params.changes);
-  enqueueSystemEvent(undoContext, {
+  const text = params.userLine;
+  enqueueSystemEvent(formatWorkshopUndoContext(params.changes, text), {
     sessionKey: resolveSystemEventQueueKey(sessionKey, agentId),
   });
+  if (!text) {
+    log.debug(`skill workshop change kept out of chat: session ${sessionKey}`);
+    return;
+  }
   const idempotencyKey = `skill-workshop-notice:${params.runId}`;
   try {
     const { deliveryContext: target, threadId } = extractDeliveryInfo(sessionKey, {

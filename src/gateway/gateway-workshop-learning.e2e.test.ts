@@ -71,7 +71,7 @@ function respondWithTool(
 
 describe("Gateway automatic Workshop learning", () => {
   it(
-    "patches a learned skill through skill_workshop and announces it while foreground work continues",
+    "patches a learned skill through skill_workshop and confirms the user's correction while foreground work continues",
     { timeout: 150_000 },
     async () => {
       const state = await createOpenClawTestState({
@@ -86,6 +86,8 @@ describe("Gateway automatic Workshop learning", () => {
           OPENCLAW_SKIP_BROWSER_CONTROL_SERVER: "1",
           OPENCLAW_SKIP_PROVIDERS: "1",
           OPENCLAW_DISABLE_BUNDLED_PLUGINS: "1",
+          // The production quiet window is five minutes; the proof keeps the earlier 30 seconds.
+          OPENCLAW_TEST_SKILL_REVIEW_QUIET_MS: "30000",
         },
       });
       let gateway: Awaited<ReturnType<typeof startGatewayWithClient>> | undefined;
@@ -98,6 +100,8 @@ describe("Gateway automatic Workshop learning", () => {
       let reviewActions: Array<{ name: string; args: Record<string, unknown> }> = [];
       let foregroundRequests = 0;
       const laterMessage = "FOREGROUND_OVERLAP_CHECK: reply with FOREGROUND_OVERLAP_COMPLETE.";
+      const userLine =
+        "Got it, I'll check the public generation before calling a publication done.";
       const laterReply = "FOREGROUND_OVERLAP_COMPLETE";
       const outsideFile = path.join(state.workspaceDir, "operator-owned.txt");
       const outsideContent = "OUTSIDE_WORKSHOP_SENTINEL_MUST_NOT_ENTER_REVIEW\n";
@@ -183,8 +187,9 @@ describe("Gateway automatic Workshop learning", () => {
               if (next) {
                 respondWithTool(response, `review_${reviewRequests.length}`, next.name, next.args);
               } else {
+                // The user stated the correction, so the review confirms it in one line.
                 writeOpenAiResponsesText(response, {
-                  text: "NO_REPLY",
+                  text: `Saved the correction.\nTELL_USER: ${userLine}`,
                   messageId: "review_done",
                   responseId: "review_done",
                 });
@@ -342,14 +347,14 @@ describe("Gateway automatic Workshop learning", () => {
             );
             expect(laterTranscript).toContain(laterMessage);
             expect(laterTranscript).toContain(laterReply);
-            // The review announces its change in the originating conversation, where the
-            // foreground agent sees it next turn and can undo it.
+            // The review confirms the user's correction in the originating conversation, in its
+            // own words; its summary line and the skill's name stay out of the chat.
             await expect
               .poll(() => JSON.stringify(loadTranscriptEventsSync(source)), {
                 timeout: 80_000,
                 interval: 100,
               })
-              .toContain("💾 Learned:");
+              .toContain(userLine);
             const skill = await fs.readFile(skillFile, "utf8");
             const support = await fs.readFile(supportFile, "utf8");
             const outside = await fs.readFile(outsideFile, "utf8");
@@ -377,8 +382,10 @@ describe("Gateway automatic Workshop learning", () => {
               continuedTranscript,
             );
             const notice = JSON.stringify(finalTranscript.slice(continuedTranscript.length));
-            expect(notice).toContain(`updated \`map-publication\` (${reason})`);
-            expect(notice).toContain('Say \\"undo\\" to revert this skill change.');
+            expect(notice).toContain(userLine);
+            expect(notice).not.toContain("Saved the correction.");
+            expect(notice).not.toContain("map-publication");
+            expect(changes.map((change) => change.summary)).toContain(reason);
           },
         );
       } finally {

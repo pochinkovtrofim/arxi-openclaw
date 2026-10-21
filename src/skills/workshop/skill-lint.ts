@@ -4,7 +4,8 @@ import {
   stripFrontmatterBlock,
 } from "../../../packages/markdown-core/src/frontmatter.js";
 
-const MAX_DESCRIPTION_BYTES = 160;
+// Characters, not bytes: a description in the user's language is as short in Cyrillic or CJK.
+const MAX_DESCRIPTION_CHARS = 160;
 const MAX_BODY_LINES = 250;
 const MAX_BODY_BYTES = 12_000;
 const MIN_NEGATION_LINES = 3;
@@ -28,7 +29,7 @@ function lintSkillMarkdown(content: string): SkillLintFinding[] {
     .replace(/`[^`\n]*`/g, "")
     .split("\n")
     .map((line) => line.trim());
-  const descriptionBytes = Buffer.byteLength(description);
+  const descriptionChars = Array.from(description).length;
   const bodyLines = body.split("\n").length;
   const bodyBytes = Buffer.byteLength(body);
   const styled = [description, ...prose].join("\n");
@@ -39,8 +40,8 @@ function lintSkillMarkdown(content: string): SkillLintFinding[] {
   const checks: Array<[rule: string, message: string | false]> = [
     [
       "description-length",
-      descriptionBytes > MAX_DESCRIPTION_BYTES &&
-        `description is ${descriptionBytes} bytes; trim it to ≤${MAX_DESCRIPTION_BYTES} with the trigger first.`,
+      descriptionChars > MAX_DESCRIPTION_CHARS &&
+        `description is ${descriptionChars} characters; trim it to ≤${MAX_DESCRIPTION_CHARS} with the trigger first.`,
     ],
     [
       "description-identity",

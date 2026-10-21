@@ -28,7 +28,11 @@ import { resolveSkillWorkshopConfig } from "./config.js";
 import { buildSkillExperienceReviewPrompt } from "./experience-review-prompt.js";
 import type { ExperienceReviewCandidate } from "./experience-review-scheduler.js";
 import { listWorkshopChanges } from "./library.js";
-import { assertSkillReviewRunSucceeded, postWorkshopChangeNotice } from "./review-outcome.js";
+import {
+  assertSkillReviewRunSucceeded,
+  postWorkshopChangeNotice,
+  readSkillReviewUserLine,
+} from "./review-outcome.js";
 import { runSkillWorkshopReview } from "./review-run.js";
 
 // A review judges the recent trajectory, not the whole session. Native harnesses
@@ -47,6 +51,8 @@ export const EXPERIENCE_REVIEW_CONTEXT_LIMITS = {
   measuredContextUsage: "drop-when-bounded",
 } as const;
 const log = createSubsystemLogger("skills/workshop");
+/** Saves from the same conversation this recent are shown to the review as already done. */
+const EARLIER_CHANGES_WINDOW_MS = 24 * 60 * 60_000;
 
 /** Admits a queued review only when Workshop is on and the session's policy exposes the tool. */
 export async function prepareSkillExperienceReviewCandidate(
@@ -212,6 +218,9 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
     // foreign commits. Retain this fence until the next SDK major retires them.
     validateSessionTranscriptContextAnchor(source, candidate.source, sourceEntry);
   };
+  const earlierChanges = (await listWorkshopChanges(agentId, { sessionKey, limit: 10 })).filter(
+    (change) => change.createdAtMs >= Date.now() - EARLIER_CHANGES_WINDOW_MS,
+  );
   const preparedRunAdmission = prepareAgentRunAdmission({
     cfg: config,
     operationalRunInstance: createOperationalRunInstanceRef(runId),
@@ -236,7 +245,7 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
       permissionMode: sourceEntry.permissionMode ?? foregroundPromptContext.permissionMode,
       config,
       abortSignal,
-      prompt: buildSkillExperienceReviewPrompt(candidate),
+      prompt: buildSkillExperienceReviewPrompt({ ...candidate, earlierChanges }),
       provider: candidate.ctx.modelProviderId,
       model: candidate.ctx.modelId,
       ...(candidate.ctx.authProfileId
@@ -246,14 +255,20 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
       runId,
       ...(capability ? { cronCreatorAuthorityCapability: capability } : {}),
     });
+  let payloads: Awaited<ReturnType<typeof run>>["payloads"];
   try {
-    assertSkillReviewRunSucceeded(
-      capability ? await runWithCronCreatorAuthorityCapability(capability, run) : await run(),
-    );
+    const result = capability
+      ? await runWithCronCreatorAuthorityCapability(capability, run)
+      : await run();
+    assertSkillReviewRunSucceeded(result);
+    payloads = result.payloads;
   } finally {
     // Each skill_workshop call commits on its own, so a failed or aborted run may have changed skills.
     const changes = await listWorkshopChanges(agentId, { runId });
-    log.debug(`experience review finished: session=${sessionKey} changes=${changes.length}`);
-    await postWorkshopChangeNotice({ config, generation, runId, changes });
+    const userLine = readSkillReviewUserLine(payloads, changes);
+    log.debug(
+      `experience review finished: session=${sessionKey} changes=${changes.length} told=${userLine !== undefined}`,
+    );
+    await postWorkshopChangeNotice({ config, generation, runId, changes, userLine });
   }
 }

@@ -34,12 +34,12 @@ import {
 import { SkillWorkshopToolSchema } from "./skill-workshop-tool-schema.js";
 import { textResult } from "./tool-results.js";
 
-const SKILL_WORKSHOP_DESCRIPTION = `Your learned skills: reusable procedures saved as <name>/SKILL.md that load in future sessions. Changes apply immediately, are versioned, and are shown to the user.
+const SKILL_WORKSHOP_DESCRIPTION = `Your learned skills: reusable procedures saved as <name>/SKILL.md that load in future sessions. Changes apply immediately, are versioned, and are listed for the user with undo.
 Actions: list | view name [file_path] [version] | create name content | patch name old_text new_text [file_path] | write_file name file_path content | remove_file name file_path | archive name (absorbed_into or reason) | restore name [version].
-- create: content is the full SKILL.md: frontmatter name (= name) and description (aim for ≤160 bytes, triggers first), then the procedure.
+- create: content is the full SKILL.md: frontmatter name (= name) and description (in the user's language, aim for ≤160 characters, triggers first), then the procedure.
 - patch: replaces one exact, unique old_text; view first and copy the text exactly. Prefer patch over rewrites.
 - file_path: SKILL.md or files under references/, templates/, scripts/, assets/. remove_file deletes one of those support files; archive removes a whole skill.
-- reason: one short line saying what changed; shown to the user.
+- reason: one short plain sentence in the user's language saying what you will now do better, without skill names or file paths; the user reads it in their list of learned skills.
 - restore without version undoes the last change.
 
 ${SKILL_AUTHORING_STANDARDS_PROMPT}`;
