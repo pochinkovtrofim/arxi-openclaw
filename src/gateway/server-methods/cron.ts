@@ -44,7 +44,10 @@ import {
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
 import { isRecord } from "../../utils.js";
 import {
+  assertCronFailureRepairRequest,
   getCronManagementAuthority,
+  getCronManagementRepairJobId,
+  readCronManagementGrantEntitlement,
   withCronManagementGrant,
 } from "../cron-creator-authority-grant.js";
 import { authorizeGatewaySessionCreation } from "../operator-role-policy.js";
@@ -548,7 +551,15 @@ export const cronHandlers: GatewayRequestHandlers = {
             defaultAgentId: context.cron.getDefaultAgentId(),
             job: nextJob,
           });
-          if (updateOptions) {
+          const identity = client?.internal?.agentRuntimeIdentity;
+          if (
+            updateOptions &&
+            identity &&
+            getCronManagementRepairJobId(identity) === lockedJob.id
+          ) {
+            // A repair keeps the job's requester facts and binds only the tools it lends.
+            updateOptions.repairLentMcpToolBindings = identity.cronMcpToolBindings ?? [];
+          } else if (updateOptions) {
             updateOptions.toolsAllowProvenance = resolveCronRequesterProvenanceForJob(
               lockedJob,
               readCronCallerScope(client),
@@ -801,6 +812,21 @@ for (const [method, handler] of Object.entries(cronHandlers)) {
       });
     };
     try {
+      const entitlement = grant ? readCronManagementGrantEntitlement(grant) : undefined;
+      if (entitlement?.source === "failure-repair") {
+        const current =
+          method === "cron.update" ? await args.context.cron.readJob(entitlement.jobId) : undefined;
+        const payload = current?.payload;
+        assertCronFailureRepairRequest(
+          entitlement,
+          method,
+          args.params,
+          payload && {
+            kind: payload.kind,
+            toolsAllow: "toolsAllow" in payload ? payload.toolsAllow : undefined,
+          },
+        );
+      }
       await (grant ? withCronManagementGrant(grant, identity, method, run) : run());
     } catch (error) {
       if (!(error instanceof TypeError)) {

@@ -584,6 +584,11 @@ export async function dispatchCronDelivery(
       });
     if (finalReply) {
       adoptSettledChildReply(finalReply);
+      if (agentReportedFailure !== undefined && params.withholdReportedFailure) {
+        // As with the parent's own report, the owner conversation tells the owner.
+        deliveryAttempted = true;
+        return { kind: "suppressed" };
+      }
     }
     if (spawnOnlyHandoff && !synthesizedText?.trim()) {
       // An accepted spawn is the turn's only completion; retiring it without

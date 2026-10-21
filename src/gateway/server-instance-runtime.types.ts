@@ -26,6 +26,8 @@ export type GatewayInstanceAgentDispatchOptions = {
   internalDeliverySuppressText?: boolean;
   /** Keep runtime error payloads (timeouts, provider failures) out of the delivered reply. */
   internalDeliverySuppressErrors?: boolean;
+  /** The scheduler's repair turn for this failing automation may fix only that job. */
+  cronFailureRepairJobId?: string;
   onAccepted?: (payload: unknown) => void;
   onStartOwner?: (owner: AgentTurnStartOwner) => void;
   onExecutionStarted?: () => void;

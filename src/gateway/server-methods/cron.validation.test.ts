@@ -390,6 +390,67 @@ describe("cron method validation", () => {
       }
     },
   );
+
+  it("hands a failure repair's signed MCP identities to the service, not the repair turn's origin", async () => {
+    const client = callerClient("main");
+    const identity = client.internal!.agentRuntimeIdentity!;
+    const authority = claimAgentRunDelegatedAuthority(identity.operationalRunInstance);
+    identity.delegatedAuthority = { kind: "local", ...authority };
+    const sheets = {
+      name: "google_workspace__sheets_append",
+      serverName: "google_workspace",
+      operation: "tool" as const,
+      toolName: "sheets_append",
+    };
+    const job = createCronJob({
+      payload: { kind: "agentTurn", message: "Scan jobs", toolsAllow: ["browser"] },
+    });
+    const context = createCronContext(job);
+    // The real service merges a payload patch; this stub's shallow merge would drop the message.
+    context.cron.update.mockImplementationOnce(async (id, patch) =>
+      createCronJob({
+        ...job,
+        id,
+        payload: { ...job.payload, ...patch.payload } as CronJob["payload"],
+      }),
+    );
+    const scope = createCronCreatorAuthorityRunScope(
+      identity.operationalRunInstance.runId,
+      { kind: "unknown" },
+      { source: "failure-repair", jobId: job.id },
+    );
+    try {
+      const { respond } = await runWithCronCreatorAuthorityCapability(scope, () =>
+        withGatewayToolCallerIdentity({ ...identity, approvalAuthority: authority }, async () => {
+          identity.cronManagementGrant = bindCronManagementGrant(scope.runId)!.mint("cron.update");
+          identity.cronToolsAllowCapture = "final-executable-surface";
+          identity.cronMcpToolBindings = [sheets, { ...sheets, name: "mail__read" }];
+          return await invokeCron(
+            "cron.update",
+            {
+              id: job.id,
+              patch: { payload: { kind: "agentTurn", toolsAllow: ["browser", sheets.name] } },
+            },
+            { client, context },
+          );
+        }),
+      );
+      expect(respond).toHaveBeenCalledWith(true, expect.anything(), undefined);
+      // The service merges these with the job's stored requester facts.
+      const options = context.cron.updateWithPrecondition.mock.calls[0]?.[3] as
+        | { toolsAllowProvenance?: unknown; repairLentMcpToolBindings?: unknown }
+        | undefined;
+      expect(options?.repairLentMcpToolBindings).toEqual([
+        sheets,
+        { ...sheets, name: "mail__read" },
+      ]);
+      expect(options?.toolsAllowProvenance).toBeUndefined();
+    } finally {
+      revokeCronCreatorAuthorityRunScope(scope);
+      releaseAgentRunDelegatedAuthority(authority);
+    }
+  });
+
   beforeEach(() => {
     getRuntimeConfig.mockReset().mockReturnValue({} as OpenClawConfig);
     cronRunRecordsOverride.mockReset();

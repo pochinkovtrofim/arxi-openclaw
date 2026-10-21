@@ -48,6 +48,11 @@ import {
 } from "./cron-tool-creator-cap.js";
 import { CronToolOutputSchema } from "./cron-tool-output-schema.js";
 import {
+  assertCronRepairScope,
+  describeCronRepairTool,
+  updateCronJobForRepair,
+} from "./cron-tool-repair.js";
+import {
   assertCronPacingInput,
   createCronToolSchema,
   CRON_TOOL_LIST_MAX_LIMIT,
@@ -240,17 +245,20 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
   // Trigger-gated surfaces default on, matching cron/service/jobs-validation.ts.
   const triggersEnabled = opts?.config?.cron?.triggers?.enabled !== false;
   const selfRemoveOnly = Boolean(readCronSelfRemoveOnlyJobId(opts));
+  const repairJobId = managementAuthority?.repairJobId;
   const tool: AnyAgentTool = {
     label: "Automations",
     name: AUTOMATIONS_TOOL_NAME,
     displaySummary: CRON_TOOL_DISPLAY_SUMMARY,
-    description: selfRemoveOnly
-      ? managementAuthority?.managementOnly
-        ? "Inspect or remove only the current automation. Actions: list [includeDisabled], get jobId, remove jobId. Use the current job ID; other jobs and management actions are unavailable."
-        : 'Inspect or remove only the current automation. Actions: status; list [includeDisabled]; get/runs/remove jobId; next_check in:"15m" for this paced run. Use the current job ID. To stop a finished job, remove it; creating/updating/running jobs and waking sessions are unavailable. Return the task result; the scheduler owns delivery.'
-      : managementAuthority?.managementOnly
-        ? 'Manage any existing automation on this Gateway with the admitted automation management authority. Actions: list [includeDisabled,limit,offset] (compact summaries with timing; follow nextOffset); get jobId (full schedule, payload, and delivery details); update jobId job (partial patch, null clears); run jobId (runMode:"force" runs now; waits up to timeoutMs, default 60s, and returns the finished run, or its runId if still running); remove jobId (operator removal requests cancellation of an active run; the result reports activeRunCancellationRequested:true). Creator attribution and scheduled execution policy stay intact. Use the Automations page for other actions.'
-        : buildCronToolDescription({ triggersEnabled }),
+    description: repairJobId
+      ? describeCronRepairTool(repairJobId)
+      : selfRemoveOnly
+        ? managementAuthority?.managementOnly
+          ? "Inspect or remove only the current automation. Actions: list [includeDisabled], get jobId, remove jobId. Use the current job ID; other jobs and management actions are unavailable."
+          : 'Inspect or remove only the current automation. Actions: status; list [includeDisabled]; get/runs/remove jobId; next_check in:"15m" for this paced run. Use the current job ID. To stop a finished job, remove it; creating/updating/running jobs and waking sessions are unavailable. Return the task result; the scheduler owns delivery.'
+        : managementAuthority?.managementOnly
+          ? 'Manage any existing automation on this Gateway with the admitted automation management authority. Actions: list [includeDisabled,limit,offset] (compact summaries with timing; follow nextOffset); get jobId (full schedule, payload, and delivery details); update jobId job (partial patch, null clears); run jobId (runMode:"force" runs now; waits up to timeoutMs, default 60s, and returns the finished run, or its runId if still running); remove jobId (operator removal requests cancellation of an active run; the result reports activeRunCancellationRequested:true). Creator attribution and scheduled execution policy stay intact. Use the Automations page for other actions.'
+          : buildCronToolDescription({ triggersEnabled }),
     outputSchema: CronToolOutputSchema,
     parameters: createCronToolSchema({
       agentSessionKey: opts?.agentSessionKey,
@@ -300,6 +308,9 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
         throw new Error(
           "This turn can only list, get, update, run, or remove automations. Use the Automations page for other actions.",
         );
+      }
+      if (repairJobId) {
+        assertCronRepairScope(repairJobId, action, readCronJobIdParam(params));
       }
       assertCronSelfRemoveScope(opts, action, params);
       const parsedGatewayOpts = readGatewayCallOptions(params);
@@ -597,6 +608,35 @@ export function createCronTool(opts?: CronToolOptions, deps?: CronToolDeps): Any
               params,
               "update",
             );
+            if (repairJobId) {
+              return jsonResult(
+                await updateCronJobForRepair({
+                  id,
+                  patch: canonicalPatch,
+                  surface: opts?.creatorToolAllowlist,
+                  captureRef: opts?.creatorToolAllowlistCaptureRef,
+                  gatewayOpts,
+                  callGateway: (method, callOpts, callParams) =>
+                    callGateway(method, callOpts, callParams),
+                  ...(callerIdentity
+                    ? {
+                        withLentTools: (toolsAllow, run) =>
+                          withGatewayToolCallerIdentity(
+                            {
+                              ...callerIdentity,
+                              cronToolsAllowCapture: "final-executable-surface",
+                              cronMcpToolBindings: resolveCronCreatorMcpToolBindingsForToolsAllow(
+                                opts?.creatorToolAllowlist,
+                                toolsAllow,
+                              ),
+                            },
+                            run,
+                          ),
+                      }
+                    : {}),
+                }),
+              );
+            }
             if (!managementAuthority) {
               assertNoCronShellExecution(canonicalPatch);
             }

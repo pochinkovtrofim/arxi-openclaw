@@ -16,6 +16,7 @@ import {
   isSystemMonitorDeclaration,
   systemOwnedDeclarationKeyNamespace,
 } from "../system-owned-declaration.js";
+import { resolveCronRepairToolsAllowProvenance } from "../tools-allow-provenance.js";
 import type { CronJobCreate, CronJobPatch } from "../types.js";
 import { declarativeFields } from "./jobs-declarative.js";
 import { persistUpdatedJob } from "./jobs-mutation-persistence.js";
@@ -332,13 +333,22 @@ async function updateLoadedJob(params: {
     ? await resolveConfiguredChannelsForValidation(state)
     : undefined;
   await precondition?.(structuredClone(job), now);
+  const toolsAllowProvenance =
+    opts?.repairLentMcpToolBindings !== undefined
+      ? resolveCronRepairToolsAllowProvenance({
+          job,
+          toolsAllow:
+            patch.payload && "toolsAllow" in patch.payload ? patch.payload.toolsAllow : undefined,
+          lentMcpToolBindings: opts.repairLentMcpToolBindings,
+        })
+      : opts?.toolsAllowProvenance;
   const nextJob = cloneCronJobForMutation(job);
   applyJobPatch(nextJob, patch, {
     defaultAgentId: resolveCurrentDefaultAgentId(state),
     scheduleValidationNowMs: now,
     cronConfig: state.deps.cronConfig,
     scheduledToolPolicy: opts?.scheduledToolPolicy,
-    toolsAllowProvenance: opts?.toolsAllowProvenance,
+    toolsAllowProvenance,
     toolsAllowExecTarget: opts?.toolsAllowExecTarget,
     configuredChannels,
   });
@@ -371,7 +381,7 @@ async function updateLoadedJob(params: {
   reconcileCronChannelRequesterAuthority({
     job: nextJob,
     previousJob: job,
-    toolsAllowProvenance: opts?.toolsAllowProvenance,
+    toolsAllowProvenance,
     reauthorize: patch.payload !== undefined && Object.hasOwn(patch.payload, "toolsAllow"),
     reauthorizeCallerOrigin:
       patch.payload !== undefined && Object.hasOwn(patch.payload, "toolsAllow"),

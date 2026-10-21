@@ -18,7 +18,10 @@ import type { CronAgentAvailability } from "../agent-availability.js";
 import type { CronCompletionDeliveryFence } from "../delivery-attempt-fence.js";
 import { toPublicCronJob } from "../public-job.js";
 import type { CronRuntimeAuthority } from "../runtime-authority.js";
-import type { CronScheduledToolPolicy } from "../scheduled-tool-policy.js";
+import type {
+  CronScheduledMcpToolBinding,
+  CronScheduledToolPolicy,
+} from "../scheduled-tool-policy.js";
 import type { CronRunReceiptHandle } from "../store/run-receipt.types.js";
 import type { QuarantinedCronConfigJob } from "../types-shared.js";
 import type {
@@ -260,6 +263,8 @@ export type CronServiceDeps = {
     job: CronNotificationJob;
     routing: CronNotificationRouting;
     payload: ReplyPayload;
+    /** The product worded the whole alert; add no scheduler detail lines. */
+    productCopy?: true;
     runAtMs?: number;
     channel: CronMessageChannel;
     to?: string;
@@ -512,6 +517,11 @@ export type CronUpdateOptions = Pick<
 > & {
   /** Null forbids policy adoption; undefined retains in-process operator defaults. */
   scheduledToolPolicy?: CronScheduledToolPolicy | null;
+  /**
+   * A scheduler failure repair's signed MCP identities: the job keeps its stored requester
+   * facts, and only listed names without a binding take one. Gateway-owned, never public input.
+   */
+  repairLentMcpToolBindings?: readonly CronScheduledMcpToolBinding[];
 };
 
 export type CronCommitGuardOptions = {

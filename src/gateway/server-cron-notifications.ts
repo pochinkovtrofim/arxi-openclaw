@@ -57,8 +57,9 @@ type CronFailureAlertParams = Parameters<
 /**
  * The owner conversation receives the repair request as an ordinary turn: its own session,
  * workspace, and tool policy, with the reply delivered to its last route (thread included).
+ * The scheduler-bound job id lets that turn fix only this job (its tools, pause, run now).
  * Only its authored reply reaches the chat: runtime failure payloads (timeouts, provider
- * errors) are not posted, and the job's next failure alert owns escalation.
+ * errors) are not posted, and the job's next failure owns escalation.
  */
 export async function runGatewayCronFailureRepair(
   request: CronFailureRepairRequest,
@@ -83,6 +84,7 @@ export async function runGatewayCronFailureRepair(
         },
         {
           internalDeliverySuppressErrors: true,
+          cronFailureRepairJobId: request.jobId,
           ...(resolveGatewayContext ? { resolveGatewayContext } : {}),
         },
       ),
@@ -462,12 +464,14 @@ async function sendGatewayCronFailureAlertUnderAdmission(
         },
         payload: {
           ...params.payload,
-          text: appendCronFailureAlertDetails(
-            params.payload.text ?? "",
-            params.job.id,
-            params.runAtMs,
-            runtimeConfig,
-          ),
+          text: params.productCopy
+            ? (params.payload.text ?? "")
+            : appendCronFailureAlertDetails(
+                params.payload.text ?? "",
+                params.job.id,
+                params.runAtMs,
+                runtimeConfig,
+              ),
         },
         nativeDeliveryPurpose: "cron_failure_alert",
         abortSignal: abortController.signal,

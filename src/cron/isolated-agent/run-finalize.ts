@@ -23,6 +23,10 @@ import {
   createCronRunDiagnosticsFromError,
   mergeCronRunDiagnostics,
 } from "../run-diagnostics.js";
+import {
+  cronFailuresGoToOwnerConversation,
+  resolveFailureAlert,
+} from "../service/failure-alerts.js";
 import type { CronDeliveryTrace, CronRunTelemetry } from "../types.js";
 import { resolveCronChannelOutputPolicy } from "./channel-output-policy.js";
 import type { DispatchCronDeliveryState } from "./delivery-dispatch-types.js";
@@ -335,7 +339,17 @@ export async function finalizeCronRun(params: {
     finalRunResult.meta?.terminalReplyKind === "silent-empty" ||
     isSilentReplyPayloadText(finalRunResult.meta?.finalAssistantRawText) ||
     isSilentReplyPayloadText(finalRunResult.meta?.finalAssistantVisibleText);
-  if (hasFatalStructuredErrorPayload && prepared.deliveryRequested) {
+  // When the owner conversation answers for this job's failures, it tells the owner in their
+  // language and can repair the job; the run's error text stays in cron state for that turn.
+  const failuresGoToConversation = cronFailuresGoToOwnerConversation(
+    prepared.input.job,
+    resolveFailureAlert({ deps: { cronConfig: prepared.input.cfg.cron } }, prepared.input.job),
+  );
+  const failureOwnedByConversation = hasFatalErrorPayload && failuresGoToConversation;
+  if (
+    (hasFatalStructuredErrorPayload || failureOwnedByConversation) &&
+    prepared.deliveryRequested
+  ) {
     // Structured run error payloads belong in cron state and failure alerts,
     // not the normal completion announce path where provider JSON can leak.
     await cleanupRunSession("cron-delete-after-run-fatal-error");
@@ -387,6 +401,7 @@ export async function finalizeCronRun(params: {
     sourceDeliveryOutcome,
     queueSourceSessionMessageToolAwareness,
     deliveryBestEffort: prepared.input.job.delivery?.bestEffort === true,
+    withholdReportedFailure: failuresGoToConversation,
     deliveryPayloadHasStructuredContent,
     deliveryPayloads,
     synthesizedText,

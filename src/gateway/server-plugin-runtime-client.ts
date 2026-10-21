@@ -37,6 +37,7 @@ export function createSyntheticPluginRuntimeClient(
       | "runtimeContextFragments"
       | "internalDeliverySuppressText"
       | "internalDeliverySuppressErrors"
+      | "cronFailureRepairJobId"
       | "pluginRuntimeOwnerId"
       | "nodeInvokeApprovalSessionKey"
       | "pluginSubagentRequester"
@@ -88,6 +89,9 @@ export function createSyntheticPluginRuntimeClient(
         : {}),
       ...(params?.internalDeliverySuppressErrors === true
         ? { internalDeliverySuppressErrors: true }
+        : {}),
+      ...(params?.cronFailureRepairJobId?.trim()
+        ? { cronFailureRepairJobId: params.cronFailureRepairJobId.trim() }
         : {}),
       ...(params?.scopes?.includes(APPROVALS_SCOPE) ? { approvalRuntime: true } : {}),
       ...(pluginRuntimeOwnerId ? { pluginRuntimeOwnerId } : {}),

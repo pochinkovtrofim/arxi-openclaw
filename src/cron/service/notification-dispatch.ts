@@ -46,8 +46,8 @@ export function dispatchCronNotification(
 }
 
 /**
- * Starts the repair turn in the conversation that owns the job. Request failures are logged;
- * terminal one-shots send their fallback alert, while recurring jobs alert on the next failure.
+ * Starts the repair turn in the conversation that owns the job. Request failures are logged
+ * and send the fallback alert when the request carries one; otherwise the next failure speaks.
  */
 function requestFailureRepair(
   state: CronServiceState,
@@ -171,6 +171,7 @@ function transportFailureAlert(
       job: params.job,
       routing,
       payload: params.payload,
+      ...(params.productCopy ? { productCopy: true as const } : {}),
       runAtMs: params.runAtMs,
       channel: params.route.channel,
       to: params.route.to,

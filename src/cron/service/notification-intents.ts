@@ -90,6 +90,8 @@ type CronFailureAlertNotification = {
   kind: "failure-alert";
   job: CronNotificationJob;
   payload: ReplyPayload;
+  /** The product worded the whole alert; transports add no scheduler detail lines. */
+  productCopy?: true;
   runAtMs?: number;
   route: CronFailureAlertRoute;
 };

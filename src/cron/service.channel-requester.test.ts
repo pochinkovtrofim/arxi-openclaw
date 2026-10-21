@@ -416,6 +416,45 @@ describe("CronService authenticated channel requester", () => {
     }
   });
 
+  it("keeps the requester facts of a job a failure repair lends tools to", async () => {
+    const { storePath } = await makeStorePath();
+    const cron = createCronService(storePath);
+    const sheets = {
+      name: "google_workspace__sheets_append",
+      serverName: "google_workspace",
+      operation: "tool" as const,
+      toolName: "sheets_append",
+    };
+    const discordOrigin = { kind: "external" as const, channel: "discord" };
+    try {
+      const created = await cron.add(requesterDeclaration(), {
+        scheduledToolPolicy: requesterPolicy,
+        toolsAllowProvenance: { ...fullRequesterProvenance, callerOrigin: discordOrigin },
+      });
+      await cron.update(
+        created.id,
+        { payload: { kind: "agentTurn", toolsAllow: ["message", sheets.name] } },
+        {
+          scheduledToolPolicy: null,
+          // The repair turn signs its whole surface; only the newly listed name is bound.
+          repairLentMcpToolBindings: [sheets, { ...sheets, name: "mail__read" }],
+        },
+      );
+      const stored = (await loadCronStore(storePath)).jobs[0]!;
+      expect(stored.payload.toolsAllow).toEqual(["message", sheets.name]);
+      expect(stored.scheduledToolPolicy).toEqual(requesterPolicy);
+      expect(stored.toolsAllowProvenance).toEqual({
+        version: 1,
+        source: "final-executable-surface",
+        callerOrigin: discordOrigin,
+        channelRequester,
+        mcpToolBindings: [sheets],
+      });
+    } finally {
+      cron.stop();
+    }
+  });
+
   it.each([
     { mutation: "update", mode: "trusted" },
     { mutation: "declaration", mode: "account" },

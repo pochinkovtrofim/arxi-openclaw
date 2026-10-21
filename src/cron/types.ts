@@ -287,13 +287,14 @@ export type CronJobState = Omit<
   /**
    * Unresolved recovery scope and last notified signature, when an alert was requested.
    * `repair` records the owner-conversation repair request that replaced the streak's first
-   * alert, and `alerted` that its fallback alert was sent. It lasts until the job succeeds,
-   * so a streak is repaired at most once.
+   * alert, `followedUp` that the conversation got its one follow-up turn, and `alerted` that
+   * the plain alert after them was sent. It lasts until the job succeeds, so a streak gets
+   * one repair request.
    */
   failureAlertIncident?: {
     signature?: string;
     scope: "run" | "trigger";
-    repair?: { atMs: number; alerted?: true };
+    repair?: { atMs: number; followedUp?: true; alerted?: true };
   };
   /** Fences notification settlement when multiple cycles share a timestamp. */
   lastFailureNotificationId?: string;

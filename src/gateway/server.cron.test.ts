@@ -1218,6 +1218,11 @@ describe("gateway server cron", () => {
       threadId: 42,
       message: expect.stringContaining("Automation repair request from the scheduler"),
       internalDeliverySuppressErrors: true,
+      // The turn may fix exactly this job: the scheduler's binding, not a provenance label.
+      cronCreatorAuthorityCapability: expect.objectContaining({
+        callerOrigin: { kind: "unknown" },
+        managementEntitlement: { source: "failure-repair", jobId },
+      }),
     });
     expect(cronIsolatedRun).toHaveBeenCalledTimes(2);
   }, 45_000);

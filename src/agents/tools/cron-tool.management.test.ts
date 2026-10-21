@@ -25,6 +25,88 @@ import {
 const jobId = "existing-job";
 const configRevision = "sha256:stored-job";
 
+async function withRepairTool(
+  run: (
+    tool: ReturnType<typeof createCronTool>,
+    calls: Array<[string, unknown]>,
+    bindings: Map<string, unknown>,
+  ) => Promise<void>,
+  payload: Record<string, unknown> = {
+    kind: "agentTurn",
+    message: "scan",
+    toolsAllow: ["browser"],
+  },
+) {
+  const runId = "failure-repair-tool-run";
+  const { operationalRunInstance } = createTestAdmittedRunContext(runId);
+  const authority = claimAgentRunDelegatedAuthority(operationalRunInstance);
+  const capability = createCronCreatorAuthorityCapability(
+    runId,
+    { kind: "unknown" },
+    { source: "failure-repair", jobId },
+  )!;
+  const identity: AgentRuntimeIdentity = {
+    kind: "agentRuntime",
+    agentId: "main",
+    sessionKey: "agent:main:telegram:direct:owner",
+    operationalRunInstance,
+    delegatedAuthority: { ...authority, kind: "local" },
+  };
+  const calls: Array<[method: string, params: unknown]> = [];
+  const bindings = new Map<string, unknown>();
+  try {
+    await runWithCronCreatorAuthorityCapability(capability, () =>
+      withGatewayToolCallerIdentity({ ...identity, approvalAuthority: authority }, async () => {
+        const tool = createCronTool(
+          {
+            runId,
+            agentSessionKey: identity.sessionKey,
+            // The repair turn's own final tool surface, as the runner captures it.
+            creatorToolAllowlist: [
+              "browser",
+              "read",
+              "automations",
+              {
+                name: "google_workspace__sheets_append",
+                aliasName: "sheets_append",
+                mcp: {
+                  serverName: "google_workspace",
+                  operation: "tool",
+                  toolName: "sheets_append",
+                },
+              },
+            ],
+            creatorToolAllowlistCaptureRef: {
+              value: { version: 1, source: "final-executable-surface" },
+            },
+          },
+          {
+            callGatewayTool: async <T>(method: string, _options: unknown, params: unknown) => {
+              const caller = getGatewayToolCallerIdentity();
+              expect(caller?.cronManagementGrant).toBeDefined();
+              bindings.set(method, caller?.cronMcpToolBindings);
+              return await withCronManagementGrant(
+                caller!.cronManagementGrant!,
+                identity,
+                method,
+                async () => {
+                  calls.push([method, params]);
+                  return (
+                    method === "cron.get" ? { id: jobId, configRevision, payload } : { id: jobId }
+                  ) as T;
+                },
+              );
+            },
+          },
+        );
+        await run(tool, calls, bindings);
+      }),
+    );
+  } finally {
+    releaseAgentRunDelegatedAuthority(authority);
+  }
+}
+
 async function withAdminTool(
   origin: "unknown" | "channel-owner",
   run: (tool: ReturnType<typeof createCronTool>, calls: Array<[string, unknown]>) => Promise<void>,
@@ -136,6 +218,87 @@ describe("admin automation management", () => {
         "Use the Automations page for other actions",
       );
       expect(calls).toEqual([]);
+    });
+  });
+});
+
+describe("failure-repair automation access", () => {
+  it("gives the failing job tools this conversation has, by canonical name", async () => {
+    await withRepairTool(async (tool, calls, bindings) => {
+      await tool.execute("repair-update", {
+        action: "update",
+        jobId,
+        job: { payload: { toolsAllow: ["browser", "sheets_append", "read"] } },
+      });
+      expect(calls).toEqual([
+        ["cron.get", { id: jobId }],
+        [
+          "cron.update",
+          {
+            id: jobId,
+            expectedConfigRevision: configRevision,
+            patch: {
+              payload: {
+                kind: "agentTurn",
+                toolsAllow: ["browser", "google_workspace__sheets_append", "read"],
+              },
+            },
+          },
+        ],
+      ]);
+      // The update carries the lent MCP tool's identity, so its scheduled runs can bind it.
+      expect(bindings.get("cron.update")).toEqual([
+        {
+          name: "google_workspace__sheets_append",
+          serverName: "google_workspace",
+          operation: "tool",
+          toolName: "sheets_append",
+        },
+      ]);
+    });
+  });
+
+  it("refuses tools the conversation lacks and the automation control plane", async () => {
+    await withRepairTool(async (tool, calls) => {
+      await expect(
+        tool.execute("repair-exec", {
+          action: "update",
+          jobId,
+          job: { payload: { toolsAllow: ["browser", "exec"] } },
+        }),
+      ).rejects.toThrow(/Not available in this conversation.*: exec\./u);
+      await expect(
+        tool.execute("repair-automations", {
+          action: "update",
+          jobId,
+          job: { payload: { toolsAllow: ["browser", "automations"] } },
+        }),
+      ).rejects.toThrow(/cannot get them: automations\./u);
+      expect(calls.map(([method]) => method)).toEqual(["cron.get", "cron.get"]);
+    });
+  });
+
+  it("can pause or run only its own job and change nothing else", async () => {
+    await withRepairTool(async (tool, calls) => {
+      await tool.execute("repair-pause", { action: "update", jobId, job: { enabled: false } });
+      await tool.execute("repair-run", { action: "run", jobId, runMode: "force" });
+      await expect(
+        tool.execute("repair-other", { action: "get", jobId: "another-job" }),
+      ).rejects.toThrow(`only get, update, or run automation ${jobId}`);
+      await expect(tool.execute("repair-remove", { action: "remove", jobId })).rejects.toThrow(
+        `only get, update, or run automation ${jobId}`,
+      );
+      await expect(
+        tool.execute("repair-schedule", {
+          action: "update",
+          jobId,
+          job: { schedule: { kind: "every", everyMs: 60_000 } },
+        }),
+      ).rejects.toThrow("A repair can change only payload.toolsAllow, or set enabled:false.");
+      expect(calls).toEqual([
+        ["cron.update", { id: jobId, patch: { enabled: false } }],
+        ["cron.run", expect.objectContaining({ id: jobId, mode: "force" })],
+      ]);
     });
   });
 });

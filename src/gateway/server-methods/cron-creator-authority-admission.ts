@@ -92,6 +92,40 @@ function resolveDirectOperatorAuthority(
     : undefined;
 }
 
+/**
+ * The scheduler's repair turn for a failing automation, recognized only by the in-process
+ * client the scheduler dispatched it with; provenance labels are not authority.
+ */
+function resolveCronFailureRepairAuthority(params: {
+  runId: string;
+  resolvedSessionKey?: string;
+  spawnedBy?: string;
+  client?: GatewayClient | null;
+  isCurrent?: () => boolean;
+  inputProvenance?: InputProvenance;
+}): GatewayCronCreatorAuthorityAdmission | undefined {
+  const jobId = params.client?.internal?.cronFailureRepairJobId?.trim();
+  const runId = params.runId.trim();
+  if (
+    !jobId ||
+    !runId ||
+    params.client?.internal?.syntheticClient !== true ||
+    !params.resolvedSessionKey?.trim() ||
+    params.spawnedBy?.trim() ||
+    params.inputProvenance?.kind !== "internal_system" ||
+    params.inputProvenance.sourceTool !== "cron_failure_repair" ||
+    params.inputProvenance.jobId !== jobId
+  ) {
+    return undefined;
+  }
+  return Object.freeze({
+    runId,
+    callerOrigin: { kind: "unknown" as const },
+    managementEntitlement: Object.freeze({ source: "failure-repair" as const, jobId }),
+    ...(params.isCurrent ? { isCurrent: params.isCurrent } : {}),
+  });
+}
+
 /** Mints cron authority for an admitted local operator or authenticated Control UI admin turn. */
 export function resolveGatewayCronCreatorAuthorityAdmission(params: {
   runId: string;
@@ -143,6 +177,10 @@ export function resolveGatewayCronCreatorAuthorityAdmission(params: {
     !params.isOneShotModelRun &&
     !params.isRestartRecoveryResumeRun
   ) {
+    const repair = resolveCronFailureRepairAuthority(params);
+    if (repair) {
+      return repair;
+    }
     const continuation = consumeRequesterCronAuthorityAdmission({
       runId: params.runId,
       sessionKey: params.resolvedSessionKey,

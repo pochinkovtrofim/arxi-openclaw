@@ -62,4 +62,14 @@ export type UserMessageEvent =
   | { code: "cooldown_seconds"; seconds: number }
   | { code: "cooldown_minutes"; minutes: number }
   | { code: "post_compaction_failed"; text: string }
-  | { code: "auth_profile_failure" | "assistant_request_failure"; reason: FailoverReason };
+  | { code: "auth_profile_failure" | "assistant_request_failure"; reason: FailoverReason }
+  | {
+      /** A scheduled automation kept failing; sent when no conversation turn speaks for it. */
+      code: "automation_failed";
+      jobName: string;
+      count: number;
+      skipped?: true;
+      repairRequested?: true;
+      reason?: FailoverReason;
+    }
+  | { code: "automation_delivery_failed"; jobName: string };
