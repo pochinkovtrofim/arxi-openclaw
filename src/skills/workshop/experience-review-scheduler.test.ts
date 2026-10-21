@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { TranscriptEntryAnchor } from "../../config/sessions/transcript-entry-anchor.js";
 import {
   createSkillExperienceReviewScheduler,
+  EXPERIENCE_REVIEW_SESSION_QUIET_MS,
   type ExperienceReviewCandidate,
   type SkillExperienceReviewParams,
 } from "./experience-review-scheduler.js";
@@ -19,12 +20,14 @@ const source = {
 
 function createHarness() {
   const timers: Array<() => void> = [];
+  const delays: number[] = [];
   const runReview = vi.fn(async (_candidate: ExperienceReviewCandidate) => {});
   const scheduler = createSkillExperienceReviewScheduler({
     isSystemActive: () => false,
     runReview,
-    setTimer: (callback) => {
+    setTimer: (callback, delayMs) => {
       timers.push(callback);
+      delays.push(delayMs);
       return { unref() {} } as unknown as ReturnType<typeof setTimeout>;
     },
     clearTimer: () => {},
@@ -63,7 +66,7 @@ function createHarness() {
       callback();
     }
   };
-  return { turn, fireTimers, runReview, timers };
+  return { turn, fireTimers, runReview, timers, delays };
 }
 
 describe("skill experience review scheduler", () => {
@@ -157,6 +160,58 @@ describe("skill experience review scheduler", () => {
         { name: "deploy", source: "workspace", activation: "read", skillFile: workshopSkill },
       ],
     });
+    expect(timers).toHaveLength(0);
+  });
+
+  it("waits for the conversation to go quiet so one review covers a whole exchange", async () => {
+    const { turn, fireTimers, runReview, delays } = createHarness();
+    const workshopSkill = path.join(
+      resolveWorkshopSkillsDir({}, "main"),
+      "job-opportunity-verification",
+      "SKILL.md",
+    );
+
+    // The first turn reaches the threshold; the reply a minute later reads the learned skill.
+    turn(10);
+    turn(7, {
+      usedSkills: [
+        {
+          name: "job-opportunity-verification",
+          source: "workspace",
+          activation: "read",
+          skillFile: workshopSkill,
+        },
+      ],
+    });
+    expect(delays).toEqual([
+      EXPERIENCE_REVIEW_SESSION_QUIET_MS,
+      EXPERIENCE_REVIEW_SESSION_QUIET_MS,
+      EXPERIENCE_REVIEW_SESSION_QUIET_MS,
+    ]);
+    expect(delays[0]).toBe(5 * 60_000);
+    fireTimers();
+    await vi.waitFor(() => expect(runReview).toHaveBeenCalledTimes(1));
+    await setImmediate();
+    expect(runReview).toHaveBeenCalledTimes(1);
+    // The one review forks the conversation through the latest turn.
+    expect(runReview.mock.calls[0]?.[0]).toMatchObject({ ctx: { runId: "run-7" } });
+  });
+
+  it("moves a queued review on to a short later turn, where corrections usually come", async () => {
+    const { turn, fireTimers, runReview, timers } = createHarness();
+    const laterSource = { ...source, entryId: "entry-2" } as TranscriptEntryAnchor;
+
+    turn(10);
+    // "No, send it as one table from now on": two iterations and no learned skill read.
+    turn(2, { source: laterSource });
+    fireTimers();
+    await vi.waitFor(() => expect(runReview).toHaveBeenCalledTimes(1));
+    expect(runReview.mock.calls[0]?.[0]).toMatchObject({
+      source: laterSource,
+      ctx: { runId: "run-2" },
+    });
+    // That review covered both turns; their iterations do not count again.
+    turn(9);
     expect(timers).toHaveLength(0);
   });
 

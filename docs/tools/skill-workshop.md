@@ -52,16 +52,14 @@ it started with.
 
 ## Undo
 
-When a background run changes a skill, OpenClaw posts one line to the
-conversation that triggered it:
+Background changes are quiet: each is listed in the skill's history with its
+reason, one plain sentence in the user's language. Only when the review saved a
+correction the user stated explicitly does it confirm in one short line, without
+skill names; see [What you see](/tools/self-learning#what-you-see).
 
-```text
-💾 Learned: updated `deploy-staging` (tightened the rollback step). Say "undo" to revert this skill change.
-```
-
-Reply "undo" and the agent restores the previous version with `skill_workshop`.
-Nothing is posted when the review changed nothing. Channel-less Control UI
-sessions get the same line as a transcript entry.
+After a background change, reply "undo" in that conversation and the agent
+restores the previous version with `skill_workshop`, or archives a skill the
+review created.
 
 You can also undo from the Control UI (**Undo** on the skill's latest change or
 in its History tab) or the
@@ -145,7 +143,8 @@ Writes are validated before they land:
 - New names use 1-63 lowercase letters, digits, or hyphens and start with a letter
   or digit. Longer names saved by earlier releases stay listed and manageable.
 - `SKILL.md` needs frontmatter whose `name` matches the skill directory and a
-  `description` of 1-1024 bytes (aim for about 160). It must fit within `skills.workshop.maxSkillBytes`.
+  `description` of 1-1024 bytes (aim for about 160 characters), written in the
+  user's language because the user reads it in their list of learned skills. It must fit within `skills.workshop.maxSkillBytes`.
 - Support files go under `references/`, `templates/`, `scripts/`, or `assets/`,
   up to 256 KiB each. Absolute paths, traversal, and symlinks are refused.
 - A critical security-scanner finding, including a literal secret, refuses the
@@ -157,7 +156,7 @@ The background review must `view` an existing skill before it can `patch`,
 
 A successful `create`, `patch`, or `write_file` of `SKILL.md` may end with up to
 three `Advisory (not blocking)` lines: authoring issues the write introduced (a
-description over 160 bytes or opening with "This skill", a body over 250 lines
+description over 160 characters or opening with "This skill", a body over 250 lines
 or 12 KB, emphasis words, three or more Never/Don't steps, update notes or
 dates). The write has already landed. A `create` also lists the agent's other
 learned skills, so the agent itself decides whether the new skill duplicates

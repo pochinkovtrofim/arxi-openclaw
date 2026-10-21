@@ -34,7 +34,8 @@ export const SkillWorkshopToolSchema = Type.Object(
     ),
     reason: Type.Optional(
       Type.String({
-        description: "One short line saying what changed and why; shown to the user.",
+        description:
+          "One short plain sentence in the user's language saying what you will now do better, without skill names or file paths; the user reads it in their list of learned skills.",
       }),
     ),
     version: Type.Optional(

@@ -82,6 +82,72 @@ describe("runSkillExperienceReview", () => {
     );
   });
 
+  it("shows the review this conversation's earlier saves and hands on only its marked user line", async () => {
+    const candidate = await createExperienceReviewCandidate(
+      "review-earlier-saves",
+      [{ role: "user", content: "From now on check recruiters on LinkedIn first.", timestamp: 1 }],
+      { workspaceDir: state.workspaceDir, modelId: "gpt-test" },
+    );
+    const earlier: WorkshopChange = {
+      id: "c0",
+      agentId: "main",
+      skillName: "job-opportunity-verification",
+      action: "patch",
+      actor: "review",
+      summary: "Добавила шаг проверки вакансии",
+      versionId: "20261021T142200000Z-patch",
+      sessionKey: candidate.source.sessionKey,
+      createdAtMs: Date.now() - 3 * 60_000,
+    };
+    const stale: WorkshopChange = {
+      ...earlier,
+      id: "c-old",
+      summary: "a save from two days ago",
+      createdAtMs: Date.now() - 48 * 60 * 60_000,
+    };
+    const committed: WorkshopChange = {
+      ...earlier,
+      id: "c1",
+      summary: "Проверяю рекрутера в LinkedIn до звонка",
+      versionId: "20261021T142500000Z-patch",
+      createdAtMs: Date.now(),
+    };
+    mocks.listWorkshopChanges.mockImplementation(
+      async (_agentId: string, options: { sessionKey?: string; runId?: string }) =>
+        options.sessionKey === candidate.source.sessionKey
+          ? [earlier, stale]
+          : options.runId
+            ? [committed]
+            : [],
+    );
+    let prompt: string | undefined;
+    mocks.runSkillWorkshopReview.mockImplementationOnce(
+      async (params: Parameters<typeof runSkillWorkshopReview>[0]) => {
+        prompt = params.prompt;
+        return {
+          meta: { durationMs: 1 },
+          payloads: [
+            {
+              text: "Patched the skill.\nTELL_USER: Запомнила: рекрутеров сначала проверяю в LinkedIn.",
+            },
+          ],
+        };
+      },
+    );
+
+    await runSkillExperienceReview(candidate);
+
+    expect(prompt).toContain("Already saved from this conversation");
+    expect(prompt).toContain("patch job-opportunity-verification: Добавила шаг проверки вакансии");
+    expect(prompt).not.toContain("a save from two days ago");
+    expect(mocks.postWorkshopChangeNotice).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changes: [committed],
+        userLine: "Запомнила: рекрутеров сначала проверяю в LinkedIn.",
+      }),
+    );
+  });
+
   it("checks source authority and its accepted anchor together after a later append", async () => {
     const candidate = await createExperienceReviewCandidate(
       "review-append",

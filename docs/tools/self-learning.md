@@ -22,8 +22,8 @@ Learning happens in three places:
 - **Unused-skill cleanup** archives learned skills unused for 30 days. See
   [Unused-skill cleanup](/tools/skill-workshop#unused-skill-cleanup).
 
-Every change applies immediately, is announced in the conversation, and can be
-undone. See [Undo](/tools/skill-workshop#undo).
+Every change applies immediately, is listed with its reason where you manage
+learned skills, and can be undone. See [Undo](/tools/skill-workshop#undo).
 
 ## When a review runs
 
@@ -37,9 +37,14 @@ count, so a skill that just misled or helped the agent gets a fresh look. The
 same eligibility rules apply, and a turn that changed a learned skill itself
 still skips the review.
 
-A queued review starts after 30 seconds with no agent or reply run active; later
-activity in the same session restarts that wait. Reviews run one at a time.
-The foreground reply never waits for a review.
+A queued review waits until the conversation has been quiet for five minutes
+and no agent or reply run is active; every later turn in the same session
+restarts that wait. A back-and-forth therefore gets one review that sees the
+whole exchange, instead of one review per turn editing the same skill again.
+Reviews run one at a time. The foreground reply never waits for a review.
+
+The review is also told what earlier reviews or the agent already saved from
+the same conversation in the last day, and saves only what later turns add.
 
 These turns do not count:
 
@@ -94,16 +99,27 @@ commands, paths, or ids. When nothing durable was learned, it changes nothing.
 
 ## What you see
 
-If the review changed a skill, one line is posted to the conversation that
-triggered it and mirrored into the session transcript:
+Changes are quiet. Each one appears in the skill's history (Control UI
+**Plugins → Skill workshop**, `openclaw skills workshop changes`) with the
+review's reason: one plain sentence in your language, such as "Check the
+recruiter's profile before the call". Nothing is posted to the conversation.
+
+The one exception is a correction you stated yourself. When you told the agent
+to do something differently, or how you want it done from now on, and the
+review saved exactly that, it confirms in one short line in your language,
+without skill names:
 
 ```text
-💾 Learned: updated `deploy-staging` (tightened the rollback step). Say "undo" to revert this skill change.
+Got it, I'll send reports as one table from now on.
 ```
 
-Channel-less Control UI sessions get the line as a transcript entry. Nothing is
-posted when nothing changed. Reply "undo" and the agent restores the previous
-version.
+The line goes to the conversation that triggered the review and is mirrored
+into the session transcript; channel-less Control UI sessions get it as a
+transcript entry.
+
+Either way the next turn of that conversation learns the exact revert call, so
+replying "undo" right after a change restores the previous version, or archives
+a skill the review created.
 
 A review stops without changing anything further if you turn learning off, or
 if the source session is deleted, replaced, or changes permission mode while it
@@ -149,7 +165,7 @@ can watch, steer, or stop it. Starting one does not change the learning mode.
    subagent, or Incognito.
 4. Tool policy allows `skill_workshop` and the session is not sandboxed. In
    `auto` mode, `openclaw doctor` reports the setting that hides it.
-5. The Gateway stayed up and idle for the 30-second wait.
+5. The Gateway stayed up and the conversation stayed quiet for five minutes.
 
 A review that ran can still decide nothing is worth saving. That is the
 expected result for routine work.

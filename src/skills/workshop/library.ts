@@ -673,7 +673,7 @@ export async function restoreWorkshopSkill(
 
 export async function listWorkshopChanges(
   agentId: string,
-  options: { limit?: number; beforeMs?: number; runId?: string } = {},
+  options: { limit?: number; beforeMs?: number; runId?: string; sessionKey?: string } = {},
 ): Promise<WorkshopChange[]> {
   return await executeOpenClawStateWorker(captureOpenClawStateWorkerContext(), {
     type: "skills.workshop.changes.list",
@@ -682,6 +682,7 @@ export async function listWorkshopChanges(
       limit: Math.min(Math.max(Math.trunc(options.limit ?? 50), 1), MAX_CHANGES_LIMIT),
       ...(options.beforeMs !== undefined ? { beforeMs: options.beforeMs } : {}),
       ...(options.runId ? { runId: options.runId } : {}),
+      ...(options.sessionKey ? { sessionKey: options.sessionKey } : {}),
     },
   });
 }

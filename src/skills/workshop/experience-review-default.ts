@@ -1,5 +1,6 @@
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { isVitestRuntimeEnv } from "../../infra/test-runtime-env.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { runWithGatewayDetachedWorkContinuation } from "../../process/gateway-work-admission.js";
 import { resolveSkillWorkshopConfig } from "./config.js";
@@ -13,6 +14,11 @@ const UNUSED_ARCHIVE_INTERVAL_MS = 24 * 60 * 60_000;
 const lastUnusedArchiveByAgent = new Map<string, number>();
 
 const defaultScheduler = createSkillExperienceReviewScheduler({
+  // Gateway end-to-end tests shorten the five-minute quiet window.
+  sessionQuietMs: () =>
+    isVitestRuntimeEnv()
+      ? Number(process.env.OPENCLAW_TEST_SKILL_REVIEW_QUIET_MS) || undefined
+      : undefined,
   isSystemActive: async () => {
     const { getActiveEmbeddedRunCount } =
       await import("../../agents/embedded-agent-runner/active-run-projections.js");

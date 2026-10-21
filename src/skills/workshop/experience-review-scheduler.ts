@@ -17,7 +17,13 @@ import { resolveWorkshopSkillsDir } from "./skills-root.js";
 
 /** Model iterations a session accumulates across turns before a review is due. */
 const EXPERIENCE_REVIEW_ITERATION_THRESHOLD = 10;
-const EXPERIENCE_REVIEW_IDLE_MS = 30_000;
+/**
+ * Quiet time after a session's last turn. A conversation's back-and-forth (replies usually come
+ * within a minute or two) collapses into one review that sees the whole exchange, instead of one
+ * review per turn re-editing the same skill. The bounded review context does not reuse the
+ * foreground prompt cache, so waiting costs nothing there.
+ */
+export const EXPERIENCE_REVIEW_SESSION_QUIET_MS = 5 * 60_000;
 const EXPERIENCE_REVIEW_RETRY_IDLE_MS = 30_000;
 const EXPERIENCE_REVIEW_MAX_PENDING = 32;
 const EXPERIENCE_REVIEW_MAX_COUNTERS = 1024;
@@ -75,6 +81,8 @@ type ExperienceReviewTimer = ReturnType<typeof setTimeout>;
 type ExperienceReviewSchedulerDeps = {
   isSystemActive: () => boolean | Promise<boolean>;
   runReview: (candidate: ExperienceReviewCandidate) => Promise<void>;
+  /** Read at each arm; undefined means {@link EXPERIENCE_REVIEW_SESSION_QUIET_MS}. */
+  sessionQuietMs?: () => number | undefined;
   setTimer?: (callback: () => void, delayMs: number) => ExperienceReviewTimer;
   clearTimer?: (timer: ExperienceReviewTimer) => void;
 };
@@ -147,13 +155,14 @@ function usedWorkshopSkill(params: SkillExperienceReviewParams): boolean {
 /**
  * Counts model iterations per (agent, session) across turns and queues one background review
  * once a session has done enough work since its last review or its last own Workshop edit,
- * or right after a turn that used a learned skill. Reviews wait for a quiet period and run
- * one at a time.
+ * or right after a turn that used a learned skill. Reviews wait until the session has been
+ * quiet for a while, so one review covers a whole exchange, and run one at a time.
  */
 export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSchedulerDeps) {
   const iterationsBySession = new Map<string, number>();
   const pendingBySession = new Map<string, PendingExperienceReview>();
   let reviewInFlight = false;
+  const sessionQuietMs = () => deps.sessionQuietMs?.() ?? EXPERIENCE_REVIEW_SESSION_QUIET_MS;
   const setTimer = deps.setTimer ?? ((callback, delayMs) => setTimeout(callback, delayMs));
   const clearTimer = deps.clearTimer ?? clearTimeout;
 
@@ -221,7 +230,7 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
       const existing = pendingBySession.get(key);
       // Quiet time follows all later foreground work in the session.
       if (existing) {
-        arm(key, existing, EXPERIENCE_REVIEW_IDLE_MS);
+        arm(key, existing, sessionQuietMs());
       }
       // Errored completions (provider/prompt failures) are environment noise, not
       // learnable evidence. User aborts carry no error and stay eligible.
@@ -244,7 +253,13 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
       }
       const iterations = (iterationsBySession.get(key) ?? 0) + resolveTurnModelIterations(params);
       iterationsBySession.delete(key);
-      if (iterations < EXPERIENCE_REVIEW_ITERATION_THRESHOLD && !usedWorkshopSkill(params)) {
+      // A queued review moves on to every later turn, however short, so it sees
+      // the whole exchange (a correction usually comes in a one-line reply).
+      if (
+        !existing &&
+        iterations < EXPERIENCE_REVIEW_ITERATION_THRESHOLD &&
+        !usedWorkshopSkill(params)
+      ) {
         // Re-insert so the least recently active session is the one pruned.
         iterationsBySession.set(key, iterations);
         pruneMapToMaxSize(iterationsBySession, EXPERIENCE_REVIEW_MAX_COUNTERS);
@@ -267,6 +282,7 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
           pendingBySession.delete(oldest[0]);
         }
       }
+      const usedSkills = [...(existing?.candidate.usedSkills ?? []), ...(params.usedSkills ?? [])];
       const candidate: ExperienceReviewCandidate = {
         ctx: {
           runId: params.ctx.runId,
@@ -278,13 +294,13 @@ export function createSkillExperienceReviewScheduler(deps: ExperienceReviewSched
         },
         config: params.config,
         source: { ...source },
-        usedSkills: params.usedSkills ? [...params.usedSkills] : undefined,
+        usedSkills: usedSkills.length ? usedSkills : undefined,
         turnAborted: !params.event.success,
       };
       const pending = existing ?? { candidate, generation: 0 };
       pending.candidate = candidate;
       pendingBySession.set(key, pending);
-      arm(key, pending, EXPERIENCE_REVIEW_IDLE_MS);
+      arm(key, pending, sessionQuietMs());
       log.debug(`experience review scheduled: session=${sessionKey} iterations=${iterations}`);
     },
     clear(): void {
