@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import {
   acquireFileLock as acquireFsSafeFileLock,
+  createFileLockManager,
   drainFileLockManagerForTest,
   resetFileLockManagerForTest,
 } from "@openclaw/fs-safe/file-lock";
@@ -88,6 +89,23 @@ function createCurrentProcessLockPayload(): Record<string, unknown> {
     payload.starttime = starttime;
   }
   return payload;
+}
+
+// A VM snapshot restore or a deterministic boot resumes the same pid and start
+// time, so a sidecar left by an earlier incarnation of this process looks live
+// forever. This manager tracks every lock the process holds, so an unheld
+// sidecar that names this exact process was abandoned by that incarnation.
+function isAbandonedByThisProcess(payload: unknown, normalizedTargetPath: string): boolean {
+  const owner = asNullableRecord(payload);
+  const starttime = getCurrentProcessStartTime();
+  return (
+    owner?.pid === process.pid &&
+    starttime !== null &&
+    owner.starttime === starttime &&
+    !createFileLockManager(FILE_LOCK_MANAGER_KEY)
+      .heldEntries()
+      .some((entry) => entry.normalizedTargetPath === normalizedTargetPath)
+  );
 }
 
 function sameStatValue(left: number | bigint, right: number | bigint): boolean {
@@ -181,7 +199,11 @@ export async function acquireFileLock(
           return staleOwner !== null;
         }
         if (staleRecovery === "remove-if-definitely-stale") {
-          return isLockOwnerDefinitelyStale({ payload: asNullableRecord(params.payload) });
+          return (
+            isLockOwnerDefinitelyStale({ payload: asNullableRecord(params.payload) }) ||
+            (!params.heldByThisProcess &&
+              isAbandonedByThisProcess(params.payload, params.normalizedTargetPath))
+          );
         }
         return shouldRemoveDeadOwnerOrExpiredLock({
           payload: asNullableRecord(params.payload),
@@ -197,7 +219,10 @@ export async function acquireFileLock(
             }) => {
               options.assertResourceUnborrowed?.(snapshot.normalizedTargetPath);
               if (staleRecovery === "remove-if-definitely-stale") {
-                return isLockOwnerDefinitelyStale({ payload: asNullableRecord(snapshot.payload) });
+                return (
+                  isLockOwnerDefinitelyStale({ payload: asNullableRecord(snapshot.payload) }) ||
+                  isAbandonedByThisProcess(snapshot.payload, snapshot.normalizedTargetPath)
+                );
               }
               return shouldRemoveDeadOwnerOrExpiredLock({
                 payload: asNullableRecord(snapshot.payload),

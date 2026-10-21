@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getFileLockProcessStartTime } from "../shared/pid-alive.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import {
   acquireFileLock,
@@ -197,6 +198,38 @@ describe("acquireFileLock", () => {
       expect(await fs.readFile(lockPath, "utf8")).toBe(bytes);
     }
   });
+
+  it.runIf(process.platform === "linux")(
+    "reclaims a definite-only sidecar left by an earlier incarnation of this process",
+    async () => {
+      // A restored VM snapshot resumes the same pid and start time as the
+      // Gateway that left this sidecar behind when the VM was killed.
+      const filePath = path.join(tempDir, "openclaw.sqlite.cron-authority");
+      const lockPath = `${filePath}.lock`;
+      const starttime = getFileLockProcessStartTime(process.pid);
+      expect(starttime).not.toBeNull();
+      await fs.writeFile(
+        lockPath,
+        JSON.stringify({ pid: process.pid, createdAt: "2000-01-01T00:00:00Z", starttime }),
+      );
+      const options = {
+        retries: { retries: 0, factor: 1, minTimeout: 1, maxTimeout: 1 },
+        stale: 0,
+        staleRecovery: "remove-if-definitely-stale",
+      } as const;
+
+      const held = await acquireFileLock(filePath, options);
+      const reclaimed = JSON.parse(await fs.readFile(lockPath, "utf8"));
+      expect(reclaimed.createdAt).not.toBe("2000-01-01T00:00:00Z");
+
+      // The same process holding it for real still excludes a second holder.
+      await expect(acquireFileLock(filePath, options)).rejects.toMatchObject({
+        code: FILE_LOCK_TIMEOUT_ERROR_CODE,
+      });
+      expect(JSON.parse(await fs.readFile(lockPath, "utf8"))).toEqual(reclaimed);
+      await held.release();
+    },
+  );
 
   it("does not grant stale removal for an unsupported JavaScript policy", async () => {
     const filePath = path.join(tempDir, "unsupported-policy");
