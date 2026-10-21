@@ -175,10 +175,11 @@ one and should be merged.
 }
 ```
 
-| Setting                           | Default  | Effect                                                                                  |
-| --------------------------------- | -------- | --------------------------------------------------------------------------------------- |
-| `skills.workshop.autonomous.mode` | `"auto"` | `"auto"` enables the background review and unused-skill cleanup. `"off"` disables both. |
-| `skills.workshop.maxSkillBytes`   | `40000`  | Maximum `SKILL.md` size in bytes (1024-200000).                                         |
+| Setting                            | Default  | Effect                                                                                                                                                                  |
+| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills.workshop.autonomous.mode`  | `"auto"` | `"auto"` enables the background review and unused-skill cleanup. `"off"` disables both.                                                                                 |
+| `skills.workshop.autonomous.model` | unset    | Optional `provider/model` for background reviews. A review uses it when the reviewed turn ran on the same provider (same sign-in); otherwise it keeps the turn's model. |
+| `skills.workshop.maxSkillBytes`    | `40000`  | Maximum `SKILL.md` size in bytes (1024-200000).                                                                                                                         |
 
 ```bash
 openclaw config set skills.workshop.autonomous.mode off

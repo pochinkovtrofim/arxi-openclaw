@@ -82,6 +82,29 @@ describe("runSkillExperienceReview", () => {
     );
   });
 
+  it.each([
+    { model: "openai/gpt-review", expected: { provider: "openai", model: "gpt-review" } },
+    // Another provider would need another sign-in; the turn's own model reviews instead.
+    { model: "anthropic/claude-review", expected: { provider: "openai", model: "gpt-test" } },
+  ])("reviews on the configured model $model only on the turn's provider", async (route) => {
+    const candidate = await createExperienceReviewCandidate(
+      `review-model-${route.expected.model}`,
+      [{ role: "user", content: "Reconcile the budget.", timestamp: 1 }],
+      { workspaceDir: state.workspaceDir, modelId: "gpt-test" },
+    );
+    candidate.config = {
+      ...candidate.config,
+      skills: { workshop: { autonomous: { mode: "auto", model: route.model } } },
+    };
+    mocks.runSkillWorkshopReview.mockResolvedValue({ meta: { durationMs: 1 }, payloads: [] });
+
+    await runSkillExperienceReview(candidate);
+
+    expect(mocks.runSkillWorkshopReview).toHaveBeenCalledWith(
+      expect.objectContaining(route.expected),
+    );
+  });
+
   it("shows the review this conversation's earlier saves and hands on only its marked user line", async () => {
     const candidate = await createExperienceReviewCandidate(
       "review-earlier-saves",

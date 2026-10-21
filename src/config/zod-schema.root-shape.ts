@@ -570,6 +570,8 @@ export const OpenClawSchemaShape = {
             .strictObject({
               /** "auto" lets agents save and update Workshop skills; "off" disables autonomous learning. */
               mode: z.union([z.literal("off"), z.literal("auto")]).optional(),
+              /** provider/model for background reviews that share the reviewed turn's provider. */
+              model: z.string().optional(),
             })
             .optional(),
           /** Maximum Workshop skill file size in bytes. */

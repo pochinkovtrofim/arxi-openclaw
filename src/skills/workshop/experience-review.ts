@@ -231,6 +231,13 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
     },
     assertSourceCurrent,
   });
+  // Reviews read a bounded transcript suffix and never share the foreground cache, so a
+  // configured cheaper model on the same provider (same sign-in) can carry them.
+  const reviewModel = resolveSkillWorkshopConfig(config).autonomous.model;
+  const reviewRoute =
+    reviewModel?.provider === candidate.ctx.modelProviderId
+      ? reviewModel
+      : { provider: candidate.ctx.modelProviderId, model: candidate.ctx.modelId };
   const run = () =>
     runSkillWorkshopReview({
       ...foregroundPromptContext,
@@ -246,8 +253,8 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
       config,
       abortSignal,
       prompt: buildSkillExperienceReviewPrompt({ ...candidate, earlierChanges }),
-      provider: candidate.ctx.modelProviderId,
-      model: candidate.ctx.modelId,
+      provider: reviewRoute.provider,
+      model: reviewRoute.model,
       ...(candidate.ctx.authProfileId
         ? { authProfileId: candidate.ctx.authProfileId, authProfileIdSource: "user" as const }
         : {}),

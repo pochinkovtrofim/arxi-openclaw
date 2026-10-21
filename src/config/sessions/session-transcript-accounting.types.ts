@@ -12,6 +12,8 @@ export type SessionTranscriptAccountingOptions = {
 export type SessionTranscriptUsageSnapshot = {
   promptTokens?: number;
   outputTokens?: number;
+  /** Epoch ms of the message that carried this usage: the latest model call. */
+  observedAt?: number;
   trailingMessages: AgentMessage[];
 };
 

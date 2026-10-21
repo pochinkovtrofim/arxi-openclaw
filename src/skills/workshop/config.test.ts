@@ -13,6 +13,18 @@ describe("resolveSkillWorkshopConfig", () => {
     ).toBe(mode);
   });
 
+  it("splits the review model into provider and model id", () => {
+    const read = (model: string) =>
+      resolveSkillWorkshopConfig({ skills: { workshop: { autonomous: { model } } } }).autonomous
+        .model;
+    expect(read(" anthropic/claude-sonnet-5-5 ")).toEqual({
+      provider: "anthropic",
+      model: "claude-sonnet-5-5",
+    });
+    expect(read("claude-sonnet-5-5")).toBeUndefined();
+    expect(read("anthropic/")).toBeUndefined();
+  });
+
   it("does not read the retired boolean key at runtime", () => {
     expect(
       resolveSkillWorkshopConfig({

@@ -30,6 +30,7 @@ function isUnavailableContextBarrier(
 function deriveTranscriptUsageSnapshot(
   usage: NonNullable<ReturnType<typeof normalizeUsage>>,
   trailingMessages: AgentMessage[],
+  observedAt: number | undefined,
 ): SessionTranscriptUsageSnapshot | undefined {
   const promptTokens = deriveContextPromptTokens({ lastCallUsage: usage });
   const outputTokens = asPositiveFiniteNumber(usage.output);
@@ -39,8 +40,20 @@ function deriveTranscriptUsageSnapshot(
   return {
     promptTokens,
     outputTokens,
+    ...(observedAt !== undefined ? { observedAt } : {}),
     trailingMessages,
   };
+}
+
+function readEventTimestamp(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const timestamp = typeof value === "string" ? Date.parse(value) : value;
+    const positive = asPositiveFiniteNumber(timestamp);
+    if (positive !== undefined) {
+      return positive;
+    }
+  }
+  return undefined;
 }
 
 function readTranscriptAccountingSnapshot(
@@ -56,6 +69,7 @@ function readTranscriptAccountingSnapshot(
   let scanUsage = options.includeUsage;
   let scanTaint = options.includeTurnTaint === true;
   let latestUsage: ReturnType<typeof normalizeUsage>;
+  let latestUsageAt: number | undefined;
   const trailingMessages: AgentMessage[] = [];
   let boundaryFound = false;
   let tainted = false;
@@ -88,6 +102,7 @@ function readTranscriptAccountingSnapshot(
           trailingMessages.length = 0;
         } else if (usage && hasNonzeroUsage(usage)) {
           latestUsage = usage;
+          latestUsageAt = readEventTimestamp(messageRecord?.timestamp, record.timestamp);
           scanUsage = false;
         } else if (message) {
           trailingMessages.push(message);
@@ -113,7 +128,7 @@ function readTranscriptAccountingSnapshot(
     hasLeafControl,
     tainted,
     usage: latestUsage
-      ? deriveTranscriptUsageSnapshot(latestUsage, trailingMessages.toReversed())
+      ? deriveTranscriptUsageSnapshot(latestUsage, trailingMessages.toReversed(), latestUsageAt)
       : undefined,
   };
 }
