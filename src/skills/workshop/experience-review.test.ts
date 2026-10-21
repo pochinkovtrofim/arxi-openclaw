@@ -82,6 +82,31 @@ describe("runSkillExperienceReview", () => {
     );
   });
 
+  it.each([
+    { from: "openai/gpt-test", expected: { provider: "openai", model: "gpt-review" } },
+    // An unmapped turn model (Haiku-like cheap turns) keeps reviewing on itself.
+    { from: "openai/gpt-other", expected: { provider: "openai", model: "gpt-test" } },
+  ])("reviews a $from turn on its mapped model", async (route) => {
+    const candidate = await createExperienceReviewCandidate(
+      `review-model-${route.expected.model}`,
+      [{ role: "user", content: "Reconcile the budget.", timestamp: 1 }],
+      { workspaceDir: state.workspaceDir, modelId: "gpt-test" },
+    );
+    candidate.config = {
+      ...candidate.config,
+      skills: {
+        workshop: { autonomous: { mode: "auto", models: { [route.from]: "openai/gpt-review" } } },
+      },
+    };
+    mocks.runSkillWorkshopReview.mockResolvedValue({ meta: { durationMs: 1 }, payloads: [] });
+
+    await runSkillExperienceReview(candidate);
+
+    expect(mocks.runSkillWorkshopReview).toHaveBeenCalledWith(
+      expect.objectContaining(route.expected),
+    );
+  });
+
   it("shows the review this conversation's earlier saves and hands on only its marked user line", async () => {
     const candidate = await createExperienceReviewCandidate(
       "review-earlier-saves",

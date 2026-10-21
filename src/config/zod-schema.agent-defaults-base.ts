@@ -199,6 +199,11 @@ export const AgentDefaultsBaseSchema = z.strictObject({
        */
       maxActiveTranscriptBytes: NonNegativeByteSizeSchema.optional(),
       /**
+       * Compact before a turn whose prompt cache has already expired once the session
+       * holds at least this many tokens. Default: 150000. Set to 0 to disable.
+       */
+      coldCacheTokens: z.number().int().nonnegative().optional(),
+      /**
        * Send brief context-maintenance notices to the user: when compaction starts
        * and completes, and when a pre-compaction memory flush is exhausted so the
        * reply continues in a degraded state.

@@ -165,6 +165,8 @@ export const AGENT_FIELD_HELP: Record<string, string> = {
     "Optional provider/model or configured bare alias used only for compaction summarization. Bare aliases resolve before dispatch; a configured literal model ID wins if it collides with an alias. Leave unset to keep using the primary agent model.",
   "agents.defaults.compaction.maxActiveTranscriptBytes":
     'Byte threshold that triggers normal preflight local compaction when the transcript window the model sees (since the latest compaction or reset) reaches this size (bytes or strings like "20mb"). Set to 0 or leave unset to disable. Also caps Codex app-server native rollout transcripts; oversized native threads restart fresh.',
+  "agents.defaults.compaction.coldCacheTokens":
+    "Token count at which a turn compacts first when its prompt cache has already expired (the time since the session's last model call exceeds the model's cache retention). The next request has to rewrite the whole prompt cache anyway; compacting first makes it rewrite a summary instead of the full history. Applies to prompt-cached Anthropic routes. Default: 150000. Set to 0 to disable.",
   "agents.defaults.compaction.notifyUser":
     "When enabled, sends brief context-maintenance notices to the user: when compaction starts and completes (for example, '🧹 Compacting context...' and '🧹 Compaction complete'), and when a pre-compaction memory flush is exhausted so the reply continues in a degraded state (for example, '⚠️ Memory maintenance temporarily failed; continuing your reply.'). Disabled by default to keep context maintenance silent and non-intrusive.",
   "agents.defaults.compaction.memoryFlush":

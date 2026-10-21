@@ -85,6 +85,7 @@ describe("session transcript reader facade", () => {
           role: "assistant",
           content: "answer",
           usage: { input: 200, output: 7 },
+          timestamp: 1_760_000_000_000,
           __openclaw: { turnTainted: true },
         },
       },
@@ -103,7 +104,13 @@ describe("session transcript reader facade", () => {
         .reduce((bytes, event) => bytes + Buffer.byteLength(JSON.stringify(event)) + 1, 0),
       eventCount: 2,
       turnTainted: true,
-      usage: { promptTokens: 200, outputTokens: 7, trailingMessages: [] },
+      // The usage-bearing message dates the latest model call (cold-cache compaction).
+      usage: {
+        promptTokens: 200,
+        outputTokens: 7,
+        observedAt: 1_760_000_000_000,
+        trailingMessages: [],
+      },
     });
   });
 

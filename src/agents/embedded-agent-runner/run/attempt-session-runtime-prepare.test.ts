@@ -536,6 +536,57 @@ describe("prepareEmbeddedAttemptSessionRuntime", () => {
     expect(restored.update?.content).toContain("## Tools\nread");
   });
 
+  it.each([
+    { api: "anthropic-messages", appendOnlyRuntimeContext: true, pins: true },
+    { api: "anthropic-messages", appendOnlyRuntimeContext: false, pins: false },
+    // Strict-alternation transports cannot carry a user-role update next to the user turn.
+    { api: "bedrock-converse-stream", appendOnlyRuntimeContext: true, pins: false },
+  ])(
+    "pins the system prompt on an append-only $api route without in-history system messages: $pins",
+    async ({ api, appendOnlyRuntimeContext, pins }) => {
+      // Claude 5.5 over OAuth or a proxy: an edited workspace file must not rewrite the cache.
+      const fixture = createFixture();
+      Object.assign(fixture.transcriptPolicy, { appendOnlyRuntimeContext });
+      fixture.input.attempt.model = { ...fixture.input.attempt.model, api };
+      const entries: SessionEntry[] = [];
+      const appendCustomEntryAsync = async (customType: string, data: unknown) => {
+        entries.push({
+          type: "custom",
+          customType,
+          data,
+          id: `append-only-marker-${entries.length}`,
+          parentId: null,
+          timestamp: "2026-10-01T00:00:00Z",
+        });
+      };
+      Object.assign(fixture.sessionManager, {
+        getBranch: () => entries,
+        getSessionTarget: () => undefined,
+        getSessionId: () => "append-only-session",
+        appendCustomEntryAsync,
+      });
+      Object.assign(fixture.activeSession, { agent: { state: { messages: [] } } });
+      mocks.retainSessionPromptState.mockImplementation(() => ({
+        state: { toolResults: { projected: true } },
+        [Symbol.dispose]: () => {},
+      }));
+
+      const runtime = await prepareEmbeddedAttemptSessionRuntime(fixture.input);
+      if (!pins) {
+        expect(runtime.prepareSystemPromptUpdate).toBeUndefined();
+        return;
+      }
+      const initial = await runtime.prepareSystemPromptUpdate!("## Memory\nold\n## Skills\na");
+      initial.commit();
+      await persistSessionSystemPrompt(runtime.sessionPromptState, appendCustomEntryAsync);
+      const edited = await runtime.prepareSystemPromptUpdate!("## Memory\nnew\n## Skills\na", true);
+      expect(edited.restart).toBe(false);
+      expect(edited.systemPrompt).toBe("## Memory\nold\n## Skills\na");
+      expect(edited.update?.content).toContain("## Memory\nnew");
+      expect(edited.update?.content).not.toContain("## Skills");
+    },
+  );
+
   it.each([false, true])(
     "registers prompt series only outside settled finalization %s",
     async (finalization) => {

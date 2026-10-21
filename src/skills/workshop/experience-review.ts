@@ -231,6 +231,12 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
     },
     assertSourceCurrent,
   });
+  // An operator may move reviews of an expensive turn model to a cheaper one on the same
+  // provider (same sign-in); the review then writes its own cache instead of reusing the
+  // foreground prefix.
+  const reviewRoute = resolveSkillWorkshopConfig(config).autonomous.models.get(
+    `${candidate.ctx.modelProviderId}/${candidate.ctx.modelId}`,
+  ) ?? { provider: candidate.ctx.modelProviderId, model: candidate.ctx.modelId };
   const run = () =>
     runSkillWorkshopReview({
       ...foregroundPromptContext,
@@ -246,8 +252,8 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
       config,
       abortSignal,
       prompt: buildSkillExperienceReviewPrompt({ ...candidate, earlierChanges }),
-      provider: candidate.ctx.modelProviderId,
-      model: candidate.ctx.modelId,
+      provider: reviewRoute.provider,
+      model: reviewRoute.model,
       ...(candidate.ctx.authProfileId
         ? { authProfileId: candidate.ctx.authProfileId, authProfileIdSource: "user" as const }
         : {}),

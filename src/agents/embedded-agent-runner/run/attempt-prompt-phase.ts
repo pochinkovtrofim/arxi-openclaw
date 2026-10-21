@@ -472,7 +472,9 @@ export async function runEmbeddedAttemptPromptPhase(
         persistToolResultProjections: async () => {
           if (
             !isRawModelRun &&
-            (inHistorySystemUpdates || toolResultPromptProjectionState.frozen.size > 0)
+            (inHistorySystemUpdates ||
+              sessionRuntime.prepareSystemPromptUpdate ||
+              toolResultPromptProjectionState.frozen.size > 0)
           ) {
             await withTranscriptWrite(async () => {
               runAbortController.signal.throwIfAborted();

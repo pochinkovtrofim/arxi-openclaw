@@ -320,6 +320,7 @@ export const FIELD_LABELS: Record<string, string> = {
   "skills.load.allowSymlinkTargets": "Allowed Skill Symlink Targets",
   "skills.load.watch": "Watch Skills",
   "skills.workshop.autonomous.mode": "Skill Workshop Autonomous Mode",
+  "skills.workshop.autonomous.models": "Skill Workshop Review Models",
   "agents.defaults.skills": "Skills",
   "agents.defaults.subagents.delegationMode": "Sub-agent Delegation Mode",
   "agents.entries.*.subagents.delegationMode": "Sub-agent Delegation Mode",
@@ -481,6 +482,7 @@ export const FIELD_LABELS: Record<string, string> = {
   "agents.defaults.compaction.model": "Compaction Model Override",
   "agents.defaults.compaction.maxActiveTranscriptBytes":
     "Compaction Active Transcript Size Threshold",
+  "agents.defaults.compaction.coldCacheTokens": "Compaction Cold Cache Token Threshold",
   "agents.defaults.compaction.notifyUser": "Compaction Notify User",
   "agents.defaults.compaction.memoryFlush": "Compaction Memory Flush",
   "agents.defaults.compaction.memoryFlush.enabled": "Compaction Memory Flush Enabled",
