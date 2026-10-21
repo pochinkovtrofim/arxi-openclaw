@@ -55,9 +55,9 @@ import {
 } from "../../context-engine/transcript-byte-limit.js";
 import { logVerbose } from "../../globals.js";
 import { isAbortError } from "../../infra/abort-signal.js";
-import { formatErrorMessage } from "../../infra/errors.js";
 import { clearAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
 import { emitAgentRunStatusEvent } from "../../infra/agent-run-status-events.js";
+import { formatErrorMessage } from "../../infra/errors.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { isMemoryFlushPlanNativeProviderOwned } from "../../plugins/memory-state.js";
 import { CommandLane } from "../../process/lanes.js";
@@ -584,7 +584,8 @@ export async function runSessionCompactionIfNeeded(params: {
   const shouldCompactColdCache =
     !params.isHeartbeat &&
     coldCache !== undefined &&
-    (params.coldCacheDue === true || (cacheIdleMs !== undefined && cacheIdleMs >= coldCache.ttlMs)) &&
+    (params.coldCacheDue === true ||
+      (cacheIdleMs !== undefined && cacheIdleMs >= coldCache.ttlMs)) &&
     (tokenCountForCompaction ?? 0) >= coldCache.minTokens;
 
   logVerbose(
@@ -827,7 +828,9 @@ export async function runSessionCompactionIfNeeded(params: {
         return compactionStore[compactionSessionKey] ?? entry;
       }
       if (coldCacheOnly) {
-        preflightCompactionLog.warn(`cold-cache compaction failed; replying uncompacted: ${reason}`);
+        preflightCompactionLog.warn(
+          `cold-cache compaction failed; replying uncompacted: ${reason}`,
+        );
         return entry;
       }
       await notifyCompaction("incomplete");
@@ -890,7 +893,12 @@ export async function runSessionCompactionIfNeeded(params: {
     }
     return entry;
   } catch (err) {
-    if (coldCacheOnly && !compactionCommitted && !params.abortSignal?.aborted && !isAbortError(err)) {
+    if (
+      coldCacheOnly &&
+      !compactionCommitted &&
+      !params.abortSignal?.aborted &&
+      !isAbortError(err)
+    ) {
       // Lost authority still throws here; a provider failure leaves the session as it was.
       assertActive();
       preflightCompactionLog.warn(

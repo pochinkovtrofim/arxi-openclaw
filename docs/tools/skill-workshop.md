@@ -175,11 +175,11 @@ one and should be merged.
 }
 ```
 
-| Setting                            | Default  | Effect                                                                                                                                                                  |
-| ---------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skills.workshop.autonomous.mode`  | `"auto"` | `"auto"` enables the background review and unused-skill cleanup. `"off"` disables both.                                                                                 |
-| `skills.workshop.autonomous.models` | unset | Map from a reviewed turn's `provider/model` to the `provider/model` its background reviews use, for example `{"anthropic/claude-opus-5-5": "anthropic/claude-sonnet-5-5"}`. Mappings stay within one provider (same sign-in); unmapped turns review on their own model. |
-| `skills.workshop.maxSkillBytes`    | `40000`  | Maximum `SKILL.md` size in bytes (1024-200000).                                                                                                                         |
+| Setting                             | Default  | Effect                                                                                                                                                                                                                                                                  |
+| ----------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills.workshop.autonomous.mode`   | `"auto"` | `"auto"` enables the background review and unused-skill cleanup. `"off"` disables both.                                                                                                                                                                                 |
+| `skills.workshop.autonomous.models` | unset    | Map from a reviewed turn's `provider/model` to the `provider/model` its background reviews use, for example `{"anthropic/claude-opus-5-5": "anthropic/claude-sonnet-5-5"}`. Mappings stay within one provider (same sign-in); unmapped turns review on their own model. |
+| `skills.workshop.maxSkillBytes`     | `40000`  | Maximum `SKILL.md` size in bytes (1024-200000).                                                                                                                                                                                                                         |
 
 ```bash
 openclaw config set skills.workshop.autonomous.mode off
