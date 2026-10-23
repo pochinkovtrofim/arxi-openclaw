@@ -577,6 +577,8 @@ export function buildAnthropicProvider(): ProviderPlugin {
             ctx,
             providerId,
             buildProvider: buildAnthropicCatalogProvider,
+            // Discovery follows a configured proxy, as inference does.
+            allowExplicitBaseUrl: true,
             modelDiscovery: {
               endpointPath: "v1/models",
               buildRequestHeaders: ({ apiKey, discoveryApiKey }) => ({

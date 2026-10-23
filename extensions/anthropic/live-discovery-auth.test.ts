@@ -157,6 +157,29 @@ describe("anthropic live model discovery auth", () => {
     expect(models.has("claude-unshaped-9")).toBe(false);
   });
 
+  it("lists models through a configured proxy base URL with their context windows", async () => {
+    // A proxy that holds the key (Ro's host facade) must also serve discovery;
+    // otherwise the catalog falls back to rows without selectable windows.
+    discoveryRows.value = [
+      { id: "claude-sonnet-5-5", type: "model", max_input_tokens: 1_000_000, max_tokens: 128_000 },
+    ];
+    const result = await buildAnthropicProvider().catalog?.run?.({
+      ...buildCatalogContext("arxi-host-anthropic-v1"),
+      config: {
+        models: { providers: { anthropic: { baseUrl: "http://127.0.0.1:18080/anthropic" } } },
+      },
+    } as unknown as ProviderCatalogContext);
+
+    expect(String(guardedFetchCalls.at(-1)?.url)).toBe(
+      "http://127.0.0.1:18080/anthropic/v1/models",
+    );
+    const model =
+      result && "providers" in result
+        ? result.providers.anthropic?.models?.find((entry) => entry.id === "claude-sonnet-5-5")
+        : undefined;
+    expect(model?.contextWindows?.map((option) => option.id)).toEqual(["200k", "1m"]);
+  });
+
   it("keeps the closest shipped model's request contract for a listed unknown id", async () => {
     discoveryRows.value = [
       {
