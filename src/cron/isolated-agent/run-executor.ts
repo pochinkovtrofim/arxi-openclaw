@@ -598,6 +598,8 @@ function createCronPromptExecutor(
           agentDir: params.agentDir,
           provider: providerOverride,
           agentHarnessRuntimeOverride: sessionRuntimeOverride,
+          // The session's selected window bounds compaction, as on the CLI path.
+          contextWindow: params.cronSession.sessionEntry.contextWindow,
           // Same capability the reply path and agent command prepare: harness-native effort lists
           // (Codex `max`) reach the runtime model only through it.
           modelThinkingCapability: prepareModelRunCapabilities(
