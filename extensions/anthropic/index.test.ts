@@ -917,6 +917,20 @@ describe("anthropic provider replay hooks", () => {
     ).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
   });
 
+  it("keeps shipped context-window options on a forward-compat row without discovery", async () => {
+    const provider = await registerSingleProviderPlugin(anthropicPlugin);
+
+    const resolved = provider.resolveDynamicModel?.({
+      provider: "anthropic",
+      modelId: "claude-sonnet-5-5",
+      modelRegistry: createModelRegistry([]),
+    } as ProviderResolveDynamicModelContext);
+
+    expect(resolved?.contextWindows?.map((option) => option.id)).toEqual(["200k", "1m"]);
+    expect(resolved?.contextWindowDefault).toBe("1m");
+    expect(resolved?.contextWindow).toBe(1_000_000);
+  });
+
   it("resolves dated modern Claude refs without discovery templates", async () => {
     const provider = await registerSingleProviderPlugin(anthropicPlugin);
 
