@@ -189,6 +189,29 @@ async function summarize(messages: AgentMessage[], model: Model, previousSummary
 }
 
 describe("summary request input budget", () => {
+  it("sends the one-off summary request without prompt caching", async () => {
+    const { streamFn } = createCapturingStream();
+    const retention: unknown[] = [];
+    const result = await generateSummary(
+      createLongSession(3),
+      createModel(1_000_000),
+      16_384,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (model, context, options) => {
+        retention.push(options?.cacheRetention);
+        return streamFn(model, context, options);
+      },
+    );
+
+    expect(result).toEqual({ ok: true, value: "summary" });
+    expect(retention).toEqual(["none"]);
+  });
+
   it("sends a small history unchanged", async () => {
     const messages = createLongSession(3);
     const prompt = await summarize(messages, createModel(1_000_000));
