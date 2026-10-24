@@ -18,6 +18,10 @@ import {
 import { redactDiagnosticText } from "../utils/credential-redaction.js";
 import { createDeferredEventBuffer } from "../utils/deferred-event-buffer.js";
 import {
+  holdAnthropicCacheKeepWarm,
+  pauseAnthropicCacheKeepWarm,
+} from "./anthropic-cache-keep-warm.js";
+import {
   isAnthropicReplayRejection,
   suppressAnthropicCompaction,
 } from "./anthropic-compaction-replay.js";
@@ -380,6 +384,11 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
           throw new Error(`No API key for provider: ${model.provider}`);
         }
         const transportOptions = resolveAnthropicTransportOptions(model, options, apiKey);
+        const keepWarm = options?.cacheKeepWarm;
+        if (keepWarm) {
+          pauseAnthropicCacheKeepWarm(keepWarm.key);
+        }
+        const requestedAt = Date.now();
         const requestContext = prepareClaudeNoPrefillRequestContext(model, context);
         const { request, isOAuthToken, directApiKeyBetaHeader, claudeCodeVersion } =
           createAnthropicTransportClient({
@@ -429,6 +438,24 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
           profile: "transport",
         });
         finalizeTransportStream({ stream, output });
+        if (keepWarm) {
+          holdAnthropicCacheKeepWarm(keepWarm, model.id, requestedAt, async () => {
+            // A refresh belongs to no turn, so it carries no trace.
+            const { traceparent: _traceparent, ...replayHeaders } = transportOptions.headers ?? {};
+            const replayClient = createAnthropicTransportClient({
+              model,
+              context: requestContext,
+              apiKey,
+              options: { ...transportOptions, headers: replayHeaders },
+            });
+            const replay = await replayClient.request(
+              { ...params, stream: false, max_tokens: 0 },
+              { headers },
+            );
+            await replay.response.body?.cancel();
+            return replay.response.ok;
+          });
+        }
       } catch (error) {
         failTransportStream({
           stream,

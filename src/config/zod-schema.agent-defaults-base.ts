@@ -104,6 +104,11 @@ export const AgentDefaultsBaseSchema = z.strictObject({
       maxTotalChars: z.number().int().min(1).max(50_000).optional(),
     })
     .optional(),
+  /**
+   * Keep a quiet chat's one-hour prompt cache warm for up to this long after its
+   * last request (duration string, default unit: hours). Default: off.
+   */
+  promptCacheKeepWarm: z.string().optional(),
   contextPruning: z
     .strictObject({
       /** Pruning mode for old tool results in model context. */

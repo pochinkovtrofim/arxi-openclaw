@@ -10,6 +10,7 @@ import {
   supportsClaudeAdaptiveThinking,
 } from "../providers/anthropic-model-contract.js";
 import { adjustMaxTokensForThinking } from "../providers/simple-options.js";
+import type { AnthropicCacheKeepWarm } from "./anthropic-cache-keep-warm.js";
 import { copyProviderAcceptanceObserver } from "./transport-stream-shared.js";
 
 const ANTHROPIC_MESSAGES_DEFAULT_MAX_TOKENS = 4_096;
@@ -18,6 +19,7 @@ const ANTHROPIC_MESSAGES_FALLBACK_CONTEXT_DIVISOR = 4;
 export type AnthropicTransportOptions = AnthropicOptions &
   Pick<SimpleStreamOptions, "reasoning" | "thinkingBudgets" | "stop"> & {
     authProfileId?: string;
+    cacheKeepWarm?: AnthropicCacheKeepWarm;
   };
 
 function resolvePositiveAnthropicTokenLimit(value: unknown): number | undefined {

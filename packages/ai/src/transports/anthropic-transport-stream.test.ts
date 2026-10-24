@@ -1099,6 +1099,25 @@ describe("anthropic transport stream", () => {
     expect(latestAnthropicRequest().payload.stop_sequences).toEqual(["User:", "Assistant:"]);
   });
 
+  it("keeps a quiet chat's cache warm by replaying its last request without output", async () => {
+    vi.useFakeTimers();
+    const result = await runTransportStream(makeAnthropicTransportModel(), undefined, {
+      apiKey: "sk-ant-api",
+      headers: { traceparent: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01" },
+      cacheKeepWarm: { key: "transport-chat", maxIdleMs: 55 * 60_000 },
+    });
+    expect(result.stopReason).toBe("stop");
+    const sent = latestAnthropicRequest().payload;
+    guardedFetchMock.mockResolvedValueOnce(new Response("{}", { status: 200 }));
+
+    await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
+
+    expect(guardedFetchMock).toHaveBeenCalledTimes(2);
+    expect(new Headers(guardedFetchCall(0)[1]?.headers).has("traceparent")).toBe(true);
+    expect(latestAnthropicRequestHeaders().has("traceparent")).toBe(false);
+    expect(latestAnthropicRequest().payload).toEqual({ ...sent, stream: false, max_tokens: 0 });
+  });
+
   it.each([
     {
       label: "floors a sub-unit override",

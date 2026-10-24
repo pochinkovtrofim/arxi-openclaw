@@ -106,6 +106,16 @@ agents:
       every: "55m"
 ```
 
+### `promptCacheKeepWarm`
+
+Keeps a quiet chat's one-hour cache warm without running a turn. After a chat request on an Anthropic model with `cacheRetention: "long"`, OpenClaw re-sends that chat's last request with `max_tokens: 0` once the chat has been quiet for 55 minutes, then every 55 minutes until the chat has been quiet for the configured span. A refresh bills a cache read and no output, adds nothing to the transcript and carries no trace; any new request in the chat restarts the wait, and a failed refresh stops them. Refreshes count as cache touches, so `cache-ttl` pruning leaves the kept history alone. A refresh due after the entry already expired, for example after the host slept, is skipped. Scheduled, heartbeat and other non-chat runs are not kept warm, and the timers end when the Gateway restarts.
+
+```yaml
+agents:
+  defaults:
+    promptCacheKeepWarm: "12h"
+```
+
 ## Provider behavior
 
 ### Anthropic (direct API and Vertex AI)

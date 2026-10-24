@@ -30,7 +30,7 @@ import {
 } from "../extra-params.js";
 import { log } from "../logger.js";
 import type { PromptCacheRequestObservation } from "../prompt-cache-request-observer.js";
-import { resolveCacheRetention } from "../prompt-cache-retention.js";
+import { resolveCacheKeepWarm, resolveCacheRetention } from "../prompt-cache-retention.js";
 import {
   type ProviderPromptState,
   wrapStreamFnWithProviderPromptState,
@@ -605,6 +605,20 @@ export async function prepareEmbeddedAttemptTransport(input: {
     const baseStreamFn = session.agent.streamFn;
     session.agent.streamFn = (model, context, options) => {
       const requestOptions = { ...options, cacheTtlPruning: { tools: contextPruning?.tools } };
+      return baseStreamFn(model, context, requestOptions);
+    };
+  }
+  const cacheKeepWarm = resolveCacheKeepWarm({
+    keepWarmFor: attempt.config?.agents?.defaults?.promptCacheKeepWarm,
+    trigger: attempt.trigger,
+    modelApi: attempt.model.api,
+    retention: effectivePromptCacheRetention,
+    key: attempt.sessionKey ?? attempt.sessionId,
+  });
+  if (cacheKeepWarm) {
+    const baseStreamFn = session.agent.streamFn;
+    session.agent.streamFn = (model, context, options) => {
+      const requestOptions = { ...options, cacheKeepWarm };
       return baseStreamFn(model, context, requestOptions);
     };
   }

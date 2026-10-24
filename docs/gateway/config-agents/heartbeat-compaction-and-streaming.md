@@ -196,6 +196,21 @@ Calls, prompts and replies stay. Other runs, including chat turns in the same se
 
 See [Session Pruning](/concepts/session-pruning) for behavior details.
 
+## `agents.defaults.promptCacheKeepWarm`
+
+```json5
+{
+  agents: {
+    defaults: {
+      promptCacheKeepWarm: "12h", // off when unset; duration, default unit hours
+    },
+  },
+}
+```
+
+Keeps a quiet chat's one-hour Anthropic prompt cache warm for up to this long after its last
+request. See [Prompt caching](/reference/prompt-caching#promptcachekeepwarm).
+
 ## Block streaming
 
 ```json5
