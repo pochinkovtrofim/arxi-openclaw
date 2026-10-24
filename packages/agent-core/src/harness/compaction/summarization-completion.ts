@@ -113,7 +113,15 @@ export async function runSummarizationCompletion(
     instructions += `\n\nAdditional focus: ${params.customInstructions}`;
   }
   const { model, thinkingLevel, maxTokens, signal, apiKey, headers } = params;
-  const options: SimpleStreamOptions = { maxTokens, signal, apiKey, headers };
+  // The serialized conversation is sent once and never read again; caching it
+  // would only pay the cache-write premium over plain input.
+  const options: SimpleStreamOptions = {
+    maxTokens,
+    signal,
+    apiKey,
+    headers,
+    cacheRetention: "none",
+  };
   const fableReasoning =
     (model.api === "anthropic-messages" || model.api === "bedrock-converse-stream") &&
     resolveClaudeFable5ModelIdentity(model) !== undefined;
