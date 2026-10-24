@@ -411,6 +411,7 @@ export function installEmbeddedAttemptContextGuards(input: {
     recordCacheTouch: (startedAt: number) => {
       lastCacheTouchAt = startedAt;
     },
+    readLastCacheTouchAt: () => (cacheTtlSettings ? lastCacheTouchAt : undefined),
     remove: () => {
       activeSession.agent.transformContext = previousComputerFrameTransform;
       removeHistoryImagePruneContextTransform();

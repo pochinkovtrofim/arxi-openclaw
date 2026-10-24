@@ -399,6 +399,48 @@ describe("prepareEmbeddedAttemptTransport", () => {
     },
   );
 
+  it.each([
+    { name: "a scheduled run after an hour idle", trigger: "cron", touchAgeMs: 60, ttl: undefined },
+    { name: "a first scheduled run", trigger: "cron", touchAgeMs: null, ttl: undefined },
+    { name: "a scheduled run within the hour", trigger: "cron", touchAgeMs: 30, ttl: "1h" },
+    { name: "a chat turn after an hour idle", trigger: "user", touchAgeMs: 60, ttl: "1h" },
+    { name: "a session without cache touches", trigger: "cron", touchAgeMs: undefined, ttl: "1h" },
+  ] as const)("writes the cache for $name with ttl $ttl", async ({ trigger, touchAgeMs, ttl }) => {
+    const previousHost = getAiTransportHost();
+    const payloads: string[] = [];
+    configureAiTransportHost({
+      ...previousHost,
+      buildModelFetch: () => async (_input, init) => {
+        payloads.push(String(init?.body));
+        return createAnthropicResponse(anthropicEvents);
+      },
+    });
+    const { input, session } = createTransportFixture({
+      pruning: false,
+      apiKey: "sk-ant-api-test",
+    });
+    input.attempt.model = anthropicModel;
+    input.attempt.trigger = trigger;
+    input.attempt.runtimePlan!.transport.resolveExtraParams = () => ({ cacheRetention: "long" });
+    input.lastCacheTouchAt =
+      typeof touchAgeMs === "number" ? Date.now() - touchAgeMs * 60_000 : touchAgeMs;
+
+    try {
+      const result = await prepareEmbeddedAttemptTransport(input);
+      const stream = await session.agent.streamFn(anthropicModel, anthropicContext, {});
+      await stream.result();
+      expect(result.effectivePromptCacheRetention).toBe(ttl ? "long" : "short");
+    } finally {
+      configureAiTransportHost(previousHost);
+    }
+
+    expect(payloads).toHaveLength(1);
+    const payload = JSON.parse(payloads[0] ?? "{}") as { system?: unknown[] };
+    expect(payload.system).toContainEqual(
+      expect.objectContaining({ cache_control: { type: "ephemeral", ...(ttl ? { ttl } : {}) } }),
+    );
+  });
+
   it("keeps the run credential out of session-owned fallback streams", async () => {
     // Session-owned streams resolve their own auth; the run credential is not theirs.
     const sessionStream = vi.fn<StreamFn>(() => createAssistantMessageEventStream());

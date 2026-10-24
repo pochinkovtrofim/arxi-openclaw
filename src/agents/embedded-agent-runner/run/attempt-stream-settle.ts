@@ -30,7 +30,11 @@ import {
 } from "../extra-params.js";
 import { log } from "../logger.js";
 import type { PromptCacheRequestObservation } from "../prompt-cache-request-observer.js";
-import { resolveCacheKeepWarm, resolveCacheRetention } from "../prompt-cache-retention.js";
+import {
+  resolveCacheKeepWarm,
+  resolveCacheRetention,
+  resolveRunCacheRetention,
+} from "../prompt-cache-retention.js";
 import {
   type ProviderPromptState,
   wrapStreamFnWithProviderPromptState,
@@ -372,6 +376,8 @@ export async function prepareEmbeddedAttemptTransport(input: {
   attempt: EmbeddedRunAttemptParams;
   session: AgentSession;
   settingsManager: SettingsManager;
+  /** The session's last cache touch before this run; undefined when not recorded. */
+  lastCacheTouchAt?: number | null;
   providerThinkingLevel: ProviderThinkLevel | undefined;
   onCurrentTurnImageFailure?: (count: number) => void;
   sessionAgentId: string;
@@ -576,12 +582,25 @@ export async function prepareEmbeddedAttemptTransport(input: {
       codeModeToolSurfaceEnabled: true,
     });
   }
-  const effectivePromptCacheRetention = resolveCacheRetention(
+  const configuredPromptCacheRetention = resolveCacheRetention(
     effectiveExtraParams,
     attempt.provider,
     attempt.model.api,
     attempt.modelId,
   );
+  const effectivePromptCacheRetention = resolveRunCacheRetention({
+    retention: configuredPromptCacheRetention,
+    trigger: attempt.trigger,
+    lastCacheTouchAt: input.lastCacheTouchAt,
+    now: Date.now(),
+  });
+  if (effectivePromptCacheRetention !== configuredPromptCacheRetention) {
+    const baseStreamFn = session.agent.streamFn;
+    session.agent.streamFn = (model, context, options) => {
+      const requestOptions = { ...options, cacheRetention: effectivePromptCacheRetention };
+      return baseStreamFn(model, context, requestOptions);
+    };
+  }
   const agentTransportOverride = resolveAgentTransportOverride({
     settingsManager: input.settingsManager,
     effectiveExtraParams,

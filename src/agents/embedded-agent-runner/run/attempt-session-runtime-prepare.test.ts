@@ -103,6 +103,7 @@ function createFixture() {
   };
   const contextGuards = {
     getAfterTurnCheckpoint: vi.fn(() => null),
+    readLastCacheTouchAt: vi.fn(() => 1_234),
     remove: vi.fn(),
     takePendingMidTurnPrecheckRequest: vi.fn(() => null),
   };
@@ -697,6 +698,9 @@ describe("prepareEmbeddedAttemptSessionRuntime", () => {
     expect(guardInput.getPromptCacheRetention()).toBe("long");
     expect(guardInput.getCompactionReplayEnabled()).toBe(true);
     expect(guardInput.getSystemPrompt()).toBe("updated prompt");
+    expect(mocks.prepareTransport).toHaveBeenCalledWith(
+      expect.objectContaining({ lastCacheTouchAt: 1_234 }),
+    );
     guardInput.onCurrentTurnImageFailure(2);
     guardInput.onCurrentTurnImageFailure(1);
     expect(result.state.currentTurnImageFailureCount).toBe(2);
