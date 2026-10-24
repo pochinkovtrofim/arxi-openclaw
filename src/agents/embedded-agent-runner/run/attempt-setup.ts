@@ -420,9 +420,10 @@ export function installEmbeddedAttemptContextGuards(input: {
       cacheTtlSettings
         ? lastCacheTouchAt
         : Math.max(
+            // Replies are stamped with the resolved model, not the requested ref.
             readLastAssistantCacheTouch(input.sessionManager, {
-              provider: attempt.provider,
-              modelId: attempt.modelId,
+              provider: attempt.model.provider,
+              modelId: attempt.model.id,
             }) ?? 0,
             readAnthropicCacheKeepWarmTouch(
               attempt.sessionKey ?? attempt.sessionId,

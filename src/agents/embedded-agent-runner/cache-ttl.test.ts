@@ -16,6 +16,7 @@ vi.mock("../../plugins/provider-runtime.js", () => ({
   },
 }));
 
+import { SessionManager } from "../sessions/session-manager.js";
 import {
   isCacheTtlEligibleProvider,
   readLastAssistantCacheTouch,
@@ -214,5 +215,34 @@ describe("readLastAssistantCacheTouch", () => {
     expect(
       readLastAssistantCacheTouch(sessionManager, { provider: "openai", modelId: "gpt-5.4" }),
     ).toBeNull();
+  });
+
+  it("reads replies saved by a real session manager", () => {
+    const sessionManager = SessionManager.inMemory("/retained");
+    sessionManager.appendMessage({ role: "user", content: "hello", timestamp: 1_000 });
+    sessionManager.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "hi" }],
+      api: "anthropic-messages",
+      provider: "anthropic",
+      model: "claude-sonnet-5-5",
+      usage: {
+        input: 4,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 900,
+        totalTokens: 906,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2_000,
+    });
+
+    expect(
+      readLastAssistantCacheTouch(sessionManager, {
+        provider: "anthropic",
+        modelId: "claude-sonnet-5-5",
+      }),
+    ).toBe(2_000);
   });
 });

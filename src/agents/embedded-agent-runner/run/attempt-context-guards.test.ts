@@ -198,11 +198,18 @@ describe("installEmbeddedAttemptContextGuards", () => {
       config: {
         agents: { defaults: { contextPruning: testCase.pruning ? { mode: "cache-ttl" } : {} } },
       } as never,
+      model: { ...input.attempt.model, provider: "anthropic", id: "claude-sonnet-5-5" },
     } as typeof input.attempt;
 
     const guards = installEmbeddedAttemptContextGuards(input as never);
 
     expect(guards.readLastCacheTouchAt()).toBe(testCase.expected);
+    if (!testCase.pruning) {
+      expect(hoisted.readLastAssistantCacheTouch).toHaveBeenLastCalledWith(input.sessionManager, {
+        provider: "anthropic",
+        modelId: "claude-sonnet-5-5",
+      });
+    }
   });
 
   it("tracks mid-turn requests and restores attempt-local transforms", async () => {
