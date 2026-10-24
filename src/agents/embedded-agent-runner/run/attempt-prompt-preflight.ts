@@ -25,7 +25,14 @@ import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types
 
 type AttemptPromptPreflightParams = Pick<
   EmbeddedRunAttemptParams,
-  "config" | "modelId" | "provider" | "sessionFile" | "sessionId" | "sessionKey" | "startedAtMs" | "trigger"
+  | "config"
+  | "modelId"
+  | "provider"
+  | "sessionFile"
+  | "sessionId"
+  | "sessionKey"
+  | "startedAtMs"
+  | "trigger"
 >;
 
 type AttemptPromptPreflightState = {

@@ -62,8 +62,16 @@ describe("pruneEarlierRunToolResults", () => {
 
     expect(messages).toHaveLength(transcript.length);
     expect([...pruned]).toEqual(["a:3", "b:7"]);
-    expect(messages[2]).toMatchObject({ role: "toolResult", toolCallId: "a", content: placeholder });
-    expect(messages[6]).toMatchObject({ role: "toolResult", toolCallId: "b", content: placeholder });
+    expect(messages[2]).toMatchObject({
+      role: "toolResult",
+      toolCallId: "a",
+      content: placeholder,
+    });
+    expect(messages[6]).toMatchObject({
+      role: "toolResult",
+      toolCallId: "b",
+      content: placeholder,
+    });
     // Calls, prompts, answers and the current run's results stay as they were.
     for (const index of [0, 1, 3, 4, 5, 7, 8, 9, 10]) {
       expect(messages[index]).toBe(transcript[index]);
