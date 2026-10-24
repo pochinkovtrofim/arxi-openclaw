@@ -89,17 +89,20 @@ export function resolveRunCacheRetention(params: {
  * a fresh-context session (`cron.freshContextSessions`) clears them before its
  * next run, so they take the five-minute cache while the tool and system
  * checkpoints keep one hour for that run. The first run of a new persistent
- * session pays one history rewrite at its next run.
+ * session pays one history rewrite at its next run. A conversation keeps one
+ * hour: the person may answer the run's message.
  */
 export function resolveRunMessageCacheRetention(params: {
   retention?: CacheRetention;
   trigger?: string;
   modelApi?: string;
+  conversation: boolean;
   earlierMessagesInContext: boolean;
 }): "short" | undefined {
   return params.retention === "long" &&
     params.trigger === "cron" &&
     params.modelApi === "anthropic-messages" &&
+    !params.conversation &&
     !params.earlierMessagesInContext
     ? "short"
     : undefined;

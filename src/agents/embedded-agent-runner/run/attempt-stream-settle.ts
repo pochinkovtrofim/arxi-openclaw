@@ -596,13 +596,13 @@ export async function prepareEmbeddedAttemptTransport(input: {
     cfg: attempt.config,
     agentId: input.sessionAgentId,
   });
+  const conversation =
+    attempt.sessionKey === mainSessionKey || parseSessionDeliveryRoute(attempt.sessionKey) !== null;
   const effectivePromptCacheRetention = resolveRunCacheRetention({
     retention: configuredPromptCacheRetention,
     trigger: attempt.trigger,
     modelApi: attempt.model.api,
-    conversation:
-      attempt.sessionKey === mainSessionKey ||
-      parseSessionDeliveryRoute(attempt.sessionKey) !== null,
+    conversation,
     detached: attempt.sessionPersistence === "detached",
     lastCacheTouchAt: input.lastCacheTouchAt,
     now: Date.now(),
@@ -619,6 +619,7 @@ export async function prepareEmbeddedAttemptTransport(input: {
     retention: effectivePromptCacheRetention,
     trigger: attempt.trigger,
     modelApi: attempt.model.api,
+    conversation,
     earlierMessagesInContext:
       runStartedAtMs === undefined ||
       session.messages.some(

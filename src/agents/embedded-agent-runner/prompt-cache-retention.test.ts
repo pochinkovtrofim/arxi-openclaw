@@ -38,6 +38,7 @@ describe("prompt cache retention", () => {
       expected: undefined,
     },
     { name: "a chat turn", trigger: "user", expected: undefined },
+    { name: "a scheduled run into a new chat", conversation: true, expected: undefined },
     { name: "the five-minute setting", retention: "short", expected: undefined },
     { name: "another provider API", modelApi: "openai-responses", expected: undefined },
   ] as const)("sets history checkpoint retention for $name", (params) => {
@@ -46,6 +47,7 @@ describe("prompt cache retention", () => {
         retention: "long",
         trigger: "cron",
         modelApi: "anthropic-messages",
+        conversation: false,
         earlierMessagesInContext: false,
         ...params,
       }),
