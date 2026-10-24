@@ -288,6 +288,46 @@ export function pruneExpiredCacheTtlToolResults(params: {
   return next ?? unchanged;
 }
 
+export const EARLIER_RUN_TOOL_RESULT_PLACEHOLDER =
+  "[Tool result from an earlier run omitted. That call already ran; repeat a read if you need its data now]";
+
+/** The run start before which a cron run sends tool results as a placeholder, when configured. */
+export function resolveEarlierRunToolResultBoundary(params: {
+  contextPruning?: AgentContextPruningConfig;
+  trigger?: string;
+  startedAtMs?: number;
+}): number | undefined {
+  return params.contextPruning?.earlierRuns === "cron" && params.trigger === "cron"
+    ? params.startedAtMs
+    : undefined;
+}
+
+/**
+ * Projects tool results recorded before this run started as one fixed placeholder,
+ * without mutating the transcript. The boundary is the run, not the attempt, so a
+ * retry or finalization attempt keeps the run's own results. Earlier runs render
+ * the same bytes on every request, so the cached prefix holds. Returns the
+ * projected messages and the keys of the replaced results.
+ */
+export function pruneEarlierRunToolResults(
+  messages: AgentMessage[],
+  runStartedAtMs: number,
+): { messages: AgentMessage[]; pruned: Set<string> } {
+  const pruned = new Set<string>();
+  let next: AgentMessage[] | undefined;
+  for (const [index, message] of messages.entries()) {
+    if (message.role !== "toolResult" || !(message.timestamp < runStartedAtMs)) {
+      continue;
+    }
+    pruned.add(`${message.toolCallId}:${message.timestamp}`);
+    (next ??= messages.slice())[index] = {
+      ...message,
+      content: [{ type: "text", text: EARLIER_RUN_TOOL_RESULT_PLACEHOLDER }],
+    };
+  }
+  return { messages: next ?? messages, pruned };
+}
+
 const MIN_KEEP_CHARS = 2_000;
 const RECOVERY_MIN_KEEP_CHARS = 0;
 const TOOL_RESULT_WARNING_DEDUPE_LIMIT = 1_024;

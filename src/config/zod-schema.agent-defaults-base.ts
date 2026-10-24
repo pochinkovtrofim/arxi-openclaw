@@ -108,6 +108,11 @@ export const AgentDefaultsBaseSchema = z.strictObject({
     .strictObject({
       /** Pruning mode for old tool results in model context. */
       mode: z.union([z.literal("off"), z.literal("cache-ttl")]).optional(),
+      /**
+       * Replace tool results from earlier runs of a persistent session with a short
+       * placeholder. "cron" applies it to scheduled runs. Default: off.
+       */
+      earlierRuns: z.union([z.literal("off"), z.literal("cron")]).optional(),
       /** TTL to consider cache expired (duration string, default unit: minutes). */
       ttl: z.string().optional(),
       tools: z

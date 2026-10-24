@@ -48,8 +48,10 @@ import {
   installToolResultContextGuard,
 } from "../tool-result-context-guard.js";
 import {
+  pruneEarlierRunToolResults,
   pruneExpiredCacheTtlToolResults,
   resolveCacheTtlPruningSettings,
+  resolveEarlierRunToolResultBoundary,
   resolveLiveToolResultMaxChars,
 } from "../tool-result-truncation.js";
 import { mapThinkingLevel, mapThinkingLevelForProvider } from "../utils.js";
@@ -260,6 +262,26 @@ export function installEmbeddedAttemptContextGuards(input: {
           lastCacheTouchAt = Date.now();
         },
       });
+    };
+  }
+  const earlierRunsBoundary = resolveEarlierRunToolResultBoundary({
+    contextPruning,
+    trigger: attempt.trigger,
+    startedAtMs: attempt.startedAtMs,
+  });
+  if (earlierRunsBoundary !== undefined) {
+    const previousEarlierRunsTransform = activeSession.agent.transformContext;
+    activeSession.agent.transformContext = async (messages, signal) => {
+      const sourceMessages = previousEarlierRunsTransform
+        ? await previousEarlierRunsTransform.call(activeSession.agent, messages, signal)
+        : messages;
+      const projected = pruneEarlierRunToolResults(sourceMessages, earlierRunsBoundary);
+      const promptState = getEmbeddedSessionPromptState(attempt.sessionId);
+      if ([...projected.pruned].some((key) => !promptState.earlierRunToolResults?.has(key))) {
+        declarePromptHistoryRewrite({ ...attempt, reason: "pruning" });
+      }
+      promptState.earlierRunToolResults = projected.pruned;
+      return projected.messages;
     };
   }
 

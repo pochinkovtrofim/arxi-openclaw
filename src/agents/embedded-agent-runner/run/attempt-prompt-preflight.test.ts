@@ -341,6 +341,43 @@ describe("attempt prompt preflight", () => {
     expect(result.contextBudgetStatus?.overflowTokens).toBeGreaterThan(0);
   });
 
+  it.each([
+    { trigger: "cron", shouldCompact: false },
+    { trigger: "user", shouldCompact: true },
+  ] as const)(
+    "sizes a $trigger run with earlier runs' tool results as sent",
+    async ({ trigger, shouldCompact }) => {
+      const result = await prepareEmbeddedAttemptPromptPreflight({
+        attempt: {
+          ...attempt,
+          config: { agents: { defaults: { contextPruning: { earlierRuns: "cron" } } } },
+          startedAtMs: 2,
+          trigger,
+        },
+        compactionReplayEnabled: false,
+        contextEngineAssemblySucceeded: false,
+        contextEnginePromptAuthority: "assembled",
+        contextTokenBudget: 2_000,
+        hookMessagesForCurrentPrompt: [makeToolResultMessage("earlier inbox ".repeat(2_000))],
+        includeBoundaryTimestamp: false,
+        promptForPrecheck: "check again",
+        reserveTokens: 20,
+        sessionMessageCount: 1,
+        state: {
+          contextBudgetStatus: undefined,
+          preflightRecovery: undefined,
+          promptError: null,
+          promptErrorSource: null,
+          skipPromptSubmission: false,
+        },
+        systemPrompt: "",
+        toolResultMaxChars: 100_000,
+      });
+
+      expect(result.contextBudgetStatus?.shouldCompact).toBe(shouldCompact);
+    },
+  );
+
   it("defers overflow admission to a context engine that owns compaction", async () => {
     const state: Parameters<typeof prepareEmbeddedAttemptPromptPreflight>[0]["state"] = {
       contextBudgetStatus: undefined,

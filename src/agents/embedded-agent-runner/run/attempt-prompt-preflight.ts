@@ -8,6 +8,8 @@ import type { SessionManager } from "../../sessions/index.js";
 import { log } from "../logger.js";
 import type { ToolResultPromptProjectionState } from "../session-prompt-state.js";
 import {
+  pruneEarlierRunToolResults,
+  resolveEarlierRunToolResultBoundary,
   resolveLiveToolResultMaxChars,
   truncateOversizedToolResultsInSessionManager,
 } from "../tool-result-truncation.js";
@@ -23,7 +25,14 @@ import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types
 
 type AttemptPromptPreflightParams = Pick<
   EmbeddedRunAttemptParams,
-  "config" | "modelId" | "provider" | "sessionFile" | "sessionId" | "sessionKey"
+  | "config"
+  | "modelId"
+  | "provider"
+  | "sessionFile"
+  | "sessionId"
+  | "sessionKey"
+  | "startedAtMs"
+  | "trigger"
 >;
 
 type AttemptPromptPreflightState = {
@@ -182,8 +191,18 @@ export async function prepareEmbeddedAttemptPromptPreflight(input: {
   }
   let preemptiveCompaction: ReturnType<typeof shouldPreemptivelyCompactBeforePrompt>;
   try {
+    // Size the request a cron run actually sends, not the earlier runs' full output.
+    const earlierRunsBoundary = resolveEarlierRunToolResultBoundary({
+      contextPruning: attempt.config?.agents?.defaults?.contextPruning,
+      trigger: attempt.trigger,
+      startedAtMs: attempt.startedAtMs,
+    });
     preemptiveCompaction = shouldPreemptivelyCompactBeforePrompt({
-      messages: input.hookMessagesForCurrentPrompt,
+      messages:
+        earlierRunsBoundary === undefined
+          ? input.hookMessagesForCurrentPrompt
+          : pruneEarlierRunToolResults(input.hookMessagesForCurrentPrompt, earlierRunsBoundary)
+              .messages,
       unwindowedMessages: unwindowedLlmBoundaryMessagesForPrecheck,
       systemPrompt: input.systemPrompt,
       prompt: input.promptForPrecheck,

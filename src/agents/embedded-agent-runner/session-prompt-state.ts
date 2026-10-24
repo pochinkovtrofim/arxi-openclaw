@@ -33,6 +33,7 @@ type EmbeddedSessionPromptState = {
   pendingSystemPrompt?: SystemPromptSeries;
   systemPromptRouteKey?: string;
   prunedImageMessages?: Set<string>;
+  earlierRunToolResults?: Set<string>;
   removedRuntimeContextKeys?: Set<string>;
   runtimeContextCarrierPositions?: number[];
 };
