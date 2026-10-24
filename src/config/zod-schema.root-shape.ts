@@ -411,6 +411,8 @@ export const OpenClawSchemaShape = {
        * Default: "24h".
        */
       sessionRetention: z.union([z.string(), z.literal(false)]).optional(),
+      /** Named `session:<name>` targets whose every run starts on a cleared model context. */
+      freshContextSessions: z.array(z.string().min(1)).optional(),
       failureAlert: z
         .strictObject({
           enabled: z.boolean().optional(),

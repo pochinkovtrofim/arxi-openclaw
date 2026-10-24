@@ -577,6 +577,8 @@ export async function buildAnthropicRequest(
     cacheControl,
     supportsCacheControlOnTools,
     cacheBreakpointOptOutMessageIndexes,
+    // Five-minute history checkpoints may follow one-hour ones, never the reverse.
+    cacheControl && options?.messageCacheRetention === "short" ? { type: "ephemeral" } : undefined,
   );
   return { params, toolProjection, usedCompactionReplay: replayPlan.compaction !== undefined };
 }

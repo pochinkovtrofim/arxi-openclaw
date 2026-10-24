@@ -36,6 +36,7 @@ import {
   resolveCacheKeepWarm,
   resolveCacheRetention,
   resolveRunCacheRetention,
+  resolveRunMessageCacheRetention,
 } from "../prompt-cache-retention.js";
 import {
   type ProviderPromptState,
@@ -595,13 +596,13 @@ export async function prepareEmbeddedAttemptTransport(input: {
     cfg: attempt.config,
     agentId: input.sessionAgentId,
   });
+  const conversation =
+    attempt.sessionKey === mainSessionKey || parseSessionDeliveryRoute(attempt.sessionKey) !== null;
   const effectivePromptCacheRetention = resolveRunCacheRetention({
     retention: configuredPromptCacheRetention,
     trigger: attempt.trigger,
     modelApi: attempt.model.api,
-    conversation:
-      attempt.sessionKey === mainSessionKey ||
-      parseSessionDeliveryRoute(attempt.sessionKey) !== null,
+    conversation,
     detached: attempt.sessionPersistence === "detached",
     lastCacheTouchAt: input.lastCacheTouchAt,
     now: Date.now(),
@@ -610,6 +611,26 @@ export async function prepareEmbeddedAttemptTransport(input: {
     const baseStreamFn = session.agent.streamFn;
     session.agent.streamFn = (model, context, options) => {
       const requestOptions = { ...options, cacheRetention: effectivePromptCacheRetention };
+      return baseStreamFn(model, context, requestOptions);
+    };
+  }
+  const runStartedAtMs = attempt.startedAtMs;
+  const messageCacheRetention = resolveRunMessageCacheRetention({
+    retention: effectivePromptCacheRetention,
+    trigger: attempt.trigger,
+    modelApi: attempt.model.api,
+    conversation,
+    earlierMessagesInContext:
+      runStartedAtMs === undefined ||
+      session.messages.some(
+        (message) =>
+          !(typeof message.timestamp === "number" && message.timestamp >= runStartedAtMs),
+      ),
+  });
+  if (messageCacheRetention) {
+    const baseStreamFn = session.agent.streamFn;
+    session.agent.streamFn = (model, context, options) => {
+      const requestOptions = { ...options, messageCacheRetention };
       return baseStreamFn(model, context, requestOptions);
     };
   }

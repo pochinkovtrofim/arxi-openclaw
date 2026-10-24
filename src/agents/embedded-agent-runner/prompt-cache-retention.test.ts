@@ -4,6 +4,7 @@ import {
   resolveCacheKeepWarm,
   resolveCacheRetention,
   resolveRunCacheRetention,
+  resolveRunMessageCacheRetention,
 } from "./prompt-cache-retention.js";
 
 describe("prompt cache retention", () => {
@@ -25,6 +26,30 @@ describe("prompt cache retention", () => {
         ...params,
         lastCacheTouchAt: now - ("touchAgeMs" in params ? params.touchAgeMs : 60 * 60_000),
         now,
+      }),
+    ).toBe(params.expected);
+  });
+
+  it.each([
+    { name: "a scheduled run with no earlier message", expected: "short" },
+    {
+      name: "a scheduled run after earlier ones",
+      earlierMessagesInContext: true,
+      expected: undefined,
+    },
+    { name: "a chat turn", trigger: "user", expected: undefined },
+    { name: "a scheduled run into a new chat", conversation: true, expected: undefined },
+    { name: "the five-minute setting", retention: "short", expected: undefined },
+    { name: "another provider API", modelApi: "openai-responses", expected: undefined },
+  ] as const)("sets history checkpoint retention for $name", (params) => {
+    expect(
+      resolveRunMessageCacheRetention({
+        retention: "long",
+        trigger: "cron",
+        modelApi: "anthropic-messages",
+        conversation: false,
+        earlierMessagesInContext: false,
+        ...params,
       }),
     ).toBe(params.expected);
   });

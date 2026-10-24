@@ -30,6 +30,18 @@ export function resolveCronSessionTargetSessionKey(
   return assertSafeCronSessionTargetId(sessionTarget.slice(8));
 }
 
+/** Returns whether `cron.freshContextSessions` starts each run of this target on a cleared context. */
+export function isFreshContextCronSessionTarget(
+  freshContextSessions: readonly string[] | undefined,
+  sessionTarget?: string | null,
+): boolean {
+  const name =
+    typeof sessionTarget === "string" && sessionTarget.startsWith("session:")
+      ? sessionTarget.slice(8).trim()
+      : "";
+  return name !== "" && (freshContextSessions?.includes(name) ?? false);
+}
+
 /** Returns whether cron executes the job in a detached run session. */
 export function isDetachedCronSessionTarget(sessionTarget?: string | null): boolean {
   return sessionTarget === "isolated" || sessionTarget === "current";

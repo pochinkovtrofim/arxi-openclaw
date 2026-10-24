@@ -263,7 +263,8 @@ export function createPersistCronSessionEntry(params: {
   persistSessionEntry: CronSessionRowWriter;
 }): PersistCronSessionEntry {
   return async (assertCommitAllowed, liveEntry = params.cronSession.sessionEntry) => {
-    const resetBoundaryPending = params.cronSession.resetBoundaryPending !== undefined;
+    const pendingResetBoundary = params.cronSession.resetBoundaryPending;
+    const resetBoundaryPending = pendingResetBoundary !== undefined;
     // Reset admission completes before a CLI turn can own settlement.
     if (assertCommitAllowed && resetBoundaryPending) {
       throw new CronSessionLifecycleClaimError(params.agentSessionKey);
@@ -285,10 +286,10 @@ export function createPersistCronSessionEntry(params: {
       sessionKey: params.agentSessionKey,
       fallbackEntry: persistedEntry,
       assertCommitAllowed,
-      ...(resetBoundaryPending
+      ...(pendingResetBoundary
         ? {
             resetBoundary: {
-              context: "preserve-tail",
+              context: pendingResetBoundary.context ?? "preserve-tail",
               reason: "cron-stale",
               cwd: params.workspaceDir,
             } satisfies SessionResetBoundaryWrite,

@@ -460,6 +460,59 @@ describe("prepareEmbeddedAttemptTransport", () => {
   });
 
   it.each([
+    { name: "a scheduled run on a cleared context", earlier: false, historyTtl: undefined },
+    { name: "a scheduled run after earlier runs", earlier: true, historyTtl: "1h" },
+  ] as const)("keeps one-hour system checkpoints for $name", async ({ earlier, historyTtl }) => {
+    const previousHost = getAiTransportHost();
+    const payloads: string[] = [];
+    configureAiTransportHost({
+      ...previousHost,
+      buildModelFetch: () => async (_input, init) => {
+        payloads.push(String(init?.body));
+        return createAnthropicResponse(anthropicEvents);
+      },
+    });
+    const { input, session } = createTransportFixture({
+      pruning: false,
+      apiKey: "sk-ant-api-test",
+    });
+    const startedAtMs = Date.now();
+    input.attempt.model = anthropicModel;
+    input.attempt.trigger = "cron";
+    input.attempt.sessionKey = "agent:main:arxi-proactive-steward";
+    input.attempt.startedAtMs = startedAtMs;
+    input.attempt.runtimePlan!.transport.resolveExtraParams = () => ({ cacheRetention: "long" });
+    input.lastCacheTouchAt = startedAtMs - 30 * 60_000;
+    Object.assign(session, {
+      messages: earlier
+        ? [{ role: "user", content: "earlier run", timestamp: startedAtMs - 1 }]
+        : [],
+    });
+
+    try {
+      await prepareEmbeddedAttemptTransport(input);
+      const stream = await session.agent.streamFn(anthropicModel, anthropicContext, {});
+      await stream.result();
+    } finally {
+      configureAiTransportHost(previousHost);
+    }
+
+    const payload = JSON.parse(payloads[0] ?? "{}") as {
+      system?: Array<{ cache_control?: unknown }>;
+      messages?: Array<{ content?: unknown }>;
+    };
+    const historyMarkers = JSON.stringify(payload.messages)
+      .match(/"cache_control":\{[^}]*\}/g)
+      ?.map((marker) => JSON.parse(`{${marker}}`).cache_control);
+    expect(payload.system).toContainEqual(
+      expect.objectContaining({ cache_control: { type: "ephemeral", ttl: "1h" } }),
+    );
+    expect(historyMarkers).toEqual([
+      { type: "ephemeral", ...(historyTtl ? { ttl: historyTtl } : {}) },
+    ]);
+  });
+
+  it.each([
     { name: "a chat turn", detached: false, ttl: "1h" },
     { name: "a detached review of it", detached: true, ttl: undefined },
   ] as const)("keeps $name warm only with the one-hour cache", async ({ detached, ttl }) => {

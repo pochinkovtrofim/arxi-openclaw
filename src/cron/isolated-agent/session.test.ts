@@ -35,6 +35,7 @@ function resolveWithStoredEntry(params?: {
   targetEntry?: SessionEntry;
   forceNew?: boolean;
   fresh?: boolean;
+  freshContext?: boolean;
   exactRunSession?: boolean;
 }) {
   const sessionKey = params?.sessionKey ?? "webhook:stable-key";
@@ -57,6 +58,7 @@ function resolveWithStoredEntry(params?: {
     agentId: "main",
     nowMs: NOW_MS,
     forceNew: params?.forceNew,
+    freshContext: params?.freshContext,
     exactRunSession: params?.exactRunSession,
     store,
     lifecycleTimestamps: {},
@@ -341,9 +343,41 @@ describe("resolveCronSession", () => {
     expect(result.sessionEntry.agentHarnessId).toBeUndefined();
     expect(result.sessionEntry.claudeCliSessionId).toBeUndefined();
     expect(result.sessionEntry).not.toHaveProperty("sessionFile");
-    expect(result.resetBoundaryPending).toMatchObject({ reason: "cron-stale" });
+    expect(result.resetBoundaryPending).toEqual({
+      reason: "cron-stale",
+      sessionFile: "webhook:stable-key",
+    });
     expectNoDelivery(result.sessionEntry);
     expect(result.sessionEntry.channel).toBeUndefined();
     expect(result.sessionEntry.origin).toBeUndefined();
+  });
+
+  it("clears a fresh-context session's model context on every run, even while fresh", () => {
+    const entry = {
+      sessionId: "steward-session",
+      lifecycleRevision: "previous-run",
+      updatedAt: NOW_MS - 30 * 60_000,
+      systemSent: true,
+      modelOverride: "claude-sonnet-5-5",
+      compactionCount: 2,
+    };
+
+    const kept = resolveWithStoredEntry({ entry });
+    const cleared = resolveWithStoredEntry({ entry, freshContext: true });
+
+    expect(kept.isNewSession).toBe(false);
+    expect(kept.resetBoundaryPending).toBeUndefined();
+    expect(cleared.sessionEntry.sessionId).toBe("steward-session");
+    expect(cleared.isNewSession).toBe(true);
+    expect(cleared.lifecycleRevision).not.toBe("previous-run");
+    expect(cleared.sessionEntry).toMatchObject({
+      modelOverride: "claude-sonnet-5-5",
+      compactionCount: 0,
+    });
+    expect(cleared.resetBoundaryPending).toEqual({
+      reason: "cron-stale",
+      context: "clear",
+      sessionFile: "webhook:stable-key",
+    });
   });
 });

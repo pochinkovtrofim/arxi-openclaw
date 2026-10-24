@@ -72,6 +72,12 @@ export type AnthropicContextManagementOptions = {
   anthropicServerCompaction?: boolean;
   anthropicCompactThreshold?: number;
   cacheTtlPruning?: { tools?: { allow?: string[]; deny?: string[] } };
+  /**
+   * Retention for history checkpoints only. "short" keeps one-hour tool and
+   * system checkpoints for later requests while this request's history uses
+   * the five-minute cache.
+   */
+  messageCacheRetention?: "short";
 };
 
 /** Provider options shared by the Anthropic provider and canonical transport. */

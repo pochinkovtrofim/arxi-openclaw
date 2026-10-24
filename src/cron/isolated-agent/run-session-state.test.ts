@@ -268,6 +268,37 @@ describe("createPersistCronSessionEntry", () => {
     );
   });
 
+  it("writes a fresh-context run's boundary without the recent tail", async () => {
+    const lifecycleRevision = "00000000-0000-4000-8000-000000000003";
+    const existingEntry = makeSessionEntry({ lifecycleRevision });
+    const cronSession = {
+      ...makeCronSession(existingEntry),
+      initialSessionEntry: existingEntry,
+      lifecycleRevision,
+      resetBoundaryPending: {
+        reason: "cron-stale" as const,
+        context: "clear" as const,
+        sessionFile: "sqlite:main:run-session-id:/tmp/sessions.json",
+      },
+    } as MutableCronSession;
+    const persistSessionEntry = makeGuardedPersistSessionEntry({
+      "agent:main:cron:job": existingEntry,
+    });
+
+    await createPersistCronSessionEntry({
+      cronSession,
+      agentSessionKey: "agent:main:cron:job",
+      workspaceDir: "/tmp/workspace",
+      persistSessionEntry,
+    })();
+
+    expect(persistSessionEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        resetBoundary: { context: "clear", reason: "cron-stale", cwd: "/tmp/workspace" },
+      }),
+    );
+  });
+
   it("does not forward a workspace when no reset boundary is pending", async () => {
     const cronSession = makeCronSession();
     const persistSessionEntry = makeGuardedPersistSessionEntry({});
