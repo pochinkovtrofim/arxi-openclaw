@@ -123,7 +123,10 @@ export async function prepareEmbeddedAttemptAgentSession(input: {
   applyAgentAutoCompactionGuard({
     settingsManager,
     contextEngineInfo: input.activeContextEngineInfo,
-    compactionMode: resolveEffectiveCompactionMode(attempt.config),
+    // Safeguard hands compaction to the reply path's explicit preflight, which a
+    // cron run never takes; a persistent cron session compacts at its own window.
+    compactionMode:
+      attempt.trigger === "cron" ? undefined : resolveEffectiveCompactionMode(attempt.config),
     silentOverflowProneProvider: isSilentOverflowProneModel({
       provider: attempt.provider,
       modelId: attempt.modelId,
