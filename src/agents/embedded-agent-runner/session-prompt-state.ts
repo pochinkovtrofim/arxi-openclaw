@@ -83,11 +83,25 @@ function promptSections(text: string): Map<string, string> {
   return sections;
 }
 
+// Region comments and blank lines move with the cache boundary; they carry no instructions.
+const PROMPT_LAYOUT_LINE = /^<!-- \/?openclaw:attempt:(?:STABLE|DYNAMIC) -->$/gm;
+
+function promptInstructions(section: string): string {
+  return section
+    .replace(PROMPT_LAYOUT_LINE, "")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+}
+
 function promptDelta(previous: string, current: string): string[] {
   const before = promptSections(previous);
   const sections: string[] = [];
   for (const [heading, section] of promptSections(current)) {
-    if (before.get(heading) !== section) {
+    const previousSection = before.get(heading);
+    if (
+      previousSection === undefined ||
+      promptInstructions(previousSection) !== promptInstructions(section)
+    ) {
       sections.push(section);
     }
     before.delete(heading);

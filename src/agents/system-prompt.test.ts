@@ -674,8 +674,8 @@ describe("buildAgentSystemPrompt", () => {
     } satisfies Partial<PromptParams>;
     const prompt = renderPrompt(baseParams);
     const boundary = prompt.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY);
-    expect(prompt.indexOf("# Project Context")).toBeGreaterThan(-1);
-    expect(boundary).toBeGreaterThan(prompt.indexOf("# Project Context"));
+    expect(boundary).toBeGreaterThan(-1);
+    expect(prompt.indexOf("# Project Context")).toBeGreaterThan(boundary);
     for (const section of [
       "## Messaging",
       "## Conversation Context",
@@ -700,6 +700,21 @@ describe("buildAgentSystemPrompt", () => {
         prompt.slice(0, boundary),
       );
     }
+  });
+
+  it("starts the suffix with workspace files so edits keep the shared prefix", () => {
+    const render = (content: string) =>
+      renderPrompt({ contextFiles: [{ path: "MEMORY.md", content }], reasoningTagHint: true });
+    const [prefix, suffix] = render("Prefers mornings.").split(SYSTEM_PROMPT_CACHE_BOUNDARY);
+
+    expect(render("Prefers evenings.").split(SYSTEM_PROMPT_CACHE_BOUNDARY)[0]).toBe(prefix);
+    expect(prefix).not.toContain("## Workspace Files (injected)");
+    expect(prefix).not.toContain("## Reasoning Format");
+    expect(suffix!.trimStart().startsWith("## Workspace Files (injected)")).toBe(true);
+    expect(suffix!.indexOf("## Reasoning Format")).toBeLessThan(
+      suffix!.indexOf("# Project Context"),
+    );
+    expect(suffix!.indexOf("Prefers mornings.")).toBeLessThan(suffix!.indexOf("## Runtime"));
   });
 
   it("keeps automatic tool discovery in the stable prompt-cache prefix", () => {
