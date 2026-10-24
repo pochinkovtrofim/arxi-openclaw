@@ -2,6 +2,7 @@ import {
   isAnthropicServerToolClearingEnabled,
   resolveCompactionReplayEligibility,
 } from "@openclaw/ai/transports";
+import { resolveAgentMainSessionKey } from "../../../config/sessions/main-session.js";
 import type { ModelCompatConfig } from "../../../config/types.models.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { createOpenAIServiceTierObservationWrapper } from "../../../llm/providers/stream-wrappers/openai-service-tier-observation.js";
@@ -9,6 +10,7 @@ import { createCodexNativeWebSearchWrapper } from "../../../llm/providers/stream
 import { getAgentScopedMediaLocalRoots } from "../../../media/local-roots.js";
 import type { ProviderRuntimePluginHandle } from "../../../plugins/provider-hook-runtime.js";
 import { resolveProviderTextTransforms } from "../../../plugins/provider-runtime.js";
+import { parseSessionDeliveryRoute } from "../../../sessions/session-key-utils.js";
 import { resolveAdmittedRunActiveAssertion } from "../../admitted-run-context.js";
 import type { AgentRunAttemptFailureSource } from "../../agent-run-terminal-outcome.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
@@ -588,9 +590,18 @@ export async function prepareEmbeddedAttemptTransport(input: {
     attempt.model.api,
     attempt.modelId,
   );
+  // A scheduled turn can target a chat session directly (`session:<chat key>`).
+  const mainSessionKey = resolveAgentMainSessionKey({
+    cfg: attempt.config,
+    agentId: input.sessionAgentId,
+  });
   const effectivePromptCacheRetention = resolveRunCacheRetention({
     retention: configuredPromptCacheRetention,
     trigger: attempt.trigger,
+    modelApi: attempt.model.api,
+    conversation:
+      attempt.sessionKey === mainSessionKey ||
+      parseSessionDeliveryRoute(attempt.sessionKey) !== null,
     lastCacheTouchAt: input.lastCacheTouchAt,
     now: Date.now(),
   });

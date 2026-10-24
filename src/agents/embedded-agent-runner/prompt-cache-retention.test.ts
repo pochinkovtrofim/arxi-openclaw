@@ -1,8 +1,32 @@
 // Coverage for prompt-cache retention resolution by provider and model API.
 import { describe, expect, it } from "vitest";
-import { resolveCacheKeepWarm, resolveCacheRetention } from "./prompt-cache-retention.js";
+import {
+  resolveCacheKeepWarm,
+  resolveCacheRetention,
+  resolveRunCacheRetention,
+} from "./prompt-cache-retention.js";
 
 describe("prompt cache retention", () => {
+  it.each([
+    { name: "an idle background session", expected: "short" },
+    { name: "a session cached within the hour", touchAgeMs: 59 * 60_000, expected: "long" },
+    { name: "another provider API", modelApi: "openai-responses", expected: "long" },
+    { name: "the five-minute setting", retention: "short", expected: "short" },
+  ] as const)("writes the cache for $name with $expected retention", (params) => {
+    const now = 10 * 3_600_000;
+    expect(
+      resolveRunCacheRetention({
+        retention: "long",
+        trigger: "cron",
+        modelApi: "anthropic-messages",
+        conversation: false,
+        ...params,
+        lastCacheTouchAt: now - ("touchAgeMs" in params ? params.touchAgeMs : 60 * 60_000),
+        now,
+      }),
+    ).toBe(params.expected);
+  });
+
   it.each([
     { name: "a chat turn on the one-hour cache", keepWarmFor: "12h", expected: 12 * 3_600_000 },
     { name: "a scheduled run", keepWarmFor: "12h", trigger: "cron", expected: undefined },

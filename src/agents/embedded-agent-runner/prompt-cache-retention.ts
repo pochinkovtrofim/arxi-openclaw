@@ -51,21 +51,27 @@ export function resolveCacheKeepWarm(params: {
 const LONG_CACHE_REUSE_MS = 60 * 60_000;
 
 /**
- * A scheduled run in a session that touched no cache within the last hour writes
- * the five-minute cache: its own calls follow each other within minutes, and a
- * one-hour write pays off only when the session runs again within the hour.
- * A session that did run within the hour keeps the configured one-hour cache.
- * `lastCacheTouchAt` is undefined when the session does not record cache touches.
+ * A scheduled Anthropic run in a background session that touched no cache within
+ * the last hour writes the five-minute cache: its own calls follow each other
+ * within minutes, and a one-hour write pays off only when the session runs again
+ * within the hour. A session that did run within the hour keeps the configured
+ * one-hour cache, and so does a conversation, where the person may answer the
+ * run's message. `lastCacheTouchAt` is undefined when the session does not record
+ * cache touches.
  */
 export function resolveRunCacheRetention(params: {
   retention?: CacheRetention;
   trigger?: string;
+  modelApi?: string;
+  conversation: boolean;
   lastCacheTouchAt?: number | null;
   now: number;
 }): CacheRetention | undefined {
   if (
     params.retention !== "long" ||
     params.trigger !== "cron" ||
+    params.modelApi !== "anthropic-messages" ||
+    params.conversation ||
     params.lastCacheTouchAt === undefined
   ) {
     return params.retention;

@@ -405,7 +405,22 @@ describe("prepareEmbeddedAttemptTransport", () => {
     { name: "a scheduled run within the hour", trigger: "cron", touchAgeMs: 30, ttl: "1h" },
     { name: "a chat turn after an hour idle", trigger: "user", touchAgeMs: 60, ttl: "1h" },
     { name: "a session without cache touches", trigger: "cron", touchAgeMs: undefined, ttl: "1h" },
-  ] as const)("writes the cache for $name with ttl $ttl", async ({ trigger, touchAgeMs, ttl }) => {
+    {
+      name: "a scheduled turn in the main chat",
+      trigger: "cron",
+      touchAgeMs: 60,
+      sessionKey: "agent:main:main",
+      ttl: "1h",
+    },
+    {
+      name: "a scheduled turn in a direct chat",
+      trigger: "cron",
+      touchAgeMs: 60,
+      sessionKey: "agent:main:telegram:default:direct:42",
+      ttl: "1h",
+    },
+  ] as const)("writes the cache for $name with ttl $ttl", async (testCase) => {
+    const { trigger, touchAgeMs, ttl } = testCase;
     const previousHost = getAiTransportHost();
     const payloads: string[] = [];
     configureAiTransportHost({
@@ -421,6 +436,8 @@ describe("prepareEmbeddedAttemptTransport", () => {
     });
     input.attempt.model = anthropicModel;
     input.attempt.trigger = trigger;
+    input.attempt.sessionKey =
+      "sessionKey" in testCase ? testCase.sessionKey : "agent:main:arxi-agenda";
     input.attempt.runtimePlan!.transport.resolveExtraParams = () => ({ cacheRetention: "long" });
     input.lastCacheTouchAt =
       typeof touchAgeMs === "number" ? Date.now() - touchAgeMs * 60_000 : touchAgeMs;
