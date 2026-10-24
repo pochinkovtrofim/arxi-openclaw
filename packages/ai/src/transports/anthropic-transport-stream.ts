@@ -18,6 +18,7 @@ import {
 import { redactDiagnosticText } from "../utils/credential-redaction.js";
 import { createDeferredEventBuffer } from "../utils/deferred-event-buffer.js";
 import {
+  dropAnthropicCacheKeepWarm,
   holdAnthropicCacheKeepWarm,
   pauseAnthropicCacheKeepWarm,
 } from "./anthropic-cache-keep-warm.js";
@@ -28,6 +29,7 @@ import {
 import { buildAnthropicRequest, prepareAnthropicRequest } from "./anthropic-messages.js";
 import {
   isDirectAnthropicModel,
+  resolveAnthropicCacheOptions,
   supportsAnthropicServerSideFallback,
 } from "./anthropic-payload-policy.js";
 import { consumeAnthropicStream, type AnthropicStreamBlock } from "./anthropic-stream-reducer.js";
@@ -385,8 +387,13 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
         }
         const transportOptions = resolveAnthropicTransportOptions(model, options, apiKey);
         const keepWarm = options?.cacheKeepWarm;
+        // Only a request with one-hour markers is worth replaying; another request
+        // in the session, such as a compaction summary, ends the hold.
+        const oneHourCache =
+          resolveAnthropicCacheOptions(model, transportOptions.cacheRetention).cacheControl?.ttl ===
+          "1h";
         if (keepWarm) {
-          pauseAnthropicCacheKeepWarm(keepWarm.key);
+          (oneHourCache ? pauseAnthropicCacheKeepWarm : dropAnthropicCacheKeepWarm)(keepWarm.key);
         }
         const requestedAt = Date.now();
         const requestContext = prepareClaudeNoPrefillRequestContext(model, context);
@@ -438,7 +445,7 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
           profile: "transport",
         });
         finalizeTransportStream({ stream, output });
-        if (keepWarm) {
+        if (keepWarm && oneHourCache) {
           holdAnthropicCacheKeepWarm(keepWarm, model.id, requestedAt, async () => {
             // A refresh belongs to no turn, so it carries no trace.
             const { traceparent: _traceparent, ...replayHeaders } = transportOptions.headers ?? {};

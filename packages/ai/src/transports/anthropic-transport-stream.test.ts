@@ -1104,6 +1104,7 @@ describe("anthropic transport stream", () => {
     const result = await runTransportStream(makeAnthropicTransportModel(), undefined, {
       apiKey: "sk-ant-api",
       headers: { traceparent: "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01" },
+      cacheRetention: "long",
       cacheKeepWarm: { key: "transport-chat", maxIdleMs: 55 * 60_000 },
     });
     expect(result.stopReason).toBe("stop");
@@ -1116,6 +1117,36 @@ describe("anthropic transport stream", () => {
     expect(new Headers(guardedFetchCall(0)[1]?.headers).has("traceparent")).toBe(true);
     expect(latestAnthropicRequestHeaders().has("traceparent")).toBe(false);
     expect(latestAnthropicRequest().payload).toEqual({ ...sent, stream: false, max_tokens: 0 });
+  });
+
+  it.each([
+    { name: "replays the latest one-hour request", retention: "long", calls: 3 },
+    { name: "stops after a request without one-hour markers", retention: "none", calls: 2 },
+  ] as const)("$name in a kept-warm session", async ({ retention, calls }) => {
+    vi.useFakeTimers();
+    guardedFetchMock.mockImplementation(async () =>
+      createSseResponse([
+        anthropicMessageStart({ id: "msg_warm", usage: { input_tokens: 0, output_tokens: 0 } }),
+        anthropicMessageDelta({ stop_reason: "end_turn" }, { input_tokens: 0, output_tokens: 0 }),
+        { type: "message_stop" },
+      ]),
+    );
+    const cacheKeepWarm = { key: "transport-chat-latest", maxIdleMs: 55 * 60_000 };
+    await runTransportStream(makeAnthropicTransportModel(), undefined, {
+      apiKey: "sk-ant-api",
+      cacheRetention: "long",
+      cacheKeepWarm,
+    });
+    await runTransportStream(
+      makeAnthropicTransportModel(),
+      { messages: [makeUserMessage("summarize", 0)] },
+      { apiKey: "sk-ant-api", cacheRetention: retention, cacheKeepWarm },
+    );
+
+    await vi.advanceTimersByTimeAsync(3 * 60 * 60_000);
+
+    expect(guardedFetchMock).toHaveBeenCalledTimes(calls);
+    expect(latestAnthropicRequest().payload.stream).toBe(retention !== "long");
   });
 
   it.each([

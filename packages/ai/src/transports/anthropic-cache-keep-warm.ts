@@ -24,6 +24,12 @@ export function pauseAnthropicCacheKeepWarm(key: string): void {
   }
 }
 
+/** The session sent a request without one-hour markers; its held request no longer matches. */
+export function dropAnthropicCacheKeepWarm(key: string): void {
+  clearTimeout(holds.get(key)?.timer);
+  holds.delete(key);
+}
+
 /** Replays the session's last request each time it has been quiet for 55 minutes. */
 export function holdAnthropicCacheKeepWarm(
   keepWarm: AnthropicCacheKeepWarm,
