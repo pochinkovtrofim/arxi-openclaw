@@ -12,6 +12,7 @@ describe("prompt cache retention", () => {
     { name: "a session cached within the hour", touchAgeMs: 59 * 60_000, expected: "long" },
     { name: "another provider API", modelApi: "openai-responses", expected: "long" },
     { name: "the five-minute setting", retention: "short", expected: "short" },
+    { name: "a detached chat-triggered run", trigger: "user", detached: true, expected: "short" },
   ] as const)("writes the cache for $name with $expected retention", (params) => {
     const now = 10 * 3_600_000;
     expect(
@@ -20,6 +21,7 @@ describe("prompt cache retention", () => {
         trigger: "cron",
         modelApi: "anthropic-messages",
         conversation: false,
+        detached: false,
         ...params,
         lastCacheTouchAt: now - ("touchAgeMs" in params ? params.touchAgeMs : 60 * 60_000),
         now,

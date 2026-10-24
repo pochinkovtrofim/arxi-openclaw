@@ -16,7 +16,12 @@ vi.mock("../../plugins/provider-runtime.js", () => ({
   },
 }));
 
-import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "./cache-ttl.js";
+import { SessionManager } from "../sessions/session-manager.js";
+import {
+  isCacheTtlEligibleProvider,
+  readLastAssistantCacheTouch,
+  readLastCacheTtlTimestamp,
+} from "./cache-ttl.js";
 
 describe("isCacheTtlEligibleProvider", () => {
   it("forwards only the normalized identity and bounded resolved route", () => {
@@ -176,5 +181,68 @@ describe("readLastCacheTtlTimestamp", () => {
         modelId: "claude-sonnet-4-5",
       }),
     ).toBeNull();
+  });
+});
+
+describe("readLastAssistantCacheTouch", () => {
+  const reply = (timestamp: number, model: string, cacheRead: number) => ({
+    type: "message",
+    message: {
+      role: "assistant",
+      provider: "anthropic",
+      model,
+      usage: { cacheRead, cacheWrite: 0 },
+      timestamp,
+    },
+  });
+
+  it("dates the last reply of this model that touched the cache", () => {
+    const sessionManager = {
+      getEntries: () => [
+        reply(1_000, "claude-sonnet-5-5", 900),
+        reply(2_000, "claude-sonnet-5-5", 0),
+        reply(3_000, "claude-haiku-5-5", 900),
+        { type: "message", message: { role: "user", timestamp: 4_000 } },
+      ],
+    };
+
+    expect(
+      readLastAssistantCacheTouch(sessionManager, {
+        provider: "Anthropic",
+        modelId: "claude-sonnet-5-5",
+      }),
+    ).toBe(1_000);
+    expect(
+      readLastAssistantCacheTouch(sessionManager, { provider: "openai", modelId: "gpt-5.4" }),
+    ).toBeNull();
+  });
+
+  it("reads replies saved by a real session manager", () => {
+    const sessionManager = SessionManager.inMemory("/retained");
+    sessionManager.appendMessage({ role: "user", content: "hello", timestamp: 1_000 });
+    sessionManager.appendMessage({
+      role: "assistant",
+      content: [{ type: "text", text: "hi" }],
+      api: "anthropic-messages",
+      provider: "anthropic",
+      model: "claude-sonnet-5-5",
+      usage: {
+        input: 4,
+        output: 2,
+        cacheRead: 0,
+        cacheWrite: 900,
+        totalTokens: 906,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: 2_000,
+    });
+
+    expect(
+      readLastAssistantCacheTouch(sessionManager, {
+        provider: "anthropic",
+        modelId: "claude-sonnet-5-5",
+      }),
+    ).toBe(2_000);
   });
 });

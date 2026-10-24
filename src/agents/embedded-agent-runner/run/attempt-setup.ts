@@ -37,7 +37,11 @@ import { sanitizeToolUseResultPairingForModel } from "../../session-transcript-r
 import type { AgentSession } from "../../sessions/index.js";
 import { invalidateComputerFrameIfMissing } from "../../tools/computer-tool.js";
 import { resolveAttemptWorkspaceSandbox } from "../../workspace-sandbox.js";
-import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "../cache-ttl.js";
+import {
+  isCacheTtlEligibleProvider,
+  readLastAssistantCacheTouch,
+  readLastCacheTtlTimestamp,
+} from "../cache-ttl.js";
 import { log } from "../logger.js";
 import { declarePromptHistoryRewrite } from "../prompt-cache-observability.js";
 import {
@@ -411,7 +415,21 @@ export function installEmbeddedAttemptContextGuards(input: {
     recordCacheTouch: (startedAt: number) => {
       lastCacheTouchAt = startedAt;
     },
-    readLastCacheTouchAt: () => (cacheTtlSettings ? lastCacheTouchAt : undefined),
+    // Without cache-ttl entries, the last cached reply dates the session's cache.
+    readLastCacheTouchAt: () =>
+      cacheTtlSettings
+        ? lastCacheTouchAt
+        : Math.max(
+            // Replies are stamped with the resolved model, not the requested ref.
+            readLastAssistantCacheTouch(input.sessionManager, {
+              provider: attempt.model.provider,
+              modelId: attempt.model.id,
+            }) ?? 0,
+            readAnthropicCacheKeepWarmTouch(
+              attempt.sessionKey ?? attempt.sessionId,
+              attempt.modelId,
+            ) ?? 0,
+          ) || null,
     remove: () => {
       activeSession.agent.transformContext = previousComputerFrameTransform;
       removeHistoryImagePruneContextTransform();
