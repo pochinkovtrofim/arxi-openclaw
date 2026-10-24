@@ -1,5 +1,9 @@
 /** Provider transport implementations and transport-specific compatibility helpers. */
 export type { OpenAIResponsesCompactionRejection } from "./provider-options.js";
+export {
+  readAnthropicCacheKeepWarmTouch,
+  type AnthropicCacheKeepWarm,
+} from "./transports/anthropic-cache-keep-warm.js";
 export * from "./transports/anthropic-payload-policy.js";
 export * from "./transports/anthropic-transport-stream.js";
 export { resolveCompletionTokenReservation } from "./transports/anthropic-transport-options.js";

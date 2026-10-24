@@ -17,6 +17,12 @@ const hoisted = vi.hoisted(() => ({
   invalidateComputerFrameIfMissing: vi.fn(),
   isCacheTtlEligibleProvider: vi.fn(() => false),
   readLastCacheTtlTimestamp: vi.fn(() => null as number | null),
+  readAnthropicCacheKeepWarmTouch: vi.fn(() => undefined as number | undefined),
+}));
+
+vi.mock("@openclaw/ai/transports", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@openclaw/ai/transports")>()),
+  readAnthropicCacheKeepWarmTouch: hoisted.readAnthropicCacheKeepWarmTouch,
 }));
 
 vi.mock("../tool-result-context-guard.js", () => ({
@@ -128,6 +134,44 @@ describe("installEmbeddedAttemptContextGuards", () => {
     hoisted.installHistoryImagePruneContextTransform.mockReturnValue(vi.fn());
     hoisted.isCacheTtlEligibleProvider.mockReturnValue(false);
     hoisted.readLastCacheTtlTimestamp.mockReturnValue(null);
+    hoisted.readAnthropicCacheKeepWarmTouch.mockReturnValue(undefined);
+  });
+
+  it.each([
+    { name: "prunes history once the cache expired", keepWarmTouchAge: undefined, pruned: true },
+    {
+      name: "keeps history a keep-warm replay kept cached",
+      keepWarmTouchAge: 60_000,
+      pruned: false,
+    },
+  ])("$name", async ({ keepWarmTouchAge, pruned }) => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    const now = 10_000_000;
+    vi.setSystemTime(now);
+    hoisted.isCacheTtlEligibleProvider.mockReturnValue(true);
+    hoisted.readLastCacheTtlTimestamp.mockReturnValue(now - 2 * 3_600_000);
+    hoisted.readAnthropicCacheKeepWarmTouch.mockReturnValue(
+      keepWarmTouchAge === undefined ? undefined : now - keepWarmTouchAge,
+    );
+    const input = createInput();
+    input.attempt = {
+      ...input.attempt,
+      sessionKey: "agent:main:main",
+      config: { agents: { defaults: { contextPruning: { mode: "cache-ttl" } } } } as never,
+    } as typeof input.attempt;
+    installEmbeddedAttemptContextGuards(input as never);
+    const history = prunableHistory();
+
+    const projected = await input.activeSession.agent.transformContext!(
+      history,
+      new AbortController().signal,
+    );
+
+    expect(JSON.stringify(projected) !== JSON.stringify(history)).toBe(pruned);
+    expect(hoisted.readAnthropicCacheKeepWarmTouch).toHaveBeenCalledWith(
+      "agent:main:main",
+      "model-1",
+    );
   });
 
   it("tracks mid-turn requests and restores attempt-local transforms", async () => {

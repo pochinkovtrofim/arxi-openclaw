@@ -1,8 +1,12 @@
 /**
  * Resolves provider/model prompt-cache retention behavior.
  */
-import { resolveOpenAIPromptCacheKeySupport } from "@openclaw/ai/transports";
+import {
+  resolveOpenAIPromptCacheKeySupport,
+  type AnthropicCacheKeepWarm,
+} from "@openclaw/ai/transports";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
+import { parseDurationMs } from "../../cli/parse-duration.js";
 import { resolveAnthropicCacheRetentionFamily } from "../../llm/providers/stream-wrappers/anthropic-family-cache-semantics.js";
 import type { OpenAICompletionsCompat } from "../../llm/types.js";
 
@@ -16,6 +20,32 @@ export function resolveExplicitCachedContent(extraParams: Record<string, unknown
         ? extraParams.cached_content
         : undefined;
   return raw?.trim() || undefined;
+}
+
+/** Keep-warm for a chat turn on a one-hour Anthropic cache, when configured. */
+export function resolveCacheKeepWarm(params: {
+  keepWarmFor?: string;
+  trigger?: string;
+  modelApi?: string;
+  retention?: CacheRetention;
+  key: string;
+}): AnthropicCacheKeepWarm | undefined {
+  if (
+    !params.keepWarmFor ||
+    params.trigger !== "user" ||
+    params.modelApi !== "anthropic-messages" ||
+    params.retention !== "long"
+  ) {
+    return undefined;
+  }
+  try {
+    return {
+      key: params.key,
+      maxIdleMs: parseDurationMs(params.keepWarmFor, { defaultUnit: "h" }),
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 export function parseCacheRetention(value: unknown): CacheRetention | undefined {

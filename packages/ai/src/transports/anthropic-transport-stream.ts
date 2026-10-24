@@ -18,12 +18,18 @@ import {
 import { redactDiagnosticText } from "../utils/credential-redaction.js";
 import { createDeferredEventBuffer } from "../utils/deferred-event-buffer.js";
 import {
+  dropAnthropicCacheKeepWarm,
+  holdAnthropicCacheKeepWarm,
+  pauseAnthropicCacheKeepWarm,
+} from "./anthropic-cache-keep-warm.js";
+import {
   isAnthropicReplayRejection,
   suppressAnthropicCompaction,
 } from "./anthropic-compaction-replay.js";
 import { buildAnthropicRequest, prepareAnthropicRequest } from "./anthropic-messages.js";
 import {
   isDirectAnthropicModel,
+  resolveAnthropicCacheOptions,
   supportsAnthropicServerSideFallback,
 } from "./anthropic-payload-policy.js";
 import { consumeAnthropicStream, type AnthropicStreamBlock } from "./anthropic-stream-reducer.js";
@@ -380,6 +386,16 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
           throw new Error(`No API key for provider: ${model.provider}`);
         }
         const transportOptions = resolveAnthropicTransportOptions(model, options, apiKey);
+        const keepWarm = options?.cacheKeepWarm;
+        // Only a request with one-hour markers is worth replaying; another request
+        // in the session, such as a compaction summary, ends the hold.
+        const oneHourCache =
+          resolveAnthropicCacheOptions(model, transportOptions.cacheRetention).cacheControl?.ttl ===
+          "1h";
+        if (keepWarm) {
+          (oneHourCache ? pauseAnthropicCacheKeepWarm : dropAnthropicCacheKeepWarm)(keepWarm.key);
+        }
+        const requestedAt = Date.now();
         const requestContext = prepareClaudeNoPrefillRequestContext(model, context);
         const { request, isOAuthToken, directApiKeyBetaHeader, claudeCodeVersion } =
           createAnthropicTransportClient({
@@ -429,6 +445,24 @@ export function createAnthropicMessagesTransportStreamFn(): StreamFn {
           profile: "transport",
         });
         finalizeTransportStream({ stream, output });
+        if (keepWarm && oneHourCache) {
+          holdAnthropicCacheKeepWarm(keepWarm, model.id, requestedAt, async () => {
+            // A refresh belongs to no turn, so it carries no trace.
+            const { traceparent: _traceparent, ...replayHeaders } = transportOptions.headers ?? {};
+            const replayClient = createAnthropicTransportClient({
+              model,
+              context: requestContext,
+              apiKey,
+              options: { ...transportOptions, headers: replayHeaders },
+            });
+            const replay = await replayClient.request(
+              { ...params, stream: false, max_tokens: 0 },
+              { headers },
+            );
+            await replay.response.body?.cancel();
+            return replay.response.ok;
+          });
+        }
       } catch (error) {
         failTransportStream({
           stream,

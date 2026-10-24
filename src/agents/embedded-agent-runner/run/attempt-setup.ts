@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readAnthropicCacheKeepWarmTouch } from "@openclaw/ai/transports";
 import { isPathRelativeEscape } from "@openclaw/fs-safe/path";
 import { MAX_IMAGE_BYTES } from "@openclaw/media-core/constants";
 import type { ModelCompatConfig } from "../../../config/types.models.js";
@@ -236,10 +237,15 @@ export function installEmbeddedAttemptContextGuards(input: {
       : undefined;
   const previousCacheTtlTransform = activeSession.agent.transformContext;
   let lastCacheTouchAt = cacheTtlSettings
-    ? readLastCacheTtlTimestamp(input.sessionManager, {
-        provider: attempt.provider,
-        modelId: attempt.modelId,
-      })
+    ? Math.max(
+        readLastCacheTtlTimestamp(input.sessionManager, {
+          provider: attempt.provider,
+          modelId: attempt.modelId,
+        }) ?? 0,
+        // A keep-warm replay between runs refreshes the cache without a transcript entry.
+        readAnthropicCacheKeepWarmTouch(attempt.sessionKey ?? attempt.sessionId, attempt.modelId) ??
+          0,
+      ) || null
     : null;
   if (cacheTtlSettings) {
     activeSession.agent.transformContext = async (messages, signal) => {
