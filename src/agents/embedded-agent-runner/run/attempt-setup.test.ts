@@ -10,7 +10,10 @@ import type { SandboxContext } from "../../sandbox/types.js";
 import { castAgentMessage } from "../../test-helpers/agent-message-fixtures.js";
 import { makeProviderModelFixture } from "../../test-helpers/provider-model-fixture.js";
 import { resolveAttemptWorkspaceSandbox } from "../../workspace-sandbox.js";
-import { createToolResultPromptProjectionState } from "../session-prompt-state.js";
+import {
+  clearEmbeddedSessionPromptStates,
+  createToolResultPromptProjectionState,
+} from "../session-prompt-state.js";
 import { prepareEmbeddedSkills } from "../skill-runtime.js";
 import { buildEmbeddedForegroundPromptContext } from "./agent-end-context.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
@@ -207,6 +210,94 @@ describe("prepareEmbeddedAttemptSetup", () => {
       await fs.rm(workspaceDir, { recursive: true, force: true });
     }
   });
+
+  it.each([
+    { trigger: "cron", replaced: true },
+    { trigger: "user", replaced: false },
+  ] as const)(
+    "hides earlier runs' tool results for a $trigger run when configured for cron",
+    async ({ trigger, replaced }) => {
+      const agent = {} as {
+        transformContext?: (messages: unknown[], signal?: AbortSignal) => Promise<unknown[]>;
+      };
+      const settingsManager = { getBlockImages: () => false };
+      const sessionId = `session-earlier-runs-${trigger}`;
+      const guards = installEmbeddedAttemptContextGuards({
+        activeSession: { agent, settingsManager } as never,
+        agentDir: os.tmpdir(),
+        attempt: {
+          config: { agents: { defaults: { contextPruning: { earlierRuns: "cron" } } } },
+          contextTokenBudget: 200_000,
+          model: { input: ["text"] },
+          modelId: "claude-sonnet-5-5",
+          provider: "anthropic",
+          sessionId,
+          sessionKey: "agent:main:session:steward",
+          trigger,
+        } as unknown as EmbeddedRunAttemptParams,
+        computerContextEpoch: { value: 0 },
+        dropThinkingBlocksForEstimate: false,
+        effectiveCwd: os.tmpdir(),
+        effectiveFsWorkspaceOnly: false,
+        effectiveWorkspace: os.tmpdir(),
+        getPrePromptMessageCount: () => 3,
+        getPromptCache: () => undefined,
+        getPromptCacheRetention: () => undefined,
+        getCompactionReplayEnabled: () => false,
+        getServerToolClearingEnabled: () => false,
+        toolResultPromptProjectionState: createToolResultPromptProjectionState(),
+        getSystemPrompt: () => "",
+        isOpenAIResponsesApi: false,
+        repairToolUseResultPairing: false,
+        sessionAgentId: "main",
+        sessionManager: {} as never,
+        settingsManager: settingsManager as never,
+      });
+      const result = (id: string, text: string, timestamp: number) =>
+        castAgentMessage({
+          role: "toolResult",
+          toolCallId: id,
+          toolName: "read",
+          content: [{ type: "text", text }],
+          isError: false,
+          timestamp,
+        });
+      const call = (id: string, timestamp: number) =>
+        castAgentMessage({
+          role: "assistant",
+          content: [{ type: "toolCall", id, name: "read", arguments: {} }],
+          stopReason: "toolUse",
+          timestamp,
+        });
+      const prompt = (text: string, timestamp: number) =>
+        castAgentMessage({ role: "user", content: [{ type: "text", text }], timestamp });
+
+      try {
+        const projected = await agent.transformContext?.([
+          call("earlier", 1),
+          result("earlier", "earlier inbox", 2),
+          castAgentMessage({ role: "assistant", content: [{ type: "text", text: "done" }] }),
+          prompt("check again", 4),
+          call("current", 5),
+          result("current", "current inbox", 6),
+        ]);
+        expect((projected?.[1] as { content?: unknown }).content).toEqual([
+          {
+            type: "text",
+            text: replaced
+              ? "[Tool result from an earlier run omitted; call the tool again if you need it]"
+              : "earlier inbox",
+          },
+        ]);
+        expect((projected?.[5] as { content?: unknown }).content).toEqual([
+          { type: "text", text: "current inbox" },
+        ]);
+      } finally {
+        guards.remove();
+        clearEmbeddedSessionPromptStates([sessionId]);
+      }
+    },
+  );
 
   it("prepares one closed session permission policy", async () => {
     const root = path.join(os.tmpdir(), "openclaw-attempt-permission-root");

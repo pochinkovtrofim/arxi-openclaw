@@ -97,9 +97,24 @@ for results no longer in the active history; `/new` and session reset
 start without the old session's projections. Cache-TTL marker timestamps still
 support the existing cache and heartbeat bookkeeping.
 
-Two safety rules apply regardless of thresholds: the last three assistant turns are never pruned, and nothing before the session's first user message is ever pruned (protects bootstrap reads like `SOUL.md`/`USER.md`). The size thresholds and trim windows above are built-in behavior, not config keys; the configurable surface is `agents.defaults.contextPruning` (`mode`, `ttl`, `tools`, `hardClear`).
+Two safety rules apply regardless of thresholds: the last three assistant turns are never pruned, and nothing before the session's first user message is ever pruned (protects bootstrap reads like `SOUL.md`/`USER.md`). The size thresholds and trim windows above are built-in behavior, not config keys; the configurable surface is `agents.defaults.contextPruning` (`mode`, `ttl`, `tools`, `hardClear`, `earlierRuns`).
 
 Only `toolResult` messages are eligible; normal conversation text is left alone. Use `agents.defaults.contextPruning.tools.{allow,deny}` to scope which tool names are prunable on either path.
+
+## Earlier runs of scheduled jobs
+
+A scheduled job that keeps a persistent session (`sessionTarget: "session:<name>"`) re-reads
+its whole history on every run, and most of that history is tool output from earlier runs.
+Set `agents.defaults.contextPruning.earlierRuns` to `"cron"` to send each of those results as
+`[Tool result from an earlier run omitted; call the tool again if you need it]`.
+
+- Only cron runs are projected. Chat turns, heartbeats and other triggers see full results.
+- The current run keeps its own results for its whole tool loop.
+- Tool calls, prompts and replies from earlier runs stay, so the job still knows what it did.
+- Earlier runs render the same bytes on every request, so the prompt cache holds. Each run
+  rewrites only the previous run's results once, as placeholders.
+- The transcript on disk keeps the full results, so compaction summaries and history viewers
+  still see them.
 
 ## Legacy image cleanup
 

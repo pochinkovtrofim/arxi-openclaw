@@ -288,6 +288,38 @@ export function pruneExpiredCacheTtlToolResults(params: {
   return next ?? unchanged;
 }
 
+export const EARLIER_RUN_TOOL_RESULT_PLACEHOLDER =
+  "[Tool result from an earlier run omitted; call the tool again if you need it]";
+
+/**
+ * Projects tool results that precede the current prompt as one fixed placeholder,
+ * without mutating the transcript. Earlier runs render the same bytes on every
+ * request, so the cached prefix holds; a run keeps its own results until the next
+ * run starts. Returns the projected messages and the keys of the replaced results.
+ */
+export function pruneEarlierRunToolResults(
+  messages: AgentMessage[],
+  prePromptMessageCount: number,
+): { messages: AgentMessage[]; pruned: Set<string> } {
+  // A stale count after an in-run compaction must not reach the current prompt.
+  const lastUser = messages.findLastIndex((message) => message.role === "user");
+  const boundary = Math.min(prePromptMessageCount, Math.max(lastUser, 0));
+  const pruned = new Set<string>();
+  let next: AgentMessage[] | undefined;
+  for (let index = 0; index < boundary; index++) {
+    const message = messages[index];
+    if (message?.role !== "toolResult") {
+      continue;
+    }
+    pruned.add(`${index}:${message.toolCallId}:${message.timestamp}`);
+    (next ??= messages.slice())[index] = {
+      ...message,
+      content: [{ type: "text", text: EARLIER_RUN_TOOL_RESULT_PLACEHOLDER }],
+    };
+  }
+  return { messages: next ?? messages, pruned };
+}
+
 const MIN_KEEP_CHARS = 2_000;
 const RECOVERY_MIN_KEEP_CHARS = 0;
 const TOOL_RESULT_WARNING_DEDUPE_LIMIT = 1_024;

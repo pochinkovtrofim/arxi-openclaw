@@ -157,6 +157,7 @@ Prunes **old tool results** from in-memory context before sending to the LLM. Do
     defaults: {
       contextPruning: {
         mode: "cache-ttl", // off (default) | cache-ttl
+        earlierRuns: "cron", // off (default) | cron: hide earlier runs' tool results in scheduled runs
         ttl: "1h", // duration string; bare numbers are minutes (default 5m)
         tools: { allow: [], deny: [] }, // tool names eligible for / excluded from pruning
         hardClear: {
@@ -188,6 +189,10 @@ Notes:
 - The most recent assistant messages are preserved.
 
 </Accordion>
+
+`earlierRuns: "cron"` works independently of `mode`. In a scheduled (cron) run, every tool result
+recorded before the run's prompt is sent as `[Tool result from an earlier run omitted; call the tool again if you need it]`.
+Calls, prompts and replies stay. Other runs, including chat turns in the same session, are unaffected.
 
 See [Session Pruning](/concepts/session-pruning) for behavior details.
 
