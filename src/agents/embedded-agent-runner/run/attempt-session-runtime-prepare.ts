@@ -330,6 +330,7 @@ export async function prepareEmbeddedAttemptSessionRuntime(input: {
     assertCronRootCurrent: sessionLock.assertCronRootCurrent,
     session: activeSession,
     settingsManager,
+    lastCacheTouchAt: contextGuards.readLastCacheTouchAt(),
     providerThinkingLevel,
     sessionAgentId,
     workspaceDir: effectiveWorkspace,

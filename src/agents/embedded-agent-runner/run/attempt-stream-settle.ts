@@ -2,6 +2,7 @@ import {
   isAnthropicServerToolClearingEnabled,
   resolveCompactionReplayEligibility,
 } from "@openclaw/ai/transports";
+import { resolveAgentMainSessionKey } from "../../../config/sessions/main-session.js";
 import type { ModelCompatConfig } from "../../../config/types.models.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { createOpenAIServiceTierObservationWrapper } from "../../../llm/providers/stream-wrappers/openai-service-tier-observation.js";
@@ -9,6 +10,7 @@ import { createCodexNativeWebSearchWrapper } from "../../../llm/providers/stream
 import { getAgentScopedMediaLocalRoots } from "../../../media/local-roots.js";
 import type { ProviderRuntimePluginHandle } from "../../../plugins/provider-hook-runtime.js";
 import { resolveProviderTextTransforms } from "../../../plugins/provider-runtime.js";
+import { parseSessionDeliveryRoute } from "../../../sessions/session-key-utils.js";
 import { resolveAdmittedRunActiveAssertion } from "../../admitted-run-context.js";
 import type { AgentRunAttemptFailureSource } from "../../agent-run-terminal-outcome.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
@@ -30,7 +32,11 @@ import {
 } from "../extra-params.js";
 import { log } from "../logger.js";
 import type { PromptCacheRequestObservation } from "../prompt-cache-request-observer.js";
-import { resolveCacheKeepWarm, resolveCacheRetention } from "../prompt-cache-retention.js";
+import {
+  resolveCacheKeepWarm,
+  resolveCacheRetention,
+  resolveRunCacheRetention,
+} from "../prompt-cache-retention.js";
 import {
   type ProviderPromptState,
   wrapStreamFnWithProviderPromptState,
@@ -372,6 +378,8 @@ export async function prepareEmbeddedAttemptTransport(input: {
   attempt: EmbeddedRunAttemptParams;
   session: AgentSession;
   settingsManager: SettingsManager;
+  /** The session's last cache touch before this run; undefined when not recorded. */
+  lastCacheTouchAt?: number | null;
   providerThinkingLevel: ProviderThinkLevel | undefined;
   onCurrentTurnImageFailure?: (count: number) => void;
   sessionAgentId: string;
@@ -576,12 +584,34 @@ export async function prepareEmbeddedAttemptTransport(input: {
       codeModeToolSurfaceEnabled: true,
     });
   }
-  const effectivePromptCacheRetention = resolveCacheRetention(
+  const configuredPromptCacheRetention = resolveCacheRetention(
     effectiveExtraParams,
     attempt.provider,
     attempt.model.api,
     attempt.modelId,
   );
+  // A scheduled turn can target a chat session directly (`session:<chat key>`).
+  const mainSessionKey = resolveAgentMainSessionKey({
+    cfg: attempt.config,
+    agentId: input.sessionAgentId,
+  });
+  const effectivePromptCacheRetention = resolveRunCacheRetention({
+    retention: configuredPromptCacheRetention,
+    trigger: attempt.trigger,
+    modelApi: attempt.model.api,
+    conversation:
+      attempt.sessionKey === mainSessionKey ||
+      parseSessionDeliveryRoute(attempt.sessionKey) !== null,
+    lastCacheTouchAt: input.lastCacheTouchAt,
+    now: Date.now(),
+  });
+  if (effectivePromptCacheRetention !== configuredPromptCacheRetention) {
+    const baseStreamFn = session.agent.streamFn;
+    session.agent.streamFn = (model, context, options) => {
+      const requestOptions = { ...options, cacheRetention: effectivePromptCacheRetention };
+      return baseStreamFn(model, context, requestOptions);
+    };
+  }
   const agentTransportOverride = resolveAgentTransportOverride({
     settingsManager: input.settingsManager,
     effectiveExtraParams,
