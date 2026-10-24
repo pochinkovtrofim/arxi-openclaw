@@ -1476,6 +1476,7 @@ describe("Anthropic provider", () => {
       {
         type: "text",
         text: "Reactions guidance\nRuntime: session=alpha",
+        cache_control: { type: "ephemeral" },
       },
     ]);
   });

@@ -112,6 +112,28 @@ describe("system prompt series", () => {
     expect(project(base).update?.content).toContain("## Added\n(removed)");
   });
 
+  it("does not report a moved cache boundary as an instruction change", () => {
+    const region = (section: string, text: string) =>
+      `<!-- openclaw:attempt:${section} -->\n${text}\n<!-- /openclaw:attempt:${section} -->`;
+    const render = (stable: string, dynamic: string) =>
+      `${region("STABLE", stable)}${SYSTEM_PROMPT_CACHE_BOUNDARY}${region("DYNAMIC", dynamic)}`;
+    const files =
+      "## Workspace Files (injected)\n# Project Context\n## MEMORY.md\nPrefers mornings.";
+    const first = project(render(`## Skills\nUse skills.\n${files}`, "## Runtime\nSession."));
+    const moved = project(render("## Skills\nUse skills.", `${files}\n## Runtime\nSession.`));
+
+    expect(moved.update).toBeUndefined();
+    expect(moved.systemPrompt).toBe(first.systemPrompt);
+    expect(
+      project(
+        render(
+          "## Skills\nUse skills.",
+          `${files.replace("mornings", "evenings")}\n## Runtime\nSession.`,
+        ),
+      ).update?.content,
+    ).toContain("## MEMORY.md\nPrefers evenings.");
+  });
+
   it("keeps both prompt digests stable across disposed turns with skill, memory, and date changes", async () => {
     const entries: SessionEntry[] = [];
     let first: string | undefined;

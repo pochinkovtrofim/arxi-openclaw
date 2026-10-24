@@ -323,6 +323,22 @@ describe("anthropic payload policy", () => {
     });
   });
 
+  it("caches the session suffix after the stable prefix", () => {
+    const policy = cachePolicy({ cacheRetention: "long" });
+    const payload = boundarySystemPayload();
+
+    applyAnthropicPayloadPolicyToParams(payload, policy, new Set());
+
+    expect(payload.system).toEqual([
+      textBlock("Stable prefix", { type: "ephemeral", ttl: "1h" }),
+      textBlock("Dynamic lab suffix", { type: "ephemeral", ttl: "1h" }),
+    ]);
+    expect(payload.messages[0]).toEqual({
+      role: "user",
+      content: [{ type: "text", text: "Hello", cache_control: { type: "ephemeral", ttl: "1h" } }],
+    });
+  });
+
   it("strips the boundary even when cache retention is disabled", () => {
     const policy = cachePolicy({ cacheRetention: "none" });
     const payload = boundarySystemPayload();

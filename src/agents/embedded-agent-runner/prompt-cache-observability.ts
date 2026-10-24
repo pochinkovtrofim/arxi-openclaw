@@ -51,6 +51,15 @@ type PromptSectionDigests = Partial<Record<PromptSectionName, string>>;
 const promptSectionHeadings = new Map<string, PromptSectionName>(
   PROMPT_SECTION_NAMES.map((name) => [`${name === "Project Context" ? "#" : "##"} ${name}`, name]),
 );
+// Injected files own the headings inside them; only the sections the builder
+// places after them in the suffix end them.
+const projectContextEnds = new Set<PromptSectionName>([
+  "Temporal Context",
+  "Runtime",
+  "Runtime Context",
+  "Conversation Context",
+  "Subagent Context",
+]);
 
 type PromptCacheSnapshot = {
   provider: string;
@@ -353,13 +362,13 @@ function fingerprintPromptSections(
     }
   };
   for (const heading of prompt.matchAll(/^#{1,2} [^\n]*(?:\n|$)/gm)) {
+    const next = promptSectionHeadings.get(heading[0].trimEnd()) ?? "Other";
+    if (name === "Project Context" && !projectContextEnds.has(next)) {
+      continue;
+    }
     append(heading.index);
     start = heading.index;
-    name = promptSectionHeadings.get(heading[0].trimEnd()) ?? "Other";
-    // Injected files own the rest of the stable prefix, including their headings.
-    if (name === "Project Context") {
-      break;
-    }
+    name = next;
   }
   append(prompt.length);
   return sections;

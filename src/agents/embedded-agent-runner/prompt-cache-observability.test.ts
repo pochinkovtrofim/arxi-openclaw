@@ -797,6 +797,7 @@ describe("prompt cache observability", () => {
     ["# Project Context\n## MEMORY.md\n## Skills", "Project Context", "prefix"],
     ["## Runtime", "Runtime", "suffix"],
     ["## Temporal Context", "Temporal Context", "suffix"],
+    ["# Project Context\n## MEMORY.md\nfiles\n## Temporal Context", "Temporal Context", "suffix"],
     ["## private-plugin-heading", "Other", "suffix"],
   ] as const)("attributes changed %s content in the %s section (%s)", (heading, section, side) => {
     const sessionId = scopedKey("changed-prompt-section");

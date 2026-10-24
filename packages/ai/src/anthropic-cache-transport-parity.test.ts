@@ -62,7 +62,6 @@ const routes: Array<{
   model?: Partial<Model<"anthropic-messages">>;
   cacheRetention: "short" | "long" | "none";
   withTools?: boolean;
-  toolCache?: boolean;
   longCache?: boolean;
 }> = [
   { name: "direct short", cacheRetention: "short" },
@@ -76,14 +75,12 @@ const routes: Array<{
     name: "Fireworks",
     model: { provider: "fireworks" },
     cacheRetention: "long",
-    toolCache: false,
     longCache: false,
   },
   {
     name: "incompatible proxy",
     model: { baseUrl: "https://proxy.example/v1", compat: { supportsCacheControlOnTools: false } },
     cacheRetention: "long",
-    toolCache: false,
   },
 ];
 
@@ -179,8 +176,9 @@ describe("Anthropic cache checkpoint transport parity", () => {
             cacheRetention === "none"
               ? []
               : [
-                  ...(withTools && route.toolCache !== false ? ["tools[1]"] : []),
+                  // The marked system suffix covers the tools.
                   `system[${route.apiKey ? 2 : 0}]`,
+                  `system[${route.apiKey ? 3 : 1}]`,
                   "messages[0].content[0]",
                   ...(turn > 0 ? [`messages[${turn * 2}].content[0]`] : []),
                 ];

@@ -228,7 +228,12 @@ export function applyAnthropicRequestCacheControl(
   if (!cacheControl) {
     return;
   }
-  if (supportsCacheControlOnTools && Array.isArray(payload.tools)) {
+  // A marked system suffix already caches the tools; keep that slot for history.
+  if (
+    supportsCacheControlOnTools &&
+    Array.isArray(payload.tools) &&
+    countAnthropicCacheControlMarkers(payload.system) < 2
+  ) {
     const lastTool = payload.tools.at(-1);
     if (isRecord(lastTool)) {
       lastTool.cache_control = cacheControl;
@@ -254,6 +259,7 @@ function normalizeAnthropicSystemBlocks(
   }
 
   const normalizedBlocks: Array<unknown> = [];
+  let sessionSuffix: Record<string, unknown> | undefined;
   for (const block of system) {
     if (!block || typeof block !== "object") {
       normalizedBlocks.push(block);
@@ -291,11 +297,16 @@ function normalizeAnthropicSystemBlocks(
       });
     }
     if (split.dynamicSuffix) {
-      normalizedBlocks.push({
-        ...rest,
-        text: split.dynamicSuffix,
-      });
+      const suffix = { ...rest, text: split.dynamicSuffix };
+      normalizedBlocks.push(suffix);
+      sessionSuffix = split.stablePrefix ? suffix : undefined;
     }
+  }
+
+  // The suffix holds per-session context that stays fixed across turns; caching
+  // it lets a session's next run reuse it whatever history comes after.
+  if (sessionSuffix && normalizedBlocks.at(-1) === sessionSuffix) {
+    sessionSuffix.cache_control = cacheControl;
   }
 
   if (cacheControl) {

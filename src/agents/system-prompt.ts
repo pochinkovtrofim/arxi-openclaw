@@ -619,7 +619,6 @@ export function buildAgentSystemPrompt(params: {
       nativeCommandGuidanceLines,
       providerSectionOverrides,
       providerStablePrefix,
-      reasoningHint,
       reasoningLevel,
       userTimezone,
       sandboxInfo: params.sandboxInfo,
@@ -639,7 +638,6 @@ export function buildAgentSystemPrompt(params: {
       memoryCitationsMode: params.memoryCitationsMode,
       memorySection,
       acpEnabled,
-      stableContextFiles: contextFiles,
     }),
   );
   const stablePrefix = cacheStablePromptPrefix(stablePrefixCacheKey, () => {
@@ -817,25 +815,24 @@ export function buildAgentSystemPrompt(params: {
           : "",
       ],
       ...bootstrapSystemPromptSections,
-      "## Workspace Files (injected)",
-      "User-editable; OpenClaw loads below as Project Context.",
-      "",
+      SYSTEM_PROMPT_CACHE_BOUNDARY,
     ];
-
-    if (reasoningHint) {
-      lines.push("## Reasoning Format", reasoningHint, "");
-    }
-
-    lines.push(...buildProjectContextSection(preparedContextFiles));
-
-    lines.push(SYSTEM_PROMPT_CACHE_BOUNDARY);
     return joinPromptLines(lines);
   });
 
-  const lines: PromptLine[] = [stablePrefix];
+  // The agent edits its workspace files, so sessions pinned at different
+  // revisions differ here. Start the suffix with them to keep the instructions
+  // above a prefix those sessions share; the transport caches this suffix too.
+  const lines: PromptLine[] = [
+    stablePrefix,
+    "## Workspace Files (injected)",
+    "User-editable; OpenClaw loads below as Project Context.",
+    reasoningHint && ["## Reasoning Format", reasoningHint],
+    ...buildProjectContextSection(preparedContextFiles),
+  ];
 
-  // Local date and timezone can change between turns. Keep them at the front of
-  // the volatile suffix so rollover is visible without invalidating the stable prefix.
+  // Local date and timezone can change between turns. Keep them below the cache
+  // boundary so rollover is visible without invalidating the stable prefix.
   lines.push(
     ...buildTemporalContextSection({
       userDate,
@@ -844,8 +841,8 @@ export function buildAgentSystemPrompt(params: {
     }),
   );
 
-  // Channel/session-specific guidance lives below the cache boundary so large
-  // stable workspace context can remain a byte-identical prefix across turns.
+  // Channel/session-specific guidance lives below the cache boundary so the
+  // large stable instructions can remain a byte-identical prefix across turns.
   lines.push(
     ...normalizeStringEntries(params.projectMemoryBootstrap),
     acpHarnessSpawnAllowed &&

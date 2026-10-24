@@ -109,7 +109,7 @@ describe("createMantleAnthropicStreamFn", () => {
           text: "Stable workspace",
           cache_control: { type: "ephemeral", ttl: "1h" },
         },
-        { type: "text", text: suffix },
+        { type: "text", text: suffix, cache_control: { type: "ephemeral", ttl: "1h" } },
       ]);
       expect(JSON.stringify(request).match(/"cache_control"/g)?.length).toBeLessThanOrEqual(4);
     }

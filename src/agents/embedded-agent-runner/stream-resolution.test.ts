@@ -193,7 +193,11 @@ describe("resolveEmbeddedAgentStream", () => {
             ]
           : [
               { type: "text", text: "Stable workspace", cache_control: { type: "ephemeral" } },
-              { type: "text", text: "Dynamic suffix" },
+              {
+                type: "text",
+                text: "Dynamic suffix",
+                cache_control: { type: "ephemeral" },
+              },
             ],
       );
       expect(JSON.stringify(request)).not.toContain("OPENCLAW_CACHE_BOUNDARY");
