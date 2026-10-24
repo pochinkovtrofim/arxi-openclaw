@@ -7,7 +7,10 @@ import { selectSessionTranscriptLeafControlledPath } from "./transcript-tree.js"
 type SessionResetBoundaryReason = "new" | "reset" | "idle" | "daily" | "cron-stale";
 
 export type SessionResetBoundaryRequest =
-  | { context: "clear"; reason: Extract<SessionResetBoundaryReason, "new" | "reset"> }
+  | {
+      context: "clear";
+      reason: Extract<SessionResetBoundaryReason, "new" | "reset" | "cron-stale">;
+    }
   | {
       context: "preserve-tail";
       reason: Extract<SessionResetBoundaryReason, "reset" | "idle" | "daily" | "cron-stale">;

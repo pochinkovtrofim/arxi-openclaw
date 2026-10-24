@@ -36,6 +36,7 @@ import {
   resolveCacheKeepWarm,
   resolveCacheRetention,
   resolveRunCacheRetention,
+  resolveRunMessageCacheRetention,
 } from "../prompt-cache-retention.js";
 import {
   type ProviderPromptState,
@@ -610,6 +611,25 @@ export async function prepareEmbeddedAttemptTransport(input: {
     const baseStreamFn = session.agent.streamFn;
     session.agent.streamFn = (model, context, options) => {
       const requestOptions = { ...options, cacheRetention: effectivePromptCacheRetention };
+      return baseStreamFn(model, context, requestOptions);
+    };
+  }
+  const runStartedAtMs = attempt.startedAtMs;
+  const messageCacheRetention = resolveRunMessageCacheRetention({
+    retention: effectivePromptCacheRetention,
+    trigger: attempt.trigger,
+    modelApi: attempt.model.api,
+    earlierMessagesInContext:
+      runStartedAtMs === undefined ||
+      session.messages.some(
+        (message) =>
+          !(typeof message.timestamp === "number" && message.timestamp >= runStartedAtMs),
+      ),
+  });
+  if (messageCacheRetention) {
+    const baseStreamFn = session.agent.streamFn;
+    session.agent.streamFn = (model, context, options) => {
+      const requestOptions = { ...options, messageCacheRetention };
       return baseStreamFn(model, context, requestOptions);
     };
   }

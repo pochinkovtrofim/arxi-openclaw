@@ -166,6 +166,8 @@ type CronSessionParams = {
   nowMs: number;
   agentId: string;
   forceNew?: boolean;
+  /** Start this run on a cleared model context while keeping the session row and transcript. */
+  freshContext?: boolean;
   /**
    * The run executes in a hidden `:run:` row, so the base row's revision names
    * this run's generation for continuation ownership and must be minted per run.
@@ -230,7 +232,10 @@ export function resolveCronSession(
   let sessionId: string;
   let isNewSession: boolean;
   let systemSent: boolean;
-  let resetBoundaryPending: { reason: "cron-stale"; sessionFile: string } | undefined;
+  // Without `context`, the boundary keeps the recent tail.
+  let resetBoundaryPending:
+    | { reason: "cron-stale"; context?: "clear"; sessionFile: string }
+    | undefined;
 
   if (!params.forceNew && entry?.sessionId) {
     // Cron/webhook sessions follow the direct reset policy so scheduled turns
@@ -249,7 +254,7 @@ export function resolveCronSession(
           policy: resetPolicy,
         });
 
-    if (freshness.fresh) {
+    if (freshness.fresh && !params.freshContext) {
       sessionId = entry.sessionId;
       isNewSession = false;
       systemSent = entry.systemSent ?? false;
@@ -258,7 +263,11 @@ export function resolveCronSession(
       isNewSession = true;
       systemSent = false;
       if (!sourceSessionDiffers) {
-        resetBoundaryPending = { reason: "cron-stale", sessionFile: params.sessionKey };
+        resetBoundaryPending = {
+          reason: "cron-stale",
+          ...(params.freshContext ? { context: "clear" as const } : {}),
+          sessionFile: params.sessionKey,
+        };
       }
     }
   } else {

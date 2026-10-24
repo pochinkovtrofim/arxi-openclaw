@@ -223,6 +223,7 @@ export function applyAnthropicRequestCacheControl(
   cacheControl: AnthropicEphemeralCacheControl | undefined,
   supportsCacheControlOnTools: boolean,
   cacheBreakpointOptOutMessageIndexes: ReadonlySet<number> = new Set(),
+  messageCacheControl: AnthropicEphemeralCacheControl = cacheControl ?? { type: "ephemeral" },
 ): void {
   if (!cacheControl) {
     return;
@@ -238,7 +239,7 @@ export function applyAnthropicRequestCacheControl(
     countAnthropicCacheControlMarkers(payload.tools);
   applyAnthropicCacheControlToMessages(
     payload.messages,
-    cacheControl,
+    messageCacheControl,
     ANTHROPIC_CACHE_CONTROL_LIMIT - usedMarkers,
     cacheBreakpointOptOutMessageIndexes,
   );

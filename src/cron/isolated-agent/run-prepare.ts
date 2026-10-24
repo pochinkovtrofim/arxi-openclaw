@@ -24,7 +24,7 @@ import { resolveCronSkillsSnapshot } from "../../skills/runtime/cron-snapshot.js
 import { resolveCronJobEffectiveAgentId } from "../agent-id.js";
 import { createCronRunDiagnosticsFromError } from "../run-diagnostics.js";
 import { resolveCronScheduledToolPolicy } from "../scheduled-tool-policy.js";
-import { isDetachedCronSessionTarget } from "../session-target.js";
+import { isDetachedCronSessionTarget, isFreshContextCronSessionTarget } from "../session-target.js";
 import { resolveCronRunToolsAllow } from "../tools-allow.js";
 import {
   resolveCronModelSelection,
@@ -188,6 +188,10 @@ export async function prepareCronRunContext(params: {
       agentId,
       nowMs: now,
       forceNew: usesDetachedRunSession,
+      freshContext: isFreshContextCronSessionTarget(
+        runtimeCfg.cron?.freshContextSessions,
+        input.job.sessionTarget,
+      ),
       exactRunSession: usesExactRunSession,
       hookExternalContentSource,
     });

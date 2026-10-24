@@ -116,6 +116,8 @@ export const AUTOMATION_FIELD_HELP: Record<string, string> = {
     "Allows automation webhooks to RFC 2544 benchmark-range IPs (198.18.0.0/15). Use only with trusted fake-IP proxy environments.",
   "cron.webhookSsrfPolicy.allowIpv6UniqueLocalRange":
     "Allows automation webhooks to IPv6 Unique Local Addresses (fc00::/7). Use only with trusted fake-IP proxy environments.",
+  "cron.freshContextSessions":
+    "Names of `session:<name>` automation targets whose every run starts on a cleared model context. The session keeps its key, settings and stored transcript, but the model sees only the current run, so a frequent job neither grows its prompt nor needs compaction. Default: none.",
   "cron.sessionRetention":
     "Controls how long completed automation run sessions are kept before pruning (`24h`, `7d`, `1h30m`, or `false` to disable pruning; a zero duration such as `0h` also disables; default: `24h`). Use shorter retention to reduce storage growth on high-frequency schedules.",
   transcripts:

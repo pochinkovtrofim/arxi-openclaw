@@ -83,6 +83,28 @@ export function resolveRunCacheRetention(params: {
     : "short";
 }
 
+/**
+ * History checkpoints of a scheduled Anthropic run whose context holds no
+ * earlier message serve only the run's own calls, which follow within minutes:
+ * a fresh-context session (`cron.freshContextSessions`) clears them before its
+ * next run, so they take the five-minute cache while the tool and system
+ * checkpoints keep one hour for that run. The first run of a new persistent
+ * session pays one history rewrite at its next run.
+ */
+export function resolveRunMessageCacheRetention(params: {
+  retention?: CacheRetention;
+  trigger?: string;
+  modelApi?: string;
+  earlierMessagesInContext: boolean;
+}): "short" | undefined {
+  return params.retention === "long" &&
+    params.trigger === "cron" &&
+    params.modelApi === "anthropic-messages" &&
+    !params.earlierMessagesInContext
+    ? "short"
+    : undefined;
+}
+
 export function parseCacheRetention(value: unknown): CacheRetention | undefined {
   return value === "none" || value === "short" || value === "long" ? value : undefined;
 }

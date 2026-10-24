@@ -1,6 +1,7 @@
 // Session target tests cover target resolution for cron-created sessions.
 import { describe, expect, it } from "vitest";
 import {
+  isFreshContextCronSessionTarget,
   resolveCronCurrentSessionTarget,
   resolveCronDeliverySessionKey,
   resolveCronNotificationSessionKey,
@@ -8,6 +9,16 @@ import {
 } from "./session-target.js";
 
 describe("cron session target helpers", () => {
+  it("matches configured fresh-context names against named session targets only", () => {
+    const names = ["arxi-proactive-steward"];
+    expect(isFreshContextCronSessionTarget(names, "session: arxi-proactive-steward ")).toBe(true);
+    expect(isFreshContextCronSessionTarget(names, "session:arxi-agenda")).toBe(false);
+    expect(isFreshContextCronSessionTarget(names, "isolated")).toBe(false);
+    expect(isFreshContextCronSessionTarget(undefined, "session:arxi-proactive-steward")).toBe(
+      false,
+    );
+  });
+
   it("extracts and trims persistent session targets", () => {
     expect(resolveCronSessionTargetSessionKey("session: agent:main:telegram:direct:123 ")).toBe(
       "agent:main:telegram:direct:123",

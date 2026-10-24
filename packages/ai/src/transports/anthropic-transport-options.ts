@@ -103,6 +103,7 @@ export function resolveAnthropicTransportOptions(
     anthropicServerCompaction: options?.anthropicServerCompaction,
     anthropicCompactThreshold: options?.anthropicCompactThreshold,
     cacheTtlPruning: options?.cacheTtlPruning,
+    messageCacheRetention: options?.messageCacheRetention,
     ...(options?.authProfileId ? { authProfileId: options.authProfileId } : {}),
   } satisfies AnthropicTransportOptions);
   resolved.reasoning = applyAnthropicThinkingOptions(model, resolved, options, "transport");
