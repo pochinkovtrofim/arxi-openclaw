@@ -924,6 +924,20 @@ describe("prepareEmbeddedAttemptAgentSession", () => {
     );
   });
 
+  it.each([
+    ["cron", undefined],
+    ["user", "safeguard"],
+  ] as const)("a %s run hands compaction mode %s to the guard", async (trigger, expected) => {
+    const fixture = createInput();
+    fixture.input.attempt = { ...fixture.input.attempt, trigger };
+
+    await prepareEmbeddedAttemptAgentSession(fixture.input);
+
+    expect(hoisted.applyAgentAutoCompactionGuard).toHaveBeenCalledWith(
+      expect.objectContaining({ compactionMode: expected }),
+    );
+  });
+
   it("publishes session ownership before activation can fail", async () => {
     const fixture = createInput({ activationError: new Error("activation failed") });
 

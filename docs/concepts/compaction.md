@@ -26,6 +26,12 @@ Built-in summarization receives text, not image pixels. Omitted images and other
 New configs default `agents.defaults.compaction.mode` to `"safeguard"` (stricter guardrails, summary quality audits). Set `mode: "default"` explicitly to opt out.
 </Note>
 
+In safeguard mode a chat turn compacts in its explicit preflight. A scheduled (cron) run has no
+such preflight, so it compacts inside its own session once context passes the session's window
+minus the reserve, before the prompt or after the run, with the same safeguard summary checks.
+A persistent cron session (`sessionTarget: "session:<name>"`) therefore stays within the
+`contextWindow` selected on it.
+
 With the built-in safeguard quality guard enabled, OpenClaw applies the final
 summary budget before validation. Required headings must remain in the retained
 generated body, while pending asks and exact identifiers must remain in the
