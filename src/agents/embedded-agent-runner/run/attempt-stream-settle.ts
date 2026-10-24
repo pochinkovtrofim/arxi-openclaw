@@ -602,6 +602,7 @@ export async function prepareEmbeddedAttemptTransport(input: {
     conversation:
       attempt.sessionKey === mainSessionKey ||
       parseSessionDeliveryRoute(attempt.sessionKey) !== null,
+    detached: attempt.sessionPersistence === "detached",
     lastCacheTouchAt: input.lastCacheTouchAt,
     now: Date.now(),
   });

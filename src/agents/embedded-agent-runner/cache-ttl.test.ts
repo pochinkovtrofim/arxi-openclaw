@@ -16,7 +16,11 @@ vi.mock("../../plugins/provider-runtime.js", () => ({
   },
 }));
 
-import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "./cache-ttl.js";
+import {
+  isCacheTtlEligibleProvider,
+  readLastAssistantCacheTouch,
+  readLastCacheTtlTimestamp,
+} from "./cache-ttl.js";
 
 describe("isCacheTtlEligibleProvider", () => {
   it("forwards only the normalized identity and bounded resolved route", () => {
@@ -175,6 +179,40 @@ describe("readLastCacheTtlTimestamp", () => {
         provider: "anthropic",
         modelId: "claude-sonnet-4-5",
       }),
+    ).toBeNull();
+  });
+});
+
+describe("readLastAssistantCacheTouch", () => {
+  const reply = (timestamp: number, model: string, cacheRead: number) => ({
+    type: "message",
+    message: {
+      role: "assistant",
+      provider: "anthropic",
+      model,
+      usage: { cacheRead, cacheWrite: 0 },
+      timestamp,
+    },
+  });
+
+  it("dates the last reply of this model that touched the cache", () => {
+    const sessionManager = {
+      getEntries: () => [
+        reply(1_000, "claude-sonnet-5-5", 900),
+        reply(2_000, "claude-sonnet-5-5", 0),
+        reply(3_000, "claude-haiku-5-5", 900),
+        { type: "message", message: { role: "user", timestamp: 4_000 } },
+      ],
+    };
+
+    expect(
+      readLastAssistantCacheTouch(sessionManager, {
+        provider: "Anthropic",
+        modelId: "claude-sonnet-5-5",
+      }),
+    ).toBe(1_000);
+    expect(
+      readLastAssistantCacheTouch(sessionManager, { provider: "openai", modelId: "gpt-5.4" }),
     ).toBeNull();
   });
 });

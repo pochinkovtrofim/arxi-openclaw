@@ -17,6 +17,7 @@ const hoisted = vi.hoisted(() => ({
   invalidateComputerFrameIfMissing: vi.fn(),
   isCacheTtlEligibleProvider: vi.fn(() => false),
   readLastCacheTtlTimestamp: vi.fn(() => null as number | null),
+  readLastAssistantCacheTouch: vi.fn(() => null as number | null),
   readAnthropicCacheKeepWarmTouch: vi.fn(() => undefined as number | undefined),
 }));
 
@@ -39,6 +40,7 @@ vi.mock("../cache-ttl.js", () => ({
   readCacheTtlEntries: () => [],
   isCacheTtlEligibleProvider: hoisted.isCacheTtlEligibleProvider,
   readLastCacheTtlTimestamp: hoisted.readLastCacheTtlTimestamp,
+  readLastAssistantCacheTouch: hoisted.readLastAssistantCacheTouch,
 }));
 
 import { installEmbeddedAttemptContextGuards } from "./attempt-setup.js";
@@ -172,6 +174,35 @@ describe("installEmbeddedAttemptContextGuards", () => {
       "agent:main:main",
       "model-1",
     );
+  });
+
+  it.each([
+    {
+      name: "a cache-ttl entry",
+      pruning: true,
+      transcript: null,
+      keepWarm: undefined,
+      expected: 5,
+    },
+    { name: "the last cached reply", pruning: false, transcript: 7, keepWarm: 6, expected: 7 },
+    { name: "a keep-warm replay", pruning: false, transcript: 7, keepWarm: 8, expected: 8 },
+    { name: "no touch", pruning: false, transcript: null, keepWarm: undefined, expected: null },
+  ])("dates the session's last cache touch from $name", (testCase) => {
+    hoisted.isCacheTtlEligibleProvider.mockReturnValue(true);
+    hoisted.readLastCacheTtlTimestamp.mockReturnValue(5);
+    hoisted.readLastAssistantCacheTouch.mockReturnValue(testCase.transcript);
+    hoisted.readAnthropicCacheKeepWarmTouch.mockReturnValue(testCase.keepWarm);
+    const input = createInput();
+    input.attempt = {
+      ...input.attempt,
+      config: {
+        agents: { defaults: { contextPruning: testCase.pruning ? { mode: "cache-ttl" } : {} } },
+      } as never,
+    } as typeof input.attempt;
+
+    const guards = installEmbeddedAttemptContextGuards(input as never);
+
+    expect(guards.readLastCacheTouchAt()).toBe(testCase.expected);
   });
 
   it("tracks mid-turn requests and restores attempt-local transforms", async () => {

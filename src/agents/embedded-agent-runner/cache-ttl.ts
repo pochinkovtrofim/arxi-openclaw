@@ -11,6 +11,16 @@ import type { ProviderCacheTtlEligibilityContext } from "../../plugins/provider-
 import { isGooglePromptCacheEligible } from "./prompt-cache-retention.js";
 
 type CustomEntryLike = { type?: unknown; customType?: unknown; data?: unknown };
+type MessageEntryLike = {
+  type?: unknown;
+  message?: {
+    role?: unknown;
+    provider?: unknown;
+    model?: unknown;
+    usage?: { cacheRead?: unknown; cacheWrite?: unknown };
+    timestamp?: unknown;
+  };
+};
 
 const CACHE_TTL_CUSTOM_TYPE = "openclaw.cache-ttl";
 
@@ -86,6 +96,42 @@ export function readLastCacheTtlTimestamp(
       if (ts && Number.isFinite(ts)) {
         return ts;
       }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** When the session's last assistant reply for this model read or wrote the prompt cache. */
+export function readLastAssistantCacheTouch(
+  sessionManager: unknown,
+  context: Required<CacheTtlContext>,
+): number | null {
+  try {
+    const sm = sessionManager as { getEntries?: () => MessageEntryLike[] };
+    const entries = sm?.getEntries ? sm.getEntries() : [];
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const message = entries[i]?.type === "message" ? entries[i]?.message : undefined;
+      if (
+        message?.role !== "assistant" ||
+        normalizeOptionalLowercaseString(message.provider as string | undefined) !==
+          normalizeOptionalLowercaseString(context.provider) ||
+        normalizeOptionalLowercaseString(message.model as string | undefined) !==
+          normalizeOptionalLowercaseString(context.modelId)
+      ) {
+        continue;
+      }
+      const { cacheRead, cacheWrite } = message.usage ?? {};
+      if (
+        !(typeof cacheRead === "number" && cacheRead > 0) &&
+        !(typeof cacheWrite === "number" && cacheWrite > 0)
+      ) {
+        continue;
+      }
+      return typeof message.timestamp === "number" && Number.isFinite(message.timestamp)
+        ? message.timestamp
+        : null;
     }
     return null;
   } catch {

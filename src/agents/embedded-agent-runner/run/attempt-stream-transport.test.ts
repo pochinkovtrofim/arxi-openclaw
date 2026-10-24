@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { configureAiTransportHost, getAiTransportHost } from "@openclaw/ai";
 import { isAnthropicOAuthApiKey } from "@openclaw/ai/internal/anthropic";
+import { readAnthropicCacheKeepWarmTouch } from "@openclaw/ai/transports";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -455,6 +456,48 @@ describe("prepareEmbeddedAttemptTransport", () => {
     const payload = JSON.parse(payloads[0] ?? "{}") as { system?: unknown[] };
     expect(payload.system).toContainEqual(
       expect.objectContaining({ cache_control: { type: "ephemeral", ...(ttl ? { ttl } : {}) } }),
+    );
+  });
+
+  it.each([
+    { name: "a chat turn", detached: false, ttl: "1h" },
+    { name: "a detached review of it", detached: true, ttl: undefined },
+  ] as const)("keeps $name warm only with the one-hour cache", async ({ detached, ttl }) => {
+    const previousHost = getAiTransportHost();
+    const payloads: string[] = [];
+    configureAiTransportHost({
+      ...previousHost,
+      buildModelFetch: () => async (_input, init) => {
+        payloads.push(String(init?.body));
+        return createAnthropicResponse(anthropicEvents);
+      },
+    });
+    const { input, session } = createTransportFixture({
+      pruning: false,
+      apiKey: "sk-ant-api-test",
+    });
+    const sessionKey = `agent:main:keep-warm-${String(detached)}`;
+    input.attempt.model = anthropicModel;
+    input.attempt.trigger = "user";
+    input.attempt.sessionKey = sessionKey;
+    input.attempt.sessionPersistence = detached ? "detached" : "durable";
+    input.attempt.config.agents!.defaults!.promptCacheKeepWarm = "12h";
+    input.attempt.runtimePlan!.transport.resolveExtraParams = () => ({ cacheRetention: "long" });
+
+    try {
+      await prepareEmbeddedAttemptTransport(input);
+      const stream = await session.agent.streamFn(anthropicModel, anthropicContext, {});
+      await stream.result();
+    } finally {
+      configureAiTransportHost(previousHost);
+    }
+
+    const payload = JSON.parse(payloads[0] ?? "{}") as { system?: unknown[] };
+    expect(payload.system).toContainEqual(
+      expect.objectContaining({ cache_control: { type: "ephemeral", ...(ttl ? { ttl } : {}) } }),
+    );
+    expect(readAnthropicCacheKeepWarmTouch(sessionKey, anthropicModel.id) !== undefined).toBe(
+      !detached,
     );
   });
 
