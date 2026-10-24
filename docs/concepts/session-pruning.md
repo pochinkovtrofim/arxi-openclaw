@@ -106,13 +106,14 @@ Only `toolResult` messages are eligible; normal conversation text is left alone.
 A scheduled job that keeps a persistent session (`sessionTarget: "session:<name>"`) re-reads
 its whole history on every run, and most of that history is tool output from earlier runs.
 Set `agents.defaults.contextPruning.earlierRuns` to `"cron"` to send each of those results as
-`[Tool result from an earlier run omitted; call the tool again if you need it]`.
+`[Tool result from an earlier run omitted. That call already ran; repeat a read if you need its data now]`.
 
 - Only cron runs are projected. Chat turns, heartbeats and other triggers see full results.
-- The current run keeps its own results for its whole tool loop.
+- The current run keeps its own results, including on retry and finalization attempts.
 - Tool calls, prompts and replies from earlier runs stay, so the job still knows what it did.
 - Earlier runs render the same bytes on every request, so the prompt cache holds. Each run
-  rewrites only the previous run's results once, as placeholders.
+  rewrites only the previous run's results once, as placeholders. Preflight compaction sizes
+  the projected request.
 - The transcript on disk keeps the full results, so compaction summaries and history viewers
   still see them.
 

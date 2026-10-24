@@ -15,6 +15,7 @@ import {
   createToolResultPromptProjectionState,
 } from "../session-prompt-state.js";
 import { prepareEmbeddedSkills } from "../skill-runtime.js";
+import { EARLIER_RUN_TOOL_RESULT_PLACEHOLDER } from "../tool-result-truncation.js";
 import { buildEmbeddedForegroundPromptContext } from "./agent-end-context.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
@@ -233,6 +234,7 @@ describe("prepareEmbeddedAttemptSetup", () => {
           provider: "anthropic",
           sessionId,
           sessionKey: "agent:main:session:steward",
+          startedAtMs: 3,
           trigger,
         } as unknown as EmbeddedRunAttemptParams,
         computerContextEpoch: { value: 0 },
@@ -284,9 +286,7 @@ describe("prepareEmbeddedAttemptSetup", () => {
         expect((projected?.[1] as { content?: unknown }).content).toEqual([
           {
             type: "text",
-            text: replaced
-              ? "[Tool result from an earlier run omitted; call the tool again if you need it]"
-              : "earlier inbox",
+            text: replaced ? EARLIER_RUN_TOOL_RESULT_PLACEHOLDER : "earlier inbox",
           },
         ]);
         expect((projected?.[5] as { content?: unknown }).content).toEqual([
@@ -296,6 +296,7 @@ describe("prepareEmbeddedAttemptSetup", () => {
         guards.remove();
         clearEmbeddedSessionPromptStates([sessionId]);
       }
+      expect(agent.transformContext).toBeUndefined();
     },
   );
 

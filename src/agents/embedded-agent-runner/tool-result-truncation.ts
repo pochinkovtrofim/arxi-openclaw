@@ -289,29 +289,37 @@ export function pruneExpiredCacheTtlToolResults(params: {
 }
 
 export const EARLIER_RUN_TOOL_RESULT_PLACEHOLDER =
-  "[Tool result from an earlier run omitted; call the tool again if you need it]";
+  "[Tool result from an earlier run omitted. That call already ran; repeat a read if you need its data now]";
+
+/** The run start before which a cron run sends tool results as a placeholder, when configured. */
+export function resolveEarlierRunToolResultBoundary(params: {
+  contextPruning?: AgentContextPruningConfig;
+  trigger?: string;
+  startedAtMs?: number;
+}): number | undefined {
+  return params.contextPruning?.earlierRuns === "cron" && params.trigger === "cron"
+    ? params.startedAtMs
+    : undefined;
+}
 
 /**
- * Projects tool results that precede the current prompt as one fixed placeholder,
- * without mutating the transcript. Earlier runs render the same bytes on every
- * request, so the cached prefix holds; a run keeps its own results until the next
- * run starts. Returns the projected messages and the keys of the replaced results.
+ * Projects tool results recorded before this run started as one fixed placeholder,
+ * without mutating the transcript. The boundary is the run, not the attempt, so a
+ * retry or finalization attempt keeps the run's own results. Earlier runs render
+ * the same bytes on every request, so the cached prefix holds. Returns the
+ * projected messages and the keys of the replaced results.
  */
 export function pruneEarlierRunToolResults(
   messages: AgentMessage[],
-  prePromptMessageCount: number,
+  runStartedAtMs: number,
 ): { messages: AgentMessage[]; pruned: Set<string> } {
-  // A stale count after an in-run compaction must not reach the current prompt.
-  const lastUser = messages.findLastIndex((message) => message.role === "user");
-  const boundary = Math.min(prePromptMessageCount, Math.max(lastUser, 0));
   const pruned = new Set<string>();
   let next: AgentMessage[] | undefined;
-  for (let index = 0; index < boundary; index++) {
-    const message = messages[index];
-    if (message?.role !== "toolResult") {
+  for (const [index, message] of messages.entries()) {
+    if (message.role !== "toolResult" || !(message.timestamp < runStartedAtMs)) {
       continue;
     }
-    pruned.add(`${index}:${message.toolCallId}:${message.timestamp}`);
+    pruned.add(`${message.toolCallId}:${message.timestamp}`);
     (next ??= messages.slice())[index] = {
       ...message,
       content: [{ type: "text", text: EARLIER_RUN_TOOL_RESULT_PLACEHOLDER }],

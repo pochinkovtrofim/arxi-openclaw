@@ -39,7 +39,7 @@ function answer(text: string, timestamp: number): AgentMessage {
   });
 }
 
-// Two earlier runs, then the current prompt with one tool round of its own.
+// Two earlier runs, then the current run (started at 9) with one tool round of its own.
 const transcript = [
   user("check 1", 1),
   toolCall("a", 2),
@@ -53,21 +53,17 @@ const transcript = [
   toolCall("c", 10),
   toolResult("c", "third inbox", 11),
 ];
-const currentPromptIndex = 8;
+const runStartedAt = 9;
+const placeholder = [{ type: "text", text: EARLIER_RUN_TOOL_RESULT_PLACEHOLDER }];
 
 describe("pruneEarlierRunToolResults", () => {
-  it("replaces only tool results that precede the current prompt", () => {
-    const { messages, pruned } = pruneEarlierRunToolResults(transcript, currentPromptIndex);
+  it("replaces only tool results recorded before the run started", () => {
+    const { messages, pruned } = pruneEarlierRunToolResults(transcript, runStartedAt);
 
     expect(messages).toHaveLength(transcript.length);
-    expect([...pruned]).toEqual(["2:a:3", "6:b:7"]);
-    for (const index of [2, 6]) {
-      expect(messages[index]).toMatchObject({
-        role: "toolResult",
-        toolCallId: transcript[index]?.role === "toolResult" ? transcript[index].toolCallId : "",
-        content: [{ type: "text", text: EARLIER_RUN_TOOL_RESULT_PLACEHOLDER }],
-      });
-    }
+    expect([...pruned]).toEqual(["a:3", "b:7"]);
+    expect(messages[2]).toMatchObject({ role: "toolResult", toolCallId: "a", content: placeholder });
+    expect(messages[6]).toMatchObject({ role: "toolResult", toolCallId: "b", content: placeholder });
     // Calls, prompts, answers and the current run's results stay as they were.
     for (const index of [0, 1, 3, 4, 5, 7, 8, 9, 10]) {
       expect(messages[index]).toBe(transcript[index]);
@@ -76,24 +72,23 @@ describe("pruneEarlierRunToolResults", () => {
   });
 
   it("renders earlier runs identically on every request of a run", () => {
-    const first = pruneEarlierRunToolResults(transcript.slice(0, 10), currentPromptIndex);
-    const second = pruneEarlierRunToolResults(transcript, currentPromptIndex);
+    const first = pruneEarlierRunToolResults(transcript.slice(0, 10), runStartedAt);
+    const second = pruneEarlierRunToolResults(transcript, runStartedAt);
 
     expect(JSON.stringify(second.messages.slice(0, 10))).toBe(JSON.stringify(first.messages));
   });
 
-  it("never reaches past the last prompt when the count is stale", () => {
-    const { messages } = pruneEarlierRunToolResults(transcript, transcript.length);
+  it("keeps the run's own results on a retry attempt after a new prompt", () => {
+    const retry = [...transcript, user("Continue from where you stopped.", 12)];
+    const { messages } = pruneEarlierRunToolResults(retry, runStartedAt);
 
-    expect(messages[10]).toBe(transcript[10]);
-    expect(messages[6]).toMatchObject({
-      content: [{ type: "text", text: EARLIER_RUN_TOOL_RESULT_PLACEHOLDER }],
-    });
+    expect(messages[10]).toBe(retry[10]);
+    expect(messages[6]).toMatchObject({ content: placeholder });
   });
 
   it("returns the same array when there is nothing earlier to replace", () => {
     const firstRun = transcript.slice(0, 3);
 
-    expect(pruneEarlierRunToolResults(firstRun, 0).messages).toBe(firstRun);
+    expect(pruneEarlierRunToolResults(firstRun, 1).messages).toBe(firstRun);
   });
 });

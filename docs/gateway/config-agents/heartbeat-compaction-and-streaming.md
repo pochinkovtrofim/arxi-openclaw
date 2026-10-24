@@ -191,7 +191,7 @@ Notes:
 </Accordion>
 
 `earlierRuns: "cron"` works independently of `mode`. In a scheduled (cron) run, every tool result
-recorded before the run's prompt is sent as `[Tool result from an earlier run omitted; call the tool again if you need it]`.
+recorded before the run started is sent as `[Tool result from an earlier run omitted. That call already ran; repeat a read if you need its data now]`.
 Calls, prompts and replies stay. Other runs, including chat turns in the same session, are unaffected.
 
 See [Session Pruning](/concepts/session-pruning) for behavior details.
