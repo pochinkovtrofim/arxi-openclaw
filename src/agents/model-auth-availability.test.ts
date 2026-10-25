@@ -557,6 +557,25 @@ describe("createModelAuthAvailabilityResolver", () => {
     });
   });
 
+  it("treats an expired Anthropic OAuth login with a refresh token as runnable", () => {
+    const resolver = createModelAuthAvailabilityResolver({
+      cfg: {} as OpenClawConfig,
+      authStore: authStore({
+        "anthropic:default": {
+          type: "oauth",
+          provider: "anthropic",
+          access: "expired-access",
+          refresh: "stored-refresh",
+          expires: Date.now() - 60_000,
+        },
+      }),
+      env: {},
+      routeResolverFactory: routeResolverFactory(null),
+    });
+
+    expect(resolver.resolveProviderAuthAvailability("anthropic")).toBe(true);
+  });
+
   it("does not grant refresh authority to an unsupported external CLI id", () => {
     const resolver = createModelAuthAvailabilityResolver({
       cfg: {} as OpenClawConfig,
