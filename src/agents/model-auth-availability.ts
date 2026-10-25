@@ -104,6 +104,9 @@ export type {
 } from "./model-auth-availability.types.js";
 
 const OPENAI_PROVIDER_ID = "openai";
+// Providers whose stored OAuth refresh token the runtime redeems itself
+// (src/llm/utils/oauth), so an expired access token is still runnable.
+const RUNTIME_OAUTH_REFRESH_PROVIDER_IDS = new Set([OPENAI_PROVIDER_ID, "anthropic"]);
 const OPENAI_CODEX_RESPONSES_API = "openai-chatgpt-responses";
 const EXTERNAL_CLI_REFRESH_PROVIDER_IDS = new Set(
   listExternalCliSyncProviderIds().map(normalizeProviderIdForAuth),
@@ -428,7 +431,8 @@ export function createModelAuthAvailabilityResolver(
       env,
       now,
       canRefreshOAuth:
-        provider === OPENAI_PROVIDER_ID || externalCliRefreshProfileIds.has(profileId),
+        RUNTIME_OAUTH_REFRESH_PROVIDER_IDS.has(provider) ||
+        externalCliRefreshProfileIds.has(profileId),
     });
   };
   const profileInCooldown = (profileId: string, target: AuthTarget) => {
