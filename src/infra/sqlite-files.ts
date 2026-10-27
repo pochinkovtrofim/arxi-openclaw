@@ -55,6 +55,26 @@ type CopiedSqliteSidecar = {
   sourcePath: string;
 };
 
+/** Flushes committed database pages to stable storage, including WAL frames that NORMAL sync leaves unflushed. */
+export async function syncSqliteDatabaseFiles(pathname: string): Promise<void> {
+  for (const filePath of resolveSqliteDatabaseFilePaths(pathname)) {
+    let handle: fs.promises.FileHandle;
+    try {
+      handle = await fs.promises.open(filePath, "r");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  }
+}
+
 /** Resolves the main database and all possible journal-mode sidecar paths. */
 export function resolveSqliteDatabaseFilePaths(pathname: string): string[] {
   return SQLITE_DATABASE_FILE_SUFFIXES.map((suffix) => `${pathname}${suffix}`);

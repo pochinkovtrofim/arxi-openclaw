@@ -1,9 +1,12 @@
+import { syncSqliteDatabaseFiles } from "../../infra/sqlite-files.js";
+import { authProfilesLog } from "./constants.js";
 import { isExactOAuthCredential } from "./oauth-refresh-fence.js";
 import { createFailedOAuthRefreshFence } from "./oauth-refresh-marker.js";
 import type { beginOAuthRefreshObservation } from "./oauth-refresh-observation.js";
 import type { OAuthRefreshPeerClaim } from "./oauth-refresh-peers.js";
 import { hasMatchingOAuthIdentity, isSafeOAuthPostClaimSettlement } from "./oauth-shared.js";
 import type { PersonalAuthProfileStore } from "./personal-store.js";
+import { resolveAuthProfileDatabasePath } from "./sqlite.js";
 import {
   loadAuthProfileStoreWithoutExternalProfiles,
   updateAuthProfileStoreWithLock,
@@ -117,6 +120,15 @@ export async function settleOAuthRefreshClaim(params: {
       return false;
     },
   });
+  if (persisted) {
+    // The provider already retired the previous refresh token. If the host kills
+    // this VM before the WAL reaches its disk, the owner would have to sign in again.
+    await syncSqliteDatabaseFiles(
+      params.personalStore?.databasePath ?? resolveAuthProfileDatabasePath(params.agentDir ?? ""),
+    ).catch((error: unknown) => {
+      authProfilesLog.warn("refreshed OAuth credential was not flushed to disk", { error });
+    });
+  }
   return result === null || !credential ? null : { credential, persisted };
 }
 
