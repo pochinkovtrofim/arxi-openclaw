@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import * as sqliteFiles from "../../infra/sqlite-files.js";
 import { resetFileLockStateForTest } from "../../plugin-sdk/file-lock.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { getOAuthProviderRuntimeMocks } from "./oauth-common-mocks.test-support.js";
@@ -44,7 +43,10 @@ it.each(["flushed", "flush fails"] as const)(
     await withOpenClawTestState(
       { scenario: "minimal", label: "oauth-refresh-durability" },
       async (state) => {
-        const { resolveApiKeyForProfile } = await import("./oauth.js");
+        const [sqliteFiles, { resolveApiKeyForProfile }] = await Promise.all([
+          import("../../infra/sqlite-files.js"),
+          import("./oauth.js"),
+        ]);
         const agentDir = state.agentDir();
         saveAuthProfileStore(createExpiredOauthStore({ profileId, provider }), agentDir);
         const replacement = {
