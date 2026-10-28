@@ -23,6 +23,7 @@ import {
 } from "./openclaw-database-preflight.js";
 import { clearOpenClawAgentIntegrityVerification } from "./openclaw-quarantine-store.js";
 import { closeOpenClawStateDatabaseForTest } from "./openclaw-state-db.js";
+import { resolveOpenClawStateSqlitePath } from "./openclaw-state-db.paths.js";
 
 const tempDirs = useAutoCleanupTempDirTracker((cleanup) => {
   afterEach(() => {
@@ -417,4 +418,16 @@ it("does not let prepared compatibility bypass cancellation or survive startup r
       expect.objectContaining({ schemaInspectionCount: fleet.paths.length }),
     );
   });
+});
+
+it("reads the state schema in place for a caller holding physical custody", async () => {
+  const { env } = createFleet();
+  const statePath = fs.realpathSync.native(resolveOpenClawStateSqlitePath(env));
+  const copy = vi.spyOn(snapshots, "prepareSqliteReadOnlyLocation");
+  const copied = await preflightOpenClawDatabaseSchemas({ env });
+  expect(copy.mock.calls.some(([pathname]) => pathname === statePath)).toBe(true);
+  copy.mockClear();
+  const inPlace = await preflightOpenClawDatabaseSchemas({ env, readStateInPlace: true });
+  expect(copy.mock.calls.some(([pathname]) => pathname === statePath)).toBe(false);
+  expect(inPlace).toEqual(copied);
 });
