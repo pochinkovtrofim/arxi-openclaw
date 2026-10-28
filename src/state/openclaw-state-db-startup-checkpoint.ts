@@ -13,6 +13,7 @@ import {
 } from "../infra/sqlite-transaction.js";
 import { readSqliteUserVersion } from "../infra/sqlite-user-version.js";
 import { configureSqlitePreSchemaPragmas } from "../infra/sqlite-wal.js";
+import { inspectDatabasePathIdentitySync } from "../infra/sqlite-worker-identity.js";
 import { withStateDatabaseSchemaMaintenance } from "../infra/state-database-maintenance.js";
 import {
   OPENCLAW_SQLITE_BUSY_TIMEOUT_MS,
@@ -22,6 +23,7 @@ import {
   prepareStateDatabaseInitialization,
   type StateDatabaseInitialization,
 } from "./openclaw-state-db-initialization.js";
+import { recordOpenClawStateStartupIntegrityProof } from "./openclaw-state-db-integrity-admission.js";
 import { ensureOpenClawStatePermissions } from "./openclaw-state-db-permissions.js";
 import { withExistingOpenClawStateDatabaseReadOnly } from "./openclaw-state-db-readonly.js";
 import { ensureColumn, tableHasColumn } from "./openclaw-state-db-schema-helpers.js";
@@ -128,6 +130,15 @@ function ensureStartupMigrationCheckpointSchema(
   );
 }
 
+function readCheckedSchema(
+  db: DatabaseSync,
+): { schemaVersion: number; userVersion: number } | undefined {
+  const schemaVersion = readSqliteSchemaCookie(db);
+  return typeof schemaVersion === "number"
+    ? { schemaVersion, userVersion: readSqliteUserVersion(db) }
+    : undefined;
+}
+
 function hasStartupMigrationCheckpointSchema(db: DatabaseSync): boolean {
   const objects = db // sqlite-allow-raw -- Checkpoint open admission distinguishes row access from additive schema repair.
     .prepare(`SELECT type, name FROM sqlite_schema WHERE name IN (
@@ -173,9 +184,11 @@ export function withOpenClawStateStartupCheckpointConnection<T>(
       quarantineOrphanedSqliteSidecars(pathname);
       ensureOpenClawStatePermissions(pathname, env, { createDirectory: true });
     }
+    const openingIdentity = existing ? inspectDatabasePathIdentitySync(pathname) : undefined;
     const db = openNodeSqliteDatabase(existing ? resolveExistingSqliteFileUri(pathname) : pathname);
     let ownershipAdmitted = false;
     let result: { value: T } | undefined;
+    let checkedSchema: { schemaVersion: number; userVersion: number } | undefined;
     try {
       setSqliteBusyTimeout(db, OPENCLAW_SQLITE_BUSY_TIMEOUT_MS);
       assertOpenClawStateWriteAllowed({ database: db, databasePath: pathname, env });
@@ -206,6 +219,7 @@ export function withOpenClawStateStartupCheckpointConnection<T>(
         if (schemaCookie !== undefined && readSqliteSchemaCookie(db) !== schemaCookie) {
           assertSqliteIntegrity(db, pathname);
         }
+        checkedSchema = readCheckedSchema(db);
         return { value: callback(db) };
       };
       // Native bootstrap can rebuild checkpoint tables as STRICT. Foreign keys
@@ -232,6 +246,20 @@ export function withOpenClawStateStartupCheckpointConnection<T>(
         if (restoreForeignKeys && db.isOpen) {
           db.exec("PRAGMA foreign_keys = ON;");
         }
+      }
+      // The same file, still at the checked schema, needs no second full check.
+      const current = result && checkedSchema ? readCheckedSchema(db) : undefined;
+      const closingIdentity = current ? inspectDatabasePathIdentitySync(pathname) : undefined;
+      if (
+        current &&
+        checkedSchema &&
+        current.schemaVersion === checkedSchema.schemaVersion &&
+        current.userVersion === checkedSchema.userVersion &&
+        openingIdentity?.key.startsWith("file:") &&
+        closingIdentity?.key === openingIdentity.key &&
+        closingIdentity.birthtime === openingIdentity.birthtime
+      ) {
+        recordOpenClawStateStartupIntegrityProof(openingIdentity, checkedSchema);
       }
     } finally {
       db.close();

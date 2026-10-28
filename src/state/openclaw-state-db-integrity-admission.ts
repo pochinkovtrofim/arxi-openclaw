@@ -3,6 +3,7 @@ import { registerNodeSqliteDisposeCallback } from "../infra/kysely-sync-cache-st
 import { assertSqliteIntegrity } from "../infra/sqlite-integrity.js";
 import { stageSqliteTransactionState } from "../infra/sqlite-post-commit.js";
 import { registerSqliteSchemaMutationListener } from "../infra/sqlite-schema-facts.js";
+import type { DatabaseFileIdentity } from "../infra/sqlite-worker-identity.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import type { OpenClawStateIntegrityAdmission } from "./openclaw-state-db-async-lifecycle.js";
 import { readTrackedStateDatabaseIdentity } from "./openclaw-state-db-handle.js";
@@ -12,7 +13,59 @@ const bindings = resolveGlobalSingleton(
   () => new WeakMap<DatabaseSync, { revision: SharedArrayBuffer; release(): void }>(),
 );
 
+const STARTUP_PROOF_MAX_AGE_MS = 30_000;
+// Not reset with the restarting generation: the next generation's first open consumes it.
+const startupProofs = resolveGlobalSingleton(
+  Symbol.for("openclaw.stateStartupIntegrityProofs"),
+  () => new Map<string, { birthtime?: string; metadata: bigint; checkedAtMs: number }>(),
+);
+
 export type OpenClawStateIntegrityPolicy = "verify" | "require-proof";
+type OpenClawStateSchemaMetadata = { schemaVersion: number; userVersion: number };
+
+function schemaMetadata(schema: OpenClawStateSchemaMetadata): bigint {
+  return BigInt.asIntN(
+    64,
+    (BigInt(schema.userVersion >>> 0) << 32n) | BigInt(schema.schemaVersion >>> 0),
+  );
+}
+
+/**
+ * The Gateway lock's full check of this file and schema also covers the runtime's
+ * first open of it moments later, so a wake reads the state database once.
+ */
+export function recordOpenClawStateStartupIntegrityProof(
+  identity: DatabaseFileIdentity,
+  schema: OpenClawStateSchemaMetadata,
+): void {
+  startupProofs.set(identity.key, {
+    birthtime: identity.birthtime,
+    metadata: schemaMetadata(schema),
+    checkedAtMs: Date.now(),
+  });
+}
+
+function takeStartupProof(identity: DatabaseFileIdentity, metadata: bigint): boolean {
+  const proof = startupProofs.get(identity.key);
+  startupProofs.delete(identity.key);
+  return (
+    proof !== undefined &&
+    proof.birthtime === identity.birthtime &&
+    proof.metadata === metadata &&
+    Date.now() - proof.checkedAtMs <= STARTUP_PROOF_MAX_AGE_MS
+  );
+}
+
+function assertSqliteIntegrityUnlessStartupProof(
+  database: DatabaseSync,
+  pathname: string,
+  schema: OpenClawStateSchemaMetadata,
+): void {
+  const identity = readTrackedStateDatabaseIdentity(database);
+  if (!identity?.key.startsWith("file:") || !takeStartupProof(identity, schemaMetadata(schema))) {
+    assertSqliteIntegrity(database, pathname);
+  }
+}
 
 function invalidate(revision: BigInt64Array): void {
   let previous = Atomics.load(revision, 0);
@@ -59,7 +112,7 @@ function bind(database: DatabaseSync, admission: OpenClawStateIntegrityAdmission
 export function assertOpenClawStateRuntimeIntegrity(
   database: DatabaseSync,
   pathname: string,
-  schema: { schemaVersion: number; userVersion: number },
+  schema: OpenClawStateSchemaMetadata,
   admission?: OpenClawStateIntegrityAdmission,
   policy: OpenClawStateIntegrityPolicy = "verify",
 ): (() => void) | undefined {
@@ -74,16 +127,13 @@ export function assertOpenClawStateRuntimeIntegrity(
     if (policy === "require-proof") {
       throw new Error("Shared-state reader requires current worker integrity proof");
     }
-    assertSqliteIntegrity(database, pathname);
+    assertSqliteIntegrityUnlessStartupProof(database, pathname, schema);
     return undefined;
   }
   bind(database, admission);
   const revision = new BigInt64Array(admission.revision);
   const proof = new BigInt64Array(admission.proof);
-  const metadata = BigInt.asIntN(
-    64,
-    (BigInt(schema.userVersion >>> 0) << 32n) | BigInt(schema.schemaVersion >>> 0),
-  );
+  const metadata = schemaMetadata(schema);
   const observed = Atomics.load(proof, 0);
   if (Atomics.load(revision, 0) === admission.epoch && observed !== -1n) {
     if (observed === metadata && Atomics.load(revision, 0) === admission.epoch) {
@@ -94,7 +144,7 @@ export function assertOpenClawStateRuntimeIntegrity(
   if (policy === "require-proof") {
     throw new Error("Shared-state reader requires current worker integrity proof");
   }
-  assertSqliteIntegrity(database, pathname);
+  assertSqliteIntegrityUnlessStartupProof(database, pathname, schema);
   const publish = () => {
     if (Atomics.load(revision, 0) === admission.epoch) {
       Atomics.store(proof, 0, metadata);
