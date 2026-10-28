@@ -132,6 +132,24 @@ describe("Anthropic OAuth token responses", () => {
     expect(pullCount).toBeLessThanOrEqual(2);
     expect(cancel).toHaveBeenCalledOnce();
   });
+
+  it("refreshes at the host facade the Arxi guest names", async () => {
+    vi.stubEnv("ARXI_ANTHROPIC_OAUTH_TOKEN_URL", "http://127.0.0.1:18080/anthropic/oauth/token");
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(
+          '{"access_token":"new-access-token","refresh_token":"arxi-host-login-v1","expires_in":3600}',
+          { status: 200 },
+        ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const refreshed = await refreshThroughAnthropicProvider("arxi-host-login-v1");
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("http://127.0.0.1:18080/anthropic/oauth/token");
+    expect(refreshed.access).toBe("new-access-token");
+    expect(refreshed.refresh).toBe("arxi-host-login-v1");
+  });
 });
 
 describe("Anthropic OAuth callback host", () => {

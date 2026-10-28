@@ -24,6 +24,9 @@ const OAUTH_TOKEN_SSRF_POLICY = {
   allowIpv6UniqueLocalRange: true,
   hostnameAllowlist: ["auth.openai.com"],
 } satisfies SsrFPolicy;
+// Arxi refreshes subscription logins only on the host, which keeps each
+// rotated token; the guest refreshes through the host facade named here.
+const REFRESH_URL_ENV = "ARXI_OPENAI_OAUTH_TOKEN_URL";
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000;
 const OAUTH_TOKEN_RESPONSE_BODY_LIMIT_BYTES = 1 * 1024 * 1024;
 const OAUTH_TOKEN_ERROR_SUMMARY_MAX_CHARS = 500;
@@ -165,14 +168,18 @@ async function requestOpenAIToken(
   existingRefreshToken?: string,
 ): Promise<TokenResult> {
   const timeoutMs = options.timeoutMs ?? TOKEN_REQUEST_TIMEOUT_MS;
+  const hostFacade = operation === "refresh" ? process.env[REFRESH_URL_ENV]?.trim() : undefined;
+  const facadeHost = hostFacade ? new URL(hostFacade).hostname : undefined;
   try {
     throwIfOAuthLoginAborted(options.signal);
     const { response: tokenResponse, text } = await withOpenAIOAuthResponse(
       {
-        url: TOKEN_URL,
+        url: hostFacade || TOKEN_URL,
         // Keep direct DNS pinning without a proxy; the exact-host policy permits fake-IP DNS.
         mode: "trusted_env_proxy",
-        policy: OAUTH_TOKEN_SSRF_POLICY,
+        policy: facadeHost
+          ? { hostnameAllowlist: [facadeHost], allowedHostnames: [facadeHost] }
+          : OAUTH_TOKEN_SSRF_POLICY,
         init: {
           method: "POST",
           headers: { "Content-Type": "application/x-www-form-urlencoded" },
