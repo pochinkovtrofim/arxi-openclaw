@@ -983,6 +983,52 @@ describe("Gateway owner lease", () => {
     expect(readGatewayOwnerLease({ env })?.state).toBe("unknown");
   });
 
+  it("leaves the database a clone mounts over its path unopened on release", async () => {
+    // The guest layout: state/ links to the placeholder's directory until the
+    // clone mounts the Owner's state over the same path.
+    const root = tempDirs.make("openclaw-gateway-owner-overmount-");
+    const placeholder = path.join(root, "placeholder");
+    const mounted = path.join(root, "mounted");
+    const env = { OPENCLAW_STATE_DIR: path.join(root, "home") };
+    fs.mkdirSync(placeholder);
+    fs.mkdirSync(mounted);
+    fs.mkdirSync(env.OPENCLAW_STATE_DIR);
+    const link = path.join(env.OPENCLAW_STATE_DIR, "state");
+    fs.symlinkSync(placeholder, link);
+    const databasePath = resolveOpenClawStateSqlitePath(env);
+    const coordinator = acquireGatewayStateOwner({
+      databasePath,
+      payload: {
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+        configPath: path.join(env.OPENCLAW_STATE_DIR, "openclaw.json"),
+        role: "gateway",
+      },
+    });
+    try {
+      const lease = acquireGatewayOwnerLease({
+        env,
+        port: 19483,
+        mode: "foreground",
+        supervisor: null,
+      });
+      await lease.ready;
+      const { DatabaseSync } = requireNodeSqlite();
+      const source = new DatabaseSync(databasePath, { readOnly: true });
+      try {
+        source.exec(`VACUUM INTO '${path.join(mounted, path.basename(databasePath))}'`);
+      } finally {
+        source.close();
+      }
+      fs.unlinkSync(link);
+      fs.symlinkSync(mounted, link);
+      await lease.release();
+      expect(readGatewayOwnerLease({ env })?.owner).toBe(lease.owner);
+    } finally {
+      coordinator.release();
+    }
+  });
+
   it("does not delete a replacement generation during an older owner's release", async () => {
     await using owner = fixture();
     const { env } = owner;
