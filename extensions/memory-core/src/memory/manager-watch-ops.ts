@@ -274,6 +274,10 @@ export abstract class MemoryManagerWatchOps extends MemoryManagerSyncBase {
       clearTimeout(this.sessionWatchTimer);
       this.sessionWatchTimer = null;
     }
+    if (this.sessionStartupCatchupTimer) {
+      clearTimeout(this.sessionStartupCatchupTimer);
+      this.sessionStartupCatchupTimer = null;
+    }
     if (this.intervalTimer) {
       clearInterval(this.intervalTimer);
       this.intervalTimer = null;
