@@ -242,7 +242,9 @@ export async function assertGatewayOwnerLeaseStopped(
     ({ db }) => {
       resolveStoppedGatewayOwnerLease(readGatewayOwnerLeaseFromDatabase(db), admission);
     },
-    { env },
+    // The caller holds physical custody and works in this file next, so the one
+    // lease row is read in place: a private copy of a large database costs seconds.
+    { env, allowNativeRead: true },
   );
 }
 
