@@ -18,6 +18,9 @@ import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } fr
 const CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+// Arxi refreshes subscription logins only on the host, which keeps each
+// rotated token; the guest refreshes through the host facade named here.
+const REFRESH_URL_ENV = "ARXI_ANTHROPIC_OAUTH_TOKEN_URL";
 const DEFAULT_CALLBACK_HOST = "127.0.0.1";
 const LOOPBACK_CALLBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 const CALLBACK_PORT = 53692;
@@ -149,9 +152,10 @@ async function startCallbackServer(expectedState: string) {
 async function postJson(
   body: Record<string, string | number>,
   signal?: AbortSignal,
+  url = TOKEN_URL,
 ): Promise<string> {
   throwIfOAuthLoginAborted(signal);
-  const response = await fetch(TOKEN_URL, {
+  const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -168,7 +172,7 @@ async function postJson(
 
   if (!response.ok) {
     throw new Error(
-      `HTTP request failed. status=${response.status}; url=${TOKEN_URL}; body=${responseBody}`,
+      `HTTP request failed. status=${response.status}; url=${url}; body=${responseBody}`,
     );
   }
 
@@ -318,11 +322,15 @@ async function loginAnthropic(options: OAuthLoginCallbacks): Promise<OAuthCreden
 async function refreshAnthropicToken(refreshToken: string): Promise<OAuthCredentials> {
   let responseBody: string;
   try {
-    responseBody = await postJson({
-      grant_type: "refresh_token",
-      client_id: CLIENT_ID,
-      refresh_token: refreshToken,
-    });
+    responseBody = await postJson(
+      {
+        grant_type: "refresh_token",
+        client_id: CLIENT_ID,
+        refresh_token: refreshToken,
+      },
+      undefined,
+      process.env[REFRESH_URL_ENV]?.trim() || TOKEN_URL,
+    );
   } catch (error) {
     throw new Error(
       `Anthropic token refresh request failed. url=${TOKEN_URL}; details=${formatErrorDetails(error)}`,
