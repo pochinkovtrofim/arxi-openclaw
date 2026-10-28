@@ -214,6 +214,7 @@ export async function prepareGatewayRestartIteration(
       `cron run drain timed out during restart lifecycle reset after retiring old cron admission; ${cronTaskDrain.active} task handle(s) and ${cronDrain.active} active marker(s) remain after aborting old cron runs`,
     );
   }
+  markGatewayRestartTrace("restart.next-start.cron-drained");
   retireActiveCronTaskRunTracking();
   resetCronActiveJobs();
   // Resume the retired scheduler before resetAllLanes invalidates its
