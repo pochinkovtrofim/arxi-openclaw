@@ -47,6 +47,7 @@ import { retainSnapshotTempDirectory } from "./sqlite-readonly-location-cleanup.
 import type { PreparedSqliteReadOnlyLocation } from "./sqlite-readonly-location.types.js";
 import { prepareSqliteReadOnlyLocationSync } from "./sqlite-snapshot-source.js";
 import { runSqliteImmediateTransactionSync } from "./sqlite-transaction.js";
+import { inspectDatabasePathIdentitySync } from "./sqlite-worker-identity.js";
 import { STARTUP_MIGRATION_LEASE_TTL_MS } from "./startup-migration-checkpoint.js";
 import { readStateLeaseProcessOwnerStatus } from "./state-lease-process-owner.js";
 
@@ -310,7 +311,12 @@ export function acquireGatewayOwnerLease(params: {
         ),
       { env, path: databasePath },
     );
+  // The lease row lives in the file this acquire writes. A path that names
+  // another file at release (a golden clone mounts the Owner's state over its
+  // placeholder's) holds no row of this lease, so release leaves it unopened.
+  let leaseFile: string | undefined;
   const expiresAt = mutateLease("acquire", (db) => {
+    leaseFile = inspectDatabasePathIdentitySync(databasePath)?.key;
     const previous = resolveStoppedGatewayOwnerLease(readGatewayOwnerLeaseFromDatabase(db), {
       reclaimReplayedSelf: true,
     });
@@ -377,7 +383,10 @@ export function acquireGatewayOwnerLease(params: {
       await heartbeat?.stop();
       try {
         // Lost custody may join its worker, but cannot mutate the recorded lease.
-        if (!custody?.signal.aborted) {
+        if (
+          !custody?.signal.aborted &&
+          inspectDatabasePathIdentitySync(databasePath)?.key === leaseFile
+        ) {
           mutateLease("release", (db) => {
             releaseOpenClawStateLeaseInTransaction(db, identity);
           });
