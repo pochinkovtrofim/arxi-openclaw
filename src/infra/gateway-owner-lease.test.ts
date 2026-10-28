@@ -35,6 +35,7 @@ import * as stateOwners from "./gateway-state-owner.js";
 import { acquireGatewayStateOwner, tryAcquireGatewayStateOwner } from "./gateway-state-owner.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
 import { corruptSqliteIndexKey } from "./sqlite-index-corruption.test-support.js";
+import * as snapshots from "./sqlite-snapshot-source.js";
 import { runSqliteImmediateTransactionSync } from "./sqlite-transaction.js";
 import * as bootReader from "./update-managed-service-handoff-boot.js";
 
@@ -957,6 +958,18 @@ describe("Gateway owner lease", () => {
       "Another Gateway owner lease is still active",
     );
     expect(readGatewayOwnerLease({ env })?.owner).toBe("published-generation");
+  });
+
+  it("reads the previous owner in place instead of copying the state database", async () => {
+    await using owner = fixture();
+    const { env } = owner;
+    seedOwner(env, { host: "other-gateway-host" });
+    await closeOpenClawStateDatabaseAsync();
+    const copy = vi.spyOn(snapshots, "prepareSqliteReadOnlyLocationSync");
+    await expect(
+      assertGatewayOwnerLeaseStopped(env, undefined, { reclaimReplayedSelf: true }),
+    ).rejects.toThrow("owner heartbeat is fresh");
+    expect(copy).not.toHaveBeenCalled();
   });
 
   it.each([
