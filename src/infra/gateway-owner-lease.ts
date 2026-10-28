@@ -8,6 +8,7 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getAsyncWorkSignal } from "../shared/async-work-scope.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { getFileLockProcessStartTime } from "../shared/pid-alive.js";
+import { releaseReplayedSelfAgentDatabaseLeasesInDatabase } from "../state/openclaw-agent-db-lease.js";
 import type { OpenClawStateSchemaReadAdmission } from "../state/openclaw-state-db-contract.js";
 import {
   withExistingOpenClawStateDatabaseCurrentReadOnly,
@@ -315,6 +316,9 @@ export function acquireGatewayOwnerLease(params: {
     });
     if (previous) {
       releaseOpenClawStateLeaseInTransaction(db, { ...identity, owner: previous.owner });
+      if (isReplayedSelfOwner(previous) && previous.startedAt === processOwner.startedAt) {
+        releaseReplayedSelfAgentDatabaseLeasesInDatabase(db, env);
+      }
     }
     const acquired = acquireOpenClawStateLeaseInTransaction(
       db,

@@ -783,6 +783,57 @@ describe("Gateway owner lease", () => {
     });
   });
 
+  it.each([
+    { label: "replayed with this exact process", startedAt: undefined, kept: ["parent"] },
+    { label: "of a recycled PID", startedAt: 1, kept: ["parent", "self"] },
+  ])("releases agent database leases only when the owner lease was $label", async (previous) => {
+    await using owner = fixture();
+    const { env } = owner;
+    seedOwner(env, {
+      processNamespace: readGatewayLockProcessNamespace(),
+      startedAt: previous.startedAt,
+    });
+    const agentPath = path.join(
+      env.OPENCLAW_STATE_DIR,
+      "agents",
+      "main",
+      "agent",
+      "openclaw.sqlite",
+    );
+    const leaseIds = () =>
+      withOpenClawStateStartupMigrationCheckpointDatabase(
+        (db) =>
+          db
+            .prepare("SELECT lease_id FROM agent_database_leases ORDER BY lease_id")
+            .all()
+            .map((row) => row.lease_id),
+        { env },
+      );
+    withOpenClawStateStartupMigrationCheckpointDatabase(
+      (db) => {
+        const insert = db.prepare(
+          "INSERT INTO agent_database_leases (lease_id, agent_id, path, owner_pid, owner_start_time, opened_at) VALUES (?, 'main', ?, ?, ?, ?)",
+        );
+        for (const [leaseId, pid] of [
+          ["self", process.pid],
+          ["parent", process.ppid],
+        ] as const) {
+          insert.run(
+            leaseId,
+            agentPath,
+            pid,
+            pidAlive.getFileLockProcessStartTime(pid),
+            Date.now(),
+          );
+        }
+      },
+      { env },
+    );
+    const lease = owner.acquire();
+    await lease.ready;
+    expect(leaseIds()).toEqual(previous.kept);
+  });
+
   it("lets only a starting Gateway reclaim a replayed lease through the lifecycle lock", async () => {
     const env = { OPENCLAW_STATE_DIR: tempDirs.make("openclaw-gateway-owner-replayed-") };
     const coordinator = acquireGatewayStateOwner({
