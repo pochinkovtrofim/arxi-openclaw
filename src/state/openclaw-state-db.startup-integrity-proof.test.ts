@@ -69,4 +69,16 @@ describe("startup integrity proof", () => {
 
     expect(check).toHaveBeenCalledTimes(2);
   });
+
+  it("checks again when the clock stepped back after the startup check", () => {
+    const { env, check } = sealedState();
+    const now = Date.now();
+    const clock = vi.spyOn(Date, "now").mockReturnValue(now);
+
+    withOpenClawStateStartupMigrationCheckpointDatabase(() => undefined, { env });
+    clock.mockReturnValue(now - 1);
+    runOpenClawStateWriteTransaction(() => undefined, { env });
+
+    expect(check).toHaveBeenCalledTimes(2);
+  });
 });

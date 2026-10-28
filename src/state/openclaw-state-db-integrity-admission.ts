@@ -48,11 +48,16 @@ export function recordOpenClawStateStartupIntegrityProof(
 function takeStartupProof(identity: DatabaseFileIdentity, metadata: bigint): boolean {
   const proof = startupProofs.get(identity.key);
   startupProofs.delete(identity.key);
+  if (proof === undefined) {
+    return false;
+  }
+  // A wall clock stepped back (clone-init sets it) must not keep a proof alive.
+  const ageMs = Date.now() - proof.checkedAtMs;
   return (
-    proof !== undefined &&
     proof.birthtime === identity.birthtime &&
     proof.metadata === metadata &&
-    Date.now() - proof.checkedAtMs <= STARTUP_PROOF_MAX_AGE_MS
+    ageMs >= 0 &&
+    ageMs <= STARTUP_PROOF_MAX_AGE_MS
   );
 }
 
