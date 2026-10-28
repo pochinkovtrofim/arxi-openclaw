@@ -226,6 +226,7 @@ External supervisor implementations should also apply these acceptance rules:
 - Bound capability checks with a timeout that accounts for full CLI cold-start latency on the deployed runtime and storage, rather than assuming warm-start timing.
 - If capability negotiation or handoff consumption refuses replacement, exit promptly with a nonzero status so the process manager's recovery policy can run. Do not remain alive without a Gateway child or listener.
 - Treat supervisor process liveness as distinct from replacement startup and channel readiness. Report success only after the new Gateway owns its listener and `/startupz` returns `status: "started"`; monitor `/readyz` separately for configured-channel health, while `/healthz` proves liveness only.
+- A supervisor that starts the Gateway to deliver a waiting request can set `OPENCLAW_GATEWAY_POST_READY_WORK_DELAY_MS` (milliseconds, at most 60000; default 500). Startup's background work (transcript maintenance, subagent recovery, cron start, handler prewarm) waits that long after startup settles, so the first request does not share the databases with it.
 
 ### Gateway profiling
 
