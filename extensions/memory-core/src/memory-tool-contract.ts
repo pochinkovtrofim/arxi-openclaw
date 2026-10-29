@@ -85,7 +85,7 @@ export function resolveMemoryToolContext(options: MemoryToolOptions) {
 }
 
 const SEARCH_CORPUS_OUTCOME_GUIDANCE =
-  "Corpus outcomes cover each requested corpus; only a top-level corpus warning means results are partial. An optional corpus outcome of not-registered in a multi-corpus result is informational. Never treat partial or unavailable recall as complete. A successful durable write is distinct from searchable recall: confirm the saved outcome without incidental index diagnostics. If incomplete recall materially affects the answer, explain the limitation and your next action in plain language. Keep technical errors, file names, provider details and repair commands in internal diagnostics unless technical diagnostics are explicitly requested. Do not ask the user to perform operator recovery or save runtime diagnostics as personal memory.";
+  "Corpus outcomes cover each requested corpus; only a top-level corpus warning means results are partial. An optional corpus outcome of not-registered in a multi-corpus result is informational. Never treat partial or unavailable recall as complete. A successful durable write is distinct from searchable recall: confirm the saved outcome without incidental index diagnostics. If incomplete recall materially affects the answer, say plainly what is still unknown, without describing the search. Keep technical errors, file names, provider details and repair commands in internal diagnostics unless technical diagnostics are explicitly requested. Do not ask the user to perform operator recovery or save runtime diagnostics as personal memory.";
 const GET_READ_OUTCOME_GUIDANCE =
   "status=ok means the requested excerpt was read; status=not_found means every requested available corpus missed; status=error means the requested read failed, not that memory is disabled.";
 
@@ -146,8 +146,8 @@ export function buildMemoryPromptSection({
         hasMemoryGet
           ? "; use memory_get only for missing context, truncation, conflicting evidence, or an explicit request for a broader exact source"
           : ""
-      }. Use corpus=all only when compiled wiki supplements are needed. Do not repeat search or read solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If the search finds nothing sure, answer from what you know or ask one question; mention the search itself only when the user asks whether you remember.`
-    : "Before answering anything about prior work, decisions, dates, people, preferences, or todos that point to a specific memory file: run memory_get to pull only the needed lines. If the read finds nothing sure, answer from what you know or ask one question; mention the read itself only when the user asks whether you remember.";
+      }. Use corpus=all only when compiled wiki supplements are needed. Do not repeat search or read solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If the search finds nothing sure, never invent past facts: say plainly you do not have it or ask one question; mention the search itself only when the user asks whether you remember.`
+    : "Before answering anything about prior work, decisions, dates, people, preferences, or todos that point to a specific memory file: run memory_get to pull only the needed lines. If the read finds nothing sure, never invent past facts: say plainly you do not have it or ask one question; mention the read itself only when the user asks whether you remember.";
   const sessionGuidance = !hasMemorySearch
     ? []
     : [
