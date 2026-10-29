@@ -146,8 +146,8 @@ export function buildMemoryPromptSection({
         hasMemoryGet
           ? "; use memory_get only for missing context, truncation, conflicting evidence, or an explicit request for a broader exact source"
           : ""
-      }. Use corpus=all only when compiled wiki supplements are needed. Do not repeat search or read solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If low confidence after search, say you checked.`
-    : "Before answering anything about prior work, decisions, dates, people, preferences, or todos that point to a specific memory file: run memory_get to pull only the needed lines. If low confidence after reading, say you checked.";
+      }. Use corpus=all only when compiled wiki supplements are needed. Do not repeat search or read solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If the search finds nothing sure, answer from what you know or ask one question; mention the search itself only when the user asks whether you remember.`
+    : "Before answering anything about prior work, decisions, dates, people, preferences, or todos that point to a specific memory file: run memory_get to pull only the needed lines. If the read finds nothing sure, answer from what you know or ask one question; mention the read itself only when the user asks whether you remember.";
   const sessionGuidance = !hasMemorySearch
     ? []
     : [
@@ -163,7 +163,7 @@ export function buildMemoryPromptSection({
         "Session search line numbers are not history offsets. Never read raw transcript files to expand session hits.",
       ];
   const outcomeGuidance =
-    "Report recall as partial, unavailable, or stale when the result includes a top-level warning or action guidance, or explicitly sets disabled=true or stale=true. In a multi-corpus result without a top-level warning or action guidance, treat an optional corpus outcome of not-registered as informational.";
+    "Treat recall as partial, unavailable, or stale when the result includes a top-level warning or action guidance, or explicitly sets disabled=true or stale=true; tell the user only when it changes the answer, in plain words about the answer, not the search. In a multi-corpus result without a top-level warning or action guidance, treat an optional corpus outcome of not-registered as informational.";
   const citationGuidance =
     citationsMode === "off"
       ? "Citations are disabled: do not mention file paths or line numbers in replies unless the user explicitly asks."
