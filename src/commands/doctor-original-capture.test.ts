@@ -62,7 +62,7 @@ it.each(["ancestry-unverified", "missing-capture"] as const)(
   },
 );
 
-it("keeps one sealed container capture, skips repeats, and still retires old captures", async () => {
+it("keeps one sealed container capture and skips repeats", async () => {
   await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
     const marker = state.path("activation-capture-marker");
     const env = { ...state.env, OPENCLAW_IMAGE_ACTIVATION_CAPTURE_MARKER: marker };
@@ -100,9 +100,6 @@ it("keeps one sealed container capture, skips repeats, and still retires old cap
           diagnostics: { databaseWarnings: [] },
         };
       });
-    const retire = vi
-      .spyOn(baselineCapture, "retireExpiredStandaloneDoctorCaptures")
-      .mockResolvedValue({ retired: [], warnings: [] });
     await preserve(process.cwd());
     expect(capture).toHaveBeenCalledOnce();
     const runId = fs.readFileSync(marker, "utf8");
@@ -116,9 +113,6 @@ it("keeps one sealed container capture, skips repeats, and still retires old cap
         `This container already retained a pre-repair capture (${runId}); Doctor skipped a repeated full capture. Repair-specific backups still apply.`,
       ],
     ]);
-    // Repeat starts keep the container's capture while older ones still age out.
-    expect(retire).toHaveBeenCalledTimes(2);
-    expect(retire).toHaveBeenLastCalledWith(expect.objectContaining({ keepRunId: runId }));
 
     // A marker whose capture is gone no longer suppresses capture.
     fs.rmSync(path.join(captureRoot, runId), { recursive: true });

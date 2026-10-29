@@ -205,7 +205,6 @@ export const databaseWorkerExtensionTestFiles = [
   "extensions/codex/src/app-server/event-projector.output-fidelity.native.test.ts",
   "extensions/codex/src/app-server/inference-proxy.native.test.ts",
   "extensions/codex/src/app-server/thread-lifecycle.assignment-rotation.test.ts",
-  "extensions/codex/src/app-server/thread-lifecycle.native.test.ts",
   "extensions/codex/src/app-server/thread-lifecycle.handoff.native.test.ts",
   "extensions/codex/src/app-server/thread-lifecycle.warm-cleanup.native.test.ts",
   "extensions/codex/src/app-server/thread-lifecycle.binding.test.ts",
