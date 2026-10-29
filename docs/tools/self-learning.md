@@ -104,20 +104,11 @@ Changes are quiet. Each one appears in the skill's history (Control UI
 review's reason: one plain sentence in your language, such as "Check the
 recruiter's profile before the call". Nothing is posted to the conversation.
 
-The one exception is a correction you stated yourself. When you told the agent
-to do something differently, or how you want it done from now on, and the
-review saved exactly that, it confirms in one short line in your language,
-without skill names:
+That holds for a correction you stated yourself too: the agent already answered
+you in that conversation, and a confirmation minutes later would arrive after it
+moved on.
 
-```text
-Got it, I'll send reports as one table from now on.
-```
-
-The line goes to the conversation that triggered the review and is mirrored
-into the session transcript; channel-less Control UI sessions get it as a
-transcript entry.
-
-Either way the next turn of that conversation learns the exact revert call, so
+The next turn of that conversation learns the exact revert call, so
 replying "undo" right after a change restores the previous version, or archives
 a skill the review created.
 

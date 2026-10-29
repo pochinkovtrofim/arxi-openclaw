@@ -28,11 +28,7 @@ import { resolveSkillWorkshopConfig } from "./config.js";
 import { buildSkillExperienceReviewPrompt } from "./experience-review-prompt.js";
 import type { ExperienceReviewCandidate } from "./experience-review-scheduler.js";
 import { listWorkshopChanges } from "./library.js";
-import {
-  assertSkillReviewRunSucceeded,
-  postWorkshopChangeNotice,
-  readSkillReviewUserLine,
-} from "./review-outcome.js";
+import { assertSkillReviewRunSucceeded, postWorkshopChangeNotice } from "./review-outcome.js";
 import { runSkillWorkshopReview } from "./review-run.js";
 
 // A review judges the recent trajectory, not the whole session. Native harnesses
@@ -261,20 +257,15 @@ async function runSkillExperienceReviewInner(candidate: ExperienceReviewCandidat
       runId,
       ...(capability ? { cronCreatorAuthorityCapability: capability } : {}),
     });
-  let payloads: Awaited<ReturnType<typeof run>>["payloads"];
   try {
     const result = capability
       ? await runWithCronCreatorAuthorityCapability(capability, run)
       : await run();
     assertSkillReviewRunSucceeded(result);
-    payloads = result.payloads;
   } finally {
     // Each skill_workshop call commits on its own, so a failed or aborted run may have changed skills.
     const changes = await listWorkshopChanges(agentId, { runId });
-    const userLine = readSkillReviewUserLine(payloads, changes);
-    log.debug(
-      `experience review finished: session=${sessionKey} changes=${changes.length} told=${userLine !== undefined}`,
-    );
-    await postWorkshopChangeNotice({ config, generation, runId, changes, userLine });
+    log.debug(`experience review finished: session=${sessionKey} changes=${changes.length}`);
+    postWorkshopChangeNotice({ generation, changes });
   }
 }

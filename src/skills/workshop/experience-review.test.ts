@@ -20,7 +20,7 @@ import { resolveWorkshopSkillsDir } from "./skills-root.js";
 const mocks = vi.hoisted(() => ({
   runSkillWorkshopReview: vi.fn(),
   listWorkshopChanges: vi.fn(),
-  postWorkshopChangeNotice: vi.fn(async () => {}),
+  postWorkshopChangeNotice: vi.fn(),
 }));
 vi.mock("./review-run.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./review-run.js")>()),
@@ -165,12 +165,11 @@ describe("runSkillExperienceReview", () => {
     expect(prompt).toContain("Already saved from this conversation");
     expect(prompt).toContain("patch job-opportunity-verification: Добавила шаг проверки вакансии");
     expect(prompt).not.toContain("a save from two days ago");
-    expect(mocks.postWorkshopChangeNotice).toHaveBeenCalledWith(
-      expect.objectContaining({
-        changes: [committed],
-        userLine: "Запомнила: рекрутеров сначала проверяю в LinkedIn.",
-      }),
-    );
+    // A marked line from the review's reply never reaches the chat.
+    expect(mocks.postWorkshopChangeNotice).toHaveBeenCalledWith({
+      generation: expect.objectContaining({ sessionKey: candidate.source.sessionKey }),
+      changes: [committed],
+    });
   });
 
   it("checks source authority and its accepted anchor together after a later append", async () => {
