@@ -99,6 +99,15 @@ function joinPromptLines(lines: readonly PromptLine[]): string {
     .join("\n");
 }
 
+// Arxi runs the agent as Ro; her persona files say so, and the opening line
+// should not name her a generic assistant.
+function assistantIdentityLine(): string {
+  const target = process.env.ARXI_CHANNEL_TARGET;
+  return target === "owner" || target === "group"
+    ? "You are Ro, a personal assistant running inside OpenClaw."
+    : "You are a personal assistant running inside OpenClaw.";
+}
+
 const SYSTEM_PROMPT_STABLE_PREFIX_CACHE_LIMIT = 64;
 
 const stablePromptPrefixCache = new Map<string, string>();
@@ -356,9 +365,7 @@ export function buildAgentSystemPrompt(params: {
   const modelIdentityLine = buildModelIdentityPromptLine(runtimeInfo?.model);
   if (promptMode === "none") {
     params.onRenderedSkillsPrompt?.("");
-    return ["You are a personal assistant running inside OpenClaw.", modelIdentityLine]
-      .filter(Boolean)
-      .join("\n");
+    return [assistantIdentityLine(), modelIdentityLine].filter(Boolean).join("\n");
   }
 
   const acpEnabled = params.acpEnabled === true;
@@ -602,8 +609,10 @@ export function buildAgentSystemPrompt(params: {
       "",
     );
   }
+  const identityLine = assistantIdentityLine();
   const stablePrefixCacheKey = sha256Hex(
     JSON.stringify({
+      identityLine,
       workspaceDir: params.workspaceDir,
       runtimeCwd,
       promptMode,
@@ -642,7 +651,7 @@ export function buildAgentSystemPrompt(params: {
   );
   const stablePrefix = cacheStablePromptPrefix(stablePrefixCacheKey, () => {
     const lines: PromptLine[] = [
-      "You are a personal assistant running inside OpenClaw.",
+      identityLine,
       "",
       ...buildSystemPromptToolingSection({
         includeToolGuidance,

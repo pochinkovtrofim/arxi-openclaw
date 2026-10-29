@@ -59,6 +59,23 @@ describe("buildAgentSystemPrompt", () => {
     expect(resolveAgentPromptSurfaceForSessionKey(undefined)).toBe("openclaw_main");
   });
 
+  it("names the assistant Ro when Arxi runs it", () => {
+    expect(renderPrompt({}).split("\n")[0]).toBe(
+      "You are a personal assistant running inside OpenClaw.",
+    );
+    vi.stubEnv("ARXI_CHANNEL_TARGET", "group");
+    try {
+      expect(renderPrompt({}).split("\n")[0]).toBe(
+        "You are Ro, a personal assistant running inside OpenClaw.",
+      );
+      expect(buildAgentSystemPrompt({ workspaceDir: "/tmp/openclaw", promptMode: "none" })).toMatch(
+        /^You are Ro, a personal assistant running inside OpenClaw\./,
+      );
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("keeps a verified current owner visible when other long owners exhaust the byte budget", () => {
     const currentOwner = "npub140x77qfrg4ncn27dauqjx3t83x4ummcpydzk0zdtehhszg69v7ystddknj";
     const owners = [
