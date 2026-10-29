@@ -15,6 +15,12 @@ resume them. Recovery is always on. Exhausted infrastructure retries, or a
 missing durable message-action authority claim, may tombstone one session
 until you inspect or replace it.
 
+Before accepting another message, the Gateway retires leftover recovery records
+whose runs are all recorded terminal and have no remaining execution or delivery
+owner. For a killed conversation, it also releases unfinished fences after checking
+that no run or session work remains active and no final delivery is pending. This
+lets a stopped conversation continue without resetting its history.
+
 Inter-session steering updates remain context for the executing turn. When that
 turn retains a human Control UI or channel source claim, recovery uses the claim
 rather than treating the latest steering message as a new delegated request.
@@ -27,6 +33,9 @@ provider reports an error and the turn settles before shutdown discovers it.
 The next visible message preserves an interrupted turn's recovery claim even
 when its saved status is failed, timed out, or killed. Recovery resumes the
 interrupted work before the new message takes foreground ownership.
+Before accepting another message, the Gateway retires leftover recovery records
+whose runs are all recorded terminal and have no remaining execution or delivery
+owner. This lets a stopped conversation continue without resetting its history.
 
 This page describes what survives a restart, how interrupted work is detected,
 and what the automatic resume looks like.
@@ -268,10 +277,26 @@ unit's effective `TimeoutStopUSec`, including drop-ins. It logs the source and
 reconciled stop budget at both points, so a repaired unit takes effect without
 restarting first. Inspection and any wait for startup to finish consume the same
 shutdown deadline. Active-work drain uses at most
-315 seconds, with up to 10 seconds reserved for final chat writes and server cleanup
-and up to another 5 seconds before systemd's deadline. A unit with the default
-90-second stop timeout therefore gets a 75-second drain and an 85-second Gateway
+315 seconds for requested restarts, with up to 10 seconds reserved for final chat writes and server cleanup
+and up to another 5 seconds before systemd's deadline. For a requested restart, a unit with the default
+90-second stop timeout gets a 75-second drain and an 85-second Gateway
 shutdown deadline. A shorter supervisor timeout also caps requested restart waits.
+
+An ordinary stop (including `systemctl restart` without a managed restart intent)
+gives active runs at most 20 seconds to finish before cancelling execution. Final
+chat writes, worktree lease release, checkpointing, and database close retain the
+remaining native shutdown budget. Shutdown settles received work and stop hooks
+before full harness disposal, then joins worktree leases before worker retirement,
+so a run's finalizer can release its lease. Code cells are cancelled before received
+work is joined. This avoids a
+lease join blocking the teardown needed to complete it. A clean database close
+also avoids a stale-lease integrity scan on the next startup; an interrupted close
+still requires that scan.
+
+The Codex native-profile recovery warning runs as service-owned background work.
+It does not hold readiness while another agent's database admission finishes.
+Doctor still awaits the same diagnostic, and shutdown joins any diagnostic reads
+that already started.
 
 Both allowances are bounded when the deadline cannot fund them, by the same rule the
 launchd budget uses and for the same reason: subtracting two values sized for a
@@ -722,6 +747,9 @@ If recovery fails during preparation before the agent starts, the Gateway restor
 the interrupted state and releases that attempt's delivery claim. The next recovery
 attempt uses a fresh run ID while retaining the original interrupted turn and retry
 budget, so a rejected pending input cannot leave the conversation permanently busy.
+This includes an accepted continuation refused by shutdown before its runtime turn
+starts. Its charged attempt remains in the same retry budget across startups;
+exhaustion still produces the normal recovery notice.
 
 ## Automatic resume
 
@@ -895,8 +923,18 @@ Subagent runs are persisted in the shared SQLite state database, so the
 subagent registry survives the process. On boot, interrupted child runs settle
 through their normal completion path as soon as startup restores requester ownership,
 without waiting for the periodic registry sweep. The sweep remains a retry backstop.
+This includes accepted launches whose child session had not yet recorded its first
+lifecycle run when the Gateway stopped. Startup marks that unfinished work as
+interrupted under the same session-ownership checks. If it cannot resume through
+the existing interruption path, it promptly settles as interrupted and notifies
+the requester through normal completion delivery, without waiting for the lost-run
+sweep or its cleanup backoff. A different recorded child lifecycle run is never
+claimed as an unstarted launch.
 The crash-loop breaker pauses this settlement too; the same sweep retries when
 the breaker's recovery window ends.
+Because nothing resumes an interrupted child turn, the next human message to that
+child retires the turn's saved recovery claim and starts normally instead of
+waiting for a resume.
 They are not automatically relaunched.
 The parent receives the interruption outcome and owns finishing the user's task.
 For native children with completion notifications disabled, recovery sends a

@@ -208,6 +208,7 @@ export async function completeEmbeddedAttemptAfterTurn(
       : undefined;
     await finalizeHarnessContextEngineTurn({
       ...attempt,
+      abortSignal: input.runAbortController.signal,
       contextEngine: activeContextEngine,
       promptError: Boolean(promptError),
       aborted: lifecycleState.aborted,
@@ -259,9 +260,11 @@ export async function completeEmbeddedAttemptAfterTurn(
 
   const shouldPersistBootstrapCompletion = () => {
     const lifecycleState = projectAgentRunAttemptTerminal(executionState.terminal);
+    const assistant = settled.currentAttemptCompletedAssistant ?? settled.currentAttemptAssistant;
     return (
       shouldRecordCompletedBootstrapTurn &&
       !promptError &&
+      assistant?.stopReason !== "error" &&
       !lifecycleState.aborted &&
       !lifecycleState.timedOutDuringCompaction &&
       !compactionOccurredThisAttempt
@@ -490,6 +493,11 @@ export function createEmbeddedAttemptExternalAbortController(input: {
     },
     dispose: () => {
       removeListener?.();
+      // Retained abort reasons can keep this controller after its attempt ends.
+      abortActiveSession = undefined;
+      abortRun = undefined;
+      isCompactionPendingOrRetrying = undefined;
+      isCompactionInFlight = undefined;
     },
     setActiveSessionAbort: (abort) => {
       abortActiveSession = abort;

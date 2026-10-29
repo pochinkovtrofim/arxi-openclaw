@@ -1,8 +1,14 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { waitForDead } from "../../../test/helpers/process-wait.js";
+import { withinTest } from "../../../test/helpers/promise.js";
 import * as gatewayService from "../../daemon/service.js";
 import { createMockGatewayService } from "../../daemon/service.test-helpers.js";
+import { acquireGatewayStateOwner } from "../../infra/gateway-state-owner.js";
 import {
   resolvePackageActivationHelper,
   resolvePackageActivationJournalPath,
@@ -12,20 +18,30 @@ import {
   readPackageActivationReceipt,
   runPackageActivationRecovery,
 } from "../../infra/package-update-activation.js";
+import { createPackageSwapFixture } from "../../infra/package-update-swap.test-support.js";
+import { resolveRuntimeWorkerUrl } from "../../infra/runtime-worker-url.js";
 import * as packageTarget from "../../infra/update-check-package-target.js";
 import * as updateCheck from "../../infra/update-check.js";
 import * as updateGlobal from "../../infra/update-global.js";
 import { assertManagedUpdateLeaseDatabaseIdentity } from "../../infra/update-managed-service-handoff-database.js";
 import { POST_CORE_UPDATE_ENV } from "../../infra/update-post-core-context.js";
 import { defaultRuntime } from "../../runtime.js";
+import { stateNativeProcessEntrypoints } from "../../state/native-process-runtime.test-support.js";
 import {
   createOpenClawTestState,
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
+import { killPidIfAlive } from "../../test-utils/process-tree.js";
 import * as shared from "./shared.js";
+import { updateExecutorNativeEntrypoints } from "./update-command-executor-native-runtime.test-support.js";
 import { prepareUpdateCommand } from "./update-command-run.js";
 import { updateCommand } from "./update-command.js";
-import { createInterruptedPackagePublication } from "./update-package-publication.test-support.js";
+import {
+  createInterruptedPackagePublication,
+  publicationActivation,
+  preparePackagePublication,
+  withPublicationFence,
+} from "./update-package-publication.test-support.js";
 
 const mocks = vi.hoisted(() => ({ root: vi.fn() }));
 vi.mock("./shared.js", async (original) => ({
@@ -71,15 +87,102 @@ function preparePreview(
   vi.spyOn(updateGlobal, "resolveGlobalInstallTarget").mockResolvedValue(f.params.installTarget);
   vi.spyOn(packageTarget, "fetchNpmPackageTargetStatus").mockResolvedValue({
     version: "3.0.0",
-    nodeEngine: ">=24.16.0",
+    nodeEngine: ">=24.22.1",
   });
   vi.spyOn(gatewayService, "resolveGatewayService").mockReturnValue(createMockGatewayService());
   vi.spyOn(defaultRuntime, "writeJson").mockImplementation(() => undefined);
 }
 
 describe.skipIf(process.platform === "win32")("package activation admission", () => {
+  it(
+    "recovers published activation after its stalled maintenance worker loses the executor",
+    { timeout: 40_000 },
+    async ({ signal }) => {
+      const f = await createInterruptedPackagePublication(fixtureRoot, "publication-complete");
+      preparePreview(f);
+      const databasePath = state.path("state", "orphan-maintenance.sqlite");
+      fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+      const executorUrl = resolveRuntimeWorkerUrl(updateExecutorNativeEntrypoints.executor).href;
+      const ownerUrl = resolveRuntimeWorkerUrl(
+        stateNativeProcessEntrypoints.gatewayStateOwner,
+      ).href;
+      const importArgs = executorUrl.endsWith(".ts")
+        ? ["--import", path.resolve("scripts/tsx.mjs")]
+        : [];
+      const worker = `
+      import { json } from "node:stream/consumers";
+      import { DatabaseSync } from "node:sqlite";
+      import { withDelegatedUpdateCommandExecutor } from ${JSON.stringify(executorUrl)};
+      import { acquireGatewayStateOwner } from ${JSON.stringify(ownerUrl)};
+      const grant = await json(process.stdin);
+      await withDelegatedUpdateCommandExecutor(grant, grant.runId, grant.root, async () => {
+        const owner = acquireGatewayStateOwner({ databasePath: ${JSON.stringify(databasePath)} });
+        const db = new DatabaseSync(${JSON.stringify(databasePath)});
+        db.exec("CREATE TABLE witness(value TEXT); BEGIN; INSERT INTO witness VALUES ('unfinished')");
+        process.on("SIGTERM", () => {});
+        process.send(process.pid);
+        setInterval(() => {}, 1000);
+        await new Promise(() => {});
+        db.close();
+        owner.release();
+      });
+    `;
+      const parentSource = `
+      import { spawn } from "node:child_process";
+      import { withUpdateCommandExecutor, withUpdateCommandExecutorChild } from ${JSON.stringify(executorUrl)};
+      await withUpdateCommandExecutor("orphan-maintenance", async executor => {
+        const fence = await executor.enter(${JSON.stringify(f.packageRoot)});
+        await withUpdateCommandExecutorChild(fence, ${JSON.stringify(f.packageRoot)}, (grant, beforeInput) => new Promise((resolve, reject) => {
+          const child = spawn(process.execPath, [...${JSON.stringify(importArgs)}, "--input-type=module", "-e", ${JSON.stringify(worker)}], { stdio: ["pipe", "inherit", "inherit", "ipc"] });
+          child.once("error", reject);
+          child.once("spawn", () => { beforeInput(child.pid); child.stdin.end(JSON.stringify(grant)); });
+          child.once("message", pid => process.send(pid));
+          child.once("exit", resolve);
+        }));
+      }, { existingAuthority: ${JSON.stringify(f.record.descriptor.authority)} });
+    `;
+      const parent = spawn(
+        process.execPath,
+        [...importArgs, "--input-type=module", "-e", parentSource],
+        {
+          env: { ...process.env, HOME: fixtureRoot, OPENCLAW_STATE_DIR: state.root },
+          stdio: ["ignore", "pipe", "pipe", "ipc"],
+        },
+      );
+      let stderr = "";
+      parent.stderr?.on("data", (bytes) => {
+        stderr += String(bytes);
+      });
+      parent.stdout?.resume();
+      const exited = once(parent, "exit");
+      const closed = once(parent, "close");
+      let workerPid: number | undefined;
+      try {
+        [workerPid] = await withinTest(once(parent, "message"), signal);
+        expect(() => acquireGatewayStateOwner({ databasePath }), stderr).toThrow(
+          "database is busy",
+        );
+        parent.kill("SIGKILL");
+        await withinTest(exited, signal);
+        await waitForDead(workerPid!, signal);
+        acquireGatewayStateOwner({ databasePath }).release();
+        using db = new DatabaseSync(databasePath);
+        expect(db.prepare("SELECT * FROM witness").all()).toEqual([]);
+        await expect(prepareUpdateCommand({ json: true })).resolves.toMatchObject({
+          discoveredRoot: f.packageRoot,
+        });
+        expect(readPackageActivationReceipt(f.packageRoot)).toBeUndefined();
+      } finally {
+        killPidIfAlive(workerPid);
+        if (parent.exitCode === null && parent.signalCode === null) {
+          parent.kill("SIGKILL");
+        }
+        await closed;
+      }
+    },
+  );
   it.each(["prepared", "publishing", "publication-complete", "damaged candidate"] as const)(
-    "admits only a verified completed publication with the original lease (%s)",
+    "settles a verified installed candidate with the original lease (%s)",
     async (phase) => {
       const f = await createInterruptedPackagePublication(
         fixtureRoot,
@@ -95,11 +198,9 @@ describe.skipIf(process.platform === "win32")("package activation admission", ()
         fs.readFileSync(resolvePackageActivationJournalPath(f.anchor)),
       ];
       const before = retained();
-      if (phase !== "publication-complete") {
+      if (phase === "damaged candidate") {
         await expect(prepareUpdateCommand({ json: true })).rejects.toThrow(
-          phase === "damaged candidate"
-            ? "inventoried dist files changed"
-            : "openclaw update repair",
+          "inventoried dist files changed",
         );
         expect(retained()).toEqual(before);
         return;
@@ -132,6 +233,34 @@ describe.skipIf(process.platform === "win32")("package activation admission", ()
       ).toEqual(previous);
     },
   );
+  it("retires an untouched preparation before a new update without publishing its candidate", async () => {
+    const f = await createPackageSwapFixture(fixtureRoot);
+    fs.writeFileSync(path.join(f.packageRoot, "openclaw.mjs"), 'import "./dist/index.js";\n');
+    fs.mkdirSync(path.join(f.packageRoot, "dist"), { recursive: true });
+    fs.writeFileSync(path.join(f.packageRoot, "dist/index.js"), "export {};\n");
+    fs.unlinkSync(f.launcher);
+    fs.symlinkSync("../lib/node_modules/openclaw/openclaw.mjs", f.launcher);
+    await withPublicationFence(f.packageRoot, (fence) =>
+      preparePackagePublication(f, publicationActivation(fence)),
+    );
+    preparePreview(f);
+    const installed = snapshot(f.packageRoot);
+    const launcher = fs.readlinkSync(f.launcher);
+    await updateCommand({ dryRun: true, json: true, tag: "3.0.0" });
+    expect(defaultRuntime.writeJson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        notes: expect.arrayContaining([expect.stringMatching(/publication-not-started/)]),
+      }),
+    );
+
+    await expect(prepareUpdateCommand({ json: true })).resolves.toMatchObject({
+      discoveredRoot: f.packageRoot,
+    });
+
+    expect(snapshot(f.packageRoot)).toEqual(installed);
+    expect(fs.readlinkSync(f.launcher)).toEqual(launcher);
+    expect(readPackageActivationReceipt(f.packageRoot)).toMatchObject({ phase: "complete" });
+  });
   it.each(
     (["missing", "replaced"] as const).flatMap((lease) =>
       (["candidate", "previous", "damaged candidate"] as const).map((live) => ({ lease, live })),

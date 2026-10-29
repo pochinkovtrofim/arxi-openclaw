@@ -179,6 +179,8 @@ Jobs with one of those routes default to an execution-failure alert after 2 cons
 
 Repeated failures with the same cause stay grouped into one incident across Gateway restarts. A changed cause or destination can notify after the cooldown. Successful completion clears the incident silently; the recovery stays in automation history. Skipped runs and unknown delivery outcomes do not count as recovery. If script setup cannot refresh tools after a plugin reload, the alert explains that automatic recovery failed before the script ran.
 
+After an in-place plugin replacement, the next script invocation refreshes its retained tool runtime before executing. It uses the current plugin hooks without restarting the Gateway or replaying a completed tool effect.
+
 <Note>
 Main-session jobs may only use `delivery.failureDestination` when primary delivery mode is `webhook`. Isolated jobs accept it in all modes.
 </Note>
@@ -261,6 +263,8 @@ The automation `--model` is a **job primary**, not a chat-session `/model` overr
 - An empty per-job fallback list (`--fallbacks ""` or `fallbacks: []` in the job payload/API) makes the run strict.
 - When a job has `--model` but no fallback list is configured, OpenClaw passes an explicit empty fallback override. The agent primary is therefore not appended as a hidden retry target.
 - Local-provider preflight checks walk configured fallbacks before marking a run `skipped`.
+
+When every local provider is unreachable, `automations runs` and `automations show` retain the skipped status and preflight reason. Start the provider or correct its configured endpoint. Repeated preflight skips use the existing failure-alert route and threshold without requiring `failureAlert.includeSkipped`, while explicit alert opt-outs still apply. Recurring jobs stay enabled and resume on a later scheduled run once reachability is checked again; endpoint results are cached for up to five minutes.
 
 `openclaw doctor` reports jobs that already have `payload.model` set, including provider namespace counts and mismatches against `agents.defaults.model`. Use that check when auth, provider, or billing behavior looks different between live chat and scheduled jobs.
 

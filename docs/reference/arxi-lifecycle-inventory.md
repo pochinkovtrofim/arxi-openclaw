@@ -10,9 +10,9 @@ title: "Ro lifecycle producer inventory"
 
 This is source-level upgrade evidence, not a stable OpenClaw API. Ro consumes
 only the versioned `gateway.suspend.*` protocol. The inventory was last reviewed at
-OpenClaw `v2026.10.5`, exact upstream commit
-`1b58cb9a1b4f4353e1add63c8506db4d890962e8`. That release kept the same active
-categories and added holder names for chat runs and terminal persistence.
+OpenClaw `v2026.10.9`, exact upstream commit
+`8b18b5578f66eab1501cba4cef2310d88bfb9a41`. Since `v2026.10.5` neither the canonical snapshot
+nor the server-local inspectors changed.
 
 Active work is covered by the canonical Gateway snapshot in
 `src/infra/gateway-active-work.ts` plus server-local inspectors in

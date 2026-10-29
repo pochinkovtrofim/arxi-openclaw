@@ -9,6 +9,7 @@ import { sha256Hex } from "../infra/crypto-digest.js";
 import { hasErrnoCode } from "../infra/errno.js";
 import { withFileLock } from "../infra/file-lock.js";
 import { canonicalPathFromExistingAncestor, findExistingAncestor } from "../infra/fs-safe.js";
+import { hasCommandProcessCleanupError } from "../process/exec-result.js";
 import { withServiceInspectionBudget } from "./service-inspection-budget.js";
 import {
   readServiceFileState,
@@ -113,6 +114,7 @@ async function inspect(
   let shared = new Set<string>();
   let sourcePath: string | undefined;
   let artifactPath: string | undefined;
+  let repairStateDirectory = false;
   const result = (capability: ServiceDefinitionMutationCapability) => ({
     capability:
       capability.kind !== "writable" && capability.artifact === "service-file" && artifactPath
@@ -122,6 +124,7 @@ async function inspect(
     fingerprint,
     shared,
     sourcePath,
+    repairStateDirectory,
   });
   let artifact: ServiceDefinitionMutationArtifact | undefined;
   try {
@@ -184,10 +187,16 @@ async function inspect(
       // Safe parent authority lets the installer replace these owned regular files;
       // loaded overrides and generated environment files are not legacy unit outputs.
       const repairableGeneratedFile = actual.isFile() && (file === unit || file === `${unit}.bak`);
+      const repairableStateDirectory =
+        directory &&
+        file === path.dirname(generated) &&
+        inspected === file &&
+        !stat.isSymbolicLink();
       const requiresRegeneration = Boolean(actual.mode & 0o022);
-      if (requiresRegeneration && !repairableGeneratedFile) {
+      if (requiresRegeneration && !repairableGeneratedFile && !repairableStateDirectory) {
         return result({ kind: "unknown", reason: "unsafe-permissions", artifact });
       }
+      repairStateDirectory ||= requiresRegeneration && repairableStateDirectory;
       if (directory) {
         await fs.access(inspected, constants.W_OK | constants.X_OK);
         fingerprint.set(file, `${inspected}:${identity(stat)}:${identity(actual)}`);
@@ -209,7 +218,7 @@ async function inspect(
     }
     return result({ kind: "writable" });
   } catch (error) {
-    if (error instanceof GatewayServiceAuthorityError) {
+    if (error instanceof GatewayServiceAuthorityError || hasCommandProcessCleanupError(error)) {
       throw error;
     }
     return result({ kind: "unknown", reason: "inspection-failed", artifact });
@@ -261,6 +270,9 @@ export async function readSystemdDefinitionMutationCapability(
             ...(options?.requireLoaded ? [{ requireLoaded: true }] : []),
           );
         } catch (error) {
+          if (hasCommandProcessCleanupError(error)) {
+            throw error;
+          }
           const owned =
             isSystemSystemdOwnershipError(error) && error.ownership.status !== "unverifiable";
           if (owned) {
@@ -278,7 +290,12 @@ export async function readSystemdDefinitionMutationCapability(
             requireLoaded: true,
           }).then(
             (inspection) => inspection.capability,
-            () => undefined,
+            (inspectionError: unknown) => {
+              if (hasCommandProcessCleanupError(inspectionError)) {
+                throw inspectionError;
+              }
+              return undefined;
+            },
           );
           return loaded?.kind === "writable" ? loaded : unverified;
         }
@@ -286,7 +303,10 @@ export async function readSystemdDefinitionMutationCapability(
       try {
         return (await inspect(env, environment, { ...readOptions, timeoutMs: remaining() }))
           .capability;
-      } catch {
+      } catch (error) {
+        if (hasCommandProcessCleanupError(error)) {
+          throw error;
+        }
         return { kind: "unknown", reason: "inspection-failed" };
       }
     },
@@ -319,6 +339,23 @@ export async function withSystemdDefinitionMutation<T>(
       await fs.mkdir(path.dirname(unit), { recursive: true, mode: 0o755 });
       assertGatewayServiceUpdateCurrent();
       await fs.mkdir(path.dirname(generated), { recursive: true, mode: 0o700 });
+      if (initial.repairStateDirectory) {
+        const directory = await fs.open(
+          path.dirname(generated),
+          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        );
+        try {
+          const stat = await directory.stat();
+          if (stat.uid !== process.geteuid?.()) {
+            throw new Error("Cannot repair a foreign-owned service state directory.");
+          }
+          // Tighten the owned inode before writing service credentials; reads never chmod.
+          assertGatewayServiceUpdateCurrent();
+          await directory.chmod(0o700);
+        } finally {
+          await directory.close();
+        }
+      }
       return { initial, lockedTargets: await canonicalTargets() };
     },
     async () => false,

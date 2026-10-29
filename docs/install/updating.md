@@ -26,6 +26,68 @@ Before a significant update, [create a verified backup](#before-updating-create-
 Automatic config copies and migration recovery originals are not a full-state
 backup.
 
+## Update implementation contract
+
+**Updates always work** (`openclaw update` finishes best effort everywhere). Changes to update, Doctor, service lifecycle, migrations, plugin loading: state their update behavior. Installed updater runs first, can't be patched; candidate fixes key on markers shipped drivers set; existing operator state = input. Recoverable hiccups → recorded warnings; back up before mutating, let rollback restore it; refuse only for named data risk with previous Gateway kept running. Timeouts and budgets: generous, derived from measured state, sized for slow hardware. Proof: published-driver × candidate cell.
+
+Stopped update and Doctor database snapshots tolerate concurrent read-only SQLite
+probes. The transient `-shm` WAL index is rebuilt privately, never copied or used
+to detect durable changes. Empty WAL files created by readers count as absent.
+Changes to the main database, WAL data, or rollback journal still refuse the
+stopped backup and identify the changed file. This repair must
+be present in the runtime performing the snapshot, including the candidate worker
+when the installed updater delegates capture to it.
+
+On macOS, reinstall and uninstall reconcile the launchd registration by service
+label even if its plist was deleted. Reinstall warns when the previous definition
+is missing; an existing plist and its private environment files remain backed up
+for rollback if activation fails.
+
+Channel outages are warnings once the expected Gateway build is running and its
+core readiness is verified. Detailed `/readyz` responses report `coreReady`
+separately while preserving HTTP 503, `ready: false`, and failing channel names.
+Update history retains those channel and HTTP facts. Startup, state and agent
+database admission, and plugin-replacement failures still prevent
+core readiness; an older HTTP 503 without explicit core proof remains unverified.
+Run `openclaw channels status --probe` to investigate channel warnings. This
+requires the repaired installed updater; a new candidate cannot change the
+checks of an updater already running.
+
+During update finalization, disposable plugin source copies and private SQLite
+inspection snapshots use the candidate helper's absolute `TMPDIR` (including
+when an older installed updater starts that helper). Normal Gateway cache
+placement is unchanged. Installed plugin projects, retained native admissions,
+and recovery or migration backups remain with their existing durable owners;
+`TMPDIR` does not relocate those writes or remove the need for free space on the
+installation and state filesystems.
+
+Plugin source capture repairs stale dependency links without changing real
+dependency directories. POSIX replacements are staged before publication;
+Windows removes only the junction or symlink before recreating and verifying it.
+A failed link leaves that plugin unprepared with a named error. Doctor retains
+its pending migration obligation while other plugins' migrations continue.
+This repair applies when the candidate loads plugin contracts during Doctor.
+
+Post-activation schema verification preserves agent databases Doctor holds after
+deletion. These stores may keep an older schema without failing the update;
+Doctor's held-store warning remains visible. Active databases and pending
+deletions still require the candidate schema, and held stores remain part of
+rollback verification.
+
+When an updater stops a macOS LaunchAgent, it waits for both launchd's process
+and the verified serving Gateway child to exit before continuing. An unloaded
+job or a closed listener does not prove that the child has released its agent
+databases. Pending process cleanup produces a warning and shares the existing
+bounded stop deadline; other processes using the state still receive Doctor's
+maintenance refusal. The updater performing the stop must contain this fix.
+
+OpenClaw.app runs plugin convergence through the selected runtime's Doctor while
+the app owns Gateway activation. This aligns managed official npm plugins with the new
+core before plugin migrations, repairs host peer links, and refreshes the plugin
+registry. Unavailable replacements remain nonblocking: the app's recovery
+diagnostics include the remaining version or peer-link warning and the exact
+repair command. Retry Gateway setup in the app to repeat this owned repair.
+
 ## Retired tenant-container management
 
 The experimental `openclaw fleet` command has been removed. Updating the host
@@ -71,7 +133,7 @@ schemas; follow [downgrade recovery](/reference/database-schemas/integrity-and-r
 before running either bridge release against that state.
 
 Back up the state first and use a [supported Node version](/install/node):
-Node 24.16+ on the 24.x line, or Node 26.1+. Keep the same owning account,
+Node 24.22.1+ on the 24.x line, or Node 26.12.1+. Keep the same owning account,
 installation prefix, profile, and state/configuration paths throughout.
 
 For an npm installation with an OpenClaw-managed Gateway service, run this
@@ -318,6 +380,12 @@ reported recovery command. Doctor does not clear those artifacts.
 pnpm updates use the installation's own pnpm home and bin directory, even when
 macOS service PATH excludes pnpm. The installed updater must contain this fix.
 
+pnpm updates use the installation's own pnpm home and bin directory, even when
+macOS service PATH excludes pnpm or a version manager puts another pnpm first.
+Both pnpm 10's home-level shim and pnpm 11's `bin/` shim are supported, and the
+child PATH includes both locations. The installed updater must contain this fix;
+installing a newer candidate cannot repair an older updater's preflight.
+
 Native pnpm updates also relocate pnpm 12 launcher paths before publishing them.
 After activation, unresolved launcher targets produce a warning with repair
 guidance without rolling back the updated package. These protections require
@@ -326,6 +394,21 @@ pointing into a missing `.openclaw-update-native-*` directory, reinstall the
 same version with `pnpm add -g --force openclaw@<installed-version>` using the
 same account and global directories to recreate the launcher. Back up first
 and follow the [manual package-manager procedure](/install/updating/update-methods#alternative-manual-npm-pnpm-or-bun).
+
+Native pnpm package swaps preserve platform-filtered optional dependencies as
+absent. On Windows, a dangling link declared in its owner's
+`optionalDependencies` is removed from the staged copy instead of failing
+activation; missing required dependencies and other filesystem errors still
+fail. This requires the installed updater to contain the repair.
+
+Package verification checks file hashes, sizes, and required executability. When
+a non-executable dist file gains execute bits, verification continues with one
+warning listing the affected file count, provided it has no group/world write or
+setuid/setgid/sticky bits. Other permission differences retain their existing
+behavior, including owner-only recovery modes. File permissions are left
+unchanged. Missing required executability, changed content, and unsafe file types
+still fail verification. The installed updater must contain this fix; a newer
+candidate cannot change an older updater's package verification.
 
 If a pnpm-owned install fails with `IO error: not a terminal`, the installed
 updater may be triggering an interactive pnpm build-approval prompt while
@@ -373,14 +456,29 @@ containing the managed-helper authority fix, subsequent updates started through
 **from** the fixed version; it does not repair the 2026.9.4 macOS handoff in place.
 </Note>
 
-Package updates that select Node inspect the exact candidate's Node requirement before activation.
-An incompatible runtime produces `node-runtime-preflight`, with the target
-version, required engine range, selected Node version, and an upgrade command.
+Registry package updates inspect the exact target's Node requirement before
+staging or running package lifecycle scripts. An incompatible Gateway runtime
+produces `preflight-node-runtime-incompatible`, with the target version, required
+engine range, selected Node version, and an upgrade command. If the Gateway
+service pins a Node executable, update that service definition too; changing
+the shell's Node alone does not change the service. The updater keeps the
+requested OpenClaw target and does not select another release automatically.
+Later runtime capability checks can still produce `node-runtime-preflight`.
 npm directory permission failures produce `global-install-permission-denied`,
 naming the directory, its owner when available, and the next action. Dry-run JSON
 includes these outcomes in `failures`; the update report and Doctor's update
 history retain recorded failures. The serving Gateway stays in place during
 these preflight checks.
+
+After an external reinstall changes the OpenClaw installation root, such as
+installing a newer Node version with nvm, mise, or Homebrew and reinstalling
+OpenClaw, Gateway startup repairs managed plugin host links before checking
+plugin availability. Stale or dangling links are rebound to the current
+installation, with a warning showing the old and new targets. Developer-owned
+path installs and links outside the plugin system's owned locations are left
+unchanged. If filesystem permissions prevent repair, startup reports the
+affected plugin and keeps it unavailable until the links can be repaired with
+`openclaw doctor --fix`.
 
 Directory permission checks remain in the **installed updater**. Older updaters cannot gain new
 admission behavior from the candidate they have not staged yet. If upgrading
@@ -477,9 +575,15 @@ installed-checkout check during candidate builds.
 The canary uses a temporary loopback Gateway port and suppresses background
 listeners, including the MCP Apps sandbox, browser control, and channel services.
 This lets validation run while the serving Gateway keeps its configured ports.
-It preserves non-secret Gateway auth settings such as `gateway.auth.rateLimit`
-for policy checks, while using a temporary token and disabling Tailscale identity
-authentication.
+Doctor and policy checks use the copied deployment settings, so an accepted
+policy attestation remains valid for an unchanged deployment. Only after these
+checks finish does the canary apply its temporary token, disable Tailscale and
+Control UI, and suppress background services for Gateway startup. Genuine policy
+drift still fails validation; no attestation pin is changed or skipped. The updater
+running the rehearsal must contain this fix; a newer candidate cannot undo
+configuration overrides already applied by an older updater.
+Doctor omits the onboarding URL warning derived from that temporary loopback
+binding during rehearsal; other findings remain visible.
 The activated Gateway retains your normal listener settings. Candidate startup
 progress is emitted only when the driving updater announces support, so older
 updaters, including 2026.9.5 and 2026.9.6, retain actual startup errors instead of
@@ -659,6 +763,10 @@ identities in the journal are not rewritten. Version or inode matches alone do
 not qualify; changed content, unsafe journal permissions or links, active update
 ownership, and unfinished rollback remain refusals.
 
+Symlink launchers may have different recorded permission modes (for example,
+`0755` and `0700`) if their targets and required identities still match. Regular-file
+launcher modes and package-tree integrity checks remain enforced.
+
 If a manual installation has replaced the candidate with a newer version, repair
 verifies that installation's manifest, dist inventories, entry targets, and launchers
 before archiving the old operation as `superseded-by-manual-install`. Old package
@@ -711,13 +819,22 @@ or rollback for it. Do not rewrite identities or delete recovery artifacts.
 
 ### Unfinished publication and rollback
 
-`openclaw update` automatically settles a `publication-complete` operation when
-the live candidate passes the same verification as repair, even when the update
-lease is unchanged. A dry run previews settlement without changing recovery
-artifacts. With an unchanged lease, other unfinished phases still require explicit
-repair.
+`openclaw update` automatically settles a `prepared`, `publishing`, or
+`publication-complete` operation when the live candidate passes the same
+verification as repair, even when the update lease is unchanged. It also retires
+an untouched preparation after verifying the original package and launchers.
+This does not republish files beneath a running Gateway. A dry run previews
+settlement without changing recovery artifacts. Unfinished publication that
+still needs file changes, pending rollback, and failed verification retain their
+recovery artifacts and report the repair command.
 
-For an external-helper operation stuck at `prepared`, `publishing`, or
+After a managed-service update fails before stopping the original Gateway,
+the handoff checks whether that original version is still serving and records
+the outcome. A stopped Gateway or unavailable health check is reported with
+its reason. This observation does not restart the service or mark the attempted
+update successful.
+
+To explicitly settle an external-helper operation stuck at `prepared`, `publishing`, or
 `publication-complete` whose live package already serves the candidate, run
 `openclaw update repair` from an independent terminal. Repair verifies the
 installed candidate's dist content inventory, manifest, launchers,
@@ -852,6 +969,9 @@ restarts the Gateway.
 
 Missing state metadata or unverified backup coverage can still produce
 `update-schema-bump-unfenced` with database versions and recovery instructions.
+If npm postinstall emits this typed refusal, the updater reports it without
+retrying the install with optional dependencies omitted. Other install failures
+retain their existing retry behavior.
 Before package commit, let the failed update finish restoring the previous
 package. OpenClaw 2026.9.2 leaves the Gateway service stopped after failed
 post-install verification. After package commit, the old package backup is gone:
@@ -1103,6 +1223,27 @@ openclaw doctor
 ```
 
 Migrates config, audits DM policies, and checks gateway health. Doctor also compares active official plugins with the OpenClaw package the managed service will load after restart. Resolve any plugin restart-readiness warning before continuing. Details: [Doctor](/gateway/doctor)
+
+Update snapshots and database backups accept a database only when every integrity
+finding names an exactly owned, schema-validated FTS index. A SQLite tokenizer
+change can make those derived indexes appear malformed while their content rows
+remain intact. Copies keep the original index bytes for rollback compatibility;
+run openclaw doctor --fix under the new runtime to rebuild them. Mixed damage,
+unowned FTS definitions, and foreign-key violations still refuse the copy.
+The candidate performs the rehearsal snapshot, so that allowance applies on the
+first update to a candidate containing it; activation-time backups require the
+installed updater to contain the fix. Snapshot acceptance itself does not repair
+the source. The new runtime separately permits one automatic startup repair per
+physical database generation, only for canonical owned FTS damage under a live
+Gateway startup grant and an exclusive matching database lease. It preserves a
+verified backup before rebuilding and rechecks integrity. Failed repair, mixed
+damage, missing authority, or a repeated attempt keeps the database quarantined
+and requires `openclaw doctor --fix`.
+
+On Windows, `openclaw doctor --fix` can also retry abandoned backup scratch
+cleanup after an older release reported `EPERM` while renaming to an
+`openclaw-backup-retired-*` directory. Active backup scratch and published
+archives remain protected. See [Backup scratch cleanup](/cli/backup).
 
 If you use the unpacked Chrome extension, also run `openclaw browser doctor --browser-profile chrome`.
 For a version-mismatch warning, reload the extension from `chrome://extensions`;

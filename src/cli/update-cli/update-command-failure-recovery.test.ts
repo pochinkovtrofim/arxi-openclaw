@@ -32,6 +32,16 @@ const mocks = vi.hoisted(() => ({
   >(async () => null),
   converge: vi.fn<typeof import("./update-command-convergence.js").convergeUpdatePlugins>(),
   printResult: vi.fn(),
+  task: vi.fn<typeof import("../../daemon/schtasks-exec.js").execSchtasks>(),
+}));
+// Native Windows transport only; the finalizer and autostart recovery owner stay real.
+vi.mock("../../daemon/schtasks-exec.js", async () => ({
+  ...(await vi.importActual<typeof import("../../daemon/schtasks-exec.js")>(
+    "../../daemon/schtasks-exec.js",
+  )),
+  execSchtasks: mocks.task,
+  execScheduledTaskEnabledChange: (name: string, enabled: boolean) =>
+    mocks.task(["/Change", "/TN", name, enabled ? "/ENABLE" : "/DISABLE"]),
 }));
 vi.mock("./update-command-convergence.js", () => ({ convergeUpdatePlugins: mocks.converge }));
 vi.mock("./progress.js", () => ({ printResult: mocks.printResult }));
@@ -48,6 +58,8 @@ const dirs = useAutoCleanupTempDirTracker(afterEach);
 let root: string;
 beforeEach(async () => {
   vi.clearAllMocks();
+  mocks.converge.mockReset();
+  mocks.task.mockReset();
   mocks.activePort.mockReset();
   mocks.managedService.mockReset();
   vi.mocked(verifyUpdatedGateway)
@@ -68,6 +80,61 @@ afterEach(() => {
 });
 
 describe("post-update failure recovery observation", () => {
+  it.each([
+    { untouchedFailure: true, dataAtRisk: false, serviceStopped: false },
+    { untouchedFailure: false, dataAtRisk: false, serviceStopped: false },
+    { untouchedFailure: undefined, dataAtRisk: false, serviceStopped: false },
+    { untouchedFailure: true, dataAtRisk: true, serviceStopped: false },
+    { untouchedFailure: true, dataAtRisk: false, serviceStopped: true },
+  ])(
+    "requires explicit untouched proof and no risk ($untouchedFailure, $dataAtRisk)",
+    async ({ untouchedFailure, dataAtRisk, serviceStopped }) => {
+      const { verifyUpdateFailureRecovery } = await import("./update-command-failure-recovery.js");
+      const result = await verifyUpdateFailureRecovery({
+        result: {
+          status: "error",
+          mode: "npm",
+          reason: "package-swap",
+          root,
+          before: { version: "2026.9.5" },
+          steps: [],
+          durationMs: 0,
+          ...(dataAtRisk
+            ? {
+                recovery: {
+                  serviceRestartSafe: false,
+                  reason: "runtime-verification-failed",
+                  dataAtRisk: "unreadable-state",
+                },
+              }
+            : {}),
+        },
+        root,
+        opts: { json: true },
+        untouchedFailure,
+        serviceStopped,
+      });
+      expect(result.reason).toBe("package-swap");
+      if (untouchedFailure === true && !dataAtRisk && !serviceStopped) {
+        expect(mocks.activePort).not.toHaveBeenCalled();
+        expect(mocks.managedService).not.toHaveBeenCalled();
+        expect(verifyUpdatedGateway).not.toHaveBeenCalled();
+        expect(result.verification).toEqual({});
+        expect(result.steps).toContainEqual(
+          expect.objectContaining({ name: "gateway recovery observation", exitCode: 0 }),
+        );
+      } else {
+        expect(verifyUpdatedGateway).toHaveBeenCalledOnce();
+      }
+      if (dataAtRisk) {
+        expect(result.recovery?.serviceRestartSafe).toBe(false);
+        expect(result.recovery?.serviceRestartSafe === false && result.recovery.dataAtRisk).toBe(
+          "unreadable-state",
+        );
+      }
+    },
+  );
+
   it("settles a headless package rollback without waiting for a Gateway", async () => {
     const { packageRoot, transaction } = await createRetainedPackageSwap(root);
     const configPath = path.join(process.env.OPENCLAW_STATE_DIR!, "openclaw.json");
@@ -182,7 +249,7 @@ describe("post-update failure recovery observation", () => {
     { activated: true, json: false, deferred: true },
     { activated: true, json: true, deferred: true },
   ])(
-    "defers only recorded state contention (activated=$activated, json=$json, deferred=$deferred)",
+    "observes untouched failures and defers recorded state contention (activated=$activated, json=$json, deferred=$deferred)",
     async ({ activated, json, deferred }) => {
       const env = { ...process.env };
       const run = { runId: updateLedger.createUpdateRun({ trigger: "cli" }, { env }).runId, env };
@@ -268,8 +335,8 @@ describe("post-update failure recovery observation", () => {
       if (!(failure instanceof ReportedUpdateCommandFailure)) {
         throw failure;
       }
-      expect(readRuntime).toHaveBeenCalledTimes(deferred ? 0 : 1);
-      expect(inspect).toHaveBeenCalledTimes(deferred ? 0 : 1);
+      expect(readRuntime).toHaveBeenCalledTimes(activated && !deferred ? 1 : 0);
+      expect(inspect).toHaveBeenCalledTimes(activated && !deferred ? 1 : 0);
       expect(sleep).not.toHaveBeenCalled();
       expect(waitForStartup).not.toHaveBeenCalled();
       expect(elapsedMs).toBe(0);
@@ -289,17 +356,24 @@ describe("post-update failure recovery observation", () => {
         );
       }
       expect(recorded?.verification.serviceRunning).toBeUndefined();
-      expect(recorded?.verification.readyz).toBe(deferred ? undefined : false);
+      expect(recorded?.verification.readyz).toBe(activated && !deferred ? false : undefined);
       expect(recorded?.steps).toContainEqual(
         expect.objectContaining({ step: "candidate-doctor-lint", exitCode: 2 }),
       );
       const recoveryStep = recorded?.steps.find(
         (step) => step.step === "gateway recovery verification",
       );
-      expect(recoveryStep).toMatchObject({
-        status: deferred ? "completed" : "failed",
-        exitCode: deferred ? null : 1,
-      });
+      if (activated) {
+        expect(recoveryStep).toMatchObject({
+          status: deferred ? "completed" : "failed",
+          exitCode: deferred ? null : 1,
+        });
+      } else {
+        expect(recoveryStep).toBeUndefined();
+        expect(recorded?.steps).toContainEqual(
+          expect.objectContaining({ step: "gateway recovery observation", exitCode: 0 }),
+        );
+      }
       if (deferred) {
         expect(recoveryStep?.detail).toContain("deferred");
         expect(recoveryStep?.detail).toContain("service owner");

@@ -48,7 +48,6 @@ import {
   fetchNpmPackageTargetStatus,
   runCommandWithTimeout,
 } from "./update-cli-modules.test-support.js";
-import { registerForegroundFailureRecoveryTests } from "./update-cli/update-cli-failure-recovery.test-support.js";
 import {
   writeGitUpdateResultFixture,
   packageTargetStatus,
@@ -252,17 +251,6 @@ describe("update-cli", () => {
     expect(result.pluginUpdate.warnings?.at(-1)?.message).toContain("doctor diagnostic output");
     expect(result.pluginUpdate.warnings?.at(-1)?.message).not.toContain("long-argv-prefix");
   });
-
-  registerForegroundFailureRecoveryTests({
-    setupUpdatedRootRefresh,
-    spawn,
-    updateCommand,
-    defaultRuntime,
-    ExitError,
-    spawnCall,
-    lastWriteJsonCall,
-    updateNpmInstalledPlugins,
-  });
 });
 
 describe("update-cli", () => {
@@ -399,14 +387,14 @@ describe("update-cli", () => {
       });
       primeNpmChannelTag("latest", "2026.7.1");
       vi.mocked(fetchNpmPackageTargetStatus).mockResolvedValue(
-        packageTargetStatus({ version: "2026.7.1", nodeEngine: ">=26.1.0" }),
+        packageTargetStatus({ version: "2026.7.1", nodeEngine: ">=26.12.1" }),
       );
       nodeVersionSatisfiesEngine.mockImplementation(
-        (version: string | null) => version === "26.8.1",
+        (version: string | null) => version === "26.12.1",
       );
       resolveNodeRuntimeInfo.mockImplementation(async (nodePath) => ({
         status: "supported",
-        version: nodePath === replacementNode ? "26.8.1" : "24.20.0",
+        version: nodePath === replacementNode ? "26.12.1" : "24.20.0",
         sqliteVersion: "3.51.3",
         nodeSharedSqlite: false,
         sqliteProbe: { available: true, version: "3.51.3", text: true, blob: true, json: true },
@@ -423,35 +411,25 @@ describe("update-cli", () => {
         npmCommands: ["npm", fixture.serviceNpm, requireValue(fixture.serviceNpmReal, "npm")],
         nodeVersions: {
           [serviceNode]: "v24.20.0",
-          [replacementNode]: "v26.8.1",
+          [replacementNode]: "v26.12.1",
         },
         onGatewayInstall: (argv) =>
           primeServiceCommand([requireValue(argv[0], "Node"), fixture.entrypoint, "gateway"]),
       });
-      if (capability !== "writable") {
-        await expect(updateCommand({ yes: true, json: true, restart: true })).rejects.toEqual(
-          new ExitError(1),
-        );
-        expect(lastWriteJsonCall()).toMatchObject({
-          status: "error",
-          reason: "node-runtime-preflight",
-        });
-        expect(
-          commandCalls().find(([argv]) => argv[1] === "i" && argv[2] === "-g"),
-        ).toBeUndefined();
-        expect(recoverNode).not.toHaveBeenCalled();
-        expect(serviceStop).not.toHaveBeenCalled();
-        expect((await serviceReadCommand(process.env)).programArguments[0]).toBe(serviceNode);
-        expect(
-          JSON.parse(await fs.readFile(path.join(fixture.root, "package.json"), "utf8")).version,
-        ).toBe("2026.5.18");
-      } else {
-        await updateCommand({ yes: true, json: true, restart: true });
-        expect(commandCalls().find(([argv]) => argv[1] === "i" && argv[2] === "-g")).toBeDefined();
-        expect(lastWriteJsonCall()).toMatchObject({ status: "ok" });
-        expect((await serviceReadCommand(process.env)).programArguments[0]).toBe(replacementNode);
-        expect(recoverNode).toHaveBeenCalledOnce();
-      }
+      await expect(updateCommand({ yes: true, json: true, restart: true })).rejects.toEqual(
+        new ExitError(1),
+      );
+      expect(lastWriteJsonCall()).toMatchObject({
+        status: "error",
+        reason: "preflight-node-runtime-incompatible",
+      });
+      expect(commandCalls().find(([argv]) => argv[1] === "i" && argv[2] === "-g")).toBeUndefined();
+      expect(recoverNode).not.toHaveBeenCalled();
+      expect(serviceStop).not.toHaveBeenCalled();
+      expect((await serviceReadCommand(process.env)).programArguments[0]).toBe(serviceNode);
+      expect(
+        JSON.parse(await fs.readFile(path.join(fixture.root, "package.json"), "utf8")).version,
+      ).toBe("2026.5.18");
     },
   );
 });

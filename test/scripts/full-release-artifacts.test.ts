@@ -616,30 +616,44 @@ describe.skipIf(process.platform === "win32")("immutable release artifact CLI", 
     ).toBe(true);
   });
 
-  it("adopts a newer producer attempt without replacing its original dispatch", () => {
-    const test = fixture();
-    test.artifact(
-      `${DISPATCH_ID}-dispatch`,
-      "dispatch.json",
-      {
-        request: artifactRequest(),
-        runId: "81",
-        runAttempt: "1",
-      },
-      true,
-    );
-    test.api(
-      "actions/runs/81",
-      workflowRun({ run_attempt: 2, status: "completed", conclusion: "success" }),
-    );
-    const result = test.run("resolve", { GITHUB_RUN_ATTEMPT: "2" });
-    expect(result.status, result.stderr).toBe(0);
-    expect(result.outputs).toMatchObject({
-      run_id: "81",
-      run_attempt: "2",
-      dispatch_id: DISPATCH_ID,
-    });
-  });
+  it.each(["npm", "docker"])(
+    "adopts a newer %s producer attempt without replacing its original dispatch",
+    (stage) => {
+      const test = fixture();
+      const dispatchId = `full-release-validation-51-1-artifacts-${stage}`;
+      const request = { ...artifactRequest(), stage, dispatchId };
+      test.artifact(
+        `${dispatchId}-dispatch`,
+        "dispatch.json",
+        {
+          request,
+          runId: "81",
+          runAttempt: "1",
+        },
+        true,
+      );
+      test.api(
+        "actions/runs/81",
+        workflowRun({
+          run_attempt: 2,
+          status: "completed",
+          conclusion: "success",
+          display_title: `Full Release Artifacts ${dispatchId}`,
+        }),
+      );
+      const result = test.run("resolve", {
+        GITHUB_RUN_ATTEMPT: "2",
+        ARTIFACT_STAGE: stage,
+        ARTIFACT_DISPATCH_ID: dispatchId,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.outputs).toMatchObject({
+        run_id: "81",
+        run_attempt: "2",
+        dispatch_id: dispatchId,
+      });
+    },
+  );
 
   it.each([
     "contents retry",
@@ -677,6 +691,14 @@ describe.skipIf(process.platform === "win32")("immutable release artifact CLI", 
               : [{ ...test.jobs[0], id: 999, run_attempt: 2, conclusion: "failure" }],
     });
     test.artifact("openclaw-npm-package-descriptor-81-1", "prepared-npm-bundle.json", test.raw);
+    if (outcome === "replacement preparation failed") {
+      test.artifact("openclaw-npm-package-descriptor-81-2", "prepared-npm-bundle.json", test.raw);
+    } else {
+      test.api("actions/runs/81/artifacts?name=openclaw-npm-package-descriptor-81-2&per_page=100", {
+        total_count: 0,
+        artifacts: [],
+      });
+    }
     const raw = test.run("wait", { ARTIFACT_OUTPUT: "raw", ARTIFACT_RUN_ATTEMPT: "2" });
     if (outcome === "replacement preparation failed") {
       expectRejected(raw, "Successful npm preparation was replaced");
@@ -783,6 +805,7 @@ describe.skipIf(process.platform === "win32")("immutable release artifact CLI", 
 
   it.each([
     "successful raw job",
+    "uploaded descriptor while raw job is active",
     "failed unrelated qualifier",
     "failed raw job",
     "wrong raw attempt",
@@ -793,6 +816,10 @@ describe.skipIf(process.platform === "win32")("immutable release artifact CLI", 
       const test = fixture();
       test.jobs[1]!.status = "in_progress";
       test.jobs[1]!.conclusion = null;
+      if (outcome === "uploaded descriptor while raw job is active") {
+        test.jobs[0]!.status = "in_progress";
+        test.jobs[0]!.conclusion = null;
+      }
       if (outcome === "failed raw job") {
         test.jobs[0]!.conclusion = "failure";
       }
@@ -807,8 +834,11 @@ describe.skipIf(process.platform === "win32")("immutable release artifact CLI", 
       const result = test.run("wait", {
         ARTIFACT_OUTPUT: "raw",
         FIXTURE_RERUN_DURING_DOWNLOAD: String(outcome === "rerun during download"),
+        FIXTURE_STOP_ON_WAIT: String(outcome === "uploaded descriptor while raw job is active"),
       });
-      if (outcome === "successful raw job" || outcome === "failed unrelated qualifier") {
+      if (outcome === "uploaded descriptor while raw job is active") {
+        expectRejected(result, "Fixture reached another artifact poll");
+      } else if (outcome === "successful raw job" || outcome === "failed unrelated qualifier") {
         expect(result.status, result.stderr).toBe(0);
         expect(JSON.parse(result.outputs.prepared_bundle_json!)).toEqual(test.raw);
         expect(result.outputs.qualified_preflight_bundle_json).toBeUndefined();

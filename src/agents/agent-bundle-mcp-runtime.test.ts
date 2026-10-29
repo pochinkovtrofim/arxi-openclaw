@@ -25,6 +25,7 @@ import {
   createGatewaySchedulerClock,
   createTestGatewayScheduler,
 } from "../test-utils/gateway-scheduler-clock.js";
+import { reserveTestPortListener } from "../test-utils/port-claims.js";
 import { startCatalogRecoveryMcpServer } from "./agent-bundle-mcp-catalog-recovery.test-support.js";
 import { createCombinedSessionMcpRuntime } from "./agent-bundle-mcp-combined.js";
 import { completeDeferredSessionMcpRuntimeRetirement } from "./agent-bundle-mcp-manager-cleanup.js";
@@ -56,7 +57,6 @@ import { getMcpAppModelContext, updateMcpAppModelContext } from "./mcp-app-model
 import { createMcpProofPluginRegistry } from "./mcp-connection-resolver.test-fixtures.js";
 import { fetchMcpAppView, getMcpAppViewLease } from "./mcp-ui-resource.js";
 import { testing as mcpUiResourceTesting } from "./mcp-ui-resource.test-support.js";
-import { createAgentCleanupScope } from "./run-cleanup-timeout.js";
 
 vi.mock("./embedded-agent-mcp.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./embedded-agent-mcp.js")>();
@@ -562,6 +562,56 @@ describe("session MCP runtime", () => {
       await runtime.dispose();
       await catalogResult;
       await fs.rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reports initialize authentication refusal with the server name without response secrets", async () => {
+    const server = await reserveTestPortListener({
+      offsets: [0],
+      createListener: () =>
+        http.createServer((_req, res) => {
+          res.writeHead(401, {
+            "content-type": "application/json",
+            "www-authenticate": 'Bearer realm="test-header-secret"',
+          });
+          res.end(
+            JSON.stringify({
+              jsonrpc: "2.0",
+              id: null,
+              error: { code: -32001, message: "expired token: test-body-secret" },
+            }),
+          );
+        }),
+    });
+    const runtime = createSessionMcpRuntime({
+      sessionId: "session-auth-refusal",
+      workspaceDir: "/workspace",
+      cfg: {
+        mcp: {
+          servers: {
+            lab: {
+              transport: "streamable-http",
+              url: `http://127.0.0.1:${server.claim.port}/mcp`,
+              headers: { Authorization: "Bearer test-request-secret" },
+            },
+          },
+        },
+      },
+    });
+    try {
+      const catalog = await runtime.getCatalog();
+      expect(catalog.diagnostics).toEqual([
+        expect.objectContaining({
+          serverName: "lab",
+          message: expect.stringContaining("authentication refused (401)"),
+        }),
+      ]);
+      expect(catalog.tools).toEqual([]);
+      expect(JSON.stringify(catalog)).not.toMatch(/test-(?:body|header|request)-secret/);
+    } finally {
+      await runtime.dispose();
+      await server.releaseListener();
+      await server.claim.release();
     }
   });
 
@@ -3305,60 +3355,6 @@ describe("disposeSession timeout", () => {
         trigger.releaseLists();
         await runtime.dispose();
         await Promise.all([recovering.close(), trigger.close()]);
-      }
-    },
-  );
-
-  it(
-    "retains failed HTTP retirement for a later materialized cleanup after eviction",
-    { timeout: 15_000 },
-    async () => {
-      testing.setBundleMcpDisposeTimeoutMsForTest(50);
-      const manager = createSessionMcpRuntimeManager();
-      const termination = createDeferred();
-      const server = await startCatalogRecoveryMcpServer("hanging-delete-server", {
-        holdTermination: termination.promise,
-      });
-
-      try {
-        const runtime = await manager.getOrCreate({
-          sessionId: "session-streamable-http-dispose",
-          sessionKey: "agent:test:session-streamable-http-dispose",
-          workspaceDir: "/workspace",
-          cfg: {
-            mcp: {
-              servers: {
-                hangingDelete: {
-                  url: server.url,
-                  transport: "streamable-http",
-                },
-              },
-            },
-          },
-        });
-
-        const catalog = await runtime.getCatalog();
-        expect(catalog.tools).toHaveLength(1);
-
-        const materialized = await materializeBundleMcpToolsForRun({ runtime });
-        const start = Date.now();
-        await runtime.dispose();
-        const elapsed = Date.now() - start;
-
-        expect(elapsed).toBeLessThan(1_000);
-        expect(server.terminationCount()).toBe(1);
-        await manager.disposeSession(runtime.sessionId);
-        expect(manager.listRuntimeKeys()).toEqual([]);
-        const cleanupScope = createAgentCleanupScope();
-        await cleanupScope.run(async () => {
-          await expect(materialized.dispose()).rejects.toThrow("could not confirm closure");
-          await expect(materialized.dispose()).rejects.toThrow("could not confirm closure");
-        });
-        expect(cleanupScope.outcome).toBe("uncertain");
-      } finally {
-        termination.resolve();
-        await manager.disposeAll();
-        await server.close();
       }
     },
   );

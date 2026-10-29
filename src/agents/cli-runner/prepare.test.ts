@@ -2560,9 +2560,8 @@ describe("prepareCliRunContext", () => {
     );
     expect(second.promptToolNamesHash).not.toBe(first.promptToolNamesHash);
     expect(second.reusableCliSession).toEqual({
-      mode: "reuse-with-drift",
-      sessionId: "cli-session",
-      drift: { reasons: ["prompt-tools"] },
+      mode: "invalidate",
+      invalidatedReason: "prompt-tools",
     });
   });
 
@@ -2790,9 +2789,8 @@ describe("prepareCliRunContext", () => {
       hashCliSessionText(JSON.stringify(["fake_web_tool", "memory_search"])),
     );
     expect(context.reusableCliSession).toEqual({
-      mode: "reuse-with-drift",
-      sessionId: "cli-session",
-      drift: { reasons: ["prompt-tools"] },
+      mode: "invalidate",
+      invalidatedReason: "prompt-tools",
     });
   });
 
@@ -3531,6 +3529,10 @@ describe("prepareCliRunContext", () => {
       setCliRunnerPrepareTestDeps({
         getActiveMcpLoopbackRuntime: vi.fn(createLoopbackRuntime),
         mintMcpLoopbackClientGrant,
+        resolveMcpLoopbackPolicyTools: vi.fn(() => ({
+          agentId: "main",
+          tools: projectedToolNames.map((name) => ({ name })),
+        })),
         resolveMcpLoopbackScopedTools: vi.fn(() => ({
           agentId: "main",
           tools: projectedToolNames.map((name) => ({ name })),

@@ -7,153 +7,153 @@ importers:
     configDependencies: {}
     packageManagerDependencies:
       pnpm:
-        specifier: 12.9.0
-        version: 12.9.0
+        specifier: 12.15.0
+        version: 12.15.0
 
 packages:
 
-  '@pnpm/exe.android-arm64@12.9.0':
-    resolution: {integrity: sha512-/53fHFwP1mBYQjli6h3LBZsocAMjrEY6hCDiomIwdLIFbtxHrWucPg/s8ozOG3K6Qt8yEA78v7fCcNrgZKTlEQ==}
+  '@pnpm/exe.android-arm64@12.15.0':
+    resolution: {integrity: sha512-eVCqmscY70LGvgRzu3mi8IBWBFGix+a6mNZoWmXxESsBdeiKEF9xQSuaeel10yn+zI7TXy2jlI63vFLzETk+aQ==}
     cpu: [arm64]
     os: [android]
 
-  '@pnpm/exe.android-x64@12.9.0':
-    resolution: {integrity: sha512-QI+Md3q3Df0WbDGpqciRw9ge0r7CGbxSlP3HcyIf34/YdZsbmUTl416oWOe3RrkZpVVVCA20f8B9esYrITpArA==}
+  '@pnpm/exe.android-x64@12.15.0':
+    resolution: {integrity: sha512-Gx/WbkFcdUFUg8g8AShezcS9EiQxfYvdAm2hfKLO8sfJmJvKOCt5fzlgHWDzmGhoclibgW+tUGZ/KF4F4wOTCA==}
     cpu: [x64]
     os: [android]
 
-  '@pnpm/exe.darwin-arm64@12.9.0':
-    resolution: {integrity: sha512-mWr7fGPYJ12GuvU/q0SyJfj7X/9Eqa5dA6cc+yUUAKRdYEcqW4lQcsDd1ArfxJNSDYooz9X+UhFeVxKO9e/xDA==}
+  '@pnpm/exe.darwin-arm64@12.15.0':
+    resolution: {integrity: sha512-N0ZykiDWCvqSBJvt71j7cSoBR993FqvYZFtmpCtqvW3pguiI+NAgraLPA5OTwu5mV+/d8hYpVcPktJA3xFDLtA==}
     cpu: [arm64]
     os: [darwin]
 
-  '@pnpm/exe.darwin-x64@12.9.0':
-    resolution: {integrity: sha512-fr4ns4FyMLptdYbWqW3yc/yvbfQP7D1RBCFUJpSPr7tOzd3JxZvl+Tkvg65kEAGU5wXI6vl3eCOofumEj/n3Gw==}
+  '@pnpm/exe.darwin-x64@12.15.0':
+    resolution: {integrity: sha512-7Ntr2HlBUxzwWOg7NwDxCbRW/3vXuqKO+hcXm+w3SBi9rrHY53li1wLqWVT7Gjxd+lVEHM1QJZo6WJEGFU8C6A==}
     cpu: [x64]
     os: [darwin]
 
-  '@pnpm/exe.freebsd-x64@12.9.0':
-    resolution: {integrity: sha512-4+hZPeJzSSw1oOrfUg+v4QylHv6qKhdgcCnKt9ooryE79p1Z9oyozVJ5em+g6ajbvv6jlH+epnht8/s9Cp5M3Q==}
+  '@pnpm/exe.freebsd-x64@12.15.0':
+    resolution: {integrity: sha512-btOiyL7fL7W4uQGH0aqFai2TNC3IoKcZ7gNHBVbEFZt2dWrnrD0SufL3iGs3fLlmb4OtuU35uf4Zpr9V9Jh9mA==}
     cpu: [x64]
     os: [freebsd]
 
-  '@pnpm/exe.linux-arm64-musl@12.9.0':
-    resolution: {integrity: sha512-+mHQSbA6M6W71PyV0IxYu2T43lZA8rAhlw4Gy7EMlyiv8H2GWJAXtUXl2huw7tnsar2AhCRlPn/ZvUv+/mIBkA==}
+  '@pnpm/exe.linux-arm64-musl@12.15.0':
+    resolution: {integrity: sha512-pNC38k+O+90FOjbPNSnw0E7apq1PKTmz3fFe1amn+lys/U5kL++uzir8bRiho8ONcyA3d9EU7wdqcY0DKkj+JA==}
     cpu: [arm64]
     os: [linux]
     libc: [musl]
 
-  '@pnpm/exe.linux-arm64@12.9.0':
-    resolution: {integrity: sha512-U1mBoG27+J/HuWYtVZOQrvbiKnTlDsDVzyroKQqHsJaTHTXi0H5Y+fU1GjUyMcNG5r/EXtbhp9iAwQt64uXTxQ==}
+  '@pnpm/exe.linux-arm64@12.15.0':
+    resolution: {integrity: sha512-qML/8aCXslh8td/w4U+HJNqUcZ2+m6EfTbWScIzZRmyPsRFN+xB4LP1U/hymxc1iSJiKtG56HJx2fvUErWFIGw==}
     cpu: [arm64]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.linux-ppc64@12.9.0':
-    resolution: {integrity: sha512-P5bgei3i6wjlKq6s4PNg/0cvik354upY2wW3YGSfweYTABnAZP2zGzgMc0eO5SHTz934Cbya8Z0YFRdw6MfmCg==}
+  '@pnpm/exe.linux-ppc64@12.15.0':
+    resolution: {integrity: sha512-tjRDUUl7RCJ6T/6eoNPxOqkwU4Mzi5RtTXmSAxujyz37OTwwsMU7Ps087Zk4gHcUvRSeyF40ZFsew3vtE+nmUA==}
     cpu: [ppc64]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.linux-riscv64@12.9.0':
-    resolution: {integrity: sha512-oNx2uOo2gVrRckEvz7V+FKeq9HOF0rKNHcCyxRRHSXEXpmP6ZMMgJ+iU/m/zfSGp6bAcC5mvAE270FhAeIeKhA==}
+  '@pnpm/exe.linux-riscv64@12.15.0':
+    resolution: {integrity: sha512-bF1uBWEfbwaeryz6lIiaJ8AWD082otZfvzGX5l+6LZRpRwUEpJHUsJrORaYP5/cNMv5ZR2p6TvvcJcQzwtDzmw==}
     cpu: [riscv64]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.linux-s390x@12.9.0':
-    resolution: {integrity: sha512-OChHS7hOlqdBMtZqjIB1QoZGNfzLPSsvTa2kYanf3qso5Q+KgnROQ+uV4a0wRGC6sdshSA63+Ui8MCylRy6iwA==}
+  '@pnpm/exe.linux-s390x@12.15.0':
+    resolution: {integrity: sha512-zKMhIzsexYMToeLmqV5jPsvV/f9vwsJb2kUH2NFYzalbxImeBrlA4kL7GwF8gD4pagV6jYYcJb8RjbZIdjHptg==}
     cpu: [s390x]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.linux-x64-musl@12.9.0':
-    resolution: {integrity: sha512-ubZPsDMXS+LEnPa7wZD18E+KTpOAZPt+ms/khfIROt+6Cp0A2kayQA8aIsvV7+jGZD0xoknvaGN/P3v9OisZUg==}
+  '@pnpm/exe.linux-x64-musl@12.15.0':
+    resolution: {integrity: sha512-A9J0Jg0Rdx+qQU4qXtwyST5tto9IOu1zi4fDk35nbc6DWahggbcKtFvZPKFwL2qgUXGXOX//hXv6z/sp6emO8A==}
     cpu: [x64]
     os: [linux]
     libc: [musl]
 
-  '@pnpm/exe.linux-x64@12.9.0':
-    resolution: {integrity: sha512-ElANYUwQuMfWqMJR4m5L5h9zKjvGKcA8hi2put4J1DMx2smVaNGkGnxkgeIYgMjmF7UFxlZDcL4jItkScgsW4A==}
+  '@pnpm/exe.linux-x64@12.15.0':
+    resolution: {integrity: sha512-yc+QlZR+9+nr29J4fRzhMoapgxTBDndq/+peyoq1XUufnQFnfbXUMFudDIKzHi545linGqmOmXfn0NoufNgcOg==}
     cpu: [x64]
     os: [linux]
     libc: [glibc]
 
-  '@pnpm/exe.win32-arm64@12.9.0':
-    resolution: {integrity: sha512-cqnBKZg5e9fFghmYtgJLyZOAsS1EyLeDVJ0qNsjR7hcc+dq1mWRiDo0erqdj2PGoYaVogyF9WejZSJoKvlfXDw==}
+  '@pnpm/exe.win32-arm64@12.15.0':
+    resolution: {integrity: sha512-fPXZxuY1VclkOga9bc53qNCXcegfeoBR8+Ue+AospDwKzuGGSHll0oDxkLfkmpjyRqpe7bH5DyQPYp/xSMaIVA==}
     cpu: [arm64]
     os: [win32]
 
-  '@pnpm/exe.win32-x64@12.9.0':
-    resolution: {integrity: sha512-khqst6QGgHdKs2lEmz0N75qN/EoOcEywNQlRPfBrBrq1SytHra6ro/xViueJkVvDOz9gEO8oYcXTdZeAjErjMg==}
+  '@pnpm/exe.win32-x64@12.15.0':
+    resolution: {integrity: sha512-nrd+Tp1We1DGj4DGG5Bea9lZNh9y1PjlLBdEwdInS4D0h0UIDtM7JaGGGDJhNzIwcHASyihWI7HLV+dtG+fhYg==}
     cpu: [x64]
     os: [win32]
 
-  pnpm@12.9.0:
-    resolution: {integrity: sha512-j2TvoLeSmGypiuVoeRvNdyKAfidMTwwdmFPGIRZJXFhBGduYdioqU0OxaE02G5rib90W1VFmbXY1NG0/roMN3Q==}
-    engines: {node: '>=18.*'}
+  pnpm@12.15.0:
+    resolution: {integrity: sha512-s5UdbW/0qfE9x89WzSjSuOs328ycaOUuHhGRhz6p+CoBcoerULqtxczElPA2xnwOR+sTYIwvo29HcRth6hKOYQ==}
+    engines: {node: '>=18'}
     hasBin: true
 
 snapshots:
 
-  '@pnpm/exe.android-arm64@12.9.0':
+  '@pnpm/exe.android-arm64@12.15.0':
     optional: true
 
-  '@pnpm/exe.android-x64@12.9.0':
+  '@pnpm/exe.android-x64@12.15.0':
     optional: true
 
-  '@pnpm/exe.darwin-arm64@12.9.0':
+  '@pnpm/exe.darwin-arm64@12.15.0':
     optional: true
 
-  '@pnpm/exe.darwin-x64@12.9.0':
+  '@pnpm/exe.darwin-x64@12.15.0':
     optional: true
 
-  '@pnpm/exe.freebsd-x64@12.9.0':
+  '@pnpm/exe.freebsd-x64@12.15.0':
     optional: true
 
-  '@pnpm/exe.linux-arm64-musl@12.9.0':
+  '@pnpm/exe.linux-arm64-musl@12.15.0':
     optional: true
 
-  '@pnpm/exe.linux-arm64@12.9.0':
+  '@pnpm/exe.linux-arm64@12.15.0':
     optional: true
 
-  '@pnpm/exe.linux-ppc64@12.9.0':
+  '@pnpm/exe.linux-ppc64@12.15.0':
     optional: true
 
-  '@pnpm/exe.linux-riscv64@12.9.0':
+  '@pnpm/exe.linux-riscv64@12.15.0':
     optional: true
 
-  '@pnpm/exe.linux-s390x@12.9.0':
+  '@pnpm/exe.linux-s390x@12.15.0':
     optional: true
 
-  '@pnpm/exe.linux-x64-musl@12.9.0':
+  '@pnpm/exe.linux-x64-musl@12.15.0':
     optional: true
 
-  '@pnpm/exe.linux-x64@12.9.0':
+  '@pnpm/exe.linux-x64@12.15.0':
     optional: true
 
-  '@pnpm/exe.win32-arm64@12.9.0':
+  '@pnpm/exe.win32-arm64@12.15.0':
     optional: true
 
-  '@pnpm/exe.win32-x64@12.9.0':
+  '@pnpm/exe.win32-x64@12.15.0':
     optional: true
 
-  pnpm@12.9.0:
+  pnpm@12.15.0:
     optionalDependencies:
-      '@pnpm/exe.android-arm64': 12.9.0
-      '@pnpm/exe.android-x64': 12.9.0
-      '@pnpm/exe.darwin-arm64': 12.9.0
-      '@pnpm/exe.darwin-x64': 12.9.0
-      '@pnpm/exe.freebsd-x64': 12.9.0
-      '@pnpm/exe.linux-arm64': 12.9.0
-      '@pnpm/exe.linux-arm64-musl': 12.9.0
-      '@pnpm/exe.linux-ppc64': 12.9.0
-      '@pnpm/exe.linux-riscv64': 12.9.0
-      '@pnpm/exe.linux-s390x': 12.9.0
-      '@pnpm/exe.linux-x64': 12.9.0
-      '@pnpm/exe.linux-x64-musl': 12.9.0
-      '@pnpm/exe.win32-arm64': 12.9.0
-      '@pnpm/exe.win32-x64': 12.9.0
+      '@pnpm/exe.android-arm64': 12.15.0
+      '@pnpm/exe.android-x64': 12.15.0
+      '@pnpm/exe.darwin-arm64': 12.15.0
+      '@pnpm/exe.darwin-x64': 12.15.0
+      '@pnpm/exe.freebsd-x64': 12.15.0
+      '@pnpm/exe.linux-arm64': 12.15.0
+      '@pnpm/exe.linux-arm64-musl': 12.15.0
+      '@pnpm/exe.linux-ppc64': 12.15.0
+      '@pnpm/exe.linux-riscv64': 12.15.0
+      '@pnpm/exe.linux-s390x': 12.15.0
+      '@pnpm/exe.linux-x64': 12.15.0
+      '@pnpm/exe.linux-x64-musl': 12.15.0
+      '@pnpm/exe.win32-arm64': 12.15.0
+      '@pnpm/exe.win32-x64': 12.15.0
 
 ---
 lockfileVersion: '9.0'
@@ -163,6 +163,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  '@microsoft/teams.apps@2.1.0>@azure/msal-node': 7.1.1
+  '@azure/identity@4.13.3>@azure/msal-node': 7.1.1
   '@lancedb/lancedb>@huggingface/transformers': '-'
   baileys>sharp: '-'
   baileys>audio-decode: 3.12.0
@@ -181,7 +183,7 @@ overrides:
   '@aws-sdk/xml-builder': 3.972.41
   '@hono/node-server': 2.1.3
   axios: 1.20.0
-  fast-uri: 4.2.1
+  fast-uri: 4.2.3
   follow-redirects: 1.16.1
   defu: 6.1.7
   fast-xml-parser: 5.11.2
@@ -193,7 +195,8 @@ overrides:
   file-type: 22.1.1
   form-data: 4.0.6
   ip-address: 10.7.3
-  mailauth@7.1.0>nodemailer: 10.0.13
+  mailauth@7.1.0>nodemailer: 10.1.4
+  mailparser@3.9.33>nodemailer: 10.1.4
   minimatch: 10.2.6
   path-to-regexp: 8.4.2
   proxy-addr: 2.0.8
@@ -213,12 +216,14 @@ packageExtensionsChecksum: sha256-Y7vhONQzlz51oZN7TTGWCJABkDu/F4SuqtCdf5qYwZ0=
 
 patchedDependencies:
   '@awesome.me/webawesome@3.13.0': 9b35bfc2e23b45e47ac3e6a669b8bf7df0c4ca89423e8a78d6fb921faa686208
+  '@discord/embedded-app-sdk@2.5.0': 016b529034315344702f9c7ac79ce5538b0934cf55381229946597b54343fdfd
   '@novnc/novnc@1.7.0': bfde0e1bda172da3525f9f5014d85ad28073325b74f09609084598a65d2f412d
   baileys@7.0.0-rc14: c3c4601486630c689ffd1a0e7a34f4b8cf8e7231e41c312ad33afdf4487d8ded
   chrome-devtools-mcp@1.10.1: d31d6e7e187ea9fd4dad87ed3ad08073c77ffcfddd52bc4761b39a2dfce0ac1e
   ghostty-web@0.4.0: d4c6598b6840564dac4a469f3aa9b8df24fe6eab48a6744302707017e095a524
   matrix-js-sdk@42.4.0: 12d9bb9bdc53b7b96d8d887d0bea6b3072d1fef488b51102caec19fb651c8e92
   vitest@5.0.1: 90ba2969491e095cc2e92a4d38256dfcf64f85078ec29e1762b9429a00b35901
+  zod@3.25.76: 2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d
 
 importers:
 
@@ -273,8 +278,8 @@ importers:
         specifier: workspace:*
         version: link:packages/ai
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       '@openclaw/proxyline':
         specifier: 0.4.0
         version: 0.4.0(undici@8.11.2)
@@ -642,8 +647,8 @@ importers:
         specifier: 2.1.1
         version: 2.1.1
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       acpx:
         specifier: 0.19.4
         version: 0.19.4
@@ -934,8 +939,8 @@ importers:
         specifier: 0.159.3
         version: 0.159.3
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       semver:
         specifier: 7.8.5
         version: 7.8.5
@@ -993,8 +998,8 @@ importers:
   extensions/cua-computer:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       '@trycua/cua-driver':
         specifier: 0.32.0
         version: 0.32.0
@@ -1114,7 +1119,7 @@ importers:
     dependencies:
       '@discord/embedded-app-sdk':
         specifier: 2.5.0
-        version: 2.5.0
+        version: 2.5.0(patch_hash=016b529034315344702f9c7ac79ce5538b0934cf55381229946597b54343fdfd)
       '@discordjs/voice':
         specifier: 0.19.2
         version: 0.19.2(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)
@@ -1209,8 +1214,8 @@ importers:
         specifier: 1.74.0
         version: 1.74.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       mdast-util-from-markdown:
         specifier: 2.0.3
         version: 2.0.3(supports-color@10.2.2)
@@ -1237,8 +1242,8 @@ importers:
   extensions/file-transfer:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       minimatch:
         specifier: 10.2.6
         version: 10.2.6
@@ -1479,8 +1484,8 @@ importers:
   extensions/llama-cpp:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1535,8 +1540,8 @@ importers:
         specifier: 18.9.0
         version: 18.9.0
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       fake-indexeddb:
         specifier: 6.2.5
         version: 6.2.5
@@ -1579,8 +1584,8 @@ importers:
   extensions/memory-core:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       json5:
         specifier: 2.2.3
         version: 2.2.3
@@ -1689,8 +1694,8 @@ importers:
   extensions/migrate-claude:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
     devDependencies:
       '@openclaw/plugin-sdk':
         specifier: workspace:*
@@ -1925,8 +1930,8 @@ importers:
   extensions/openshell:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       p-limit:
         specifier: 7.3.3
         version: 7.3.3
@@ -2000,8 +2005,8 @@ importers:
         specifier: 0.1.29
         version: 0.1.29
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       json5:
         specifier: 2.2.3
         version: 2.2.3
@@ -2132,8 +2137,8 @@ importers:
   extensions/signal:
     dependencies:
       '@openclaw/fs-safe':
-        specifier: 0.25.0
-        version: 0.25.0
+        specifier: 0.26.0
+        version: 0.26.0
       ws:
         specifier: 8.22.0
         version: 8.22.0
@@ -3350,24 +3355,16 @@ packages:
     resolution: {integrity: sha512-jS1stt81tslcVZi7fqVD+g6vr8w/IWqFl/vAB2dx/6EOroQDuCR4+z0o3C+d6a/GpLATvdoO+kwnDcYzsBXKQA==}
     engines: {node: '>=0.8.0'}
 
-  '@azure/msal-common@16.13.0':
-    resolution: {integrity: sha512-rOAy0KUcyBbdwVJ+f3uPpthXatFLLZN+/KWAsTLzk1aB23Xl9DRmmXYwSvBFOZyXj4jUQQ5FKxxRkhAFW1fOow==}
-    engines: {node: '>=0.8.0'}
-
-  '@azure/msal-common@16.14.1':
-    resolution: {integrity: sha512-Or6xhPNyi4zHW25158yxBoyxuCqNSPa5YBVqfF1J5Ks4MJWBo/USXdp05DQIPu1Zli00YZu6t0+h6KvHJealxQ==}
-    engines: {node: '>=0.8.0'}
-
   '@azure/msal-common@16.14.2':
     resolution: {integrity: sha512-HOBR0Gfo39TMrkxNG8k6cfjRkrRjXZc3JQs3ebMWQc9S4cihuknMYra3sgmzbZB752oQBqBN9+WF7c826p2vIQ==}
     engines: {node: '>=0.8.0'}
 
-  '@azure/msal-node@5.6.0':
-    resolution: {integrity: sha512-uFY9NxrWHw8PwZx7gAX6PDn+9vdfS05+levc/kwkx77IkjfaldnQbbcQzzDIZ5Hq5Zdr6/z92oAIoRWKp6MnOA==}
-    engines: {node: '>=20'}
+  '@azure/msal-common@16.14.3':
+    resolution: {integrity: sha512-tz3GvMrR9V/plb2lDdW8qaO8CPpfZevdExBKjltzzbAtyhK0eB2UIvji1aU+gkyHj3fxQ2ie+LNHyMXdmo8wOg==}
+    engines: {node: '>=0.8.0'}
 
-  '@azure/msal-node@6.0.1':
-    resolution: {integrity: sha512-ixSO1Y/kCVRthRs+hSx/5qkwaunX1/RAePhlMN0wIpIQ4WEZ6AREGGnGd1AP0qspHVsAwzWQKGubpjh50JyJIQ==}
+  '@azure/msal-node@7.1.1':
+    resolution: {integrity: sha512-zHXTJB38XVrsNaXrPBCMqEUjeyQysFfgmKtUHRDsEKTRjNIPckJ/w6fE5wBXrmJXBim1D3C7O7LOag0msPTrgw==}
     engines: {node: '>=20'}
 
   '@babel/code-frame@7.29.7':
@@ -4714,8 +4711,8 @@ packages:
     cpu: [arm64]
     os: [darwin]
 
-  '@openclaw/fs-safe-darwin-arm64@0.25.0':
-    resolution: {integrity: sha512-ftwB6/cM4bdWXn2pBwUSEL4A5ZnX5jh6aEPBhS5Q3Yd/bQgJyWIFTNv4+kC+4QrufuX20/VF/kIjPyu17RcDMg==}
+  '@openclaw/fs-safe-darwin-arm64@0.26.0':
+    resolution: {integrity: sha512-Lyt1rhoDUxCikH7CdkXzYqGdinKGZy3f8MC+D1/VAngXYIGUMSBu6AuR7pTo/vqrdyOI7vHpAW7QEDFobaG2ww==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [darwin]
@@ -4726,11 +4723,23 @@ packages:
     cpu: [x64]
     os: [darwin]
 
-  '@openclaw/fs-safe-darwin-x64@0.25.0':
-    resolution: {integrity: sha512-HFAAytEr0MN4zZwoLiv3oLmDOJFchanUHl5gi5YQyPTqf7/C0AEuPcR1+gP0dWpuccCEmuxivKE30yriw+WUUw==}
+  '@openclaw/fs-safe-darwin-x64@0.26.0':
+    resolution: {integrity: sha512-pX8E6FW9xF1INFXyp8rSv9PQyj7LFNovhgytmZD2/EdFlG2OXu1VZ6UQfcfDOwFARtoy0bwqqgEMkQZEBFH9PA==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [darwin]
+
+  '@openclaw/fs-safe-freebsd-arm64@0.26.0':
+    resolution: {integrity: sha512-UNPfDJhOTArrNuKVG+a15UpKsQSH2m7ZnOl+KbKwGFHSHSrVqF0RUwBueooBbuuc+xzH1Y47HmUvQkM+T39K0Q==}
+    engines: {node: '>=22'}
+    cpu: [arm64]
+    os: [freebsd]
+
+  '@openclaw/fs-safe-freebsd-x64@0.26.0':
+    resolution: {integrity: sha512-MSrO0yeScP6Gs2GvUTGeSAdTXJSGRtaDkwwM1LIxwc0Ja2lICUmSpAAsArOnvR7asEi+vAJ3KYlJgcHzcW3J4g==}
+    engines: {node: '>=22'}
+    cpu: [x64]
+    os: [freebsd]
 
   '@openclaw/fs-safe-linux-arm64-gnu@0.21.3':
     resolution: {integrity: sha512-JPDX4gk6vH/sYzQ6tHse0Zimb7lS0OBeJwT0iLF2BPQ1fobLH5X7iOrQgsqCfhRM0m+Ts6UJT7ebf/63T2uPoA==}
@@ -4739,8 +4748,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@openclaw/fs-safe-linux-arm64-gnu@0.25.0':
-    resolution: {integrity: sha512-7Cpa7T7s53TpPMH3Uc5iB3SqzHmta/jsU+2xrdBxTk/Ztc2bKy21hPlaoEI/ITMdXL1L0bYxaRvlIzoJH+6XKw==}
+  '@openclaw/fs-safe-linux-arm64-gnu@0.26.0':
+    resolution: {integrity: sha512-P78xFe+KQ9z2Tqb8p7eou22CUNbywO5qyiUS6VlfOxo5Qwpj1O1RNw2xIoPWqxGpBnK+R0OEzTT0NXCu7Nz/8g==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [linux]
@@ -4753,8 +4762,8 @@ packages:
     os: [linux]
     libc: [musl]
 
-  '@openclaw/fs-safe-linux-arm64-musl@0.25.0':
-    resolution: {integrity: sha512-9ZeTBNh1OKCSCZzc1Ne4SN96IlFA1qrHs1yclP8vxCXFXGgkTFyX2xwZ8qLuONodPDezifqVxzP66tGvyBQadw==}
+  '@openclaw/fs-safe-linux-arm64-musl@0.26.0':
+    resolution: {integrity: sha512-5ZHnjuW4vWZrSWI+6JDFrjc8QUcQ+1BnAjk+etnMeYhtJhnxau4Q9hJASWjvLsGcNrhHyNR4OmppRYvMxr5iwQ==}
     engines: {node: '>=22'}
     cpu: [arm64]
     os: [linux]
@@ -4767,8 +4776,8 @@ packages:
     os: [linux]
     libc: [glibc]
 
-  '@openclaw/fs-safe-linux-x64-gnu@0.25.0':
-    resolution: {integrity: sha512-/OMLec2NpYuBRnDeexaKwJEkgIBrUO78AxSEBqoJpAzbZ9foLvtwxyEyOZfqnTrtrHwkY1PC+ebNMQbZDj6Z7g==}
+  '@openclaw/fs-safe-linux-x64-gnu@0.26.0':
+    resolution: {integrity: sha512-yZC6kP/EnTAFFLuws25nCy4iS4wy1l4bDGvJRFtAcdLBl+M9FOLIWM6p/TcliezYmaezWGb1i+VgxghJ3uB/mg==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [linux]
@@ -4781,12 +4790,18 @@ packages:
     os: [linux]
     libc: [musl]
 
-  '@openclaw/fs-safe-linux-x64-musl@0.25.0':
-    resolution: {integrity: sha512-WQXl6zfqS4nbWwDsMx7cAH0jI8sD8DRLrgLv2pygM7lPgbX5zVC7mz8reI632qyYJBHYbg0l+FymNUk0YxocFg==}
+  '@openclaw/fs-safe-linux-x64-musl@0.26.0':
+    resolution: {integrity: sha512-kxcOv7ANmdpHXD5PdNrRFrbcesZ04x9T4JYNV55eKDbiIgK4Xe2Uo9GmaMcGouDeTrX0Oh+subsOZtUXZnFeFg==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [linux]
     libc: [musl]
+
+  '@openclaw/fs-safe-win32-arm64-msvc@0.26.0':
+    resolution: {integrity: sha512-cKUMfA1rlsimftCZrbxc1UfZ2h9u9ktoPTxY9LQkSOsTlnANVO83XBurY79rv4wq9xl4SgAppOTArP18ET7A6Q==}
+    engines: {node: '>=22'}
+    cpu: [arm64]
+    os: [win32]
 
   '@openclaw/fs-safe-win32-x64-msvc@0.21.3':
     resolution: {integrity: sha512-CuylNHU+zEayp18J/zU7qB1M/7/Jc/nWVigQ2US+EALB1LfGly45ZVSKnK7618z+xfBXpK+5c83n0piiukXH+g==}
@@ -4794,8 +4809,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@openclaw/fs-safe-win32-x64-msvc@0.25.0':
-    resolution: {integrity: sha512-O4cDKqwownShG/LvhxrrQl5sa9D8WSCTT51vzmugi8dAdXGLwaEa+qtpSWJEfA2BY9rQW3ohipHEO92uO52Gbw==}
+  '@openclaw/fs-safe-win32-x64-msvc@0.26.0':
+    resolution: {integrity: sha512-kNZIpWO7ydMpVS0rFGrmux89LYakG+i/rKuxUIUeB/zK8S35MMAJKmif4w0Px4WSG/FYlxPogav0MXkvgd0/yw==}
     engines: {node: '>=22'}
     cpu: [x64]
     os: [win32]
@@ -4804,8 +4819,8 @@ packages:
     resolution: {integrity: sha512-sBm68f4QiZrrqlZxbOlqVIutrmOK/KLZBrwyPIhV7xXJmlPFc6ZET8AggcU3hMDM3dDSUYgA8LUupxwTB2DZsg==}
     engines: {node: '>=22'}
 
-  '@openclaw/fs-safe@0.25.0':
-    resolution: {integrity: sha512-/8XzfW0zulV1BPzjnkD7vRG12u0u517w00rIuAGmW4GU07fxatYSkLHc1GaFCSX/WuLwGPzoxjPSKuRloBprIQ==}
+  '@openclaw/fs-safe@0.26.0':
+    resolution: {integrity: sha512-tLpVEBUEcFS4YtT43DwM4R8XqPNcJxJzIb23+v8Lyj0vElEHUox2t5+4buv0OiSZ3r3EsVXe5odI3FZDZWcHqg==}
     engines: {node: '>=22'}
 
   '@openclaw/libterminal@0.3.8':
@@ -7489,8 +7504,8 @@ packages:
   fast-string-width@3.0.2:
     resolution: {integrity: sha512-gX8LrtNEI5hq8DVUfRQMbr5lpaS4nMIWV+7XEbXk2b8kiQIizgnlr12B4dA3ZEx3308ze0O4Q1R+cHts8kyUJg==}
 
-  fast-uri@4.2.1:
-    resolution: {integrity: sha512-TmHQgewjHtMq1E5QKA0tOE0yeYGQs25KZC/ziJpubRtWI15W92e6vPFydWOeZBVROSHBYw/QhD9d5OefdD6LDg==}
+  fast-uri@4.2.3:
+    resolution: {integrity: sha512-I1PXwP5eAhlNlcdpjt9CgB59op2ZvZfxw+BkqGFVIUOgNpCVTcTqp3HhTX7brxj5vsip+nSY4nTvff+eIA76hg==}
 
   fast-wrap-ansi@0.2.2:
     resolution: {integrity: sha512-7F2Fl+TjRSenLqlU3UjSH0iyqopqoZIu7eZVpEirP2g1GtWa2G/ecEmBdgz31+Mxr+ELclgg6sokpSFIQiZ02Q==}
@@ -8776,8 +8791,8 @@ packages:
   node-pty@1.2.0-beta.15:
     resolution: {integrity: sha512-vORSzHXi4Ofl7HemVWpuudLqCPdaQb4LfpRCUpE5HPxhp4JYscl8zZwxh11p26v2wvW24WMwnMfLjhRLixrfxA==}
 
-  nodemailer@10.0.13:
-    resolution: {integrity: sha512-SzG86OlvcW/NNhUFC6uROMwRTL4n7MswfQqC/T8mhkmnY1YVa23zUEMYi4ijSeXSl9GLz9ZeTJDUatEDuY5FeQ==}
+  nodemailer@10.1.4:
+    resolution: {integrity: sha512-EsMnOR2oRv4LGnWvHgcVYkkQ4O2j8KO4WTw6l+PHR4sOXo8SAgIraxtEnGDmotjbhv0hDsu3IuDIFZm8iXwO4A==}
     engines: {node: '>=20.0.0'}
 
   normalize-path@3.0.0:
@@ -10400,7 +10415,7 @@ snapshots:
       '@lit/context': 1.1.6
       lit: 3.3.3
       signal-utils: 0.21.1(signal-polyfill@0.2.2)
-      zod: 3.25.76
+      zod: 3.25.76(patch_hash=2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d)
     transitivePeerDependencies:
       - signal-polyfill
 
@@ -10410,8 +10425,8 @@ snapshots:
       '@preact/signals-core': 1.14.4
       lit: 3.3.3
       validate-color: 2.2.4
-      zod: 3.25.76
-      zod-to-json-schema: 3.25.2(zod@3.25.76)
+      zod: 3.25.76(patch_hash=2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d)
+      zod-to-json-schema: 3.25.2(zod@3.25.76(patch_hash=2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d))
 
   '@agentclientprotocol/claude-agent-acp@0.85.1(@anthropic-ai/sdk@0.131.0(zod@4.6.5))(@modelcontextprotocol/sdk@1.32.0(supports-color@10.2.2)(zod@4.6.5))':
     dependencies:
@@ -10979,7 +10994,7 @@ snapshots:
       '@azure/core-util': 1.14.0(supports-color@10.2.2)
       '@azure/logger': 1.4.0(supports-color@10.2.2)
       '@azure/msal-browser': 5.24.0
-      '@azure/msal-node': 6.0.1
+      '@azure/msal-node': 7.1.1
       open: 10.2.0
       tslib: 2.8.1
     transitivePeerDependencies:
@@ -10996,20 +11011,13 @@ snapshots:
     dependencies:
       '@azure/msal-common': 16.14.2
 
-  '@azure/msal-common@16.13.0': {}
-
-  '@azure/msal-common@16.14.1': {}
-
   '@azure/msal-common@16.14.2': {}
 
-  '@azure/msal-node@5.6.0':
-    dependencies:
-      '@azure/msal-common': 16.13.0
-      jsonwebtoken: 9.0.3
+  '@azure/msal-common@16.14.3': {}
 
-  '@azure/msal-node@6.0.1':
+  '@azure/msal-node@7.1.1':
     dependencies:
-      '@azure/msal-common': 16.14.1
+      '@azure/msal-common': 16.14.3
       jsonwebtoken: 9.0.3
 
   '@babel/code-frame@7.29.7':
@@ -11507,7 +11515,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@discord/embedded-app-sdk@2.5.0':
+  '@discord/embedded-app-sdk@2.5.0(patch_hash=016b529034315344702f9c7ac79ce5538b0934cf55381229946597b54343fdfd)':
     dependencies:
       '@types/lodash.transform': 4.6.9
       '@types/uuid': 10.0.0
@@ -11516,7 +11524,7 @@ snapshots:
       eventemitter3: 5.0.4
       lodash.transform: 4.6.0
       uuid: 14.0.2
-      zod: 3.25.76
+      zod: 3.25.76(patch_hash=2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d)
 
   '@discordjs/voice@0.19.2(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)':
     dependencies:
@@ -12245,7 +12253,7 @@ snapshots:
 
   '@microsoft/teams.apps@2.1.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)':
     dependencies:
-      '@azure/msal-node': 5.6.0
+      '@azure/msal-node': 7.1.1
       '@microsoft/teams.api': 2.1.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@microsoft/teams.common': 2.1.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
       '@microsoft/teams.graph': 2.1.0(debug@4.4.3(supports-color@10.2.2))(supports-color@10.2.2)
@@ -12449,43 +12457,52 @@ snapshots:
   '@openclaw/fs-safe-darwin-arm64@0.21.3':
     optional: true
 
-  '@openclaw/fs-safe-darwin-arm64@0.25.0':
+  '@openclaw/fs-safe-darwin-arm64@0.26.0':
     optional: true
 
   '@openclaw/fs-safe-darwin-x64@0.21.3':
     optional: true
 
-  '@openclaw/fs-safe-darwin-x64@0.25.0':
+  '@openclaw/fs-safe-darwin-x64@0.26.0':
+    optional: true
+
+  '@openclaw/fs-safe-freebsd-arm64@0.26.0':
+    optional: true
+
+  '@openclaw/fs-safe-freebsd-x64@0.26.0':
     optional: true
 
   '@openclaw/fs-safe-linux-arm64-gnu@0.21.3':
     optional: true
 
-  '@openclaw/fs-safe-linux-arm64-gnu@0.25.0':
+  '@openclaw/fs-safe-linux-arm64-gnu@0.26.0':
     optional: true
 
   '@openclaw/fs-safe-linux-arm64-musl@0.21.3':
     optional: true
 
-  '@openclaw/fs-safe-linux-arm64-musl@0.25.0':
+  '@openclaw/fs-safe-linux-arm64-musl@0.26.0':
     optional: true
 
   '@openclaw/fs-safe-linux-x64-gnu@0.21.3':
     optional: true
 
-  '@openclaw/fs-safe-linux-x64-gnu@0.25.0':
+  '@openclaw/fs-safe-linux-x64-gnu@0.26.0':
     optional: true
 
   '@openclaw/fs-safe-linux-x64-musl@0.21.3':
     optional: true
 
-  '@openclaw/fs-safe-linux-x64-musl@0.25.0':
+  '@openclaw/fs-safe-linux-x64-musl@0.26.0':
+    optional: true
+
+  '@openclaw/fs-safe-win32-arm64-msvc@0.26.0':
     optional: true
 
   '@openclaw/fs-safe-win32-x64-msvc@0.21.3':
     optional: true
 
-  '@openclaw/fs-safe-win32-x64-msvc@0.25.0':
+  '@openclaw/fs-safe-win32-x64-msvc@0.26.0':
     optional: true
 
   '@openclaw/fs-safe@0.21.3':
@@ -12499,15 +12516,18 @@ snapshots:
       '@openclaw/fs-safe-win32-x64-msvc': 0.21.3
       jszip: 3.10.2
 
-  '@openclaw/fs-safe@0.25.0':
+  '@openclaw/fs-safe@0.26.0':
     optionalDependencies:
-      '@openclaw/fs-safe-darwin-arm64': 0.25.0
-      '@openclaw/fs-safe-darwin-x64': 0.25.0
-      '@openclaw/fs-safe-linux-arm64-gnu': 0.25.0
-      '@openclaw/fs-safe-linux-arm64-musl': 0.25.0
-      '@openclaw/fs-safe-linux-x64-gnu': 0.25.0
-      '@openclaw/fs-safe-linux-x64-musl': 0.25.0
-      '@openclaw/fs-safe-win32-x64-msvc': 0.25.0
+      '@openclaw/fs-safe-darwin-arm64': 0.26.0
+      '@openclaw/fs-safe-darwin-x64': 0.26.0
+      '@openclaw/fs-safe-freebsd-arm64': 0.26.0
+      '@openclaw/fs-safe-freebsd-x64': 0.26.0
+      '@openclaw/fs-safe-linux-arm64-gnu': 0.26.0
+      '@openclaw/fs-safe-linux-arm64-musl': 0.26.0
+      '@openclaw/fs-safe-linux-x64-gnu': 0.26.0
+      '@openclaw/fs-safe-linux-x64-musl': 0.26.0
+      '@openclaw/fs-safe-win32-arm64-msvc': 0.26.0
+      '@openclaw/fs-safe-win32-x64-msvc': 0.26.0
       jszip: 3.10.2
 
   '@openclaw/libterminal@0.3.8':
@@ -14161,7 +14181,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 4.2.1
+      fast-uri: 4.2.3
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -15143,7 +15163,7 @@ snapshots:
     dependencies:
       fast-string-truncated-width: 3.0.3
 
-  fast-uri@4.2.1: {}
+  fast-uri@4.2.3: {}
 
   fast-wrap-ansi@0.2.2:
     dependencies:
@@ -16162,7 +16182,7 @@ snapshots:
       ipaddr.js: 2.5.0
       joi: 18.2.9
       libmime: 5.4.4
-      nodemailer: 10.0.13
+      nodemailer: 10.1.4
       punycode.js: 2.3.1
       tldts: 7.4.15
       undici: 8.11.2
@@ -16176,7 +16196,7 @@ snapshots:
       iconv-lite: 0.7.3
       libmime: 5.4.6
       linkify-it: 5.0.2
-      nodemailer: 10.0.13
+      nodemailer: 10.1.4
       punycode.js: 2.3.1
       tlds: 1.261.0
 
@@ -16782,7 +16802,7 @@ snapshots:
     dependencies:
       node-addon-api: 7.1.1
 
-  nodemailer@10.0.13: {}
+  nodemailer@10.1.4: {}
 
   normalize-path@3.0.0: {}
 
@@ -18406,15 +18426,15 @@ snapshots:
       - bufferutil
       - utf-8-validate
 
-  zod-to-json-schema@3.25.2(zod@3.25.76):
+  zod-to-json-schema@3.25.2(zod@3.25.76(patch_hash=2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d)):
     dependencies:
-      zod: 3.25.76
+      zod: 3.25.76(patch_hash=2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d)
 
   zod-to-json-schema@3.25.2(zod@4.6.5):
     dependencies:
       zod: 4.6.5
 
-  zod@3.25.76: {}
+  zod@3.25.76(patch_hash=2f14d2000a3645bf519c1a1cc4848a71d55185327a9a976a4f033e7d507b727d): {}
 
   zod@4.3.6: {}
 

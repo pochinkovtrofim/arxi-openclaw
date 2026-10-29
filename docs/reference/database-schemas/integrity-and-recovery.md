@@ -9,6 +9,11 @@ title: "Integrity, troubleshooting, and recovery"
 
 ## Integrity checks
 
+On Windows, path casing and extended-length prefixes do not create separate
+in-process maintenance owners for the same state database. OpenClaw keeps the
+existing on-disk lock spelling for compatibility while using a normalized key
+for local schema and startup ownership.
+
 Gateway agent inspections share a five-second foreground wait. Unfinished stores
 remain unavailable while the startup admission owner completes their inspection
 and session/model preparation after the listener is ready. Other agents and the
@@ -247,6 +252,9 @@ still owns pending work. Each path still joins its accepted writers, pending ope
 and WAL maintenance before native close. The selected root refuses fresh native
 opens and new resource admission until every path settles, including failed closes;
 accepted cleanup can still use its existing admitted connection.
+Offline maintenance can release an already-owned lease after operation policy is
+revoked while its original physical database custody remains held. That cleanup
+authority does not admit new ordinary work or a replacement database.
 After shutdown grace, cached native handles also retire through their normal idle
 eviction path as soon as their final borrower releases them. They do not wait for
 the restart marker or the ordinary 30-minute idle window. Accepted cleanup can
@@ -479,6 +487,50 @@ Quarantine decisions live only in a dedicated `openclaw-quarantine.sqlite` store
 
 Background verification errors retain the original name and message and append bounded Node `code` and SQLite `errcode` values from up to eight cause-chain nodes. These diagnostics do not change the verdict: I/O failures remain inconclusive, while proven corruption is reconfirmed by the database owner before quarantine. A generic `disk I/O error` (`errcode=10`) does not establish disk exhaustion.
 
+Native first-run state receives an empty deletion journal when the shared
+catalog contains only native bootstrap tables and no existing agent history.
+If an older installation omitted that journal, Doctor can migrate configured
+agent stores whose integrity, ownership, and contents prove they contain only
+initial schema and index metadata.
+
+`doctor --fix` also automatically restores configured populated stores from the
+published missing-journal regression. This requires a receipt that the whole
+journal table was absent at reconstruction, plus the agent database's original
+producer stamp: matching owner, equal positive creation/update timestamps, and
+matching SQLite and metadata schema versions for these affected builds:
+
+- Agent schema 24: `2026.9.7`, `2026.9.8`, `2026.9.9`, `2026.9.33`,
+  `2026.10.1-beta.1`, `2026.10.1-beta.2`, and `2026.10.1`–`2026.10.4`.
+- Agent schema 25: `2026.10.5-beta.1`–`2026.10.5-beta.4`.
+- Agent schema 27: `2026.10.10-beta.1`.
+
+This includes holds recorded by an earlier Doctor. Before restoration, Doctor
+saves and verifies full SQLite backups of shared state (including reconstruction
+receipts and run reports) and the selected agent databases, including their WAL
+contents. Its warning names each restored store and backup path. The existing
+agent restoration owner revalidates the selected configured paths before
+releasing their holds; normal migrations then prepare them for Gateway startup.
+Repeating Doctor after successful restoration does not restore or back up these stores again.
+
+Reserved system agents (`openclaw` and `crestodian`) cannot be deleted, so journal
+reconstruction no longer creates deletion-recovery holds for them. `doctor --fix`
+reconciles existing reserved holds, including the quarantine receipts left by
+2026.10.5, only when the canonical store's path and internal agent identity match,
+its integrity is healthy, and no deletion row remains. It first preserves verified
+full backups of the agent store and shared recovery records, releases only that
+hold, and lets normal migrations advance the store. Other holds retain their
+existing restoration rules. Until repair succeeds, startup degrades an unmigrated
+held store with a warning naming `openclaw doctor --fix` instead of failing the
+whole Gateway.
+
+This policy accepts the small risk of resurrecting data from a lost pending
+deletion when the entire journal disappeared. A missing-table observation is
+not proof that no journal ever existed. Present-but-incomplete journals,
+unrecognized versions, rewritten producer stamps, unconfigured stores, and
+stores with current deletion records retain their holds and explicit recovery
+guidance. Doctor reports failure when a remaining hold prevents a required agent
+from starting.
+
 The background verifier retains its child through native exit and IPC disconnect,
 including when sending work fails. Failed native launches settle after closure
 without requiring an exit event. If the operating system refuses a termination
@@ -566,6 +618,16 @@ preparation leaves the agent degraded with the recorded reason; it does not stop
 healthy agents. Shared-state database failures retain their existing startup
 checks.
 
+Deferred startup retries classified SQLite lock failures during opening or session
+migration up to four attempts with cancellable backoff. Each retry checks deletion
+status and the original database file identity again; migration retries retain the
+completed opening. Corruption, incompatible schemas, changed file identities, and
+mixed cleanup failures remain terminal. If locks persist through the retry budget,
+the agent remains degraded with `database locked by another process` and guidance
+to close competing processes and restart the Gateway. There is no periodic or
+on-demand in-process admission retry after exhaustion; a new Gateway startup
+retries admission. No schema or configuration changes are required.
+
 Pending preparation does not produce a startup migration warning. Status and
 Doctor derive failed inspection and preparation warnings from current agent
 admission decisions, with the reason and repair guidance. Successful preparation
@@ -642,6 +704,10 @@ free space of at least twice the uncompressed store directory size. It takes
 verified WAL-aware SQLite backups, streams copies into a fresh NOCOW sibling,
 preserves ownership, modes, and access/default ACLs, checks copy size and
 `PRAGMA quick_check`, then atomically exchanges directories.
+It also re-records the relocated identity of any recorded migration recovery
+original and destination database it rewrites, so `update cleanup` eligibility
+survives the rewrite; a copy that no longer matches the recorded content keeps
+its original record and stays protected.
 Symbolic links retain their exact link text and ownership without following targets (including dangling links), and empty regular files are preserved.
 The report names the retained original directory and the standalone backups.
 Keep them until the updated Gateway has been verified; do not overwrite newer
@@ -928,6 +994,28 @@ are preserved. Page or b-tree damage, unreadable table data, and other integrity
 failures remain a refusal: preserve the database and its WAL, then restore a
 verified backup or use SQLite recovery. Runtime and startup never perform this
 repair automatically.
+
+FTS5-only `malformed inverted index` findings on canonical agent search tables
+are also repairable. A Node upgrade or downgrade can change SQLite's `unicode61`
+tokenization (for example, U+FFFE in SQLite 3.54), leaving intact content with an
+incompatible derived index. Stop the Gateway and run `openclaw doctor --fix` with
+the Node version that will run the Gateway, then restart it. Doctor preserves a
+backup and rebuilds only the affected, schema-validated FTS tables in one
+transaction. It verifies integrity and foreign keys before clearing quarantine;
+session recovery uses this same repair instead of moving the database aside.
+Unknown or changed FTS definitions and findings mixed with structural damage
+are not eligible for this repair.
+
+Gateway startup can attempt a bounded automatic repair once per physical
+database generation in the current process. It requires a live startup grant,
+the exact current worker lease, exclusive database custody, and only canonical
+owned FTS findings. The worker preserves a verified backup before transactional
+rebuilding, checks authority throughout, and rechecks integrity before admission.
+Mixed or foreign-schema damage, failed backup or rebuild, lost authority, and
+repeated attempts remain quarantined with `openclaw doctor --fix` guidance.
+Offline Doctor maintenance remains available when startup repair is refused.
+Switching SQLite versions again may require another rebuild, without changing
+stored content or the database schema.
 
 <a id="downgrades-are-unsupported" />
 

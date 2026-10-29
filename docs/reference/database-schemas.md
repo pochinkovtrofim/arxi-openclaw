@@ -157,12 +157,24 @@ per-field revision triggers and rollback.
 
 Canonical main-key policy reads reuse a connection-owned value at the current read revision, including within transactions and pinned snapshots. The connection owner tracks local SQL mutations, including raw and trigger-driven writes; its mutation revision, admitted schema facts, observed foreign-commit version, and pinned snapshot identity invalidate that value. Native mutation and transaction-control callbacks and authorizer-controlled reads continue querying the policy. Policy facts do not grant canonical admission or continuation authority.
 
+If a shared-state writer worker is lost, its logical leases retire even while
+idle. Retirement joins dispatched commands but does not wait for external
+callback bodies, allowing agent lease cleanup to reach its existing recovery
+path. An uncertain write remains `outcome-unknown`; recovery never replays it or
+claims that it rolled back.
+
 The Gateway does not schedule daily full-database scans. Admission-requested
 background checks stay limited to the requested agent database: `quick_check`
 for clean restart proof, or a full check after proven same-boot process death or
 native WAL admission without a verification receipt while the verifier is running.
 See [integrity admission and Doctor maintenance](/reference/database-schemas/integrity-and-recovery#integrity-checks)
 for the provenance requirements and operator-requested verification.
+
+Gateway startup and restart checks admit only configured agent database targets.
+Retained stores for unconfigured agents remain untouched for Doctor to inspect.
+An incompatible secondary agent database refuses that agent's sessions with
+`openclaw doctor --fix` guidance, without blocking healthy agents or restarting
+the Gateway. Shared-state and required system-agent checks remain strict.
 
 Two mechanisms back that contract. CI runs
 `scripts/check-native-state-schema-version.mjs`, which fails the build when the

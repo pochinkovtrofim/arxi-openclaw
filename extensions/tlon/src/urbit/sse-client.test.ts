@@ -171,6 +171,29 @@ describe("UrbitSSEClient", () => {
         expect(handler).toHaveBeenCalledWith({ text: "😀" });
       });
 
+      it.each([
+        {
+          ending: "CRLF",
+          chunks: ["id:1\r", '\ndata:{"id":1,"json":{"text":"split"}}\r', "\n\r", "\n"],
+        },
+        { ending: "CR", chunks: ["id:1\r", 'data:{"id":1,"json":{"text":"split"}}\r', "\r"] },
+      ])("preserves $ending delimiters split across byte chunks", async ({ chunks }) => {
+        const client = new UrbitSSEClient("https://example.com", "urbauth-~zod=123");
+        const delivered: unknown[] = [];
+        await client.subscribe({
+          app: "chat",
+          path: "/inbox",
+          event: (payload) => {
+            delivered.push(payload);
+          },
+        });
+        const stream = Readable.from(chunks.map((chunk) => Buffer.from(chunk)));
+
+        await client.processStream(stopAfterStream(client, stream));
+
+        expect(delivered).toEqual([{ text: "split" }]);
+      });
+
       it("accepts a boundary-sized event with split surrogate pair and delimiter", async () => {
         const cap = 16 * 1024 * 1024;
         const prefix = 'id: 1\ndata: {"json":{"text":"';
@@ -276,6 +299,93 @@ describe("UrbitSSEClient", () => {
     const client2 = new UrbitSSEClient("https://example.com", "urbauth-~zod=123");
 
     expect(client1.channelId).not.toBe(client2.channelId);
+  });
+
+  describe("stall detection", () => {
+    let client: UrbitSSEClient;
+    let handler: ReturnType<typeof vi.fn<(data: unknown) => void | Promise<void>>>;
+    const mockUrbitFetch = vi.mocked(urbitFetch);
+    beforeEach(() => {
+      client = new UrbitSSEClient("https://example.com", "urbauth-~zod=123");
+      handler = vi.fn();
+      client.eventHandlers.set(1, { event: handler });
+    });
+
+    // An open stream whose peer vanished: bytes stop and the body never ends.
+    function silentAfter(...chunks: string[]) {
+      const encoder = new TextEncoder();
+      return new ReadableStream<Uint8Array>({
+        start(controller) {
+          for (const chunk of chunks) {
+            controller.enqueue(encoder.encode(chunk));
+          }
+        },
+      });
+    }
+
+    async function openSilentStream(...chunks: string[]) {
+      const guarded = guardedResponse(new Response(silentAfter(...chunks)));
+      mockUrbitFetch.mockResolvedValueOnce(guarded);
+      const reconnect = vi.spyOn(client, "attemptReconnect").mockResolvedValue(undefined);
+      const processing = vi.spyOn(client, "processStream");
+      await client.openStream();
+      const done = processing.mock.results[0]?.value as Promise<void>;
+      done.catch(() => {});
+      return { guarded, reconnect, done };
+    }
+
+    it("ends a stream that stops delivering heartbeats", async () => {
+      vi.useFakeTimers();
+      const { guarded, reconnect, done } = await openSilentStream(
+        'id: 1\ndata: {"id":1,"json":{"ok":true}}\n\n',
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(handler).toHaveBeenCalledWith({ ok: true });
+
+      await vi.advanceTimersByTimeAsync(55_000);
+      expect(reconnect).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(reconnect).toHaveBeenCalledOnce();
+      await expect(done).rejects.toThrow("Tlon Urbit SSE stream stalled");
+      expect(guarded.release).toHaveBeenCalledOnce();
+      expect(client.isConnected).toBe(false);
+    });
+
+    it("keeps a stream open while Eyre heartbeats arrive", async () => {
+      vi.useFakeTimers();
+      let push: ((chunk: string) => void) | undefined;
+      const encoder = new TextEncoder();
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          push = (chunk) => controller.enqueue(encoder.encode(chunk));
+        },
+      });
+      mockUrbitFetch.mockResolvedValueOnce(guardedResponse(new Response(body)));
+      const reconnect = vi.spyOn(client, "attemptReconnect").mockResolvedValue(undefined);
+      await client.openStream();
+      for (let beat = 0; beat < 9; beat += 1) {
+        await vi.advanceTimersByTimeAsync(20_000);
+        push?.(":\n");
+      }
+      expect(reconnect).not.toHaveBeenCalled();
+      client.stopReceiving();
+    });
+
+    it("does not count slow event handling as a stall", async () => {
+      vi.useFakeTimers();
+      handler.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            setTimeout(resolve, 90_000);
+          }),
+      );
+      const { reconnect } = await openSilentStream('data: {"json":{"ok":true}}\n\n');
+      await vi.advanceTimersByTimeAsync(90_000);
+      expect(handler).toHaveBeenCalledOnce();
+      expect(reconnect).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(65_000);
+      expect(reconnect).toHaveBeenCalledOnce();
+    });
   });
 
   it("backs off through ten attempts before the cooldown resets the schedule", async () => {

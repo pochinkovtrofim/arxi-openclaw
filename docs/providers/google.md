@@ -220,7 +220,7 @@ the Gateway already runs inside a managed Google Cloud environment.
 
 ## Gemini 4 Argon
 
-`google/gemini-4-argon` is the default Google model, with a 1,048,576-token
+`google/gemini-4-argon` is available in the bundled catalog, with a 1,048,576-token
 context window and up to 65,536 output tokens. `google/gemini-4` is its shorthand;
 the same model ID and shorthand are available for `google-vertex`.
 
@@ -228,11 +228,6 @@ Gemini 4 Argon supports text, image, audio, video, and PDF inputs, function
 calling, structured outputs, and search grounding. It uses implicit context
 caching only: explicit `cachedContents` handles and the Live API are not
 supported. See [Google's model documentation](https://ai.google.dev/gemini-api/docs/models/gemini-4-argon).
-
-The bundled catalog also includes the stable `google/gemini-3.8-flash`, with a
-1,048,576-token context window and up to 65,536 output tokens. The built-in
-`gemini-flash` alias selects this model; `gemini-flash-lite` selects
-`google/gemini-3.5-flash-lite`.
 
 ## Capabilities
 
@@ -254,6 +249,13 @@ Responses marked `MAX_TOKENS` or `CONTINUATION` reached a generation limit.
 OpenClaw preserves their partial content and reports a length-limited result.
 Function calls in that partial response remain incomplete instead of becoming
 an executable tool-use turn.
+
+The managed Gemini and Vertex transports stop reading when a compatible proxy
+sends `data: [DONE]`, release the response body, and ignore later frames. A valid
+candidate finish reason is still required for a successful result. First-frame
+quota errors participate in API-key rotation. For Gemini's first-response retry,
+usage metadata, response IDs, and empty or unspecified finish states do not count
+as generated output or disable the existing retry deadline.
 
 ## Web search
 

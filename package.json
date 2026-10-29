@@ -1,6 +1,6 @@
 {
   "name": "openclaw",
-  "version": "2026.10.5",
+  "version": "2026.10.9",
   "openclaw": {
     "updateAdmissionProtocol": 1,
     "schemaVersions": {
@@ -122,6 +122,7 @@
     "!dist/plugin-sdk/expect-runtime.d.ts",
     "!dist/plugin-sdk/fetch-runtime.d.ts",
     "!dist/plugin-sdk/file-access-runtime.d.ts",
+    "!dist/plugin-sdk/path-existence-runtime.d.ts",
     "!dist/plugin-sdk/file-lock.d.ts",
     "!dist/plugin-sdk/gateway-config-runtime.d.ts",
     "!dist/plugin-sdk/global-singleton.d.ts",
@@ -703,6 +704,9 @@
     },
     "./plugin-sdk/file-access-runtime": {
       "default": "./dist/plugin-sdk/file-access-runtime.js"
+    },
+    "./plugin-sdk/path-existence-runtime": {
+      "default": "./dist/plugin-sdk/path-existence-runtime.js"
     },
     "./plugin-sdk/node-selection-runtime": {
       "default": "./dist/plugin-sdk/node-selection-runtime.js"
@@ -1959,6 +1963,7 @@
     "release-metadata:check": "node --import ./scripts/tsx.mjs scripts/check-release-metadata-only.mts",
     "release:beta": "node --import ./scripts/tsx.mjs scripts/release-candidate-checklist.mts",
     "release:beta-smoke": "node --import ./scripts/tsx.mjs scripts/release-beta-smoke.ts",
+    "release:backport-companions": "node scripts/release-backport-companions.mjs",
     "release:candidate": "node --import ./scripts/tsx.mjs scripts/release-candidate-checklist.mts",
     "release:clawhub-recovery": "node scripts/plugin-clawhub-recovery.mjs",
     "release:check": "pnpm build:package && pnpm release:generated:check && node --import ./scripts/tsx.mjs scripts/release-check.ts",
@@ -1967,6 +1972,8 @@
     "release:openclaw:npm:check": "node --import ./scripts/tsx.mjs scripts/openclaw-npm-release-check.ts",
     "release:openclaw:npm:verify-published": "node --import ./scripts/tsx.mjs scripts/openclaw-npm-postpublish-verify.ts",
     "release:prepare": "node --import ./scripts/tsx.mjs scripts/release-prepare.ts",
+    "release:prepush": "node --import ./scripts/tsx.mjs scripts/release-prepush.mts",
+    "release:push": "node --import ./scripts/tsx.mjs scripts/release-prepush.mts --push",
     "release:plugins:clawhub:check": "node --import ./scripts/tsx.mjs scripts/plugin-clawhub-release-check.ts",
     "release:plugins:clawhub:plan": "node --import ./scripts/tsx.mjs scripts/plugin-clawhub-release-plan.ts",
     "release:plugins:npm:check": "node --import ./scripts/tsx.mjs scripts/plugin-npm-release-check.ts",
@@ -2264,7 +2271,7 @@
     "@modelcontextprotocol/sdk": "1.32.0",
     "@mozilla/readability": "0.6.0",
     "@openclaw/ai": "workspace:*",
-    "@openclaw/fs-safe": "0.25.0",
+    "@openclaw/fs-safe": "0.26.0",
     "@openclaw/proxyline": "0.4.0",
     "@silvia-odwyer/photon-node": "0.3.4",
     "@trycua/cua-driver": "0.32.0",
@@ -2383,7 +2390,7 @@
     "sqlite-vec": "0.1.9"
   },
   "engines": {
-    "node": ">=24.16.0 <25 || >=26.1.0"
+    "node": ">=24.22.1 <25 || >=26.12.1"
   },
-  "packageManager": "pnpm@12.9.0+sha512.8f64efa0b792986ca98ae568791bcd7722807e274c4f0c1d9853c62116495c584119db98762a2a5343b1684d361b9ae26fdd16d551666d7635346d3fae830ddd"
+  "packageManager": "pnpm@12.15.0+sha512.b3951d6d6ff4a9f13dc7cf56cd28d2b8eb37dbcc9c68e52e1e1191873ea9f82a017287ab50baadc5ccc494f036c67c0e47eb13608c2fa36f47711b61ea128e61"
 }

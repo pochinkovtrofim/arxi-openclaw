@@ -347,8 +347,8 @@ function shouldRequireOAuthDir(cfg: OpenClawConfig, env: NodeJS.ProcessEnv): boo
   if ([...withPersistedAuth].some((channelId) => !withoutPersistedAuth.has(channelId))) {
     return true;
   }
-  // Pairing allowlists are persisted under credentials/<channel>-allowFrom.json, so a
-  // channel id with no effective plugin owner can never pair and must not require the dir.
+  // Legacy pairing allowlists lived under credentials/<channel>-allowFrom.json;
+  // only channels with an effective plugin owner need that directory's repair hint.
   for (const [channelId, channelCfg] of Object.entries(channels)) {
     const scopedChannelId = normalizeOptionalLowercaseString(channelId);
     if (!scopedChannelId || !withPersistedAuth.has(scopedChannelId)) {
@@ -529,7 +529,6 @@ export function stateIntegrityIssueToHealthFinding(
       return finding(
         `${issue.label} is missing.`,
         "Run `openclaw doctor --fix` to create missing runtime state directories.",
-        "error",
       );
     case "runtime-dir-not-writable":
       return finding(
@@ -591,7 +590,6 @@ export async function noteStateIntegrity(
   const env = process.env;
   const homedir = () => resolveRequiredHomeDir(env, os.homedir);
   const stateDir = resolveStateDir(env, homedir);
-  const defaultStateDir = path.join(homedir(), ".openclaw");
   const oauthDir = resolveOAuthDir(env, stateDir);
   const dirCandidates = resolveSessionRuntimeDirectories(cfg, env, homedir);
   const displayStateDir = shortenHomePath(stateDir);
@@ -745,7 +743,7 @@ export async function noteStateIntegrity(
         if (label !== "OAuth dir") {
           continue;
         }
-        warnings.push(`- CRITICAL: ${label} missing (${displayDir}).`);
+        warnings.push(`- ${label} missing (${displayDir}).`);
         const create = await prompter.confirmRuntimeRepair({
           message: `Create ${label} at ${displayDir}?`,
           initialValue: true,
@@ -762,17 +760,6 @@ export async function noteStateIntegrity(
       }
       await repairWritableDirectory(dir, displayDir, label);
     }
-  }
-
-  // Compare only the effective home's default; other accounts do not share this history.
-  if (path.resolve(stateDir) !== path.resolve(defaultStateDir) && existsDir(defaultStateDir)) {
-    warnings.push(
-      [
-        "- Multiple state directories detected. This can split session history.",
-        `  - ${shortenHomePath(defaultStateDir)}`,
-        `  Active state dir: ${displayStateDir}`,
-      ].join("\n"),
-    );
   }
 
   const orphanAgentDirs = listOrphanAgentDirs(cfg, stateDir);
@@ -956,14 +943,14 @@ export async function noteStateIntegrity(
       }
 
       await runPluginSessionStateDoctorRepairs({
-        scan: sqlitePluginStateScanner.result(),
+        scan: await sqlitePluginStateScanner.result(),
         store: { kind: "sqlite", agentId, path: sqliteStorePath },
         prompter,
         warnings,
         changes,
       });
       await runPluginSessionStateDoctorRepairs({
-        scan: legacyPluginStateScanner.result(),
+        scan: await legacyPluginStateScanner.result(),
         store: { kind: "legacy", path: absoluteStorePath },
         prompter,
         warnings,

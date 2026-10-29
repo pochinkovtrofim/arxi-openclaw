@@ -47,7 +47,7 @@ import {
   classifyWorkerBootstrapArtifactTransferPath,
   WORKER_BOOTSTRAP_ARTIFACT_TRANSFER_PATH,
 } from "./gateway-http-route-contracts.js";
-import type { AuthorizedGatewayHttpRequest } from "./http-auth-utils.js";
+import type { authorizePluginGatewayHttpRequestOrReply } from "./http-auth-utils.js";
 import {
   finishFailedGatewayHttpResponse,
   sendGatewayAuthFailure,
@@ -65,6 +65,7 @@ import {
   type GatewayIngressTransport,
   type GatewayUnattributableProxyReporter,
 } from "./ingress-attribution.js";
+import { isTrustedProxyAddress } from "./net.js";
 import { normalizePluginNodeCapabilityScopedUrl } from "./plugin-node-capability.js";
 import {
   handleProviderOAuthCallback,
@@ -119,8 +120,7 @@ import {
   type NodeWorkspaceTransferHttpCallback,
 } from "./worker-environments/node-workspace-transfer-http.js";
 
-type WatchNodeHttpRequestHandler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
-type McpOAuthCallbackHandler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
+type GatewayHttpRequestHandler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 
 type GatewayHttpRequestStage = () => Promise<boolean> | boolean;
 
@@ -134,8 +134,8 @@ export function createGatewayHttpServer(opts: {
   openAiChatCompletionsEnabled?: boolean;
   openResponsesEnabled?: boolean;
   handleHooksRequest: HooksRequestHandler;
-  handleMcpOAuthCallbackRequest?: McpOAuthCallbackHandler;
-  handleWatchNodeRequest?: WatchNodeHttpRequestHandler;
+  handleMcpOAuthCallbackRequest?: GatewayHttpRequestHandler;
+  handleWatchNodeRequest?: GatewayHttpRequestHandler;
   handlePluginRequest?: PluginHttpRequestHandler;
   shouldEnforcePluginGatewayAuth?: (pathContext: PluginRoutePathContext) => boolean;
   isPluginAuthenticatedRoute?: (pathContext: PluginRoutePathContext) => boolean;
@@ -322,6 +322,26 @@ export function createGatewayHttpServer(opts: {
       const scopedRequestPath = scopedNodeCapability.pathname;
       const pluginPathContext = resolvePluginRoutePathContext(scopedRequestPath);
       const nodeCapability = resolvePluginNodeCapabilityRoute?.(pluginPathContext);
+      const resolvedAuthValue = getResolvedAuth();
+      // Configured proxies can probe without a client identity; diagnostic details
+      // still require attribution and authorization in the probe owner.
+      if (
+        (ingressAttribution.kind !== "unattributable-proxy" ||
+          isTrustedProxyAddress(ingressAttribution.remoteAddress, trustedProxies)) &&
+        (await handleGatewayProbeRequest(
+          req,
+          res,
+          scopedRequestPath,
+          resolvedAuthValue,
+          trustedProxies,
+          allowRealIpFallback,
+          rateLimiter,
+          getReadiness,
+          getStartup,
+        ))
+      ) {
+        return undefined;
+      }
       if (ingressAttribution.kind === "unattributable-proxy") {
         opts.reportUnattributableProxy?.(ingressAttribution);
         if (
@@ -338,7 +358,6 @@ export function createGatewayHttpServer(opts: {
         return undefined;
       }
       const requestClientIp = ingressAttribution.clientIp;
-      const resolvedAuthValue = getResolvedAuth();
       const routeAuth = {
         auth: resolvedAuthValue,
         cfg: configSnapshot,
@@ -386,20 +405,7 @@ export function createGatewayHttpServer(opts: {
         }
         return true;
       };
-      const requestStages: GatewayHttpRequestStage[] = [
-        () =>
-          handleGatewayProbeRequest(
-            req,
-            res,
-            scopedRequestPath,
-            resolvedAuthValue,
-            trustedProxies,
-            allowRealIpFallback,
-            rateLimiter,
-            getReadiness,
-            getStartup,
-          ),
-      ];
+      const requestStages: GatewayHttpRequestStage[] = [];
       const addRequestStage = (
         enabled: boolean,
         stage: GatewayHttpRequestStage,
@@ -458,11 +464,8 @@ export function createGatewayHttpServer(opts: {
       if (devicePairingJoinShortcode !== null) {
         addAdmittedStage(true, async () =>
           (await getDevicePairingJoinHttpModule()).handleDevicePairingJoinHttpRequest({
-            req,
-            res,
+            ...transferRequest,
             shortcode: devicePairingJoinShortcode,
-            clientIp: ingressAttribution.rateLimit.subject.key,
-            rateLimiter: joinRateLimiter,
           }),
         );
       }
@@ -589,7 +592,6 @@ export function createGatewayHttpServer(opts: {
           clients,
           nodeCapability: nodeCapability!,
           capability: scopedNodeCapability.capability,
-          malformedScopedPath: scopedNodeCapability.malformedScopedPath,
           rateLimiter,
         });
         if (!ok.ok) {
@@ -630,9 +632,9 @@ export function createGatewayHttpServer(opts: {
       // Core and recovery routes run first, then plugin routes, then read-only Control UI
       // surfaces. Non-GET requests the SPA does not claim reach the startup 503 before final 404.
       if (handlePluginRequest) {
-        let pluginGatewayAuthSatisfied = false;
-        let pluginGatewayRequestAuth: AuthorizedGatewayHttpRequest | undefined;
-        let pluginRequestOperatorScopes: string[] | undefined;
+        let pluginAuthorization: Awaited<
+          ReturnType<typeof authorizePluginGatewayHttpRequestOrReply>
+        > = null;
         // Auth and dispatch stay separate so authorized context reaches the handler.
         requestStages.push(
           async () => {
@@ -649,30 +651,24 @@ export function createGatewayHttpServer(opts: {
             const { authorizePluginGatewayHttpRequestOrReply } = await getHttpAuthUtilsModule();
             const { resolvePluginRouteRuntimeOperatorScopes } =
               await getPluginRouteRuntimeScopesModule();
-            const authResult = await authorizePluginGatewayHttpRequestOrReply({
+            pluginAuthorization = await authorizePluginGatewayHttpRequestOrReply({
               req,
               res,
               ...routeAuth,
               requestPath: scopedRequestPath,
               resolveOperatorScopes: resolvePluginRouteRuntimeOperatorScopes,
             });
-            if (!authResult) {
-              return true;
-            }
-            pluginGatewayAuthSatisfied = true;
-            pluginGatewayRequestAuth = authResult.requestAuth;
-            pluginRequestOperatorScopes = authResult.operatorScopes;
-            return false;
+            return !pluginAuthorization;
           },
           () => {
-            if (pluginGatewayRequestAuth?.hasCurrentClientAuthority?.() === false) {
+            if (pluginAuthorization?.requestAuth.hasCurrentClientAuthority?.() === false) {
               sendGatewayAuthFailure(res, { ok: false, reason: "unauthorized" });
               return true;
             }
             return handlePluginRequest(req, res, pluginPathContext, {
-              gatewayAuthSatisfied: pluginGatewayAuthSatisfied,
-              gatewayRequestAuth: pluginGatewayRequestAuth,
-              gatewayRequestOperatorScopes: pluginRequestOperatorScopes,
+              gatewayAuthSatisfied: pluginAuthorization !== null,
+              gatewayRequestAuth: pluginAuthorization?.requestAuth,
+              gatewayRequestOperatorScopes: pluginAuthorization?.operatorScopes,
               gatewayRequestClientIp: requestClientIp,
             });
           },

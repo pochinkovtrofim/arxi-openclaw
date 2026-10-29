@@ -39,6 +39,7 @@ import { buildCodexHookRequester } from "./hook-requester.js";
 import { hasCodexNativeToolCatalog, loadCodexNativeToolCatalog } from "./native-tool-catalog.js";
 import { CodexCompactionPlanState } from "./plan-compaction-state.js";
 import { requestPluginApprovalOutcome } from "./plugin-approval-roundtrip.js";
+import { releaseCodexProbeClient } from "./probe-client.js";
 import type { CodexDynamicToolSpec } from "./protocol.js";
 import { isCodexResponsesOAuth } from "./responses-oauth.js";
 import { emitCodexAppServerEvent, runCodexCleanupStep } from "./run-attempt-lifecycle.js";
@@ -50,7 +51,6 @@ import {
   resolveScheduledCodexAppCreatorCaptureDecision,
 } from "./scheduled-app-authority.js";
 import { formatScheduledMcpIdentityMismatch } from "./scheduled-mcp-identity.js";
-import { releaseLeasedSharedCodexAppServerClient } from "./shared-client.js";
 
 export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   const {
@@ -290,7 +290,7 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         },
       });
     } finally {
-      releaseLeasedSharedCodexAppServerClient(client);
+      await releaseCodexProbeClient(client, connection.attemptClientFactory);
     }
   }
   let requireExplicitMessageTarget: boolean | undefined;

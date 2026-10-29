@@ -116,6 +116,7 @@ import {
   claimMainSessionRecoveryOwner,
   commitMainSessionRecovery,
 } from "./main-session-recovery-store.js";
+import { registerAcceptedRecoveryStopCase } from "./main-session-restart-command.test-support.js";
 import { dispatchRestartRecoveryUntilStarted } from "./main-session-restart-dispatch-start.js";
 import { readStartupRecoveryWarning } from "./main-session-restart-recovery-diagnostics.js";
 import {
@@ -136,6 +137,7 @@ import {
   makeMessageToolResult,
   makeToolResultMessage,
   makeUserMessage,
+  recoveredThenCompletedUserTurns,
 } from "./main-session-restart-recovery-transcript.test-support.js";
 import {
   markRestartAbortedMainSessions,
@@ -156,6 +158,8 @@ const discordDeliveryContext = {
 const executionIdentityEnabledConfig = {
   logging: { audit: { executionIdentity: true } },
 } satisfies OpenClawConfig;
+const restartRecoveryState = { cycleId: "interrupted-cycle", revision: 1, chargedAttempts: 0 };
+const toolTimeoutRecoveryState = { ...restartRecoveryState, safeToolsRequired: true } as const;
 
 vi.mock("../../gateway/call.js", () => ({
   callGateway: vi.fn(async () => ({ runId: "run-resumed" })),
@@ -3608,75 +3612,13 @@ describe("main-session-restart-recovery", () => {
     }
   });
 
-  it("restores an accepted recovery that fails before execution starts", async () => {
-    const { sessionsDir, storePath, readEntry } = await makeMainSessionFixture({
-      restartRecoveryDeliveryRunId: "recovery-main",
-      restartRecoveryDeliverySourceRunId: "source-main",
-    });
-    await writeTranscript(sessionsDir, "main-session", [
-      { role: "user", content: "recover without losing the owner" },
-    ]);
-    const scheduleSpy = vi
-      .spyOn(recoveryOwnerRelease, "scheduleMainSessionRecoveryPendingTarget")
-      .mockImplementation(() => {});
-    let acceptedObserver: ((payload: unknown) => void) | undefined;
-    const dispatchAgent = vi.fn<GatewayRecoveryRuntime["dispatchAgent"]>(
-      async (request, _timeoutMs, options) => {
-        const runId = request.idempotencyKey!;
-        await commitMainSessionRecovery({
-          command: {
-            kind: "admit_recovery",
-            lifecycleGeneration: getAgentEventLifecycleGeneration(),
-            now: Date.now(),
-            runId,
-            sessionId: "main-session",
-          },
-          requireWriteSuccess: true,
-          target: { sessionKey: "agent:main:main", storePath },
-        });
-        acceptedObserver = options?.onAccepted;
-        acceptedObserver?.({ runId, status: "accepted" });
-        throw new Error("detached execution failed before provider start");
-      },
-    );
-
-    try {
-      const result = await retryRestartAbortedMainSessionRecovery({
-        cfg: {},
-        expectedRecoveryRunId: "recovery-main",
-        expectedRecoverySourceRunId: "source-main",
-        expectedSessionId: "main-session",
-        sessionKey: "agent:main:main",
-        storePath,
-        gatewayRuntime: createMockGatewayRecoveryRuntime({
-          dispatchAgent: dispatchAgent as GatewayRecoveryRuntime["dispatchAgent"],
-          waitForAgent: vi.fn(async () => ({
-            runId: "recovery-main",
-            status: "timeout",
-            timeoutPhase: "queue",
-            providerStarted: false,
-          })) as GatewayRecoveryRuntime["waitForAgent"],
-        }),
-      });
-
-      expect(result).toEqual({ started: 0, settled: 0, failed: 1, skipped: 0 });
-      expect(acceptedObserver).toBeTypeOf("function");
-      expect(scheduleSpy).toHaveBeenCalledWith({
-        agentId: "main",
-        sessionId: "main-session",
-        sessionKey: "agent:main:main",
-        storePath,
-      });
-      expect(readEntry()).toMatchObject({
-        status: "interrupted",
-        abortedLastRun: true,
-        restartRecoveryDeliverySourceRunId: "source-main",
-        mainRestartRecovery: { chargedAttempts: 1 },
-      });
-      expect(readEntry()?.restartRecoveryDeliveryRunId).toBeUndefined();
-    } finally {
-      scheduleSpy.mockRestore();
-    }
+  registerAcceptedRecoveryStopCase({
+    getStateDir: () => tmpDir,
+    makeMainSessionFixture,
+    writeTranscript,
+    recoverRestartAbortedMainSessions,
+    retryRestartAbortedMainSessionRecovery,
+    sendRecoveryNotice,
   });
 
   it.each([
@@ -4308,22 +4250,14 @@ describe("main-session-restart-recovery", () => {
       safeTools: "required",
     },
     {
-      name: "ends prior replay restrictions at a new full-access user turn",
-      messages: [
-        { role: "user", content: "the earlier request" },
-        codeModeCheckpointMessage(),
-        {
-          role: "user",
-          provenance: { kind: "internal_system", sourceTool: "main_session_restart_recovery" },
-          content:
-            "[System] Your previous turn was interrupted by a gateway restart while OpenClaw was waiting on tool/model work. Continue from the existing transcript and finish the interrupted response.",
-        },
-        makeAssistantTextMessage("Finished that recovery."),
-        { role: "user", content: "a later request" },
-        makeAssistantTextMessage("Finished the later request."),
-      ],
-      entry: { permissionMode: "full", restartRecoveryForceSafeTools: true },
-      safeTools: "absent",
+      name: "keeps a new tool-timeout restriction after an older recovered user turn",
+      messages: recoveredThenCompletedUserTurns(),
+      entry: {
+        permissionMode: "full",
+        restartRecoveryForceSafeTools: true,
+        mainRestartRecovery: toolTimeoutRecoveryState,
+      },
+      safeTools: "required",
     },
     {
       name: "resumes safely without replaying visible assistant text beside a Code Mode wait",
@@ -4384,7 +4318,7 @@ describe("main-session-restart-recovery", () => {
       ],
       safeTools: "required",
       promptIncludes: [
-        "interrupted by a gateway restart",
+        "Gateway restart or a tool execution timeout",
         "marked interrupted, missing, or aborted",
         "unknown outcome",
         "not proof of tool failure",
@@ -4594,11 +4528,12 @@ describe("main-session-restart-recovery", () => {
   );
 
   it.each([
-    { label: "inherited full access", mode: "full", permissionMode: undefined, restricted: false },
-    { label: "explicit guarded access", mode: "full", permissionMode: "guarded", restricted: true },
+    ["inherited full access after a restart", undefined, false, false],
+    ["inherited full access after a tool timeout", undefined, true, true],
+    ["explicit guarded access", "guarded", false, true],
   ] as const)(
-    "continues interrupted work with $label",
-    async ({ mode, permissionMode, restricted }) => {
+    "continues interrupted work with %s",
+    async (_label, permissionMode, safeToolsRequired, restricted) => {
       const sessionsDir = await writePreparedMainSessionTranscript(
         [
           { role: "user", content: "do the thing" },
@@ -4612,12 +4547,16 @@ describe("main-session-restart-recovery", () => {
             },
           ]),
         ],
-        { permissionMode, restartRecoveryForceSafeTools: true },
+        {
+          permissionMode,
+          restartRecoveryForceSafeTools: true,
+          mainRestartRecovery: safeToolsRequired ? toolTimeoutRecoveryState : restartRecoveryState,
+        },
       );
 
       await expectRecovery(
         { started: 1, settled: 0, failed: 0, skipped: 0 },
-        { tools: { exec: { mode } } },
+        { tools: { exec: { mode: "full" } } },
       );
       expect(callGateway).toHaveBeenCalledTimes(1);
       expect(gatewayParams().forceRestartSafeTools === true).toBe(restricted);

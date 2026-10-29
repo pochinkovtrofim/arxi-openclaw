@@ -49,6 +49,7 @@ beforeEach(async () => {
       [
         job.id,
         {
+          nextCheckEnabled: true,
           pacingEnabled: true,
           scheduledAutomation: true,
           cronStoreKey: cronStoreKey(storePath),

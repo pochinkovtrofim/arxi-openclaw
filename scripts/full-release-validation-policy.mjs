@@ -15,6 +15,7 @@ import { compareAscii, sortJsonValueKeys } from "./lib/canonical-json.mjs";
 import { hasRequiredCrossOsSuites } from "./lib/cross-os-release-checks/suite-filter.mjs";
 import { candidateArtifactJsonFromBinding } from "./lib/full-release-candidate-reuse.mjs";
 import {
+  FULL_RELEASE_CHILD_EVIDENCE_JOB,
   MAX_RELEASE_ARTIFACT_BYTES,
   serializeReleaseArtifact,
 } from "./lib/full-release-evidence.mjs";
@@ -73,7 +74,7 @@ const EXACT_TARGET_EVIDENCE_REUSE_POLICY = "exact-target-full-validation-v1";
 const CHANGELOG_ONLY_EVIDENCE_REUSE_POLICY = "changelog-only-release-v1";
 export const SPLIT_CHANGELOG_EVIDENCE_REUSE_POLICY = "split-changelog-release-v1";
 
-export function assertReleasePublicationKnownBudget(plan, context) {
+export function assertReleasePublicationKnownBudget(plan, context, reusedManifest) {
   serializeReleaseArtifact(plan);
   // Only these future fields have finite bounds in the existing plan normalizers.
   // Complete future jobs/attempts and candidate receipts are not covered here.
@@ -111,7 +112,7 @@ export function assertReleasePublicationKnownBudget(plan, context) {
     errors: Array.from({ length: MAX_REPORTED_ISSUES }, () => issue),
   };
   serializeReleaseArtifact(reserved);
-  buildReleaseValidationManifest({ plan: reserved, context });
+  buildReleaseValidationManifest({ plan: reserved, context, reusedManifest });
 }
 
 // A split-layout receipt is bound to one selected release, never the directory.
@@ -730,15 +731,24 @@ export function composeReleaseAttemptJobs(attempts, expected = {}) {
     const completedNames = new Set(
       attempt.jobs.filter((job) => job?.status === "completed").map((job) => job.name),
     );
+    const runningNames = new Set(
+      expected.effectiveRunStatus === "in_progress" &&
+        expectedAttempt === effectiveRunAttempt &&
+        effectiveRunAttempt > plannedRunAttempt
+        ? attempt.jobs
+            .filter((job) => job?.status === "in_progress" && (job.runner_id || job.runner_name))
+            .map((job) => job.name)
+        : [],
+    );
     for (const rawJob of attempt.jobs) {
       const job = normalizedAttemptJob(rawJob, expectedAttempt);
-      // Skipped jobs and GitHub's runnerless queued rerun copies (beside a completed
-      // sibling in the same attempt) carry no independent evidence. GitHub may
-      // mirror the completed sibling's steps onto these copies, so runner identity is
-      // the stable discriminator. Drop them before identity checks because they collide.
+      // GitHub's runnerless queued copies can outlive the real rerun job. While
+      // the latest rerun is active, retain its running job so collection stays
+      // pending; terminal evidence still requires the completed sibling. Mirrored
+      // steps do not identify a real runner.
       const ghost = job.status === "queued" && !rawJob.runner_id && !rawJob.runner_name;
       const skipped = job.status === "completed" && job.conclusion === "skipped";
-      if (skipped || (ghost && completedNames.has(job.name))) {
+      if (skipped || (ghost && (completedNames.has(job.name) || runningNames.has(job.name)))) {
         continue;
       }
       if (names.has(job.name)) {
@@ -766,6 +776,7 @@ export function composeReleaseChildAttemptEvidence({ attempts, expected, run }) 
   const provenance = validateReleaseChildRunProvenance(run, expected);
   const composite = composeReleaseAttemptJobs(attempts, {
     effectiveRunAttempt: provenance.effectiveRunAttempt,
+    effectiveRunStatus: run.status,
     plannedRunAttempt: expected.plannedRunAttempt,
   });
   return {
@@ -963,6 +974,26 @@ export function buildReleaseExecutionPlan(input) {
       result: stringValue(input.resolveTargetResult, "missing"),
     },
     {
+      name: "Prepare release npm artifacts",
+      required: rerunGroup === "all" || (!reused && booleanValue(input.candidateRequired)),
+      result: stringValue(input.npmPreparationResult, "skipped"),
+    },
+    {
+      name: "Qualify release npm artifacts",
+      required: rerunGroup === "all",
+      result: stringValue(input.npmQualificationResult, "skipped"),
+    },
+    {
+      name: "Prepare exact plugin npm artifacts",
+      required: rerunGroup === "all" && booleanValue(input.pluginNpmPreflightRequired),
+      result: stringValue(input.pluginNpmPreparationResult, "skipped"),
+    },
+    {
+      name: "Prepare release Docker artifacts",
+      required: rerunGroup === "all",
+      result: stringValue(input.dockerPreparationResult, "skipped"),
+    },
+    {
       name: phasedChildren ? "Acquire full release candidate" : "Prepare shared release candidate",
       required: phasedChildren
         ? !reused && booleanValue(input.candidateRequired)
@@ -988,6 +1019,11 @@ function normalizedEvidenceReuse(evidenceReuse) {
   if (!evidenceReuse || evidenceReuse.requested !== true) {
     return { requested: false };
   }
+  const sourceArtifact = normalizedEvidenceReuseArtifact(
+    evidenceReuse.sourceArtifact,
+    evidenceReuse.rootRunId,
+  );
+  const sourceWorkflow = normalizedEvidenceReuseWorkflow(evidenceReuse.sourceWorkflow);
   return {
     changedPaths: Array.isArray(evidenceReuse.changedPaths)
       ? evidenceReuse.changedPaths
@@ -1000,16 +1036,51 @@ function normalizedEvidenceReuse(evidenceReuse) {
     rootRunId: boundedString(evidenceReuse.rootRunId, MAX_LABEL_LENGTH),
     runUrl: boundedString(evidenceReuse.runUrl, MAX_URL_LENGTH),
     selectedRunId: boundedString(evidenceReuse.selectedRunId, MAX_LABEL_LENGTH),
-    sourceManifest:
-      evidenceReuse.sourceManifest &&
-      typeof evidenceReuse.sourceManifest === "object" &&
-      !Array.isArray(evidenceReuse.sourceManifest)
-        ? structuredClone(evidenceReuse.sourceManifest)
-        : null,
+    ...(sourceArtifact || Object.hasOwn(evidenceReuse, "sourceArtifact") ? { sourceArtifact } : {}),
+    ...(sourceWorkflow ? { sourceWorkflow } : {}),
+    ...(!sourceArtifact &&
+    evidenceReuse.sourceManifest &&
+    typeof evidenceReuse.sourceManifest === "object" &&
+    !Array.isArray(evidenceReuse.sourceManifest)
+      ? { sourceManifest: structuredClone(evidenceReuse.sourceManifest) }
+      : {}),
   };
 }
 
-function validEvidenceReuseIdentity(evidenceReuse) {
+function normalizedEvidenceReuseWorkflow(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const ref = boundedString(value.ref, MAX_LABEL_LENGTH);
+  const sha = boundedString(value.sha, MAX_LABEL_LENGTH);
+  return ref && /^[a-f0-9]{40}$/u.test(sha) ? { ref, sha } : null;
+}
+
+function normalizedEvidenceReuseArtifact(value, rootRunId) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const runAttempt = positiveInteger(value.runAttempt);
+  const id = boundedString(value.id, MAX_LABEL_LENGTH);
+  const name = boundedString(value.name, MAX_LABEL_LENGTH);
+  const digest = boundedString(value.digest, MAX_LABEL_LENGTH);
+  const sizeInBytes = Number(value.sizeInBytes);
+  const canonicalName = `full-release-validation-${rootRunId}-${runAttempt}`;
+  const legacyName = `full-release-validation-${rootRunId}`;
+  if (
+    !/^[1-9][0-9]*$/u.test(id) ||
+    !/^sha256:[a-f0-9]{64}$/u.test(digest) ||
+    runAttempt === undefined ||
+    (name !== canonicalName && !(runAttempt === 1 && name === legacyName)) ||
+    !Number.isSafeInteger(sizeInBytes) ||
+    sizeInBytes < 1
+  ) {
+    return null;
+  }
+  return { digest, id, name, runAttempt, sizeInBytes };
+}
+
+function validEvidenceReuseIdentity(evidenceReuse, targetVersion, allowPendingArtifact = false) {
   if (!evidenceReuse.requested) {
     return true;
   }
@@ -1020,16 +1091,15 @@ function validEvidenceReuseIdentity(evidenceReuse) {
       evidenceReuse.changedPaths.length === 1 &&
       evidenceReuse.changedPaths[0] === "CHANGELOG.md") ||
     (evidenceReuse.policy === SPLIT_CHANGELOG_EVIDENCE_REUSE_POLICY &&
-      isSplitChangelogEvidenceDelta(
-        evidenceReuse.changedPaths,
-        evidenceReuse.sourceManifest?.candidateBinding?.package?.version ??
-          evidenceReuse.sourceManifest?.validationInputs?.targetVersion,
-      ));
+      isSplitChangelogEvidenceDelta(evidenceReuse.changedPaths, targetVersion));
   return (
     /^[a-f0-9]{40}$/u.test(evidenceReuse.evidenceSha) &&
     /^[1-9][0-9]*$/u.test(evidenceReuse.rootRunId) &&
     /^[1-9][0-9]*$/u.test(evidenceReuse.selectedRunId) &&
-    evidenceReuse.sourceManifest !== null &&
+    (evidenceReuse.sourceArtifact != null ||
+      evidenceReuse.sourceManifest ||
+      allowPendingArtifact) &&
+    (evidenceReuse.sourceArtifact == null || evidenceReuse.sourceWorkflow) &&
     validChangedPaths
   );
 }
@@ -1090,6 +1160,7 @@ function releaseExecutionPlanShape(payload) {
       ...(Object.hasOwn(payload, "publicationAdmissionContract")
         ? ["publicationAdmissionContract", "publicationAdmission"]
         : []),
+      ...(Object.hasOwn(payload, "sealParentRunAttempt") ? ["sealParentRunAttempt"] : []),
     ]),
   ].toSorted((left, right) => (left === right ? 0 : left < right ? -1 : 1));
   const expectedChildKeys = hasAttemptEvidence
@@ -1097,6 +1168,7 @@ function releaseExecutionPlanShape(payload) {
     : HISTORICAL_EXECUTION_PLAN_CHILD_KEYS;
   if (
     (hasAttemptEvidence && ![2, 3].includes(attemptEvidenceVersion)) ||
+    (Object.hasOwn(payload, "sealParentRunAttempt") && !hasAttemptEvidence) ||
     (Object.hasOwn(payload, "knownFlakyJobs") && !hasAttemptEvidence) ||
     (Object.hasOwn(payload, "coveragePolicy") && attemptEvidenceVersion !== 3) ||
     !hasExactKeys(payload, expectedPlanKeys) ||
@@ -1144,6 +1216,9 @@ function executionPlanDigestPayload(plan) {
           ...(plan.childReuse !== undefined ? { childReuse: plan.childReuse } : {}),
           ...(Object.hasOwn(plan, "knownFlakyJobs") ? { knownFlakyJobs: plan.knownFlakyJobs } : {}),
           attemptEvidenceVersion: plan.attemptEvidenceVersion,
+          ...(Object.hasOwn(plan, "sealParentRunAttempt")
+            ? { sealParentRunAttempt: plan.sealParentRunAttempt }
+            : {}),
         }
       : {}),
     blockers: plan.blockers,
@@ -1187,8 +1262,10 @@ export function buildReleaseExecutionPlanArtifact({
   sourceAdmission,
   publicationAdmissionContract,
   publicationAdmission,
+  pendingEvidenceReuse = false,
   qualificationCoverage,
   qualificationInputs,
+  sealParentRunAttempt,
   targetVersion,
   telegramWaiver,
   trustedWorkflow,
@@ -1206,8 +1283,31 @@ export function buildReleaseExecutionPlanArtifact({
   if (attemptAware && ![2, 3].includes(normalizedAttemptEvidenceVersion)) {
     throw new Error("release execution plan attempt evidence version is invalid");
   }
+  const normalizedParentRunAttempt = positiveInteger(expected.parentRunAttempt);
+  const normalizedSealParentRunAttempt =
+    sealParentRunAttempt === undefined ? undefined : positiveInteger(sealParentRunAttempt);
+  if (
+    normalizedParentRunAttempt === undefined ||
+    (sealParentRunAttempt !== undefined &&
+      (normalizedSealParentRunAttempt === undefined ||
+        normalizedSealParentRunAttempt <= normalizedParentRunAttempt))
+  ) {
+    throw new Error("release execution plan seal attempt is invalid");
+  }
   const normalizedReuse = normalizedEvidenceReuse(evidenceReuse);
-  if (!validEvidenceReuseIdentity(normalizedReuse)) {
+  const normalizedBlockers = normalizeIssues(blockers, "release_blocker");
+  const normalizedErrors = normalizeIssues(errors, "orchestration_error");
+  const normalizedTargetVersion = boundedString(
+    targetVersion ?? candidate?.package?.version ?? sourceAdmission?.projection?.version,
+    MAX_LABEL_LENGTH,
+  );
+  if (
+    !validEvidenceReuseIdentity(
+      normalizedReuse,
+      normalizedTargetVersion,
+      pendingEvidenceReuse || normalizedBlockers.length > 0 || normalizedErrors.length > 0,
+    )
+  ) {
     throw new Error("release execution plan evidence reuse binding is invalid");
   }
   const frozenCoverage =
@@ -1259,7 +1359,10 @@ export function buildReleaseExecutionPlanArtifact({
     version: 1,
     kind: "openclaw.full-release-execution-plan",
     parentRunId: String(expected.parentRunId),
-    parentRunAttempt: positiveInteger(expected.parentRunAttempt),
+    parentRunAttempt: normalizedParentRunAttempt,
+    ...(sealParentRunAttempt === undefined
+      ? {}
+      : { sealParentRunAttempt: normalizedSealParentRunAttempt }),
     workflowRef: boundedString(expected.workflowRef, MAX_LABEL_LENGTH),
     workflowSha: boundedString(expected.workflowSha, MAX_LABEL_LENGTH),
     targetSha: boundedString(expected.targetSha, MAX_LABEL_LENGTH),
@@ -1269,8 +1372,8 @@ export function buildReleaseExecutionPlanArtifact({
     evidenceReuse: normalizedReuse,
     gates: gates.map(normalizedGate),
     children: normalizedChildren,
-    blockers: normalizeIssues(blockers, "release_blocker"),
-    errors: normalizeIssues(errors, "orchestration_error"),
+    blockers: normalizedBlockers,
+    errors: normalizedErrors,
   };
   validatePlanSourceAdmission(basePlan, expected);
   validatePlanPublicationAdmission(basePlan, expected);
@@ -1432,6 +1535,9 @@ export function validateReleaseExecutionPlanArtifact(payload, expected = {}) {
     payload.kind !== "openclaw.full-release-execution-plan" ||
     !/^[1-9][0-9]*$/u.test(String(payload.parentRunId ?? "")) ||
     positiveInteger(payload.parentRunAttempt) === undefined ||
+    (Object.hasOwn(payload, "sealParentRunAttempt") &&
+      (positiveInteger(payload.sealParentRunAttempt) === undefined ||
+        Number(payload.sealParentRunAttempt) <= Number(payload.parentRunAttempt))) ||
     !/^[a-f0-9]{40}$/u.test(String(payload.workflowSha ?? "")) ||
     (payload.targetSha !== "" && !/^[a-f0-9]{40}$/u.test(String(payload.targetSha ?? ""))) ||
     (expected.parentRunId !== undefined &&
@@ -1452,7 +1558,15 @@ export function validateReleaseExecutionPlanArtifact(payload, expected = {}) {
     throw new Error("release execution plan artifact binding is invalid");
   }
   const evidenceReuse = normalizedEvidenceReuse(payload.evidenceReuse);
-  if (!validEvidenceReuseIdentity(evidenceReuse)) {
+  if (
+    !validEvidenceReuseIdentity(
+      evidenceReuse,
+      payload.targetVersion ??
+        evidenceReuse.sourceManifest?.candidateBinding?.package?.version ??
+        evidenceReuse.sourceManifest?.validationInputs?.targetVersion,
+      (payload.blockers?.length ?? 0) > 0 || (payload.errors?.length ?? 0) > 0,
+    )
+  ) {
     throw new Error("release execution plan evidence reuse binding is invalid");
   }
   const trustedWorkflow = normalizedTrustedWorkflow(payload.trustedWorkflow);
@@ -1464,6 +1578,9 @@ export function validateReleaseExecutionPlanArtifact(payload, expected = {}) {
   const plan = {
     ...payload,
     parentRunAttempt: positiveInteger(payload.parentRunAttempt),
+    ...(Object.hasOwn(payload, "sealParentRunAttempt")
+      ? { sealParentRunAttempt: positiveInteger(payload.sealParentRunAttempt) }
+      : {}),
     parentRunId: String(payload.parentRunId),
     children,
     blockers: normalizeIssues(payload.blockers, "release_blocker"),
@@ -1535,6 +1652,11 @@ export function planReleaseChildRerun({ childKey, jobs }) {
   if (failed.length === 0) {
     throw new Error(`${childKey} has no blocking failed job to rerun`);
   }
+  // Receipt publication is best-effort at the workflow boundary. A green child
+  // can therefore need only this failed metadata job, never its passing workloads.
+  if (failed.length === 1 && failed[0] === FULL_RELEASE_CHILD_EVIDENCE_JOB) {
+    return { failed, mode: "receipt", producer: FULL_RELEASE_CHILD_EVIDENCE_JOB };
+  }
   // These consumers bind their producer's artifact to the current run attempt, so a
   // failed-jobs rerun that leaves the green producer behind stays red (#161317).
   const producer = "install_smoke_release_checks / installer_smoke_candidate_payload";
@@ -1590,20 +1712,7 @@ function releaseState(cancelled, activeRunIds, blockers, errors) {
   );
 }
 
-export function classifyReleaseSnapshot({
-  cancelled = false,
-  children,
-  extraBlockers = [],
-  extraErrors = [],
-  localFailures = [],
-}) {
-  const selected = children.filter((child) => child.selected);
-  const active = selected.filter(
-    (child) => child.runId && child.runAttempt && child.status !== "completed",
-  );
-  const childErrors = selected.flatMap((child) =>
-    (child.errors ?? []).filter((error) => error.kind !== "dispatch_missing"),
-  );
+function releaseChildBlockers(selected) {
   const childJobBlockers = selected.flatMap((child) =>
     child.jobs.filter(isFailedJob).map((job) => ({
       child: child.key,
@@ -1640,18 +1749,35 @@ export function classifyReleaseSnapshot({
       runId: child.runId,
       url: child.url,
     }));
+  return [...childJobBlockers, ...terminalBlockers];
+}
+
+export function classifyReleaseSnapshot({
+  cancelled = false,
+  children,
+  extraBlockers = [],
+  extraErrors = [],
+  localFailures = [],
+}) {
+  const selected = children.filter((child) => child.selected);
+  const active = selected.filter(
+    (child) => child.runId && child.runAttempt && child.status !== "completed",
+  );
+  const childErrors = selected.flatMap((child) =>
+    (child.errors ?? []).filter((error) => error.kind !== "dispatch_missing"),
+  );
+  const childBlockers = releaseChildBlockers(selected);
   const rawBlockers = [
     ...localFailures,
     ...extraBlockers,
     ...dispatchBlockers(selected),
-    ...childJobBlockers,
-    ...terminalBlockers,
+    ...childBlockers,
   ];
   const blockers = normalizeIssues(rawBlockers, "release_blocker");
   const errors = normalizeIssues([...extraErrors, ...childErrors], "orchestration_error");
 
   const activeRunIds = active.map((child) => String(child.runId)).toSorted();
-  const primary = [...childJobBlockers, ...terminalBlockers]
+  const primary = childBlockers
     .filter((issue) => issue.primaryAt)
     .toSorted((left, right) => String(left.primaryAt).localeCompare(String(right.primaryAt), "en"));
   return {
@@ -1857,6 +1983,9 @@ function validateExecutionPlanChildBindings(children, payload, expectedCoverage)
     const reusedRoot = payload.evidenceReuse?.requested
       ? payload.evidenceReuse.sourceManifest
       : undefined;
+    const reusedProducer = payload.evidenceReuse?.requested
+      ? (payload.evidenceReuse.sourceWorkflow ?? reusedRoot)
+      : undefined;
     if (
       reusedRoot?.qualificationCoverage &&
       !isDeepStrictEqual(reusedRoot.qualificationCoverage, coverage)
@@ -1867,13 +1996,13 @@ function validateExecutionPlanChildBindings(children, payload, expectedCoverage)
       const child = children.find((entry) => entry.key === spec.key);
       // Reuse retains the original producer; strict chain validation separately
       // authenticates that root and proves the complete changelog-only delta.
-      const producer = child.source === "reused" && reusedRoot?.workflowSha ? reusedRoot : payload;
+      const producer = child.source === "reused" && reusedProducer ? reusedProducer : payload;
       if (
         !child.required ||
         !child.selected ||
         child.dispatchName !== spec.dispatchName ||
         child.workflow !== spec.workflow ||
-        child.workflowSha !== producer.workflowSha ||
+        child.workflowSha !== (producer.sha ?? producer.workflowSha) ||
         (child.source === "fresh" && child.workflowRef !== producer.workflowRef) ||
         (child.source === "fresh" &&
           child.displayTitle !==
@@ -2427,26 +2556,53 @@ function verifyStateTransition(decision, drain, executionPlan) {
         "compatible collector evidence for the same execution plan is required",
     );
   }
-  if (
-    decision.state.startsWith("blocked_") &&
-    drain.state === "blocked_complete" &&
-    !decision.blockers.every((blocker) =>
-      drain.blockers.some(
-        (candidate) =>
-          JSON.stringify(candidate) === JSON.stringify(blocker) ||
-          // A verified newer attempt can replace a job URL while retaining the
-          // same blocker. Both URLs must belong to their accepted job evidence.
-          (executionPlan.attemptEvidenceVersion !== undefined &&
-            JSON.stringify({ ...candidate, url: blocker.url }) === JSON.stringify(blocker) &&
-            acceptedJobBlockerAttempt(drain, candidate) >
-              acceptedJobBlockerAttempt(decision, blocker)) ||
-          (blocker.kind === "workflow_failure" &&
-            candidate.kind === "job_failure" &&
-            ["child", "runId"].every((key) => candidate[key] === blocker[key])),
-      ),
-    )
-  ) {
-    throw new Error("diagnostic drain changed or removed a release decision blocker");
+  if (decision.state.startsWith("blocked_") && drain.state === "blocked_complete") {
+    // Display rows are capped and can shift as earlier-sorted jobs finish. The
+    // complete index owns retention; child evidence owns permitted replacements.
+    const transitionBlockers = (state) => [
+      ...state.blockers,
+      ...releaseChildBlockers(
+        Object.entries(state.children).map(([key, child]) =>
+          Object.assign({}, child, { key, jobs: child.timing.jobs }),
+        ),
+      ).map((issue) => normalizeIssue(issue, "release_blocker")),
+    ];
+    const previous = new Map(
+      transitionBlockers(decision).map((blocker) => [blockerIndex([blocker])[0], blocker]),
+    );
+    const current = transitionBlockers(drain);
+    const currentIndex = new Set(drain.blockerIndex);
+    const inconsistentDisplay = [decision, drain].some(
+      (state) =>
+        state.blockerCount !== null &&
+        blockerIndex(state.blockers).some((hash) => !state.blockerIndex.includes(hash)),
+    );
+    if (
+      inconsistentDisplay ||
+      !decision.blockerIndex.every((hash) => {
+        if (currentIndex.has(hash)) {
+          return true;
+        }
+        const blocker = previous.get(hash);
+        return (
+          blocker &&
+          current.some(
+            (candidate) =>
+              // A verified newer attempt can replace a job URL while retaining
+              // the same blocker. Both URLs belong to accepted job evidence.
+              (executionPlan.attemptEvidenceVersion !== undefined &&
+                JSON.stringify({ ...candidate, url: blocker.url }) === JSON.stringify(blocker) &&
+                acceptedJobBlockerAttempt(drain, candidate) >
+                  acceptedJobBlockerAttempt(decision, blocker)) ||
+              (blocker.kind === "workflow_failure" &&
+                candidate.kind === "job_failure" &&
+                ["child", "runId"].every((key) => candidate[key] === blocker[key])),
+          )
+        );
+      })
+    ) {
+      throw new Error("diagnostic drain changed or removed a release decision blocker");
+    }
   }
 }
 

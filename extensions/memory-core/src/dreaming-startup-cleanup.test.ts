@@ -83,6 +83,14 @@ function createGateway(
     on: onMock,
     registerService: (service) => services.push(service),
   });
+  const backgroundTasks: Promise<unknown>[] = [];
+  api.lifecycle.runInBackgroundContext = (run) => {
+    const task = run();
+    if (task instanceof Promise) {
+      backgroundTasks.push(task);
+    }
+    return task;
+  };
   Object.assign(api.runtime, { config: { current: () => config } });
   registerShortTermPromotionDreaming(api);
 
@@ -104,6 +112,8 @@ function createGateway(
       throw new Error("gateway_start hook missing");
     }
     await hook({ port: 0 }, { config, getCron: () => cron });
+    // Storage assertions observe finished maintenance, not just a completed start hook.
+    await Promise.all(backgroundTasks);
   };
   const stop = async () => {
     scheduler.beginClose();

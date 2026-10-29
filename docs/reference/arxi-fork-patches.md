@@ -11,10 +11,10 @@ title: "Ro fork patch ledger"
 
 ## Selected upstream
 
-The selected stable base is OpenClaw `v2026.10.5`, exact upstream commit
-`1b58cb9a1b4f4353e1add63c8506db4d890962e8`. This integration starts from Ro
-`b420f7bd3e16a97837781b36ae67b7d2c77ab714`; its previous stable base was
-`v2026.10.2` (`b8952d477f0c932d8ddc6da5c89cab5a169b6ff1`). Dispositions recorded
+The selected stable base is OpenClaw `v2026.10.9`, exact upstream commit
+`8b18b5578f66eab1501cba4cef2310d88bfb9a41`. This integration starts from Ro
+`d0669163e6036befc21bb0a73768fbc4d09c9ded`; its previous stable base was
+`v2026.10.5` (`1b58cb9a1b4f4353e1add63c8506db4d890962e8`). Dispositions recorded
 for earlier bases below still hold unless a later section revises them.
 
 The managed Codex app-server remains pinned to `@openai/codex@0.159.3`.
@@ -95,6 +95,22 @@ or runtime layers merely because they existed in the previous history.
 - Fork product-copy codes render upstream's revised failure wording; the new
   `media_invalid_reference` code covers upstream's invalid media reference.
 
+## Redesigned for v2026.10.9
+
+- Cron `next_check`: upstream's `nextCheckEnabled` (pacing or a one-shot
+  session continuation) gates the proposal. The fork keeps `pacingEnabled`
+  beside it for the paced scheduler binding and managed Flow obligations, which
+  stay paced-only.
+- MCP structured-content mirrors: upstream's
+  `createMcpStructuredContentMirrorMatcher` replaces the fork filter (#147). The
+  fork's non-canonical number guard moves into the matcher, so node-host MCP
+  results keep precise numeric text too.
+- Telegram media captions: the fork caption planner applies upstream's rich
+  block tag downgrade.
+- Doctor capture retirement (#129) still runs only after a verified repair.
+  Upstream's container activation marker is kept; its capture-time 30-day
+  retirement is not.
+
 ## Redesigned for v2026.10.5
 
 - Gateway state custody across a host suspension (#137) is removed. Upstream's
@@ -150,8 +166,8 @@ keep the accepted candidate selected, and qualify a schema-compatible fallback
 before release closeout. The preceding runtime is not a compatible rollback.
 No source pin or test result by itself establishes production activation.
 
-The lifecycle inventory at `1b58cb9a1b4f4353e1add63c8506db4d890962e8`
-uses agent-run contexts, ACP turns, media generation, and migration/backup write
+The lifecycle inventory at `8b18b5578f66eab1501cba4cef2310d88bfb9a41`
+(unchanged from `v2026.10.5`) uses agent-run contexts, ACP turns, media generation, and migration/backup write
 custody in place of the retired task registry. All are included in suspension
 activity; write custody also accompanies the ready response.
 

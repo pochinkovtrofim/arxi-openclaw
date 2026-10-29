@@ -581,6 +581,10 @@ describe("Gateway owner lease", () => {
         state: "live",
         expired: false,
       });
+      expect(readGatewayOwnerLease({ env })?.listeningAt).toBeUndefined();
+      const beforeListening = Date.now();
+      lock.markListening?.();
+      expect(readGatewayOwnerLease({ env })?.listeningAt).toBeGreaterThanOrEqual(beforeListening);
     } finally {
       await lock.release();
     }
@@ -1055,6 +1059,8 @@ describe("Gateway owner lease", () => {
       },
       { env },
     );
+    expect(() => lease.markListening()).toThrow("owner changed before listening publication");
+    expect(readGatewayOwnerLease({ env })?.listeningAt).toBeUndefined();
     await lease.release();
     expect(readGatewayOwnerLease({ env })?.owner).toBe("replacement");
   });

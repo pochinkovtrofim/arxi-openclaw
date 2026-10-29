@@ -47,6 +47,19 @@ export const GATEWAY_CLIENT_MODES = {
   TEST: "test",
 } as const;
 
+export function isNativeAppUiClient(client?: {
+  id?: string | null;
+  mode?: string | null;
+}): boolean {
+  return (
+    client?.mode === GATEWAY_CLIENT_MODES.UI &&
+    (client.id === GATEWAY_CLIENT_IDS.MACOS_APP ||
+      client.id === GATEWAY_CLIENT_IDS.LINUX_APP ||
+      client.id === GATEWAY_CLIENT_IDS.IOS_APP ||
+      client.id === GATEWAY_CLIENT_IDS.ANDROID_APP)
+  );
+}
+
 export type GatewayClientMode = (typeof GATEWAY_CLIENT_MODES)[keyof typeof GATEWAY_CLIENT_MODES];
 
 export type GatewayClientInfo = {
@@ -87,6 +100,7 @@ export const GATEWAY_CLIENT_CAPS = {
   TERMINAL_SESSION_METADATA: "terminal-session-metadata",
   TERMINAL_UPLOAD_PATH_STYLE: "terminal-upload-path-style",
   TOOL_EVENTS: "tool-events",
+  UI_AGENT_GITHUB_SETTINGS: "ui-agent-github-settings",
   UI_COMMANDS: "ui-commands",
   ULTRAFAST: "ultrafast",
   USAGE_REFRESHING: "usage-refreshing",
