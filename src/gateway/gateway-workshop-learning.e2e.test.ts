@@ -12,6 +12,8 @@ import { createDeferred, withTestTimeout } from "../../test/helpers/promise.js";
 import { resolveSessionStorePathCore } from "../config/sessions/paths.js";
 import { loadSessionEntry, loadTranscriptEventsSync } from "../config/sessions/session-accessor.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveSystemEventQueueKey } from "../infra/system-event-ownership.js";
+import { peekSystemEvents } from "../infra/system-events.js";
 import { withServer } from "../plugin-sdk/test-helpers/http-test-server.js";
 import { listWorkshopChanges } from "../skills/workshop/library.js";
 import { resolveWorkshopSkillsDir } from "../skills/workshop/skills-root.js";
@@ -71,7 +73,7 @@ function respondWithTool(
 
 describe("Gateway automatic Workshop learning", () => {
   it(
-    "patches a learned skill through skill_workshop and confirms the user's correction while foreground work continues",
+    "patches a learned skill through skill_workshop and stays out of the chat while foreground work continues",
     { timeout: 150_000 },
     async () => {
       const state = await createOpenClawTestState({
@@ -100,7 +102,7 @@ describe("Gateway automatic Workshop learning", () => {
       let reviewActions: Array<{ name: string; args: Record<string, unknown> }> = [];
       let foregroundRequests = 0;
       const laterMessage = "FOREGROUND_OVERLAP_CHECK: reply with FOREGROUND_OVERLAP_COMPLETE.";
-      const userLine =
+      const strayLine =
         "Got it, I'll check the public generation before calling a publication done.";
       const laterReply = "FOREGROUND_OVERLAP_COMPLETE";
       const outsideFile = path.join(state.workspaceDir, "operator-owned.txt");
@@ -187,9 +189,9 @@ describe("Gateway automatic Workshop learning", () => {
               if (next) {
                 respondWithTool(response, `review_${reviewRequests.length}`, next.name, next.args);
               } else {
-                // The user stated the correction, so the review confirms it in one line.
+                // A confirmation the review writes anyway stays private.
                 writeOpenAiResponsesText(response, {
-                  text: `Saved the correction.\nTELL_USER: ${userLine}`,
+                  text: `Saved the correction.\nTELL_USER: ${strayLine}`,
                   messageId: "review_done",
                   responseId: "review_done",
                 });
@@ -347,14 +349,17 @@ describe("Gateway automatic Workshop learning", () => {
             );
             expect(laterTranscript).toContain(laterMessage);
             expect(laterTranscript).toContain(laterReply);
-            // The review confirms the user's correction in the originating conversation, in its
-            // own words; its summary line and the skill's name stay out of the chat.
+            // The review's last step hands its changes to the next turn; the chat gets nothing.
             await expect
-              .poll(() => JSON.stringify(loadTranscriptEventsSync(source)), {
+              .poll(() => peekSystemEvents(resolveSystemEventQueueKey(sessionKey, "main")), {
                 timeout: 80_000,
                 interval: 100,
               })
-              .toContain(userLine);
+              .toContainEqual(
+                expect.stringContaining(
+                  "The user was not told in chat; do not bring it up yourself.",
+                ),
+              );
             const skill = await fs.readFile(skillFile, "utf8");
             const support = await fs.readFile(supportFile, "utf8");
             const outside = await fs.readFile(outsideFile, "utf8");
@@ -381,10 +386,7 @@ describe("Gateway automatic Workshop learning", () => {
             expect(finalTranscript.slice(0, continuedTranscript.length)).toEqual(
               continuedTranscript,
             );
-            const notice = JSON.stringify(finalTranscript.slice(continuedTranscript.length));
-            expect(notice).toContain(userLine);
-            expect(notice).not.toContain("Saved the correction.");
-            expect(notice).not.toContain("map-publication");
+            expect(finalTranscript).toHaveLength(continuedTranscript.length);
             expect(changes.map((change) => change.summary)).toContain(reason);
           },
         );

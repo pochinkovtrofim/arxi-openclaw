@@ -1,34 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
 import type { WorkshopChange } from "./changes.kernel.js";
-import {
-  assertSkillReviewRunSucceeded,
-  postWorkshopChangeNotice,
-  readSkillReviewUserLine,
-} from "./review-outcome.js";
+import { assertSkillReviewRunSucceeded, postWorkshopChangeNotice } from "./review-outcome.js";
 
 const mocks = vi.hoisted(() => ({
-  extractDeliveryInfo: vi.fn(),
   loadSessionEntryReadOnly: vi.fn(),
-  sendDurableMessageBatchCore: vi.fn(async () => ({ status: "sent" })),
-  appendAssistantMessageToSessionTranscript: vi.fn(async () => ({ ok: true })),
   enqueueSystemEvent: vi.fn(() => true),
-}));
-vi.mock("../../config/sessions/delivery-info.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../config/sessions/delivery-info.js")>()),
-  extractDeliveryInfo: mocks.extractDeliveryInfo,
 }));
 vi.mock("../../config/sessions/session-accessor.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../config/sessions/session-accessor.js")>()),
   loadSessionEntryReadOnly: mocks.loadSessionEntryReadOnly,
-}));
-vi.mock("../../channels/message/runtime.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../channels/message/runtime.js")>()),
-  sendDurableMessageBatchCore: mocks.sendDurableMessageBatchCore,
-}));
-vi.mock("../../config/sessions/transcript.runtime.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../config/sessions/transcript.runtime.js")>()),
-  appendAssistantMessageToSessionTranscript: mocks.appendAssistantMessageToSessionTranscript,
 }));
 vi.mock("../../infra/system-events.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../infra/system-events.js")>()),
@@ -86,60 +67,6 @@ const change = (overrides: Partial<WorkshopChange>): WorkshopChange => ({
   ...overrides,
 });
 
-describe("readSkillReviewUserLine", () => {
-  const changed = [change({})];
-
-  it("takes only the marked line, cleaned to one plain sentence", () => {
-    expect(
-      readSkillReviewUserLine(
-        [
-          {
-            text: "Saved the correction.\nTELL_USER:  Got it, I'll send   `reports` as one table.  ",
-          },
-        ],
-        changed,
-      ),
-    ).toBe("Got it, I'll send reports as one table.");
-  });
-
-  it("keeps a review's summary, NO_REPLY, errors and reasoning out of the chat", () => {
-    expect(readSkillReviewUserLine([{ text: "NO_REPLY" }], changed)).toBeUndefined();
-    expect(
-      readSkillReviewUserLine([{ text: "Updated actual-budget-operations." }], changed),
-    ).toBeUndefined();
-    expect(
-      readSkillReviewUserLine(
-        [
-          { text: "TELL_USER: from an error", isError: true },
-          { text: "TELL_USER: from reasoning", isReasoning: true },
-        ],
-        changed,
-      ),
-    ).toBeUndefined();
-    expect(readSkillReviewUserLine(undefined, changed)).toBeUndefined();
-  });
-
-  it("drops a line without a change behind it, naming a skill, or longer than one sentence", () => {
-    expect(readSkillReviewUserLine([{ text: "TELL_USER: Got it." }], [])).toBeUndefined();
-    expect(
-      readSkillReviewUserLine(
-        [{ text: "TELL_USER: Updated actual-budget-operations for you." }],
-        changed,
-      ),
-    ).toBeUndefined();
-    expect(
-      readSkillReviewUserLine([{ text: "TELL_USER: Fixed Actual-Budget-Operations." }], changed),
-    ).toBeUndefined();
-    expect(
-      readSkillReviewUserLine([{ text: "TELL_USER: Added a step to SKILL.md." }], changed),
-    ).toBeUndefined();
-    expect(
-      readSkillReviewUserLine([{ text: `TELL_USER: ${"Запомнила. ".repeat(20)}` }], changed),
-    ).toBeUndefined();
-    expect(readSkillReviewUserLine([{ text: "TELL_USER:   " }], changed)).toBeUndefined();
-  });
-});
-
 describe("postWorkshopChangeNotice", () => {
   const generation = (sessionKey: string) => ({
     agentId: "main",
@@ -148,18 +75,8 @@ describe("postWorkshopChangeNotice", () => {
     sessionId: "reviewed-session",
     lifecycleRevision: "reviewed-revision",
   });
-  const userLine = "Запомнила, как проверять рекрутеров из LinkedIn.";
-  const post = (
-    changes: WorkshopChange[],
-    { sessionKey = "agent:main:telegram:direct:42", told = true } = {},
-  ) =>
-    postWorkshopChangeNotice({
-      config: {},
-      generation: generation(sessionKey),
-      runId: "skill-workshop-review:1",
-      changes,
-      ...(told ? { userLine } : {}),
-    });
+  const post = (changes: WorkshopChange[]) =>
+    postWorkshopChangeNotice({ generation: generation("agent:main:telegram:direct:42"), changes });
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -169,46 +86,34 @@ describe("postWorkshopChangeNotice", () => {
     });
   });
 
-  it("stays quiet when the review changed nothing", async () => {
-    await post([]);
-    expect(mocks.extractDeliveryInfo).not.toHaveBeenCalled();
-    expect(mocks.sendDurableMessageBatchCore).not.toHaveBeenCalled();
-    expect(mocks.appendAssistantMessageToSessionTranscript).not.toHaveBeenCalled();
+  it("stays quiet when the review changed nothing", () => {
+    post([]);
     expect(mocks.enqueueSystemEvent).not.toHaveBeenCalled();
   });
 
-  it("keeps a change out of the chat and gives the next turn the exact revert", async () => {
-    mocks.extractDeliveryInfo.mockReturnValue({
-      deliveryContext: { channel: "telegram", to: "42" },
-      threadId: undefined,
-    });
-    await post(
-      [
-        change({ id: "c2", versionId: "20260101T000000002Z-patch", createdAtMs: 2 }),
-        change({
-          id: "c1",
-          summary: "first pass",
-          versionId: "20260101T000000001Z-patch",
-          createdAtMs: 1,
-        }),
-        change({
-          id: "c3",
-          skillName: "release-notes",
-          action: "create",
-          summary: "drafting release notes",
-          createdAtMs: 3,
-        }),
-        change({
-          id: "c4",
-          skillName: "release-notes",
-          summary: "fixed a typo",
-          createdAtMs: 4,
-        }),
-      ],
-      { told: false },
-    );
-    expect(mocks.sendDurableMessageBatchCore).not.toHaveBeenCalled();
-    expect(mocks.appendAssistantMessageToSessionTranscript).not.toHaveBeenCalled();
+  it("keeps a change out of the chat and gives the next turn the exact revert", () => {
+    post([
+      change({ id: "c2", versionId: "20260101T000000002Z-patch", createdAtMs: 2 }),
+      change({
+        id: "c1",
+        summary: "first pass",
+        versionId: "20260101T000000001Z-patch",
+        createdAtMs: 1,
+      }),
+      change({
+        id: "c3",
+        skillName: "release-notes",
+        action: "create",
+        summary: "drafting release notes",
+        createdAtMs: 3,
+      }),
+      change({
+        id: "c4",
+        skillName: "release-notes",
+        summary: "fixed a typo",
+        createdAtMs: 4,
+      }),
+    ]);
     // The next turn learns the exact revert: archive what was created; restore what was edited
     // to the version saved before the review's first change of it.
     expect(mocks.enqueueSystemEvent).toHaveBeenCalledTimes(1);
@@ -223,75 +128,13 @@ describe("postWorkshopChangeNotice", () => {
     expect(event).toContain('skill_workshop action=archive name=release-notes reason="undo"');
   });
 
-  it("sends the review's own line to the originating chat and mirrors it into the session", async () => {
-    mocks.extractDeliveryInfo.mockReturnValue({
-      deliveryContext: { channel: "telegram", to: "42" },
-      threadId: undefined,
-    });
-    await post([change({ versionId: "20260101T000000001Z-patch" })]);
-    expect(mocks.sendDurableMessageBatchCore).toHaveBeenCalledTimes(1);
-    expect(mocks.sendDurableMessageBatchCore).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "telegram",
-        to: "42",
-        payloads: [{ text: userLine }],
-        mirror: expect.objectContaining({ sessionKey: "agent:main:telegram:direct:42" }),
-      }),
-      undefined,
-      undefined,
-      generation("agent:main:telegram:direct:42"),
-    );
-    expect(mocks.appendAssistantMessageToSessionTranscript).not.toHaveBeenCalled();
-    expect(mocks.enqueueSystemEvent).toHaveBeenCalledWith(
-      expect.stringContaining(`You told the user: "${userLine}"`),
-      expect.anything(),
-    );
-  });
-
-  it("writes the notice into the transcript of a channel-less session", async () => {
-    mocks.extractDeliveryInfo.mockReturnValue({ deliveryContext: undefined, threadId: undefined });
-    await post([change({})]);
-    expect(mocks.sendDurableMessageBatchCore).not.toHaveBeenCalled();
-    expect(mocks.appendAssistantMessageToSessionTranscript).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionKey: "agent:main:telegram:direct:42",
-        text: userLine,
-      }),
-    );
-  });
-
-  it("delivers into the thread named by the session key", async () => {
-    mocks.extractDeliveryInfo.mockReturnValue({
-      deliveryContext: { channel: "slack", to: "slack:C0123ABC", accountId: "workspace-1" },
-      threadId: "1234567890.123456",
-    });
-    const sessionKey = "agent:main:slack:channel:C0123ABC:thread:1234567890.123456";
-    await post([change({})], { sessionKey });
-    expect(mocks.sendDurableMessageBatchCore).toHaveBeenCalledWith(
-      expect.objectContaining({
-        channel: "slack",
-        to: "slack:C0123ABC",
-        threadId: "1234567890.123456",
-      }),
-      undefined,
-      undefined,
-      generation(sessionKey),
-    );
-  });
-
-  it("leaves a conversation reset since the review started untouched", async () => {
+  it("leaves a conversation reset since the review started untouched", () => {
     // A Gateway reset keeps the sessionId and rotates the lifecycle revision.
     mocks.loadSessionEntryReadOnly.mockReturnValue({
       sessionId: "reviewed-session",
       lifecycleRevision: "reset-revision",
     });
-    mocks.extractDeliveryInfo.mockReturnValue({
-      deliveryContext: { channel: "telegram", to: "42" },
-      threadId: undefined,
-    });
-    await post([change({})]);
+    post([change({})]);
     expect(mocks.enqueueSystemEvent).not.toHaveBeenCalled();
-    expect(mocks.sendDurableMessageBatchCore).not.toHaveBeenCalled();
-    expect(mocks.appendAssistantMessageToSessionTranscript).not.toHaveBeenCalled();
   });
 });

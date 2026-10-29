@@ -53,9 +53,8 @@ it started with.
 ## Undo
 
 Background changes are quiet: each is listed in the skill's history with its
-reason, one plain sentence in the user's language. Only when the review saved a
-correction the user stated explicitly does it confirm in one short line, without
-skill names; see [What you see](/tools/self-learning#what-you-see).
+reason, one plain sentence in the user's language, and nothing is posted to the
+conversation; see [What you see](/tools/self-learning#what-you-see).
 
 After a background change, reply "undo" in that conversation and the agent
 restores the previous version with `skill_workshop`, or archives a skill the
@@ -136,7 +135,7 @@ It is part of `tools.profile: "coding"`; with a stricter policy, add it to
 | `restore`     | `name`, optional `version`                           | Restores the newest saved version, or the one named                      |
 
 Every mutating action accepts `reason`, one short line that appears in the
-change feed and the chat notice. Every change saves the previous version first.
+change feed. Every change saves the previous version first.
 
 Writes are validated before they land:
 
