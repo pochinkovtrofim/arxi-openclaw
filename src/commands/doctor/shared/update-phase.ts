@@ -13,6 +13,15 @@ export const UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV =
 export const UPDATE_PARENT_ALLOWS_GATEWAY_ACTIVATION_ENV =
   "OPENCLAW_UPDATE_PARENT_ALLOWS_GATEWAY_ACTIVATION";
 
+/**
+ * Arxi runs Doctor on an Owner's first wake after a state-format change only to
+ * bring that state to this build, with the Gateway stopped and no one reading
+ * its diagnostics.
+ */
+export function isArxiWakeRepair(env: NodeJS.ProcessEnv): boolean {
+  return env.ARXI_DOCTOR_WAKE_REPAIR === "1";
+}
+
 /** Share the post-swap discovery context through planning and final publication. */
 export function resolvePostCoreConvergenceEnv(
   env: NodeJS.ProcessEnv | undefined,

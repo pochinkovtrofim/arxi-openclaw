@@ -11,6 +11,7 @@ import {
 } from "../commands/doctor-repair-mode.js";
 import {
   DOCTOR_SQLITE_NOCOW_REPAIR_ENV,
+  isArxiWakeRepair,
   isUpdateDoctorLintPass,
 } from "../commands/doctor/shared/update-phase.js";
 import { ConfigWritePostCommitError } from "../config/io.write-errors.js";
@@ -200,7 +201,13 @@ async function runDoctorHealthFlowWithResult(
     const { assertDoctorRetiredStateAdmission } =
       await import("../commands/doctor-retired-state-admission.js");
     assertDoctorRetiredStateAdmission();
-    if (options.repair === true || options.yes === true || interactiveRepair) {
+    // This pass only shortens the writer stop that maintenance begins. With the
+    // Gateway already stopped it copied a long-lived Owner's 2.2 GB agent
+    // database for nothing; maintenance verifies the same archives in place.
+    if (
+      (options.repair === true || options.yes === true || interactiveRepair) &&
+      !isArxiWakeRepair(process.env)
+    ) {
       preparedArchiveDiscovery = await prepareDoctorMaintenanceArchives(
         databasePreflight,
         effectiveRuntime,
