@@ -324,6 +324,7 @@ export async function runGatewayLoop(params: {
     if (restartRuntime.pending) {
       await restartRuntime.release();
     }
+    restartTrace.markGatewayRestartTrace("restart.handoff.resume-drained");
     if (foregroundUpdateClosed) {
       return exitProcessAfterLogFlush(1);
     }
@@ -336,6 +337,7 @@ export async function runGatewayLoop(params: {
       const restoration = sameManagedUpdateOwner(restartOwner, alreadyCancelledOwner)
         ? "restored-in-process"
         : await updateSuccessor.cancelHandoff(getManagedUpdateOwner, restartOwner);
+      restartTrace.markGatewayRestartTrace("restart.handoff.update-checked");
       if (!restoration || forcedExitStarted) {
         return;
       }
@@ -357,6 +359,7 @@ export async function runGatewayLoop(params: {
             listenerMode: supervisorMode ? "supervised" : "foreground",
             supervisor,
           });
+          restartTrace.markGatewayRestartTrace("restart.handoff.lock-acquired");
         } catch (err) {
           if (forcedExitStarted) {
             return;
@@ -407,6 +410,7 @@ export async function runGatewayLoop(params: {
     failure?: ShutdownFailure,
   ): Promise<void> => {
     await signals.drain();
+    restartTrace.markGatewayRestartTrace("restart.handoff.signals-drained");
     let cancelled = initiallyCancelled;
     const foregroundHandoff =
       expectedOwner && !cancelled && eagerLifecycleRuntime.isForegroundUpdateHandoff(expectedOwner);
@@ -435,6 +439,7 @@ export async function runGatewayLoop(params: {
       }
     }
     await releaseLockIfHeld();
+    restartTrace.markGatewayRestartTrace("restart.handoff.lock-released");
     if (forcedExitStarted) {
       return;
     }
@@ -501,6 +506,7 @@ export async function runGatewayLoop(params: {
     const respawn = isStandaloneUpdate
       ? eagerLifecycleRuntime.respawnGatewayProcessForUpdate(respawnOptions)
       : eagerLifecycleRuntime.restartGatewayProcessWithFreshPid(respawnOptions);
+    restartTrace.markGatewayRestartTrace("restart.handoff.respawn-decided");
     if (respawn.mode === "spawned") {
       const child = respawn.child;
       if (foregroundUpdateClosed) {

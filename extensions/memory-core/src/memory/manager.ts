@@ -53,6 +53,7 @@ import {
 } from "./manager-sync-control.js";
 import { resolvePersistedMemoryVectorIndexState } from "./manager-vector-rebuild-state.js";
 import type { MemoryCoreRuntimeHost } from "./runtime-host.js";
+import { resolveSessionStartupCatchupDelayMs } from "./session-sync-config.js";
 
 const log = createSubsystemLogger("memory");
 
@@ -308,11 +309,23 @@ export class MemoryIndexManager extends MemorySearchOrchestration implements Mem
           this.ensureWatcher();
           this.ensureSessionListener();
           this.ensureIntervalSync();
-          void this.runInBackgroundContext(() => this.ensureSessionStartupCatchup()).catch(
-            (err: unknown) => {
-              log.warn("memory session startup catch-up failed: " + String(err));
-            },
-          );
+          const startCatchup = () => {
+            void this.runInBackgroundContext(() => this.ensureSessionStartupCatchup()).catch(
+              (err: unknown) => {
+                log.warn("memory session startup catch-up failed: " + String(err));
+              },
+            );
+          };
+          const catchupDelayMs = resolveSessionStartupCatchupDelayMs(this.cfg);
+          if (catchupDelayMs === 0) {
+            startCatchup();
+          } else {
+            this.sessionStartupCatchupTimer = setTimeout(() => {
+              this.sessionStartupCatchupTimer = null;
+              startCatchup();
+            }, catchupDelayMs);
+            this.sessionStartupCatchupTimer.unref?.();
+          }
         });
       }
     } catch (err) {

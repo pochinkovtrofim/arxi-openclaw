@@ -1,6 +1,9 @@
 import type { OpenClawConfig } from "openclaw/plugin-sdk/config-contracts";
 import { describe, expect, it } from "vitest";
-import { resolveSessionSyncDebounceMs } from "./session-sync-config.js";
+import {
+  resolveSessionStartupCatchupDelayMs,
+  resolveSessionSyncDebounceMs,
+} from "./session-sync-config.js";
 
 function withDebounce(debounceMs: unknown): OpenClawConfig {
   return {
@@ -28,6 +31,34 @@ describe("memory-core session index delay", () => {
     "never arms a timer from the out-of-contract value %s",
     (value) => {
       expect(resolveSessionSyncDebounceMs(withDebounce(value))).toBe(5_000);
+    },
+  );
+});
+
+function withStartupCatchupDelay(startupCatchupDelayMs: unknown): OpenClawConfig {
+  return {
+    plugins: {
+      entries: { "memory-core": { config: { sessionSync: { startupCatchupDelayMs } } } },
+    },
+  } as OpenClawConfig;
+}
+
+describe("memory-core startup session scan delay", () => {
+  it("scans at once when unset", () => {
+    expect(resolveSessionStartupCatchupDelayMs({} as OpenClawConfig)).toBe(0);
+    expect(resolveSessionStartupCatchupDelayMs(withDebounce(60_000))).toBe(0);
+  });
+
+  it("uses a configured delay within the manifest bounds", () => {
+    expect(resolveSessionStartupCatchupDelayMs(withStartupCatchupDelay(60_000))).toBe(60_000);
+    expect(resolveSessionStartupCatchupDelayMs(withStartupCatchupDelay(0))).toBe(0);
+    expect(resolveSessionStartupCatchupDelayMs(withStartupCatchupDelay(3_600_000))).toBe(3_600_000);
+  });
+
+  it.each([-1, 3_600_001, 1_500.5, "60000", null])(
+    "scans at once for the out-of-contract value %s",
+    (value) => {
+      expect(resolveSessionStartupCatchupDelayMs(withStartupCatchupDelay(value))).toBe(0);
     },
   );
 });

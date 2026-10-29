@@ -1,3 +1,7 @@
+import {
+  clampTimerTimeoutMs,
+  parseStrictPositiveInteger,
+} from "@openclaw/normalization-core/number-coercion";
 import { formatErrorMessage } from "../infra/errors.js";
 import { LegacyPluginSdkResourceHost } from "../plugins/legacy-sdk-resource-host.js";
 import { hasRetainedPluginRuntimeCloseError } from "../plugins/runtime-close-error.js";
@@ -14,6 +18,17 @@ import { beginMacOSSystemCaWarmupOnce } from "./system-ca-warmup.js";
 const { log, logTailscale, logChannels, logHealth, logCron, logReload, logHooks, logWsControl } =
   gatewayKernelLogs;
 const POST_READY_WORK_START_DELAY_MS = 500;
+const MAX_POST_READY_WORK_START_DELAY_MS = 60_000;
+
+/** A host that wakes the Gateway for a request can keep startup's background work behind it. */
+export function resolvePostReadyWorkStartDelayMs(env: NodeJS.ProcessEnv = process.env): number {
+  const delayMs = clampTimerTimeoutMs(
+    parseStrictPositiveInteger(env.OPENCLAW_GATEWAY_POST_READY_WORK_DELAY_MS?.trim()),
+  );
+  return delayMs === undefined
+    ? POST_READY_WORK_START_DELAY_MS
+    : Math.min(delayMs, MAX_POST_READY_WORK_START_DELAY_MS);
+}
 
 export async function startGatewayServerCore(
   port = 18789,
@@ -120,7 +135,7 @@ async function startGatewayServerWithSdkHost(
       // Deferred sidecars must finish before the I/O window for background work begins.
       gatewayKernel.scheduler.schedule({
         id: "startup:post-ready-work",
-        delayMs: POST_READY_WORK_START_DELAY_MS,
+        delayMs: resolvePostReadyWorkStartDelayMs(),
         run: releasePostReadyWork,
       });
     },

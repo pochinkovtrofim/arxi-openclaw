@@ -63,6 +63,10 @@
     "sessionSync.debounceMs": {
       "label": "Session Index Delay",
       "help": "Milliseconds that committed transcript changes collect before one session re-index runs (default 5000). Raise it on CPU-constrained hosts with local embeddings to re-embed busy conversations less often; recall of the newest messages lags by up to this delay."
+    },
+    "sessionSync.startupCatchupDelayMs": {
+      "label": "Startup Session Scan Delay",
+      "help": "Milliseconds a newly opened index waits before it scans for session transcripts that changed while no index watched them (default 0, at once). Set it on hosts that wake for a turn so the scan does not slow that turn; until the scan runs, recall misses those changes."
     }
   },
   "configGroups": [
@@ -122,6 +126,12 @@
             "minimum": 1000,
             "maximum": 3600000,
             "default": 5000
+          },
+          "startupCatchupDelayMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3600000,
+            "default": 0
           }
         }
       },

@@ -82,6 +82,8 @@ export type OpenClawDatabasePreflightOptions = {
   signal?: AbortSignal;
   /** Updates use the isolated online reader; other inspections preserve source artifacts. */
   preserveSourceArtifacts?: boolean;
+  /** A caller with physical custody of shared state reads its schema in place, not from a copy. */
+  readStateInPlace?: boolean;
   /** Omit for current-runtime checks; updates pass their complete target pair. */
   supportedVersions?: OpenClawSchemaVersions;
   verifyCurrentSchemaShape?: boolean;

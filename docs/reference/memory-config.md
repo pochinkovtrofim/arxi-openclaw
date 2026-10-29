@@ -650,6 +650,20 @@ later. It does not change which sessions are indexed.
 }
 ```
 
+### Startup session scan delay
+
+When an index opens, it scans the session transcripts for changes it did not
+watch, such as messages written while no index was open. On a long-lived agent
+that scan reads every transcript and can take seconds, so a host that wakes for a
+turn can let the turn run first:
+
+| Key                                                                    | Type      | Default | Range                 |
+| ---------------------------------------------------------------------- | --------- | ------- | --------------------- |
+| `plugins.entries.memory-core.config.sessionSync.startupCatchupDelayMs` | `integer` | `0`     | `0` to `3600000` (ms) |
+
+`0` scans at once. Until the scan runs, `memory_search` misses those unwatched
+changes; changes made after the index opened are indexed as usual.
+
 ---
 
 ## SQLite vector acceleration (sqlite-vec)

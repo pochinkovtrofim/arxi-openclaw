@@ -583,6 +583,41 @@ export function releaseExitedOpenClawAgentDatabaseLeaseInDatabase(
   );
 }
 
+/**
+ * A VM snapshot restores every clone with this process's PID and start time, so
+ * an agent lease an earlier clone never released names this live process and is
+ * never stale: every later close reports active leases and every open repeats the
+ * full integrity check. The starting Gateway calls this in the transaction that
+ * reclaims an owner lease replayed from such a clone, before this incarnation has
+ * claimed an agent database in this state, and releases them as process death.
+ */
+export function releaseReplayedSelfAgentDatabaseLeasesInDatabase(
+  database: DatabaseSync,
+  env: NodeJS.ProcessEnv,
+): void {
+  const ownerStartTime = getFileLockProcessStartTime(process.pid);
+  if (ownerStartTime === null || !tableExists(database, "agent_database_leases")) {
+    return;
+  }
+  const db = getNodeSqliteKysely<AgentDatabaseLeaseDatabase>(database);
+  for (const held of readAgentDatabaseLeases(database)) {
+    if (held.owner_pid !== process.pid || held.owner_start_time !== ownerStartTime) {
+      continue;
+    }
+    log.info("agent database stale lease: owner-replayed; previous release not observed", {
+      agentId: held.agent_id,
+      leaseId: held.lease_id,
+      path: held.path,
+      staleReason: "owner-replayed",
+    });
+    clearAgentDatabaseLeaseVerifications(database, held.path, env);
+    executeSqliteQuerySync(
+      database,
+      db.deleteFrom("agent_database_leases").where("lease_id", "=", held.lease_id),
+    );
+  }
+}
+
 function readAgentDatabaseLeases(database: DatabaseSync, leaseId?: string) {
   const db = getNodeSqliteKysely<AgentDatabaseLeaseDatabase>(database);
   const query = db.selectFrom("agent_database_leases").selectAll();

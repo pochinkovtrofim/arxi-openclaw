@@ -148,6 +148,8 @@ export async function prepareGatewayServerBootstrap(input: {
         signal,
         env: process.env,
         reuseStartupSchemaPreparation: true,
+        // The Gateway lock acquired before startup holds physical custody of shared state.
+        readStateInPlace: !opts.updateCanary,
         agentAdmissionConfig: captureConfigOverrideApplier()(
           startupConfigSnapshotRead.snapshot.config,
         ),

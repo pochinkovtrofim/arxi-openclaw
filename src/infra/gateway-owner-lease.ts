@@ -8,6 +8,7 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getAsyncWorkSignal } from "../shared/async-work-scope.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { getFileLockProcessStartTime } from "../shared/pid-alive.js";
+import { releaseReplayedSelfAgentDatabaseLeasesInDatabase } from "../state/openclaw-agent-db-lease.js";
 import type { OpenClawStateSchemaReadAdmission } from "../state/openclaw-state-db-contract.js";
 import {
   withExistingOpenClawStateDatabaseCurrentReadOnly,
@@ -46,6 +47,7 @@ import { retainSnapshotTempDirectory } from "./sqlite-readonly-location-cleanup.
 import type { PreparedSqliteReadOnlyLocation } from "./sqlite-readonly-location.types.js";
 import { prepareSqliteReadOnlyLocationSync } from "./sqlite-snapshot-source.js";
 import { runSqliteImmediateTransactionSync } from "./sqlite-transaction.js";
+import { inspectDatabasePathIdentitySync } from "./sqlite-worker-identity.js";
 import { STARTUP_MIGRATION_LEASE_TTL_MS } from "./startup-migration-checkpoint.js";
 import { readStateLeaseProcessOwnerStatus } from "./state-lease-process-owner.js";
 
@@ -240,7 +242,9 @@ export async function assertGatewayOwnerLeaseStopped(
     ({ db }) => {
       resolveStoppedGatewayOwnerLease(readGatewayOwnerLeaseFromDatabase(db), admission);
     },
-    { env },
+    // The caller holds physical custody and works in this file next, so the one
+    // lease row is read in place: a private copy of a large database costs seconds.
+    { env, allowNativeRead: true },
   );
 }
 
@@ -309,12 +313,20 @@ export function acquireGatewayOwnerLease(params: {
         ),
       { env, path: databasePath },
     );
+  // The lease row lives in the file this acquire writes. A path that names
+  // another file at release (a golden clone mounts the Owner's state over its
+  // placeholder's) holds no row of this lease, so release leaves it unopened.
+  let leaseFile: string | undefined;
   const expiresAt = mutateLease("acquire", (db) => {
+    leaseFile = inspectDatabasePathIdentitySync(databasePath)?.key;
     const previous = resolveStoppedGatewayOwnerLease(readGatewayOwnerLeaseFromDatabase(db), {
       reclaimReplayedSelf: true,
     });
     if (previous) {
       releaseOpenClawStateLeaseInTransaction(db, { ...identity, owner: previous.owner });
+      if (isReplayedSelfOwner(previous) && previous.startedAt === processOwner.startedAt) {
+        releaseReplayedSelfAgentDatabaseLeasesInDatabase(db, env);
+      }
     }
     const acquired = acquireOpenClawStateLeaseInTransaction(
       db,
@@ -373,7 +385,10 @@ export function acquireGatewayOwnerLease(params: {
       await heartbeat?.stop();
       try {
         // Lost custody may join its worker, but cannot mutate the recorded lease.
-        if (!custody?.signal.aborted) {
+        if (
+          !custody?.signal.aborted &&
+          inspectDatabasePathIdentitySync(databasePath)?.key === leaseFile
+        ) {
           mutateLease("release", (db) => {
             releaseOpenClawStateLeaseInTransaction(db, identity);
           });

@@ -12,6 +12,7 @@ import { formatErrorMessage } from "../infra/errors.js";
 import { openNodeSqliteDatabase } from "../infra/node-sqlite.js";
 import { adoptSqliteSchemaContracts } from "../infra/sqlite-schema-contract.js";
 import { prepareSqliteReadOnlyLocation } from "../infra/sqlite-snapshot-source.js";
+import { runSqliteDeferredTransactionSync } from "../infra/sqlite-transaction.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   AgentDatabaseAdmissionError,
@@ -235,7 +236,16 @@ export async function preflightOpenClawDatabaseSchemas(
       let stateLocation = getActiveOpenClawStateDatabaseReadSnapshot({
         env: options.env,
       })?.location;
-      if (stateLocation === undefined) {
+      // A private copy of a large database costs seconds. Under physical custody
+      // one read transaction on the file sees the same consistent generation.
+      const inPlace =
+        stateLocation === undefined &&
+        options.readStateInPlace === true &&
+        !options.preserveSourceArtifacts &&
+        purpose !== "runtime";
+      if (inPlace) {
+        stateLocation = statePath;
+      } else if (stateLocation === undefined) {
         stateSnapshot = await prepareSqliteReadOnlyLocation(realpathSync.native(statePath), {
           preserveSourceArtifacts: options.preserveSourceArtifacts ?? true,
           allowLiveOwner: options.preserveSourceArtifacts !== false,
@@ -270,7 +280,12 @@ export async function preflightOpenClawDatabaseSchemas(
         stateDatabase = openNodeSqliteDatabase(stateLocation, { readOnly: true });
         closeStateSchemaReadAdmission = options.openStateSchemaReadAdmission?.(stateDatabase);
         stateDatabase.exec(`PRAGMA busy_timeout = ${OPENCLAW_SQLITE_BUSY_TIMEOUT_MS};`);
-        inspection = inspectStateDatabaseSchema(stateDatabase, input);
+        const database = stateDatabase;
+        inspection = inPlace
+          ? runSqliteDeferredTransactionSync(database, () =>
+              inspectStateDatabaseSchema(database, input),
+            )
+          : inspectStateDatabaseSchema(database, input);
       }
       Object.assign(result, inspection.schemas);
       stateInspectionErrors.push(...inspection.inspectionErrors);

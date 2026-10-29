@@ -111,6 +111,7 @@ export abstract class MemoryManagerSyncBase extends MemoryManagerDatabaseContext
   >();
   protected providerKey: string | null = null;
   protected sessionWatchTimer: NodeJS.Timeout | null = null;
+  protected sessionStartupCatchupTimer: NodeJS.Timeout | null = null;
   protected sessionUnsubscribe: (() => void) | null = null;
   protected fallbackReason?: string;
   protected intervalTimer: NodeJS.Timeout | null = null;
