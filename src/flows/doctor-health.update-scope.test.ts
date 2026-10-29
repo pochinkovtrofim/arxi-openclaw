@@ -79,11 +79,15 @@ function context(env: NodeJS.ProcessEnv) {
 }
 afterEach(() => vi.unstubAllEnvs());
 describe("update Doctor diagnostic scope", () => {
-  it.each(["standalone", "post-core"])(
+  it.each(["standalone", "post-core", "arxi-wake"])(
     "keeps standalone advisory work outside update: %s",
     async (mode) => {
       const env: NodeJS.ProcessEnv =
-        mode === "standalone" ? {} : { OPENCLAW_UPDATE_IN_PROGRESS: "1" };
+        mode === "standalone"
+          ? {}
+          : mode === "arxi-wake"
+            ? { ARXI_DOCTOR_WAKE_REPAIR: "1" }
+            : { OPENCLAW_UPDATE_IN_PROGRESS: "1" };
       if (mode === "post-core") {
         env.OPENCLAW_UPDATE_POST_CORE_CONVERGENCE = "1";
       }

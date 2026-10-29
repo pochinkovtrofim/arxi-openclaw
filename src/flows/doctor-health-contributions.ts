@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import { measureGatewayBootstrapStep } from "../cli/startup-trace.js";
 import { shouldManageGatewayService } from "../commands/doctor-service-repair-policy.js";
+import { isArxiWakeRepair } from "../commands/doctor/shared/update-phase.js";
 import { ConfigWritePostCommitError } from "../config/io.write-errors.js";
 import {
   DoctorStateMigrationRefusalError,
@@ -513,7 +514,10 @@ async function runDoctorHealthContributionList(
         )
       : [],
   );
-  const deferred = updateDoctorRun
+  // Standalone diagnostics cannot establish migration readiness: an update omits
+  // them, and so does an Arxi wake repair.
+  const omitStandalone = updateDoctorRun || isArxiWakeRepair(env);
+  const deferred = omitStandalone
     ? contributions.filter((contribution) => contribution.updateWork?.kind === "standalone")
     : [];
   if (deferred.length > 0) {
@@ -541,7 +545,7 @@ async function runDoctorHealthContributionList(
       // required migration readiness and have their own standalone invocation.
       if (
         rehearsalInspections.has(contribution) ||
-        (updateDoctorRun && contribution.updateWork?.kind === "standalone")
+        (omitStandalone && contribution.updateWork?.kind === "standalone")
       ) {
         continue;
       }
