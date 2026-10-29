@@ -13,6 +13,7 @@ import {
   createRuntimeToolMatcher,
   isToolAllowedByPolicyName,
 } from "./tool-policy-match.js";
+import { formatToolExecutionGatedMessage } from "./tool-policy-shared.js";
 import {
   collectExplicitAllowlist,
   couldNormalizeToolNamePrefixToAllowedTool,
@@ -223,6 +224,12 @@ describe("isToolAllowedByPolicyName — Ro tools renamed from arxi_* to ro_*", (
   it("keeps persisted arxi_* denials on the renamed tools", () => {
     expect(isToolAllowedByPolicyName("ro_group_settings", { deny: ["arxi_group_settings"] })).toBe(
       false,
+    );
+  });
+
+  it("names the renamed tools when a background run is told what it may use", () => {
+    expect(formatToolExecutionGatedMessage("write", ["arxi_initiative"])).toContain(
+      "Use ro_initiative instead",
     );
   });
 });

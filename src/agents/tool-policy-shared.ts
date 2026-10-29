@@ -56,7 +56,10 @@ export function formatToolExecutionGatedMessage(
   toolName: string,
   allowNames: readonly string[],
 ): string {
-  const allowed = allowNames.length > 0 ? allowNames.join(", ") : "the tools named in your task";
+  const allowed =
+    allowNames.length > 0
+      ? allowNames.map(normalizeToolPolicyName).join(", ")
+      : "the tools named in your task";
   return `${toolName} is not available in this background run. Use ${allowed} instead; do not retry ${toolName}.`;
 }
 
