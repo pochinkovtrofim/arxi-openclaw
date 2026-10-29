@@ -146,8 +146,8 @@ export function buildMemoryPromptSection({
         hasMemoryGet
           ? "; use memory_get only for missing context, truncation, conflicting evidence, or an explicit request for a broader exact source"
           : ""
-      }. Use corpus=all only when compiled wiki supplements are needed. Do not repeat search or read solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If the search finds nothing sure, never invent past facts: say plainly you do not have it or ask one question. When the user asks whether you remember, say what you checked.`
-    : "Before answering anything about prior work, decisions, dates, people, preferences, or todos that point to a specific memory file: run memory_get to pull only the needed lines. If the read finds nothing sure, never invent past facts: say plainly you do not have it or ask one question. When the user asks whether you remember, say what you checked.";
+      }. Use corpus=all only when compiled wiki supplements are needed. Do not repeat search or read solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If the search finds nothing sure, never invent past facts: say plainly you do not have it or ask one question.`
+    : "Before answering anything about prior work, decisions, dates, people, preferences, or todos that point to a specific memory file: run memory_get to pull only the needed lines. If the read finds nothing sure, never invent past facts: say plainly you do not have it or ask one question.";
   const sessionGuidance = !hasMemorySearch
     ? []
     : [
