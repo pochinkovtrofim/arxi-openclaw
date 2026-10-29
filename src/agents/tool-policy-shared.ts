@@ -71,10 +71,17 @@ export function createToolExecutionMatcher(allowNames: readonly string[]) {
   return (toolName: string) => allowed.has(normalizeToolPolicyName(toolName));
 }
 
+// Ro's plugin tools were renamed from arxi_* to ro_* (2026-10-29). Persisted
+// automation allow lists keep the old names and still grant the new tools.
+const LEGACY_RO_TOOL_PREFIX = "arxi_";
+
 /** Normalizes a tool name or alias to the policy id used for matching. */
 export function normalizeToolPolicyName(name: string): string {
   const normalized = normalizeLowercaseStringOrEmpty(name);
-  return TOOL_NAME_ALIASES.get(normalized) ?? normalized;
+  const aliased = TOOL_NAME_ALIASES.get(normalized) ?? normalized;
+  return aliased.startsWith(LEGACY_RO_TOOL_PREFIX)
+    ? `ro_${aliased.slice(LEGACY_RO_TOOL_PREFIX.length)}`
+    : aliased;
 }
 
 /** Checks whether an in-progress prefix can still resolve to an allowed tool or alias. */

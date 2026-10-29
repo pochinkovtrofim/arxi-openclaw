@@ -213,6 +213,20 @@ describe("isToolAllowedByPolicyName — legacy scheduler tool name (RFC 0026)", 
   });
 });
 
+describe("isToolAllowedByPolicyName — Ro tools renamed from arxi_* to ro_*", () => {
+  it("lets persisted arxi_* allow lists grant the renamed ro_* tools", () => {
+    expect(isRuntimeToolAllowed("ro_initiative", ["arxi_initiative", "read"])).toBe(true);
+    expect(isToolAllowedByPolicyName("ro_mail", { allow: ["arxi_*"] })).toBe(true);
+    expect(isToolAllowedByPolicyName("ro_mail", { allow: ["arxi_call"] })).toBe(false);
+  });
+
+  it("keeps persisted arxi_* denials on the renamed tools", () => {
+    expect(isToolAllowedByPolicyName("ro_group_settings", { deny: ["arxi_group_settings"] })).toBe(
+      false,
+    );
+  });
+});
+
 describe("isToolAllowedByPolicyName — apply_patch / write deny decoupling (#76749)", () => {
   it("does not deny apply_patch when write is denied", () => {
     expect(isToolAllowedByPolicyName("apply_patch", { deny: ["write"] })).toBe(true);
