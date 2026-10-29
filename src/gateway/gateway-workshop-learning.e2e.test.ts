@@ -356,7 +356,9 @@ describe("Gateway automatic Workshop learning", () => {
                 interval: 100,
               })
               .toContainEqual(
-                expect.stringContaining("The user was not told in chat; do not bring it up yourself."),
+                expect.stringContaining(
+                  "The user was not told in chat; do not bring it up yourself.",
+                ),
               );
             const skill = await fs.readFile(skillFile, "utf8");
             const support = await fs.readFile(supportFile, "utf8");

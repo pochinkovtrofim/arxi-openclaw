@@ -107,7 +107,7 @@ describe("runSkillExperienceReview", () => {
     );
   });
 
-  it("shows the review this conversation's earlier saves and hands on only its marked user line", async () => {
+  it("shows the review this conversation's earlier saves and keeps a marked line out of the chat", async () => {
     const candidate = await createExperienceReviewCandidate(
       "review-earlier-saves",
       [{ role: "user", content: "From now on check recruiters on LinkedIn first.", timestamp: 1 }],

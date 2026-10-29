@@ -92,30 +92,28 @@ describe("postWorkshopChangeNotice", () => {
   });
 
   it("keeps a change out of the chat and gives the next turn the exact revert", () => {
-    post(
-      [
-        change({ id: "c2", versionId: "20260101T000000002Z-patch", createdAtMs: 2 }),
-        change({
-          id: "c1",
-          summary: "first pass",
-          versionId: "20260101T000000001Z-patch",
-          createdAtMs: 1,
-        }),
-        change({
-          id: "c3",
-          skillName: "release-notes",
-          action: "create",
-          summary: "drafting release notes",
-          createdAtMs: 3,
-        }),
-        change({
-          id: "c4",
-          skillName: "release-notes",
-          summary: "fixed a typo",
-          createdAtMs: 4,
-        }),
-      ],
-    );
+    post([
+      change({ id: "c2", versionId: "20260101T000000002Z-patch", createdAtMs: 2 }),
+      change({
+        id: "c1",
+        summary: "first pass",
+        versionId: "20260101T000000001Z-patch",
+        createdAtMs: 1,
+      }),
+      change({
+        id: "c3",
+        skillName: "release-notes",
+        action: "create",
+        summary: "drafting release notes",
+        createdAtMs: 3,
+      }),
+      change({
+        id: "c4",
+        skillName: "release-notes",
+        summary: "fixed a typo",
+        createdAtMs: 4,
+      }),
+    ]);
     // The next turn learns the exact revert: archive what was created; restore what was edited
     // to the version saved before the review's first change of it.
     expect(mocks.enqueueSystemEvent).toHaveBeenCalledTimes(1);
