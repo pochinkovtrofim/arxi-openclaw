@@ -13,6 +13,7 @@ import {
   createRuntimeToolMatcher,
   isToolAllowedByPolicyName,
 } from "./tool-policy-match.js";
+import { formatToolExecutionGatedMessage } from "./tool-policy-shared.js";
 import {
   collectExplicitAllowlist,
   couldNormalizeToolNamePrefixToAllowedTool,
@@ -210,6 +211,26 @@ describe("isToolAllowedByPolicyName — legacy scheduler tool name (RFC 0026)", 
 
   it("denies the renamed tool through persisted legacy deny lists", () => {
     expect(isToolAllowedByPolicyName("automations", { deny: ["cron"] })).toBe(false);
+  });
+});
+
+describe("isToolAllowedByPolicyName — Ro tools renamed from arxi_* to ro_*", () => {
+  it("lets persisted arxi_* allow lists grant the renamed ro_* tools", () => {
+    expect(isRuntimeToolAllowed("ro_initiative", ["arxi_initiative", "read"])).toBe(true);
+    expect(isToolAllowedByPolicyName("ro_mail", { allow: ["arxi_*"] })).toBe(true);
+    expect(isToolAllowedByPolicyName("ro_mail", { allow: ["arxi_call"] })).toBe(false);
+  });
+
+  it("keeps persisted arxi_* denials on the renamed tools", () => {
+    expect(isToolAllowedByPolicyName("ro_group_settings", { deny: ["arxi_group_settings"] })).toBe(
+      false,
+    );
+  });
+
+  it("names the renamed tools when a background run is told what it may use", () => {
+    expect(formatToolExecutionGatedMessage("write", ["arxi_initiative"])).toContain(
+      "Use ro_initiative instead",
+    );
   });
 });
 
