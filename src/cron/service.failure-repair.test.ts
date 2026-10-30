@@ -520,15 +520,18 @@ describe("CronService failure repair", () => {
       },
     });
     const fail = (error: string) =>
-      maybeEmitFailureAlert(state, {
+      applyJobResult(
+        state,
         job,
-        alertConfig: resolveFailureAlert(state, job),
-        status: "error",
-        error,
-        reportedByAgent: true,
-        consecutiveCount: (job.state.consecutiveErrors = (job.state.consecutiveErrors ?? 0) + 1),
-        deferredNotifications,
-      });
+        {
+          status: "error",
+          error,
+          errorClassification: { kind: "permanent", reportedByAgent: true },
+          startedAt: runningAtMs,
+          endedAt: runningAtMs + 1_000,
+        },
+        { deferredNotifications },
+      );
     fail("AUTOMATION_FAILED\nGoogle Sheets tools are not available in this run.");
     expect(deferredNotifications.map((notification) => notification.kind)).toEqual([
       "failure-repair",
