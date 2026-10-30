@@ -100,6 +100,17 @@ const MIN_STALLED_EMBEDDED_RUN_ABORT_MS = 5 * 60_000;
 const STALLED_EMBEDDED_RUN_ABORT_WARN_MULTIPLIER = 3;
 const RECENT_DIAGNOSTIC_ACTIVITY_MS = 120_000;
 const DIAGNOSTIC_HEARTBEAT_INTERVAL_MS = 30_000;
+
+// Arxi: the Owner VM runs the Gateway beside the embedding server, the browser
+// and commands under one memory limit, so the Gateway alone never reaches 90%
+// of it before the VM is full. The guest names the Gateway's own critical RSS;
+// above it every heartbeat publishes memory pressure and idle workers retire.
+function resolveArxiMemoryThresholds(): { thresholds?: { rssCriticalBytes: number } } {
+  const bytes = Number(process.env.ARXI_GATEWAY_RSS_CRITICAL_BYTES);
+  return Number.isSafeInteger(bytes) && bytes > 0
+    ? { thresholds: { rssCriticalBytes: bytes } }
+    : {};
+}
 const loadStuckSessionRecoveryRuntime = createLazyRuntimeModule(
   () => import("./diagnostic-stuck-session-recovery.runtime.js"),
 );
@@ -883,12 +894,14 @@ export function startGatewayDiagnosticHeartbeat(
     const shouldEmitLivenessReport = shouldEmitLivenessEvent || shouldEmitLivenessWarning;
     const shouldRecordMemorySample =
       shouldEmitLivenessReport || hasRecentDiagnosticActivity(now) || hasOpenDiagnosticWork(work);
+    const memorySample = {
+      emitSample: shouldRecordMemorySample,
+      ...resolveArxiMemoryThresholds(),
+    };
     if (opts?.emitMemorySample) {
-      opts.emitMemorySample({ emitSample: shouldRecordMemorySample });
+      opts.emitMemorySample(memorySample);
     } else {
-      emitDiagnosticMemorySample({
-        emitSample: shouldRecordMemorySample,
-      });
+      emitDiagnosticMemorySample(memorySample);
     }
 
     if (!shouldRecordMemorySample) {

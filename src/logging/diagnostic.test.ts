@@ -1065,6 +1065,20 @@ describe("stuck session diagnostics threshold", () => {
     expectLoggerMessageContaining(warnSpy, "liveness warning:");
   });
 
+  it("passes the Gateway's critical RSS from the Arxi guest to the memory sample", () => {
+    vi.stubEnv("ARXI_GATEWAY_RSS_CRITICAL_BYTES", "2415919104");
+    const emitMemorySample = createEmitMemorySampleMock();
+    startEnabledDiagnosticHeartbeat({ emitMemorySample });
+
+    vi.advanceTimersByTime(30_000);
+
+    expect(emitMemorySample).toHaveBeenLastCalledWith({
+      emitSample: expect.any(Boolean),
+      thresholds: { rssCriticalBytes: 2_415_919_104 },
+    });
+    vi.unstubAllEnvs();
+  });
+
   it("warns and records the full duration for persistent idle event-loop degradation", () => {
     const warnSpy = vi.spyOn(diagnosticLogger, "warn").mockImplementation(() => undefined);
 
