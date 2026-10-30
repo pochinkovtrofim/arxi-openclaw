@@ -7,7 +7,7 @@ import {
 } from "../infra/sqlite-worker-identity.js";
 import { createSqliteWorkerOperationAdmission } from "../infra/sqlite-worker-operation-admission.js";
 import { runSqliteWorkerStoreOperation } from "../infra/sqlite-worker-store.js";
-import type { OpenClawAgentDatabaseWorkerLeaseReceipt } from "./openclaw-agent-db-lease.js";
+import type { OpenClawAgentDatabaseWorkerLeaseReceipt } from "./openclaw-agent-db-lease.types.js";
 import { invalidateOpenClawAgentDatabaseValidation } from "./openclaw-agent-db-validation-cache.js";
 import type { AgentDatabaseFileExecutionIdentity } from "./openclaw-agent-execution-contract.js";
 import type { OpenClawStateWorkerContext } from "./openclaw-state-worker-context.types.js";
@@ -19,11 +19,13 @@ export async function cleanupRetiredAgentDatabaseLease(params: {
   stopped: Promise<void>;
   assertOwned(): void;
   lease: OpenClawAgentDatabaseWorkerLeaseReceipt;
+  readOpenRefused?: () => boolean;
   closed?: () => ReturnType<typeof readAgentDatabaseClosedReceipt>;
 }): Promise<void> {
   params.assertOwned();
   await params.stopped;
   params.assertOwned();
+  const refusedBeforeAgentOpen = params.readOpenRefused?.() === true;
   // A confirmed native close already released its lease in the shared database the
   // worker held, so nothing remains to clean even if another file now occupies that
   // path (a remount or restore under a running Gateway). Exit alone still needs recovery.
@@ -36,7 +38,9 @@ export async function cleanupRetiredAgentDatabaseLease(params: {
   }
   params.assertOwned();
   // Uncertified retirement cannot lend proof while shared-state cleanup admission waits.
-  invalidateOpenClawAgentDatabaseValidation(params.lease.path);
+  if (!refusedBeforeAgentOpen) {
+    invalidateOpenClawAgentDatabaseValidation(params.lease.path);
+  }
   const context = {
     environment: params.context.environment,
     existingSchemaPath: params.context.existingSchemaPath,
@@ -47,6 +51,7 @@ export async function cleanupRetiredAgentDatabaseLease(params: {
     context,
     () => params.assertOwned(),
     observed,
+    params.context.maintenanceScope,
   ).catch((error: unknown) => {
     if (error instanceof Error) {
       error.message += ` (leaseId=${params.lease.leaseId}, path=${params.lease.path})`;
@@ -61,7 +66,14 @@ export async function cleanupRetiredAgentDatabaseLease(params: {
   try {
     await runSqliteWorkerStoreOperation(
       store,
-      (scope) => scope.execute({ type: "agentDatabases.releaseExitedLease", input: params.lease }),
+      (scope) =>
+        scope.execute({
+          type: "agentDatabases.releaseExitedLease",
+          input: {
+            ...params.lease,
+            outcome: refusedBeforeAgentOpen ? "refused-before-open" : "unknown",
+          },
+        }),
       context,
       () => params.assertOwned(),
       () => ({

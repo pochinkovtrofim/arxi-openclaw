@@ -35,6 +35,7 @@ export function planTelegramCaption(params: {
       : renderTelegramHtmlText(trimmedText, {
           textMode: params.textMode,
           tableMode: params.tableMode,
+          downgradeRichPromptTags: true,
         });
   const { caption, followUpText } = splitTelegramCaption(params.text, renderedCaption);
   if (!caption) {

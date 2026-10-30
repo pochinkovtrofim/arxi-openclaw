@@ -6,6 +6,10 @@
  */
 import type { Model, OpenAICompletionsCompat } from "@openclaw/llm-core";
 import type { AiProviderRequestCapabilities, AiProviderRequestPolicyInput } from "../host.js";
+import {
+  resolveOpenAIReasoningEffortMapping,
+  supportsOpenAIReasoningEffort,
+} from "../providers/openai-reasoning-effort.js";
 import { isKnownOpenAIJsonSchemaModelId } from "../providers/openai-response-format.js";
 import { resolveProviderRequestCapabilities as resolveModelProviderRequestCapabilities } from "./host-policy.js";
 
@@ -30,6 +34,7 @@ type OpenAICompletionsCompatDefaults = {
   supportsUsageInStreaming: boolean;
   maxTokensField: "max_completion_tokens" | "max_tokens";
   thinkingFormat: "openai" | "openrouter" | "deepseek" | "together" | "zai";
+  emitsDsmlToolCalls: boolean;
   visibleReasoningDetailTypes: string[];
   supportsStrictMode: boolean;
   supportsJsonSchemaResponseFormat: boolean;
@@ -53,9 +58,11 @@ export type ResolvedOpenAICompletionsCompat = Omit<
     openRouterRouting?: OpenAICompletionsCompat["openRouterRouting"];
     sessionAffinity: OpenAICompletionsSessionAffinity;
     visibleReasoningDetailTypes: string[];
+    emitsDsmlToolCalls: boolean;
     requiresNonEmptyUserOrAssistantMessage: boolean;
     configuredSupportsLongCacheRetention?: boolean;
     reasoningEffortForOff: "none" | null;
+    thinkingOffControlUndeclared: boolean;
   };
 
 function isDefaultRouteProvider(provider: string | undefined, ...ids: string[]) {
@@ -208,6 +215,7 @@ function resolveOpenAICompletionsCompatDefaults(
           !usesConfiguredNonOpenAIEndpoint ||
           supportsNativeStreamingUsageCompat)),
     maxTokensField: usesMaxTokens ? "max_tokens" : "max_completion_tokens",
+    emitsDsmlToolCalls: isDeepSeek || isXiaomi || /(?:^|\/)deepseek(?:[-/]|$)/i.test(modelId ?? ""),
     thinkingFormat:
       isDeepSeek || isXiaomi
         ? "deepseek"
@@ -305,6 +313,13 @@ export function resolveOpenAICompletionsCompat(
   const { defaults, capabilities } = detectOpenAICompletionsCompat(model, resolveCapabilities);
   const configured = model.compat;
   const thinkingFormat = configured?.thinkingFormat ?? defaults.thinkingFormat;
+  const thinkingOffControlUndeclared =
+    capabilities.usesExplicitProxyLikeEndpoint &&
+    thinkingFormat === "zai" &&
+    configured?.thinkingFormat === undefined &&
+    !supportsOpenAIReasoningEffort({ compat: configured }, "none") &&
+    !supportsOpenAIReasoningEffort({ compat: configured }, "off") &&
+    resolveOpenAIReasoningEffortMapping("off", configured?.reasoningEffortMap) === undefined;
   return {
     supportsStore: configured?.supportsStore ?? defaults.supportsStore,
     supportsDeveloperRole: configured?.supportsDeveloperRole ?? defaults.supportsDeveloperRole,
@@ -312,13 +327,15 @@ export function resolveOpenAICompletionsCompat(
       configured?.supportsReasoningEffort ?? defaults.supportsReasoningEffort,
     supportedReasoningEfforts: configured?.supportedReasoningEfforts,
     reasoningEffortMap: configured?.reasoningEffortMap,
-    // Custom servers often accept only enabled efforts; declared off contracts still win.
+    // Custom OpenAI routes need a declared off effort; inferred Z.AI may be always-thinking.
+    // Explicit Z.AI formats and effort mappings still own their off contract.
     reasoningEffortForOff:
       capabilities.usesExplicitProxyLikeEndpoint &&
-      thinkingFormat === "openai" &&
+      (thinkingFormat === "openai" || thinkingOffControlUndeclared) &&
       !configured?.supportedReasoningEfforts?.includes("none")
         ? null
         : "none",
+    thinkingOffControlUndeclared,
     supportsUsageInStreaming:
       configured?.supportsUsageInStreaming ?? defaults.supportsUsageInStreaming,
     maxTokensField: configured?.maxTokensField ?? defaults.maxTokensField,
@@ -329,6 +346,8 @@ export function resolveOpenAICompletionsCompat(
       configured?.requiresReasoningContentOnAssistantMessages ??
       defaults.requiresReasoningContentOnAssistantMessages,
     thinkingFormat,
+    // Explicit DeepSeek-format aliases retain their existing response contract.
+    emitsDsmlToolCalls: configured?.thinkingFormat === "deepseek" || defaults.emitsDsmlToolCalls,
     openRouterRouting: configured?.openRouterRouting,
     vercelGatewayRouting: configured?.vercelGatewayRouting ?? {},
     zaiToolStream: configured?.zaiToolStream ?? false,

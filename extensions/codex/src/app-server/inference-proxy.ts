@@ -1,6 +1,10 @@
 import { createServer, type IncomingMessage } from "node:http";
 import { Writable, type Duplex } from "node:stream";
-import { createDeferred, createPermitPool } from "openclaw/plugin-sdk/concurrency-runtime";
+import {
+  createDeferred,
+  createPermitPool,
+  runInDetachedAsyncContext,
+} from "openclaw/plugin-sdk/concurrency-runtime";
 import { createNodeProxyAgent } from "openclaw/plugin-sdk/fetch-runtime";
 import { generateSecureToken } from "openclaw/plugin-sdk/secure-random-runtime";
 import {
@@ -243,7 +247,8 @@ export async function createCodexInferenceProxy(params: {
     const abort = () => controller.abort();
     req.once("aborted", abort);
     res.once("close", abort);
-    void (async () => {
+    // A fresh request owns its admission, not the listener's closed startup lease.
+    void runInDetachedAsyncContext(async () => {
       try {
         const { target, path } = resolveTarget(req);
         if (req.method !== "POST") {
@@ -345,7 +350,7 @@ export async function createCodexInferenceProxy(params: {
         upload?.releaseModelExecution();
         resident?.finish();
       }
-    })();
+    });
   });
   // Leave HTTP/failure-response headroom beyond the separately bounded WS pool.
   // This last-resort TCP ceiling must not be the normal inference admission limit.
@@ -372,7 +377,10 @@ export async function createCodexInferenceProxy(params: {
       const { promise: setupSettled, resolve: finishSetup } = createDeferred();
       let resident: ReturnType<typeof reserveResident> = null;
       const controller = new AbortController();
+      // Permit-pool admission uses epoch time; handshake timers and callbacks
+      // share an elapsed-time deadline so wall-clock jumps cannot skew the budget.
       const deadlineAtMs = Date.now() + HANDSHAKE_TIMEOUT_MS;
+      const deadlineAtMonotonicMs = performance.now() + HANDSHAKE_TIMEOUT_MS;
       let releasePermit: (() => void) | null = null;
       let framePending = false;
       let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -416,7 +424,7 @@ export async function createCodexInferenceProxy(params: {
           });
       };
       const close = () => finish();
-      const failHandshake = () => finish(Date.now() >= deadlineAtMs ? 504 : 502);
+      const failHandshake = () => finish(performance.now() >= deadlineAtMonotonicMs ? 504 : 502);
       try {
         const { target, path } = resolveTarget(req);
         if (params.oauth) {
@@ -458,12 +466,15 @@ export async function createCodexInferenceProxy(params: {
           return;
         }
         // Queueing, DNS and the remote handshake share one native-compatible deadline.
-        handshakeTimer = setTimeout(() => finish(504), Math.max(1, deadlineAtMs - Date.now()));
+        handshakeTimer = setTimeout(
+          () => finish(504),
+          Math.max(1, deadlineAtMonotonicMs - performance.now()),
+        );
         handshakeTimer.unref();
         const assertHandshakeCurrent = () => {
           assertCurrent();
           signal.throwIfAborted();
-          if (Date.now() >= deadlineAtMs) {
+          if (performance.now() >= deadlineAtMonotonicMs) {
             throw new Error(FAILURE);
           }
         };
@@ -486,7 +497,7 @@ export async function createCodexInferenceProxy(params: {
           followRedirects: false,
           perMessageDeflate: false,
           maxPayload: MAX_BODY_BYTES,
-          handshakeTimeout: Math.max(1, deadlineAtMs - Date.now()),
+          handshakeTimeout: Math.max(1, deadlineAtMonotonicMs - performance.now()),
           finishRequest(request) {
             let socketClosed = Promise.resolve();
             request.once("socket", (upstreamSocket) => {

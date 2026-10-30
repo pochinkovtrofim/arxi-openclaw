@@ -47,7 +47,9 @@ export type AgentRunContext = {
   cronRunsByJobId?: Map<
     string,
     {
-      pacingEnabled: boolean;
+      nextCheckEnabled: boolean;
+      /** Paced jobs only; one-shot continuations enable next_check without a paced binding. */
+      pacingEnabled?: boolean;
       /** Captured only by timer-owned due admission; manual/force runs cannot mint it. */
       scheduledAutomation?: boolean;
       cronStoreKey?: string;

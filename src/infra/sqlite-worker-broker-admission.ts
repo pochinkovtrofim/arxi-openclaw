@@ -8,6 +8,7 @@ import { serialize } from "node:v8";
 import { getChildLogger } from "../logging/logger.js";
 import { INCOGNITO_AGENT_SQLITE_BASENAME } from "../state/openclaw-agent-db.paths.js";
 import { getOpenClawDatabaseMaintenanceScope } from "../state/openclaw-state-db-async-lifecycle.js";
+import { racePromiseWithAbortSignal } from "./abort-signal.js";
 import { assertStateDatabaseAccessAllowed } from "./gateway-state-owner.js";
 import { resolveRuntimeProcessEntrypointUrl } from "./runtime-process-url.js";
 import { runtimeNeedsTypeScriptLoader } from "./runtime-worker-url.js";
@@ -27,6 +28,20 @@ import {
 
 export const SQLITE_WORKER_ADMISSION_TIMEOUT_MS = 10_000;
 
+export function waitForSqliteWorkerOpen<T>(pending: Promise<T>, signal?: AbortSignal) {
+  return racePromiseWithAbortSignal(pending, signal, (aborted) => aborted.reason);
+}
+
+/** Cleanup-only custody replaces maintenance scope; other jobs bind the caller's scope. */
+export function captureSqliteWorkerJobCustody(cleanupAccess: Job["cleanupAccess"]) {
+  return (scope?: { maintenanceScope?: Job["maintenanceScope"] }) =>
+    cleanupAccess
+      ? { cleanupAccess }
+      : {
+          maintenanceScope: scope ? scope.maintenanceScope : getOpenClawDatabaseMaintenanceScope(),
+        };
+}
+
 export function createSqliteWorkerAdmissionWarning() {
   let nextWarning = 0;
   return (queueDepth: number, waitMs: number): void => {
@@ -39,6 +54,17 @@ export function createSqliteWorkerAdmissionWarning() {
       });
     }
   };
+}
+
+export function notifySqliteWorkerNativeStopped(
+  options: Pick<PreparedSqliteWorkerOpen, "onNativeStopped">,
+  actor: Actor,
+): void {
+  options.onNativeStopped?.(
+    actor.nativeStopped,
+    () => actor.closeReceipt,
+    () => actor.openDispatch.openRefused === true,
+  );
 }
 
 export function validateSqliteWorkerDatabaseLocator(databasePath: string): void {
@@ -93,7 +119,9 @@ export function captureSqliteWorkerOpen(
   const carrierUrl = options.runtimeGeneration?.resolve(carrier) ?? carrier;
   return {
     ...native,
-    maintenanceScope: custody.maintenanceScope ?? getOpenClawDatabaseMaintenanceScope(),
+    maintenanceScope: custody.cleanupAccess
+      ? undefined
+      : (custody.maintenanceScope ?? getOpenClawDatabaseMaintenanceScope()),
     ...(preparation !== undefined ? { preparation: serialize(preparation) } : {}),
     runtimeGeneration: options.runtimeGeneration,
     carrierUrl,
@@ -334,6 +362,7 @@ export function prepareSqliteWorkerActorContext(actor: Actor | undefined, job: J
   if (actor && !actor.target && request.type !== "close") {
     assertStateDatabaseAccessAllowed(actor.stateDatabasePath ?? actor.databasePath, {
       maintenanceScope: job.maintenanceScope,
+      schemaLease: job.cleanupAccess,
     });
   }
   if (actor && stateContext) {

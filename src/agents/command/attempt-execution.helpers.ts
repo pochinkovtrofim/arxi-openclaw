@@ -247,7 +247,9 @@ export async function claudeCliSessionTranscriptHasOrphanedToolUse(
         continue;
       }
       const rec = safeParseJsonRecord(line);
-      if (rec?.isSidechain === true) {
+      // Only conversation records count. Claude also logs request echoes
+      // (`api-request-blob`) that repeat answered tool calls under role=assistant.
+      if (rec?.isSidechain === true || (rec?.type !== "user" && rec?.type !== "assistant")) {
         continue;
       }
       const message = asOptionalRecord(rec?.message);
@@ -531,6 +533,9 @@ export function resolveCompletionToolPolicy(params: {
   completionNeedsMessageDelivery: boolean;
 }) {
   const { run, completionNeedsMessageDelivery, isSubagentAnnounceHandoff } = params;
+  if (params.isCliExecutionProvider && run.opts.forceRestartSafeTools === true) {
+    throw new Error("CLI runtimes cannot enforce restart-safe tool restrictions");
+  }
   const completionRetainsRequesterTools =
     params.trustedSubagentAnnounceHandoff &&
     !params.isRawModelRun &&

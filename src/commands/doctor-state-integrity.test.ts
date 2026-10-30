@@ -82,6 +82,7 @@ describe("doctor state integrity", () => {
     envSnapshot = captureEnv([
       "HOME",
       "OPENCLAW_HOME",
+      "OPENCLAW_PROFILE",
       "OPENCLAW_STATE_DIR",
       "OPENCLAW_OAUTH_DIR",
       "OPENCLAW_AGENT_DIR",
@@ -92,6 +93,7 @@ describe("doctor state integrity", () => {
     setTestEnvValue("HOME", tempHome);
     setTestEnvValue("OPENCLAW_HOME", tempHome);
     setTestEnvValue("OPENCLAW_STATE_DIR", stateDir);
+    deleteTestEnvValue("OPENCLAW_PROFILE");
     deleteTestEnvValue("OPENCLAW_OAUTH_DIR");
     deleteTestEnvValue("OPENCLAW_AGENT_DIR");
     deleteTestEnvValue("ARXI_AUTH_AGENT_DIR");
@@ -238,17 +240,28 @@ describe("doctor state integrity", () => {
   });
 
   it.each(["pairing", "explicit"])(
-    "requires missing OAuth storage for %s configuration",
+    "warns without blocking readiness when legacy OAuth storage is missing for %s configuration",
     async (mode) => {
       if (mode === "explicit") {
         setTestEnvValue("OPENCLAW_OAUTH_DIR", path.join(tempHome, ".oauth"));
       }
       const cfg: OpenClawConfig =
         mode === "pairing" ? { channels: { telegram: { dmPolicy: "pairing" } } } : {};
+      const findings = detectStateIntegrityHealthIssues(cfg).map(
+        stateIntegrityIssueToHealthFinding,
+      );
+      expect(findings).toContainEqual(
+        expect.objectContaining({
+          message: "OAuth dir is missing.",
+          severity: "warning",
+        }),
+      );
+      expect(findings.some((finding) => finding.severity === "error")).toBe(false);
       const confirmRuntimeRepair = decline();
       await noteStateIntegrity(cfg, { confirmRuntimeRepair, note: noteMock });
       expect(hasRepairPromptMessage(confirmRuntimeRepair, "Create OAuth dir at")).toBe(true);
-      expect(stateIntegrityText()).toContain("CRITICAL: OAuth dir missing");
+      expect(stateIntegrityText()).toContain("OAuth dir missing");
+      expect(stateIntegrityText()).not.toContain("CRITICAL: OAuth dir missing");
     },
   );
 
@@ -313,59 +326,53 @@ describe("doctor state integrity", () => {
     expect(doctorChangesText()).toContain("Cleared aborted restart-recovery flags");
   });
 
-  it("checks only the effective home's existing default state", async () => {
-    const defaultExists = true;
+  it.each(["profile", "state-dir"])(
+    "does not inspect another profile's state with a %s override",
+    async (selector) => {
+      const defaultStateDir = stateDir;
+      stateDir = path.join(tempHome, selector === "profile" ? ".openclaw-work" : "custom-state");
+      fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+      setTestEnvValue("OPENCLAW_STATE_DIR", stateDir);
+      if (selector === "profile") {
+        setTestEnvValue("OPENCLAW_PROFILE", "work");
+      }
+      const attemptedProbes: string[] = [];
+      const isDefaultState = (target: fs.PathLike) => {
+        const resolved = path.resolve(String(target));
+        return resolved === defaultStateDir || resolved.startsWith(`${defaultStateDir}${path.sep}`);
+      };
+      const readdir = fs.readdirSync,
+        exists = fs.existsSync,
+        stat = fs.statSync;
+      vi.spyOn(fs, "readdirSync").mockImplementation((target, options) => {
+        if (isDefaultState(target)) {
+          attemptedProbes.push(`readdir ${String(target)}`);
+          throw new Error("another profile's state is outside integrity diagnostics");
+        }
+        return readdir(target, options);
+      });
+      vi.spyOn(fs, "existsSync").mockImplementation((target) => {
+        if (isDefaultState(target)) {
+          attemptedProbes.push(`exists ${String(target)}`);
+          return false;
+        }
+        return exists(target);
+      });
+      vi.spyOn(fs, "statSync").mockImplementation((target, options) => {
+        if (isDefaultState(target)) {
+          attemptedProbes.push(`stat ${String(target)}`);
+          throw new Error("another profile's metadata is outside integrity diagnostics");
+        }
+        return stat(target, options);
+      });
 
-    const osHome = path.join(tempHome, "os-home");
-    const effectiveHome = path.join(tempHome, "relocated");
-    fs.mkdirSync(path.join(osHome, ".openclaw"), { recursive: true, mode: 0o700 });
-    if (defaultExists) {
-      fs.mkdirSync(path.join(effectiveHome, ".openclaw"), { recursive: true, mode: 0o700 });
-    }
-    setTestEnvValue("HOME", osHome);
-    setTestEnvValue("OPENCLAW_HOME", effectiveHome);
-    const attemptedProbes: string[] = [];
-    const outsideAccount = (target: fs.PathLike) => {
-      const resolved = path.resolve(String(target));
-      return (
-        /^\/(?:Users|home)(?:\/|$)/u.test(resolved) &&
-        resolved !== tempHome &&
-        !resolved.startsWith(`${tempHome}${path.sep}`)
-      );
-    };
-    const readdir = fs.readdirSync,
-      exists = fs.existsSync,
-      stat = fs.statSync;
-    vi.spyOn(fs, "readdirSync").mockImplementation((target, options) => {
-      if (outsideAccount(target)) {
-        attemptedProbes.push(`readdir ${String(target)}`);
-        throw new Error("account-root enumeration is outside Doctor's state scope");
-      }
-      return readdir(target, options);
-    });
-    vi.spyOn(fs, "existsSync").mockImplementation((target) => {
-      if (outsideAccount(target)) {
-        attemptedProbes.push(`exists ${String(target)}`);
-        return false;
-      }
-      return exists(target);
-    });
-    vi.spyOn(fs, "statSync").mockImplementation((target, options) => {
-      if (outsideAccount(target)) {
-        attemptedProbes.push(`stat ${String(target)}`);
-        throw new Error("sibling-account metadata is outside Doctor's state scope");
-      }
-      return stat(target, options);
-    });
-    const text = await runStateIntegrityText({});
-    expect(attemptedProbes).toEqual([]);
-    expect(text.includes("Multiple state directories detected")).toBe(defaultExists);
-    if (defaultExists) {
-      expect(text).toContain("  - $OPENCLAW_HOME/.openclaw");
-      expect(text).toContain(`Active state dir: ${stateDir}`);
-    }
-    expect(text).toContain("OAuth dir not present");
-  });
+      const text = await runStateIntegrityText({});
+
+      expect(attemptedProbes).toEqual([]);
+      expect(text).not.toContain("Multiple state directories detected");
+      expect(text).toContain("OAuth dir not present");
+    },
+  );
 });
 
 describe("doctor retained session integrity", () => {

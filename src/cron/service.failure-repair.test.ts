@@ -8,7 +8,6 @@ import {
   expectAlertTextContaining,
   setupFailureAlertSuite,
 } from "./service.failure-alert.test-helpers.js";
-import { maybeEmitFailureAlert, resolveFailureAlert } from "./service/failure-alerts.js";
 import { markInterruptedStartupRun } from "./service/startup-run-repair.js";
 import type { CronJobPolicyContext, DeferredCronNotifications } from "./service/state.js";
 import { applyJobResult } from "./service/timer-outcomes.js";
@@ -521,15 +520,18 @@ describe("CronService failure repair", () => {
       },
     });
     const fail = (error: string) =>
-      maybeEmitFailureAlert(state, {
+      applyJobResult(
+        state,
         job,
-        alertConfig: resolveFailureAlert(state, job),
-        status: "error",
-        error,
-        reportedByAgent: true,
-        consecutiveCount: (job.state.consecutiveErrors = (job.state.consecutiveErrors ?? 0) + 1),
-        deferredNotifications,
-      });
+        {
+          status: "error",
+          error,
+          errorClassification: { kind: "permanent", reportedByAgent: true },
+          startedAt: runningAtMs,
+          endedAt: runningAtMs + 1_000,
+        },
+        { deferredNotifications },
+      );
     fail("AUTOMATION_FAILED\nGoogle Sheets tools are not available in this run.");
     expect(deferredNotifications.map((notification) => notification.kind)).toEqual([
       "failure-repair",
@@ -583,15 +585,16 @@ describe("CronService failure repair", () => {
     { name: "systemEvent", payload: { kind: "systemEvent", text: "check" } },
     { name: "script", payload: { kind: "script", script: "json({})" } },
   ])("requests repair for a $name job", ({ payload }) => {
-    const { state, job, deferredNotifications } = repairPolicyFixture({ payload });
-    maybeEmitFailureAlert(state, {
-      job,
-      alertConfig: resolveFailureAlert(state, job),
-      status: "error",
-      error: "boom",
-      consecutiveCount: 2,
-      deferredNotifications,
+    const { state, job, deferredNotifications } = repairPolicyFixture({
+      payload,
+      state: { consecutiveErrors: 1 },
     });
+    applyJobResult(
+      state,
+      job,
+      { status: "error", error: "boom", startedAt: runningAtMs, endedAt: runningAtMs + 1_000 },
+      { deferredNotifications },
+    );
     expect(deferredNotifications.map((notification) => notification.kind)).toEqual([
       "failure-repair",
     ]);

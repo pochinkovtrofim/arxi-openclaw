@@ -216,9 +216,11 @@ Opt into automatic resets globally, then override them per chat type or channel:
 
 ## Gateway restart recovery
 
-When a Gateway restart interrupts an active turn, OpenClaw tries to continue
-the existing session automatically. Three attempts that fail to start a backend
-turn exhaust the recovery budget. Once a real backend turn starts,
+When a Gateway restart interrupts an admitted turn, including one still waiting
+in the queue or preparing to execute, OpenClaw tries to continue the existing
+session automatically. Shutdown records recovery before canceling queued work.
+Three attempts that fail to start a backend turn exhaust the recovery budget.
+Once a real backend turn starts,
 the budget refreshes, so a later Gateway restart does not consume the old allowance.
 Accepting, queueing, or preparing a resume request alone does not refresh it.
 CLI backends that do not report turn acceptance refresh the budget only after
@@ -248,11 +250,21 @@ the original caller lacked, and revocation still stops the recovered run.
 Older interrupted turns without a recorded authorization source remain restricted;
 send a fresh authenticated message to continue privileged work. Session ownership
 or a saved display name never grants recovery permissions.
+If the recorded source no longer matches the session or interrupted input,
+recovery retires that stale input with one local interruption notice. The
+incoming message can then continue normally without resetting the session.
+Pending replies, harness completions, and independent runs retain their existing
+recovery protection.
 
 This also covers parent turns started by subagent completion or pause notices.
 An interrupted parent continues independently of later child completions, and a
 retry of the same notice joins that recovery instead of starting the turn again.
 Parents still waiting after yielding to children remain owned by their child batch.
+
+If a delegated turn's sender authority cannot be reconstructed, automatic recovery
+stops with a recorded reason and a visible notice in the transcript or original
+channel. The notice explains how to continue in a replacement session. A saved
+delegation alone does not authorize replay after restart.
 
 Messages sent while restart recovery is waiting to start stay pending. Once
 recovery starts, they follow the session's normal message queue policy. You do
@@ -270,6 +282,11 @@ If automatic recovery is exhausted, the transcript remains available. Use
 **Resume in new session** in WebChat, or `/new` or `/reset` in other channels,
 to start a replacement session.
 
+A canonical Main session archived specifically by restart recovery can also be
+reset. Reset retains its physical session identity and transcript while starting a
+fresh model context; it does not replay the interrupted task. Other archived
+sessions must be restored before reset.
+
 ## Where state lives
 
 - **Runtime session rows and transcripts:** `~/.openclaw/agents/<agentId>/agent/openclaw-agent.sqlite` by default
@@ -279,6 +296,9 @@ to start a replacement session.
 Archive discovery uses the selected store, recorded transcript paths, and agent
 directories. The pre-agent `~/.openclaw/sessions/` directory is no longer an
 implicit fallback; explicitly configured paths still work.
+
+State directories reached through symlinks are supported on SQLite and PostgreSQL,
+including session deletion, transcript archiving, and retained cron history reads.
 
 The session rows in the per-agent SQLite database keep separate lifecycle
 timestamps:
@@ -409,14 +429,17 @@ logs one outcome with the before/after bytes and removal counts.
 An incomplete SQLite WAL checkpoint is a separate deferral. Cleanup preserves
 archives and history instead of deleting more data behind the blocked checkpoint.
 The result records `deferredReason: "checkpoint-incomplete"`, WAL bytes before and
-after, and the checkpoint outcome. Automatic and manual budget passes remain
-deferred until the checkpoint owner records completion after the pending cleanup
-work. Newer frames from concurrent writes do not erase that completion. Each SQLite cleanup
+after, and the checkpoint outcome. Manual cleanup and subsequent throttled
+automatic checks retry the checkpoint: an earlier blocked observation cannot
+suspend cleanup indefinitely when another connection completes a checkpoint
+without publishing its result. Cleanup still requires the checkpoint owner to
+record completion after the pending cleanup work. Newer frames from concurrent
+writes do not erase that completion. Each SQLite cleanup
 deletion or vacuum commit requires a new completion before further pruning, so a
 reader pinning those changes still defers cleanup. Ordering uses monotonic time;
 elapsed time, a budget change, or a system clock correction cannot release the gate.
-Normal periodic checkpointing continues, and subsequent activity can resume cleanup
-after recovery.
+Normal periodic checkpointing continues. A published completion allows the next
+activity to retry immediately; otherwise the normal check interval applies.
 
 Look for `session history disk budget deferred until a completed WAL checkpoint is observed`
 in the Gateway log. Its checkpoint fields include bounded operation names for

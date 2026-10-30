@@ -45,6 +45,22 @@ Symptom-first checks for a Telegram bot that is not behaving.
 
   </Accordion>
 
+  <Accordion title="Messages fail with runtime owner was not published">
+
+    OpenClaw tries to rebuild an agent's failed model runtime when the next
+    message arrives. After a failed recovery, the inbound message waits until
+    the runtime is eligible to retry. Waiting does not consume a recovery
+    attempt or keep typing active. If two actual recovery attempts fail in the same process, the
+    message remains in the failed ingress queue with the reason
+    `runtime-recovery-failed`. Ordinary network failures keep their normal
+    retry policy.
+
+    Check `openclaw logs --follow` for the underlying publication error, correct
+    the reported model or plugin problem, and resend the message. The failed
+    queue entry retains the original input for operator inspection.
+
+  </Accordion>
+
   <Accordion title="Polling or network instability">
 
     The `Node 22+` references below describe Node networking behavior, not OpenClaw's
@@ -68,7 +84,8 @@ channels:
     proxy: socks5://<user>:<password>@proxy-host:1080
 ```
 
-    - Node 22+ defaults to `autoSelectFamily=true` (except WSL2). Telegram DNS result order honors `OPENCLAW_TELEGRAM_DNS_RESULT_ORDER`, then `channels.telegram.network.dnsResultOrder`, then the process default (for example `NODE_OPTIONS=--dns-result-order=ipv4first`), falling back to `ipv4first` on Node 22+ if none applies.
+    - Telegram DNS result order honors `OPENCLAW_TELEGRAM_DNS_RESULT_ORDER`, then `channels.telegram.network.dnsResultOrder`, then the process default, falling back to `ipv4first` if none applies. With `ipv4first`, Telegram disables address-family racing by default so an unreachable IPv6 route cannot interfere with the preferred IPv4 connection. `verbatim` keeps address-family selection enabled with a 300 ms attempt timeout, except on WSL2. Explicit `network.autoSelectFamily` or its environment overrides take precedence.
+    - On dual-stack hosts with broken IPv6, set `channels.telegram.network.dnsResultOrder: "ipv4first"`; no `NODE_OPTIONS` change is needed. Connection failures proven to occur before sending remain retryable; timeouts after sending remain ambiguous to avoid duplicate replies.
     - On WSL2, or when IPv4-only behavior works better, force family selection:
 
 ```yaml

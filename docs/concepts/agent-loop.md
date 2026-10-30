@@ -43,9 +43,22 @@ The wait result also carries the run's `terminalReply` and, when available,
 reply reached the external source conversation. A2A announcements consume that
 fact instead of using display-history mirrors as delivery evidence.
 
+When a provider rejects a malformed tool call before dispatch, the built-in
+runner can continue once from the current transcript after earlier tools have
+settled. Earlier failed tools do not block this continuation when every failure
+carries host evidence that execution never started and its result already
+precedes the rejected response in the current turn. Failures that may have caused
+side effects, unfinished tools, and asynchronous work still block it; the
+continuation does not replay the original task or increase the retry budget.
+
+Attempt teardown releases abort and deferred-lifecycle callbacks, even when a
+retained cancellation reason keeps their completed owners reachable.
+
 ## Queueing and concurrency
 
 Runs are serialized per session key (session lane) and optionally through a global lane, preventing tool/session races. Messaging channels choose a queue mode (steer/followup/collect/interrupt) that feeds this lane system; see [Command Queue](/concepts/queue).
+
+Transcript projection rebuilds normally finish before global admission. If hydration finds a rebuild after admission, the same turn releases global capacity while waiting, then rejoins the queue before retrying hydration once. Its session and writer ownership stay intact, and cancellation still stops the wait.
 
 Before streaming, an admitted run records its durable `activeWriterRunId` claim. Every transcript append or rewrite supplies `expectedWriterRunId`, and the synchronous commit transaction verifies that it still matches the active claim. A superseded run therefore cannot commit stale transcript data. The SQLite writer queue orders per-agent mutations, while the Gateway state-directory lock prevents another Gateway or `openclaw agent --local` process from owning the same state directory concurrently.
 
@@ -155,6 +168,13 @@ recorded results. The unfinished call never executes. Recovery uses the existing
 bounded session retry budget and remains cancellable; refusals and inconsistent
 terminal responses do not qualify for this continuation.
 
+An empty `length` response also qualifies when it leaves no completed or pending
+reply. The built-in harness continues the existing transcript with its normally
+allowed tools, so it can finish work such as controlling a background `exec`
+process. This continuation preserves completed actions and uses the same retry
+budget. Partial answers and intentional silent cron results keep their existing
+handling; a confirmed context overflow still uses compaction.
+
 Auto-compaction emits `compaction` stream events and can trigger a retry. On retry, in-memory buffers and tool summaries reset to avoid duplicate output. See [Compaction](/concepts/compaction).
 
 ## Event streams
@@ -259,6 +279,15 @@ controls rather than inheriting callbacks from the completed attempt.
 A terminal timeout is a failed turn, not a successful completion. Chat and
 command results retain its timeout explanation; earlier tool errors do not
 replace that explanation or restart an already-final timed-out turn.
+This includes a timeout during tool execution when no final payload or accepted
+continuation remains. A compaction failure label does not turn that unfinished
+tool timeout into a paused run; completed tool results remain in the transcript.
+Earlier tool warnings and reasoning output do not count as a completed reply.
+Quiet or collect-mode children do not suppress a timeout unless another
+continuation owns the reply; accepting a child alone does not promise delivery.
+Progress sends and messages to another conversation do not finish the current
+source reply. Deliberate yields retain their existing accepted-work semantics.
+Tool media stays in the result alongside the timeout; artifacts alone do not finish the reply.
 
 The model idle and provider HTTP rows describe the built-in OpenClaw model
 path. Codex owns its native stream deadlines and network retries. After exact
@@ -283,6 +312,18 @@ With diagnostics enabled, a built-in two-minute threshold classifies long `proce
 - `session.stuck` is reserved for recoverable stale session bookkeeping, including idle queued sessions with stale ownerless model/tool activity.
 
 The abort threshold is at least 5 minutes and 3x the warning threshold. Stale session bookkeeping releases the affected session lane immediately after recovery gates pass; stalled embedded runs are abort-drained only after the abort threshold, so queued work resumes without cutting off merely slow runs. Recovery emits structured requested/completed outcomes; diagnostic state is marked idle only if the same processing generation is still current, and repeated `session.stuck` diagnostics back off while the session stays unchanged.
+
+Pending Code Mode `exec` and `wait` calls remain active tool work until they
+settle, including `awaitResults: true` calls waiting for nested work. Nested tool
+completion does not retire the outer call. The normal blocked-tool recovery
+allowance and enforced run/tool deadlines still apply, except while a nested
+collector wait has verified an owned, pending collector. That wait registers
+with the active embedded run and stays protected until a registry change,
+cancellation, revoked caller authority, or a run deadline. A registry change
+revokes protection before rereading; a stalled read remains recoverable. A
+collector that never settles can retain its parent until Stop or a configured
+run timeout. After the outer call settles, an embedded run that stops making
+progress remains recoverable.
 
 Attention and recovery log lines read optional session context only when their
 log level is enabled. Transcript enrichment runs in the background read worker

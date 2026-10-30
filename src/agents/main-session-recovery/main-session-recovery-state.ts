@@ -28,6 +28,7 @@ import type {
   MainSessionRecoveryView,
 } from "./main-session-recovery-types.js";
 import {
+  isKilledMainSessionRecoveryFenceOnly,
   MAX_RECOVERY_RETRIES,
   resolveRestartRecoveryTerminalClientRunId,
 } from "./main-session-restart-recovery-shared.js";
@@ -135,11 +136,15 @@ export function isMainSessionRecoveryPending(entry: SessionEntry, sessionKey: st
   );
 }
 
-/** Failed foreground admission can leave an unfinished recovery cycle behind. */
+/** Select reconciliation before new input adds custody; the store owner checks run liveness. */
 export function isMainSessionRecoveryReconciliationCandidate(entry: SessionEntry): boolean {
+  const killedFenceOnly = isKilledMainSessionRecoveryFenceOnly(entry);
   return (
-    (entry.status === undefined || entry.status === "failed") &&
-    entry.abortedLastRun !== true &&
+    (entry.status === undefined ||
+      entry.status === "failed" ||
+      killedFenceOnly ||
+      isMainRestartRecoveryTerminalOnly(entry)) &&
+    (entry.abortedLastRun !== true || killedFenceOnly) &&
     hasMainSessionRecoveryClaim(entry) &&
     !isRetryableUnadoptedChatClaim(entry) &&
     !entry.mainRestartRecovery?.tombstone

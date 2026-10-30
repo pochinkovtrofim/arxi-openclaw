@@ -120,7 +120,9 @@ export function resolveUpdateRunVerifiedServingVersion(
   const { recovery } = verification;
   return recovery?.serviceRestartSafe && recovery.service === "healthy"
     ? recovery.version
-    : verification.versionMatch && verification.readyz && verification.settled
+    : verification.versionMatch &&
+        (verification.coreReady ?? verification.readyz) &&
+        verification.settled
       ? verification.runningVersion
       : undefined;
 }
@@ -269,13 +271,20 @@ export function renderUpdateRunReport(
     run.status === "failed" &&
     (run.reason === "node-runtime-preflight" ||
       run.reason === "preflight-node-runtime-incompatible");
+  const warnings = updateRunWarningMessages(run.steps).map((message) => `Warning: ${message}`);
   let headline: string;
   switch (run.status) {
-    case "succeeded":
+    case "succeeded": {
+      // A skipped post-swap step keeps the version change; the headline must not read as clean.
+      const attention =
+        warnings.length > 0
+          ? `; ${warnings.length} warning${warnings.length === 1 ? " needs" : "s need"} attention`
+          : "";
       headline = after
-        ? `✅ OpenClaw updated to ${after}${before ? ` (from ${before})` : ""}.`
-        : "✅ OpenClaw updated.";
+        ? `✅ OpenClaw updated to ${after}${before ? ` (from ${before})` : ""}${attention}.`
+        : `✅ OpenClaw updated${attention}.`;
       break;
+    }
     case "failed":
       headline = reconciled
         ? "ℹ️ OpenClaw abandoned update reconciled."
@@ -304,7 +313,6 @@ export function renderUpdateRunReport(
   }
   headline = bounded(headline, 500);
   const markdownLimit = opts.markdownLimit ?? 1500;
-  const warnings = updateRunWarningMessages(run.steps).map((message) => `Warning: ${message}`);
   // Successful activation must not bury recovery constraints behind snapshot inventory.
   // Failed runs keep their failure diagnostics ahead of warnings in the short report.
   const lines: string[] = run.status === "succeeded" ? [...warnings] : [];
@@ -426,6 +434,7 @@ export function renderUpdateRunReport(
         ? "channels ready"
         : "channels not ready",
     facts.readyz === undefined ? undefined : facts.readyz ? "HTTP ready" : "HTTP not ready",
+    facts.coreReady === undefined ? undefined : facts.coreReady ? "core ready" : "core not ready",
     facts.pluginErrors?.length
       ? `${facts.pluginErrors.length} plugin activation error(s)`
       : undefined,

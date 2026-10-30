@@ -10,6 +10,7 @@ import {
   resolveUpdateStateContentVersion,
 } from "../../infra/update-candidate-state.js";
 import { readBuiltGatewayBuildId } from "../../infra/update-git-runtime.js";
+import { unsafeUpdateRecovery } from "../../infra/update-recovery.js";
 import {
   getUpdateRun,
   recordUpdateRunDiagnostics,
@@ -27,6 +28,7 @@ import {
   type GatewayRestartSnapshot,
 } from "../daemon-cli/restart-health.js";
 import type { UpdateCommandOptions } from "./shared.js";
+import type { CurrentCoreRecoveryRisk } from "./update-command-current-core-recovery.js";
 import type { FinishUpdateParams } from "./update-command-finish-types.js";
 import {
   recoverInstalledLaunchAgentAfterUpdate,
@@ -38,6 +40,7 @@ import {
   assertOriginalServiceStateCompatible,
   revalidateOriginalManagedServiceRuntime,
 } from "./update-command-original-service.js";
+import { POST_PLUGIN_DOCTOR_EXECUTION_FAILED_REASON } from "./update-command-post-plugin-validation.js";
 import { verifyPreviousGatewayForUpdate } from "./update-command-readiness.js";
 import { UpdateCommandRecoveryPendingError } from "./update-command-recovery-error.js";
 import {
@@ -185,7 +188,7 @@ export function refuseUnsettledDoctorRecovery(
       settlement.cwd !== root)
   ) {
     assertCurrent();
-    result.recovery = { serviceRestartSafe: false, reason: "runtime-verification-failed" };
+    result.recovery = unsafeUpdateRecovery(result.recovery, "active-mutation");
     return true;
   }
   return false;
@@ -206,7 +209,7 @@ export async function admitInstalledGatewayRecovery(
     | "ownedManagedUpdateEnv"
     | "packageUpdateNodeRunner"
     | "updateStepTimeoutMs"
-  >,
+  > & { currentCoreFailureRecovery?: boolean },
   result: UpdateRunResult,
   assertCurrent: () => void,
 ): Promise<boolean> {
@@ -216,20 +219,31 @@ export async function admitInstalledGatewayRecovery(
   }
   const settlement = result.steps.findLast((step) => step.name === "doctor process settlement");
   const databaseRollback = result.steps.findLast((step) => step.name === "database rollback");
-  // Current-core maintenance has no package rollback, but still owns its Doctor park.
+  // Current-core maintenance owns its Doctor park even after a normal child exit,
+  // which needs no cancellation settlement receipt. Only an exited post-plugin Doctor
+  // reports failure facts here, after its process custody settles; data-at-risk
+  // refusals are thrown instead and still refuse recovery.
+  const plugins = result.postUpdate?.plugins;
   const currentCore =
     params.coreAlreadyCurrent === true &&
     !params.packageTransaction &&
     result.status === "error" &&
-    settlement !== undefined;
+    (params.currentCoreFailureRecovery === true ||
+      settlement !== undefined ||
+      (plugins?.status === "error" &&
+        plugins.reason === POST_PLUGIN_DOCTOR_EXECUTION_FAILED_REASON &&
+        (plugins.failureFacts?.length ?? 0) > 0));
   if (
     (!currentCore && result.reason !== "state-migrated-no-rollback") ||
-    (params.coreAlreadyCurrent && result.recovery?.serviceRestartSafe === false) ||
+    (result.recovery?.serviceRestartSafe === false &&
+      (result.recovery.dataAtRisk ||
+        (params.coreAlreadyCurrent && !params.currentCoreFailureRecovery))) ||
     params.originalManagedServiceRuntime ||
     !params.shouldRestart ||
     !params.preManagedServiceStop?.stopped ||
     databaseRollback?.exitCode === 0 ||
-    (!settlement && !databaseRollback) ||
+    // Normal current-core Doctor completion needs no settlement receipt.
+    (!currentCore && !settlement && !databaseRollback) ||
     (result.recovery?.serviceRestartSafe === false &&
       result.recovery.reason === "source-rollback-failed")
   ) {
@@ -348,6 +362,8 @@ export async function admitInstalledGatewayRecovery(
 }
 
 export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
+  currentCoreRisk?: CurrentCoreRecoveryRisk;
+  assertRecoverySafe?: () => void;
   onGatewayStartAttempted?: () => void;
   updateRun?: UpdateCommandOptions["run"];
   preManagedServiceStop: PreManagedServiceStop | undefined;
@@ -367,6 +383,7 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
       );
     }
     executor?.assertCurrent();
+    params.assertRecoverySafe?.();
   };
   const before = params.preManagedServiceStop;
   const original = params.originalManagedServiceRuntime;
@@ -478,6 +495,7 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
       await runUpdatedInstallGatewayCommand(
         {
           onGatewayStartAttempted: params.onGatewayStartAttempted,
+          currentCoreRisk: params.currentCoreRisk,
           result: { root: original?.root ?? verdict.root },
           opts: { run },
           invocationEnv: serviceEnv,
@@ -542,6 +560,20 @@ export async function maybeRestartServiceAfterFailedMutableUpdate(params: {
     return "healthy";
   } catch (err) {
     if (hasCommandProcessCleanupError(err)) {
+      throw err;
+    }
+    if (params.currentCoreRisk) {
+      // A concurrent risk must not replace an identity, custody, or unknown
+      // restoration failure. Preserve both failures if revalidation also fails.
+      try {
+        assertCurrent();
+      } catch (cause) {
+        throw new AggregateError(
+          [err, cause],
+          "Current-core restoration and revalidation failed.",
+          { cause },
+        );
+      }
       throw err;
     }
     assertCurrent();

@@ -246,6 +246,7 @@ function buildFailureAlertPayload(params: {
   route: ResolvedFailureAlert;
   status: "error" | "skipped";
   repairRequested?: boolean;
+  localProviderUnavailable?: boolean;
 }) {
   const safeJobName = params.job.name || params.job.id;
   const errorReason = params.status === "error" ? params.errorReason : undefined;
@@ -271,7 +272,12 @@ function buildFailureAlertPayload(params: {
           ...(errorReason ? [`Cause: ${errorReason}`] : []),
           `${detailLabel}: ${truncateUtf16Safe(params.error?.trim() || "unknown reason", 200)}`,
         ]
-      : cronFailureDetailLines(errorReason, params.failureNotificationDetail);
+      : params.localProviderUnavailable
+        ? [
+            "Cause: the local model provider is unreachable.",
+            "Start the provider or check its configured endpoint in automation history. OpenClaw will check again on a later scheduled run.",
+          ]
+        : cronFailureDetailLines(errorReason, params.failureNotificationDetail);
   const text = [
     `Automation "${safeJobName}" ${statusVerb} ${params.consecutiveErrors} times`,
     ...(params.repairRequested
@@ -408,7 +414,7 @@ function failureIncident(params: {
  * conversation gets one follow-up turn, and the failure after that sends the plain alert,
  * which needs no model: a repair turn that fails silently still ends in a notice.
  */
-export function maybeEmitFailureAlert(
+function maybeEmitFailureAlert(
   state: CronJobPolicyContext,
   params: {
     job: CronJob;
@@ -424,6 +430,16 @@ export function maybeEmitFailureAlert(
     deferredNotifications: DeferredCronNotifications;
   },
 ) {
+  const localProviderUnavailable =
+    params.status === "skipped" &&
+    params.job.state.lastDiagnostics?.entries.some((entry) => entry.source === "model-preflight");
+  if (
+    params.status === "skipped" &&
+    !params.alertConfig?.includeSkipped &&
+    !localProviderUnavailable
+  ) {
+    return;
+  }
   recordUnresolvedFailure(params.job, params.failureNotificationDetail);
   const terminalOneShot =
     params.status === "error" && params.job.schedule.kind === "at" && !isJobEnabled(params.job);
@@ -472,6 +488,7 @@ export function maybeEmitFailureAlert(
       route: alertConfig,
       status: params.status,
       repairRequested: repair !== undefined,
+      localProviderUnavailable,
     }),
     runAtMs: params.runAtMs,
     route: alertConfig,
@@ -573,14 +590,14 @@ export function finalizeCronFailureNotifications(
     return;
   }
   if (
-    params.result.status === "error" &&
+    (params.result.status === "error" || params.result.status === "skipped") &&
     !params.autoDisableNotificationOwnsFailure &&
     !params.pendingTransientRetry
   ) {
     maybeEmitFailureAlert(state, {
       job: params.job,
       alertConfig: params.alertConfig,
-      status: "error",
+      status: params.result.status,
       error: params.result.error,
       errorReason: params.job.state.lastErrorReason,
       failureNotificationDetail: params.result.failureNotificationDetail,
@@ -588,7 +605,10 @@ export function finalizeCronFailureNotifications(
         params.result.errorClassification?.kind === "permanent" &&
         params.result.errorClassification.reportedByAgent === true,
       runAtMs: params.result.startedAt,
-      consecutiveCount: params.job.state.consecutiveErrors ?? 0,
+      consecutiveCount:
+        (params.result.status === "skipped"
+          ? params.job.state.consecutiveSkipped
+          : params.job.state.consecutiveErrors) ?? 0,
       deferredNotifications: params.deferredNotifications,
     });
   } else if (

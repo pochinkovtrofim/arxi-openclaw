@@ -3,14 +3,18 @@ import {
   claimAgentRunContext,
   clearAgentRunContext,
   consumeCronNextCheckProposal,
+  releaseAgentRunContext,
 } from "../../infra/agent-run-registry.js";
 import { createCronTool } from "./cron-tool.js";
 
 const RUN_ID = "paced-run";
 const JOB_ID = "paced-job";
+let runClaimId: string | undefined;
 
 afterEach(() => {
+  releaseAgentRunContext(RUN_ID, runClaimId);
   clearAgentRunContext(RUN_ID);
+  runClaimId = undefined;
 });
 
 function createScopedTool(jobId = JOB_ID) {
@@ -21,10 +25,14 @@ function createScopedTool(jobId = JOB_ID) {
 }
 
 function registerRun(pacingEnabled: boolean) {
-  claimAgentRunContext(RUN_ID, {
-    sessionKey: `agent:main:cron:${JOB_ID}`,
-    cronRunsByJobId: new Map([[JOB_ID, { pacingEnabled }]]),
-  });
+  runClaimId = claimAgentRunContext(
+    RUN_ID,
+    {
+      sessionKey: `agent:main:cron:${JOB_ID}`,
+      cronRunsByJobId: new Map([[JOB_ID, { nextCheckEnabled: pacingEnabled, pacingEnabled }]]),
+    },
+    { trackOwner: true, ownsContext: true },
+  );
 }
 
 describe("cron next_check action", () => {
@@ -60,7 +68,7 @@ describe("cron next_check action", () => {
 
     await expect(
       createScopedTool().execute("call-next-check", { action: "next_check", in: "15m" }),
-    ).rejects.toThrow("cron next_check requires pacing on the current job");
+    ).rejects.toThrow("cron next_check requires pacing or a one-shot session continuation");
   });
 
   it("rejects arbitrary job targeting", async () => {
@@ -91,7 +99,7 @@ describe("cron next_check action", () => {
     });
 
     claimAgentRunContext(RUN_ID, {
-      cronRunsByJobId: new Map([["next-job", { pacingEnabled: true }]]),
+      cronRunsByJobId: new Map([["next-job", { nextCheckEnabled: true, pacingEnabled: true }]]),
     });
     await createScopedTool("next-job").execute("call-next-check-next-job", {
       action: "next_check",

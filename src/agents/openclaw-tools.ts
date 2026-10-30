@@ -1,4 +1,5 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { GATEWAY_CLIENT_CAPS } from "../../packages/gateway-protocol/src/client-info.js";
 import { isCoreCanvasHostEnabled } from "../canvas/config.js";
 import { createShowWidgetTool, hasRegisteredShowWidgetKinds } from "../canvas/widget-tool.js";
 import { getRuntimeConfig, selectApplicableRuntimeConfig } from "../config/config.js";
@@ -27,6 +28,7 @@ import {
 import { hasAnyAuthProfileStoreSourceAsync } from "./auth-profiles/source-check.js";
 import { resolveOpenClawPluginToolsForOptions } from "./openclaw-plugin-tools.js";
 import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
+import { resolveCapturedOpenClawToolsFsPolicy } from "./openclaw-tools.fs-policy.js";
 import { createHostedGatewayTools } from "./openclaw-tools.gateway.js";
 import {
   isToolExplicitlyAllowedByFactoryPolicy,
@@ -134,6 +136,7 @@ export async function createOpenClawToolsWithPreparation(
     config: captured.config,
     agentId: captured.requesterAgentIdOverride,
   });
+  captured.fsPolicy = resolveCapturedOpenClawToolsFsPolicy(captured, sessionAgentId);
   const delegated = isEmbeddedMode()
     ? []
     : await createOpenClawDelegateToolsForRunAsync({ ...captured, sessionAgentId }, shared);
@@ -163,13 +166,14 @@ export async function createOpenClawToolsWithPreparation(
 
 /** @deprecated Use createOpenClawToolsAsync for runtime construction. */
 export function createOpenClawTools(
-  options?: OpenClawToolsOptions,
+  inputOptions?: OpenClawToolsOptions,
   preparedDelegateTools?: AnyAgentTool[],
   preparedWebSearchConfigured?: boolean,
 ): AnyAgentTool[] {
-  const resolvedConfig = options?.config;
-  const sessionConfig = options?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
-  const activeProjectKeys = options?.preparedModelRuntime?.activeProjectKeys ?? [];
+  const resolvedConfig = inputOptions?.config;
+  const sessionConfig =
+    inputOptions?.sessionConfigSource === "runtime" ? undefined : resolvedConfig;
+  const activeProjectKeys = inputOptions?.preparedModelRuntime?.activeProjectKeys ?? [];
   const runtimeSnapshot = getActiveSecretsRuntimeConfigSnapshot();
   const availabilityConfig = selectApplicableRuntimeConfig({
     inputConfig: resolvedConfig,
@@ -177,10 +181,14 @@ export function createOpenClawTools(
     runtimeSourceConfig: runtimeSnapshot?.sourceConfig,
   });
   const { sessionAgentId } = resolveSessionAgentIds({
-    sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
+    sessionKey: inputOptions?.runSessionKey ?? inputOptions?.agentSessionKey,
     config: resolvedConfig,
-    agentId: options?.requesterAgentIdOverride,
+    agentId: inputOptions?.requesterAgentIdOverride,
   });
+  const options = {
+    ...inputOptions,
+    fsPolicy: resolveCapturedOpenClawToolsFsPolicy(inputOptions ?? {}, sessionAgentId),
+  };
   const swarmToolGroups = createOpenClawSwarmToolGroups({
     ...options,
     config: sessionConfig ?? getRuntimeConfig(),
@@ -195,6 +203,8 @@ export function createOpenClawTools(
   options?.recordToolPrepStage?.("openclaw-tools:session-workspace");
   const widgetPresentation = resolveWidgetPresentationForRun(options);
   const inlineWidgetClientAvailable = options?.clientCaps?.includes("inline-widgets") === true;
+  const githubIdentitySettingsAvailable =
+    options?.clientCaps?.includes(GATEWAY_CLIENT_CAPS.UI_AGENT_GITHUB_SETTINGS) === true;
   const sessionKey = normalizeOptionalString(options?.runSessionKey ?? options?.agentSessionKey);
   const gatewayCallerAccountId = options?.gatewayCallerAccountId ?? options?.agentAccountId;
   const deliveryContext = {
@@ -445,6 +455,7 @@ export function createOpenClawTools(
           createScreenTool({
             agentSessionKey: options?.runSessionKey ?? options?.agentSessionKey,
             agentId: sessionAgentId,
+            githubIdentitySettingsAvailable,
           }),
           createThemeTool(),
           ...(options?.sandboxed
@@ -483,7 +494,9 @@ export function createOpenClawTools(
     heartbeatTool,
     createDecisionTool(sessionAgentId, options),
     createTtsTool({ ...options, agentId: sessionAgentId }),
-    options?.githubPublicationAvailable !== undefined ? createGitHubIdentityStatusTool() : null,
+    options?.githubPublicationAvailable !== undefined
+      ? createGitHubIdentityStatusTool({ githubIdentitySettingsAvailable })
+      : null,
     options?.githubPublicationAvailable === true ? createGitHubPublishTool() : null,
     transcriptsTool,
     imageGenerateTool,
@@ -508,6 +521,7 @@ export function createOpenClawTools(
           sessionKey: options?.runSessionKey ?? options?.agentSessionKey,
           runId: options?.runId,
           run: options?.skillWorkshop,
+          sandboxed: options?.sandboxed,
         }),
     progressCardTool,
     ...swarmToolGroups.structuredOutput,

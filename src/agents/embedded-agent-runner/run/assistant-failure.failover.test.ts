@@ -5,6 +5,7 @@ import type { AgentRunAttemptTerminal } from "../../agent-run-terminal-outcome.j
 import { formatBillingErrorMessage } from "../../embedded-agent-helpers.js";
 import { FailoverError } from "../../failover-error.js";
 import { renderInvalidTokenText } from "../../failover/user-copy.js";
+import { runWithModelFallback } from "../../model-fallback-runner.js";
 import { resolveAgentRunErrorLifecycleFields } from "../../run-termination.js";
 import {
   buildEmbeddedRunnerAssistant,
@@ -114,6 +115,35 @@ describe("assistant failure recovery", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.useRealTimers();
+  });
+
+  it("stops unchanged retries and model fallback after prompt projection loses its user turn", async () => {
+    let attempts = 0;
+    const run = vi.fn(async () => {
+      const input = makeInput("Model prompt projection lost its canonical user turn");
+      input.normalizedAttempt.attemptAssistant!.content = [];
+      for (;;) {
+        attempts += 1;
+        const outcome = await handleEmbeddedAssistantFailure(input);
+        if (outcome.action !== "retry") {
+          throw new Error("failure was not surfaced");
+        }
+        input.emptyErrorRetries = outcome.emptyErrorRetries;
+      }
+    });
+    await expect(
+      runWithModelFallback({
+        cfg: undefined,
+        provider: "anthropic",
+        model: "test-model",
+        manifestPlugins: [],
+        fallbacksOverride: ["openai/fixture-next", "groq/fixture-last"],
+        skipAuthProfileRuntime: true,
+        run,
+      }),
+    ).rejects.toThrow("Model prompt projection lost its canonical user turn");
+    expect(run).toHaveBeenCalledOnce();
+    expect(attempts).toBe(1);
   });
 
   it("selects the next profile before marking failure and retries without waiting for the mark", async () => {
@@ -322,7 +352,10 @@ describe("assistant failure recovery", () => {
     [{ kind: "ok" }, {}],
     [{ kind: "timeout", phase: "compaction", source: "observation" }, {}],
     [{ kind: "timeout", phase: "compaction", source: "runtime" }, { stopReason: "timeout" }],
-    [{ kind: "timeout", phase: "tool_execution", source: "runtime" }, { stopReason: "timeout" }],
+    [
+      { kind: "timeout", phase: "tool_execution", source: "runtime" },
+      { stopReason: "timeout", timeoutPhase: "tool_execution" },
+    ],
     [
       { kind: "timeout", phase: "prompt", source: "idle" },
       { stopReason: "timeout", timeoutPhase: "provider", providerStarted: true },

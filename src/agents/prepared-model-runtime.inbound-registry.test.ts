@@ -37,7 +37,10 @@ import {
   rejectPendingPreparedModelRuntimeReplacement,
   type PreparedModelRuntimeSnapshot,
 } from "./prepared-model-runtime.js";
-import { retainPreparedPluginGeneration } from "./prepared-model-runtime.plugin-lifetime.js";
+import {
+  discardPreparedPluginGeneration,
+  retainPreparedPluginGeneration,
+} from "./prepared-model-runtime.plugin-lifetime.js";
 
 const fixture = usePreparedModelRuntimeHarness({ label: "prepared-model-runtime" });
 const { mocks } = fixture;
@@ -398,7 +401,7 @@ describe("prepared reply dispatch runtime", () => {
     },
   );
 
-  it("keeps a rejected auth refresh projection unavailable without affecting siblings", async () => {
+  it("recovers a rejected auth refresh projection without affecting siblings", async () => {
     mocks.configuredAgentIds = ["default", "worker"];
     await refreshPreparedModelRuntimeSnapshots(
       {},
@@ -425,12 +428,11 @@ describe("prepared reply dispatch runtime", () => {
     await refreshFailed.promise;
     unregister();
 
-    await expect(loadPublishedGatewayReplyDispatchRuntime({ agentId: "worker" })).rejects.toThrow(
-      "prepared reply dispatch runtime owner was not published for worker",
-    );
-    await expect(loadPublishedGatewayReplyDispatchRuntime({ agentId: "default" })).resolves.toBe(
-      defaultRuntime,
-    );
+    await expect(
+      loadPublishedGatewayReplyDispatchRuntime({ agentId: "worker" }),
+    ).resolves.toMatchObject({ agentId: "worker" });
+    const retained = await loadPublishedGatewayReplyDispatchRuntime({ agentId: "default" });
+    expect(retained?.pluginGeneration).toBe(defaultRuntime?.pluginGeneration);
   });
 
   it("aborts run admission without retaining an owner after auth publication", async () => {
@@ -569,6 +571,7 @@ it("refreshes successor discovery auth after the preceding runtime registry reti
     metadata,
   );
   const releasePrevious = retainPreparedPluginGeneration(first.pluginGeneration);
+  await discardPreparedPluginGeneration(first.pluginGeneration);
   let releaseSuccessor: (() => Promise<void>) | undefined;
   try {
     expect(first.agentFacts[0]?.credentials["discovery-auth"]).toMatchObject({
@@ -586,6 +589,7 @@ it("refreshes successor discovery auth after the preceding runtime registry reti
       first.pluginGeneration.pluginRegistry,
     );
     releaseSuccessor = retainPreparedPluginGeneration(replacement.pluginGeneration);
+    await discardPreparedPluginGeneration(replacement.pluginGeneration);
     await releasePrevious();
     expect(previous.instance.lifecycle.signal.aborted).toBe(true);
     const refreshed = await prepareWorkspaceBuildGroup(
@@ -651,7 +655,15 @@ describe("catalog-worker replacement demand", () => {
         const shared = Promise.all([foreground, background]);
         finish.resolve();
         if (outcome === "failed") {
-          await expect(shared).rejects.toBe(failure);
+          await shared.catch(() => undefined);
+          await expect(foreground).rejects.toMatchObject({
+            reason: "attempt-failed",
+            cause: failure,
+          });
+          await expect(background).rejects.toMatchObject({
+            reason: "attempt-failed",
+            cause: failure,
+          });
           await expect(dispatch("scheduled")).rejects.toThrow("was not published");
           expect(mocks.resolveAmbientCredentials).toHaveBeenCalledTimes(1);
           return;
@@ -675,12 +687,12 @@ describe("catalog-worker replacement demand", () => {
       throw repeatedFailure;
     });
     try {
-      await expect(dispatch("scheduled")).rejects.toBe(repeatedFailure);
+      await expect(dispatch("scheduled")).rejects.toMatchObject({ cause: repeatedFailure });
       await expect(dispatch()).rejects.toThrow("was not published");
       clock.mockReturnValue(20_000);
       await expect(dispatch("scheduled")).rejects.toThrow("was not published");
       expect(mocks.resolveAmbientCredentials).toHaveBeenCalledTimes(1);
-      await expect(dispatch()).rejects.toBe(repeatedFailure);
+      await expect(dispatch()).rejects.toMatchObject({ cause: repeatedFailure });
       clock.mockReturnValue(30_000);
       await expect(dispatch("scheduled")).rejects.toThrow("was not published");
       expect(mocks.resolveAmbientCredentials).toHaveBeenCalledTimes(2);

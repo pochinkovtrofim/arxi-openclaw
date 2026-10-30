@@ -65,6 +65,7 @@ describe("runtime TaskFlow", () => {
           [
             "paced-job",
             {
+              nextCheckEnabled: true,
               pacingEnabled: true,
               cronStoreKey: "cron-store",
               cronScheduleIdentity: "schedule-v1",
@@ -80,6 +81,7 @@ describe("runtime TaskFlow", () => {
           [
             "paced-job",
             {
+              nextCheckEnabled: true,
               pacingEnabled: true,
               cronStoreKey: "cron-store",
               cronScheduleIdentity: "schedule-v1",
