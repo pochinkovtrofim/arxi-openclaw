@@ -290,6 +290,40 @@ describe("createLazyGatewayCronState", () => {
     expect(cron["resumeScheduling"]).toHaveBeenCalledTimes(2);
   });
 
+  it("holds a start until the first completed resume, and an in-process restart keeps it released", async () => {
+    hoisted.setState(createCronState(createCronService()));
+    const env = { OPENCLAW_CRON_START_HELD: "1" } as NodeJS.ProcessEnv;
+    const lazy = createLazyGatewayCronState({ ...createParams(), env });
+
+    const hold = lazy.cron.startHold?.();
+    expect(hold).toBeInstanceOf(Promise);
+    expect(lazy.cron.getSuspensionBlockerCount?.()).toBe(0);
+    expect(lazy.cron.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: null });
+
+    // A lapsed suspension lease resumes scheduling; only a completed resume releases.
+    lazy.cron.pauseScheduling();
+    lazy.cron.resumeScheduling();
+    let released = false;
+    void hold?.then(() => {
+      released = true;
+    });
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    expect(released).toBe(false);
+
+    lazy.cron.releaseStartHold?.();
+    await hold;
+    expect(lazy.cron.startHold?.()).toBeNull();
+    expect(env.OPENCLAW_CRON_START_HELD).toBeUndefined();
+  });
+
+  it("has no hold without the environment", () => {
+    hoisted.setState(createCronState(createCronService()));
+    const lazy = createLazyGatewayCronState({ ...createParams(), env: {} as NodeJS.ProcessEnv });
+    expect(lazy.cron.startHold?.()).toBeNull();
+  });
+
   it("waits to start while scheduling is paused", async () => {
     const cron = createCronService();
     hoisted.setState(createCronState(cron));

@@ -34,6 +34,9 @@ export type GatewayCronServiceContract = CronServiceContract & {
   /** Temporarily disarm ticks without running startup recovery on resume. */
   pauseScheduling(): void;
   resumeScheduling(): void;
+  /** Resolves when OPENCLAW_CRON_START_HELD ends; null without a hold. Never after a stop. */
+  startHold?(): Promise<void> | null;
+  releaseStartHold?(): void;
   /** Scheduler-owned work not represented by active cron run markers. */
   getSuspensionBlockerCount?(): number;
   /** Materialize lazy cron dependencies before a synchronous operator wake. */

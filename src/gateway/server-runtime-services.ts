@@ -75,6 +75,13 @@ export function startGatewayCronWithLogging(params: {
   onStartError?: (error: unknown) => void;
   logCron: { error: (message: string) => void };
 }): void {
+  // Outside the admission root below: an admitted root would block the suspension
+  // whose resume ends the hold.
+  const hold = params.cronState.cron.startHold?.();
+  if (hold) {
+    void hold.then(() => startGatewayCronWithLogging(params));
+    return;
+  }
   const reconciliation = params.cronReconciliation.arm({
     reason: params.reason,
     config: params.config,
