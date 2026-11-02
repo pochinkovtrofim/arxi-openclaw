@@ -606,7 +606,12 @@ export abstract class AgentSessionCompaction extends AgentSessionInspection {
     } else {
       contextTokens = calculateContextTokens(assistantMessage.usage);
     }
-    if (shouldCompact(contextTokens, contextWindow, settings)) {
+    const coldCache = this.settingsManager.getCompactionColdCache();
+    const cacheExpired =
+      coldCache !== undefined &&
+      contextTokens >= coldCache.minTokens &&
+      Date.now() - assistantMessage.timestamp >= coldCache.ttlMs;
+    if (cacheExpired || shouldCompact(contextTokens, contextWindow, settings)) {
       return await this.runAutoCompaction("threshold", false, requestBudget);
     }
     return false;

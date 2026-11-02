@@ -10,6 +10,20 @@ import {
 } from "./agent-settings.js";
 import { SettingsManager } from "./sessions/settings-manager.js";
 
+describe("applyAgentAutoCompactionGuard cold cache", () => {
+  it("keeps the cold-cache rule only for the runs it is handed to", () => {
+    const coldCache = { minTokens: 150_000, ttlMs: 3_600_000 };
+    const cron = SettingsManager.inMemory();
+    const chat = SettingsManager.inMemory();
+
+    applyAgentAutoCompactionGuard({ settingsManager: cron, coldCache });
+    applyAgentAutoCompactionGuard({ settingsManager: chat });
+
+    expect(cron.getCompactionColdCache()).toEqual(coldCache);
+    expect(chat.getCompactionColdCache()).toBeUndefined();
+  });
+});
+
 describe("applyAgentCompactionSettingsFromConfig", () => {
   it.each([false, true])(
     "applies and preserves compaction.enabled=%s across a settings reload",

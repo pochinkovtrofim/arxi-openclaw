@@ -30,7 +30,9 @@ In safeguard mode a chat turn compacts in its explicit preflight. A scheduled (c
 such preflight, so it compacts inside its own session once context passes the session's window
 minus the reserve, before the prompt or after the run, with the same safeguard summary checks.
 A persistent cron session (`sessionTarget: "session:<name>"`) therefore stays within the
-`contextWindow` selected on it.
+`contextWindow` selected on it. Before the prompt it also compacts once its prompt cache has
+expired and the session has reached `agents.defaults.compaction.coldCacheTokens`, the same
+rule a chat turn follows, because the next request would rewrite the whole history anyway.
 
 With the built-in safeguard quality guard enabled, OpenClaw applies the final
 summary budget before validation. Required headings must remain in the retained
