@@ -848,7 +848,11 @@ describe("AgentSession compaction", () => {
 });
 
 describe("cold prompt cache", () => {
-  const runPrompt = async (params: { ageMs: number; contextTokens: number }) => {
+  const runPrompt = async (params: {
+    ageMs: number;
+    contextTokens: number;
+    summaryFails?: boolean;
+  }) => {
     const sessionManager = SessionManager.inMemory();
     sessionManager.appendMessage({ role: "user", content: "old prompt", timestamp: 1 });
     sessionManager.appendMessage({
@@ -864,35 +868,54 @@ describe("cold prompt cache", () => {
     settingsManager.applyOverrides({
       compaction: { coldCache: { minTokens: 1_000, ttlMs: 60_000 } },
     });
-    streamMocks.streamSimple.mockImplementation((activeModel: Model) =>
-      createAssistantResultStream(
+    streamMocks.streamSimple.mockImplementation((activeModel: Model, context: Context) => {
+      // The summary request is the only one that does not carry the new prompt yet.
+      if (params.summaryFails && !JSON.stringify(context.messages).includes("current question")) {
+        throw new Error("summary failed");
+      }
+      return createAssistantResultStream(
         createAssistant(activeModel, [{ type: "text", text: "complete answer" }]),
-      ),
-    );
+      );
+    });
     const { session } = await createTestSession({
       sessionManager,
       settingsManager,
-      resourceLoader: createResourceLoader(createResultHandlers("condensed history")),
+      resourceLoader: createResourceLoader(
+        params.summaryFails ? new Map() : createResultHandlers("condensed history"),
+      ),
     });
     const compactionEvents = collectCompactionEnds(session);
     await session.prompt("current question");
-    return compactionEvents;
+    return { compactionEvents, answer: session.getLastAssistantText() };
   };
 
   it("compacts before the prompt once the cache has expired", async () => {
-    const compactionEvents = await runPrompt({ ageMs: 120_000, contextTokens: 1_000 });
+    const { compactionEvents, answer } = await runPrompt({ ageMs: 120_000, contextTokens: 1_000 });
 
     expect(compactionEvents).toHaveLength(1);
     expect(compactionEvents[0]).toMatchObject({
       reason: "threshold",
       outcome: { status: "completed" },
     });
+    expect(answer).toBe("complete answer");
+  });
+
+  it("still answers when the summary fails", async () => {
+    const { compactionEvents, answer } = await runPrompt({
+      ageMs: 120_000,
+      contextTokens: 1_000,
+      summaryFails: true,
+    });
+
+    expect(compactionEvents).toHaveLength(1);
+    expect(compactionEvents[0]).toMatchObject({ outcome: { status: "failed" } });
+    expect(answer).toBe("complete answer");
   });
 
   it.each([
     ["the cache is warm", { ageMs: 1_000, contextTokens: 1_000 }],
     ["the session is small", { ageMs: 120_000, contextTokens: 500 }],
   ])("keeps the history while %s", async (_name, params) => {
-    expect(await runPrompt(params)).toEqual([]);
+    expect((await runPrompt(params)).compactionEvents).toEqual([]);
   });
 });
