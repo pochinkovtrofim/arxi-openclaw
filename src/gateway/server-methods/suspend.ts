@@ -271,7 +271,7 @@ export const suspendHandlers: GatewayRequestHandlers = {
     }
     respondSuspendStatus(result, context, respond, "a different gateway suspension is prepared");
   },
-  "gateway.suspend.resume": async ({ respond, params }) => {
+  "gateway.suspend.resume": async ({ respond, params, context }) => {
     if (!validateGatewaySuspendResumeParams(params)) {
       respond(false, undefined, invalidParams("gateway.suspend.resume"));
       return;
@@ -298,6 +298,7 @@ export const suspendHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+    context.cron.releaseStartHold?.();
     respond(true, result);
   },
 };

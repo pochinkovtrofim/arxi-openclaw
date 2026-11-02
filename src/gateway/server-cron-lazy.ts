@@ -37,6 +37,10 @@ export function createLazyGatewayCronState(
   let exitWatcherHandoffStop: Promise<void> | undefined;
   let lifecycleGeneration = 0;
   let schedulingPaused = false;
+  // A Gateway booted beside its Owner's paused VM must not run that Owner's jobs:
+  // the scheduler stays unstarted until the first completed suspension resume.
+  let startHeld = env.OPENCLAW_CRON_START_HELD === "1";
+  const startHoldWaiters = new Set<() => void>();
   const schedulingResumeWaiters = new Set<() => void>();
   const releaseSchedulingResumeWaiters = () => {
     const waiters = Array.from(schedulingResumeWaiters);
@@ -243,11 +247,34 @@ export function createLazyGatewayCronState(
         loaded.schedulingPaused = false;
       }
     },
+    startHold() {
+      if (!startHeld) {
+        return null;
+      }
+      return new Promise<void>((resolve) => {
+        startHoldWaiters.add(resolve);
+      });
+    },
+    releaseStartHold() {
+      if (!startHeld) {
+        return;
+      }
+      startHeld = false;
+      // An in-process restart reads this environment again.
+      delete env.OPENCLAW_CRON_START_HELD;
+      for (const resolve of Array.from(startHoldWaiters)) {
+        resolve();
+      }
+      startHoldWaiters.clear();
+    },
     getSuspensionBlockerCount() {
       const loadedBlockers = loaded?.state.cron.getSuspensionBlockerCount?.() ?? 0;
       return loaded?.phase === "starting" ? Math.max(1, loadedBlockers) : loadedBlockers;
     },
     getSuspendWakeSnapshot() {
+      if (startHeld) {
+        return { complete: true, nextWakeAtMs: null };
+      }
       if (!loaded || loaded.phase !== "started") {
         return { complete: false };
       }
