@@ -2,7 +2,7 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import { resolveUserTimezone } from "../../agents/date-time.js";
+import { getKnownUserTimezone, resolveUserTimezone } from "../../agents/date-time.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { buildChannelSummary } from "../../infra/channel-summary.js";
 import {
@@ -52,6 +52,10 @@ function compactSystemEvent(event: SystemEvent): string | null {
 
 function resolveSystemEventTimezone(cfg: OpenClawConfig) {
   const raw = normalizeOptionalString(cfg.agents?.defaults?.userTimezone);
+  const known = raw ? undefined : getKnownUserTimezone();
+  if (known) {
+    return { mode: "iana" as const, timeZone: known };
+  }
   const lowered = normalizeLowercaseStringOrEmpty(raw);
   if (lowered === "utc" || lowered === "gmt") {
     return { mode: "utc" as const };

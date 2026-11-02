@@ -1,5 +1,6 @@
 // Plugin runtime index tests cover runtime entrypoint exports and registry setup.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveUserTimezone } from "../../agents/date-time.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../agents/defaults.js";
 import { resolveDefaultModelForAgent } from "../../agents/model-selection-config.js";
 import { resolveAllowedModelRefCore } from "../../agents/model-selection-resolve.js";
@@ -105,6 +106,16 @@ describe("plugin runtime command execution", () => {
   it("exposes reset freshness resolver on the host channel runtime", () => {
     const sessionRuntime = createPluginRuntime().channel.session as Record<string, unknown>;
     expect(typeof sessionRuntime.resolveEntryResetFreshness).toBe("function");
+  });
+
+  it("gives agents the zone a plugin sets through runtime.system", () => {
+    const { system } = createPluginRuntime();
+    try {
+      system.setUserTimezone("Asia/Tokyo");
+      expect(resolveUserTimezone()).toBe("Asia/Tokyo");
+    } finally {
+      system.setUserTimezone();
+    }
   });
 
   it("maps deprecated runtime.system.requestHeartbeatNow to an immediate compatibility wake", async () => {

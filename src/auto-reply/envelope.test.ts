@@ -1,5 +1,6 @@
 /** Tests inbound envelope formatting, timestamps, and sender labels. */
 import { describe, expect, it, vi } from "vitest";
+import { setKnownUserTimezone } from "../agents/date-time.js";
 import {
   formatAgentEnvelope,
   formatAgentEnvelopeTimestamp,
@@ -117,6 +118,20 @@ describe("formatAgentEnvelope", () => {
     });
 
     expect(body).toMatch(/\[WebChat Thu 2025-01-02 04:04:05 [^\]]+\] hello/);
+  });
+
+  it("formats timestamps in the known user zone when config names none", () => {
+    const ts = Date.UTC(2025, 0, 2, 20, 4, 5);
+    const format = (envelope?: { timezone?: string }) =>
+      formatAgentEnvelope({ channel: "WebChat", timestamp: ts, envelope, body: "hi" });
+    const host = format();
+    try {
+      setKnownUserTimezone("Asia/Tokyo");
+      expect(format(resolveEnvelopeFormatOptions({}))).toContain("Fri 2025-01-03 05:04");
+      expect(format({ timezone: "local" })).toBe(host);
+    } finally {
+      setKnownUserTimezone();
+    }
   });
 
   it("falls back to the host timezone for an invalid configured user timezone", () => {

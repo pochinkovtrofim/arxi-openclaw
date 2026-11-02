@@ -1,3 +1,4 @@
+import { setKnownUserTimezone } from "../../agents/date-time.js";
 import { requestHeartbeat } from "../../infra/heartbeat-wake.js";
 import { runCommandWithTimeout } from "../../process/exec.js";
 import { createLazyRuntimeMethod, createLazyRuntimeModule } from "../../shared/lazy-runtime.js";
@@ -43,5 +44,6 @@ export function createRuntimeSystem(): PluginRuntime["system"] {
     },
     runCommandWithTimeout,
     formatNativeDependencyHint,
+    setUserTimezone: setKnownUserTimezone,
   };
 }

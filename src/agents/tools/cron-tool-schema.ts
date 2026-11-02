@@ -107,7 +107,7 @@ function createCronScheduleSchema(params: {
         tz: Type.Optional(
           Type.String({
             description:
-              'IANA timezone for wall-clock fields; missing=Gateway host local timezone. Example "Asia/Shanghai".',
+              'IANA timezone for wall-clock fields; missing=Gateway host local timezone, which may not be the user zone. Example "Asia/Shanghai".',
           }),
         ),
         staggerMs: optionalNonNegativeIntegerSchema({

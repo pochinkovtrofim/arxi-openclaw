@@ -1,5 +1,5 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { resolveUserTimezone } from "../agents/date-time.js";
+import { getKnownUserTimezone, resolveUserTimezone } from "../agents/date-time.js";
 import { normalizeChatType } from "../channels/chat-type.js";
 import { resolveSenderLabel, type SenderLabelParams } from "../channels/sender-label.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -67,7 +67,8 @@ export function resolveEnvelopeFormatOptions(cfg?: OpenClawConfig): EnvelopeForm
 function resolveEnvelopeTimezone(options?: EnvelopeFormatOptions): ResolvedEnvelopeTimezone {
   const trimmed = normalizeOptionalString(options?.timezone);
   if (!trimmed) {
-    return { mode: "local" };
+    const known = getKnownUserTimezone();
+    return known ? { mode: "iana", timeZone: known } : { mode: "local" };
   }
   const lowered = trimmed.toLowerCase();
   if (lowered === "utc" || lowered === "gmt") {

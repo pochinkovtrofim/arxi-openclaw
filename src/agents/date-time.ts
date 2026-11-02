@@ -3,6 +3,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { resolveDateTimestampMs } from "@openclaw/normalization-core/number-coercion";
+import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 
 type ResolvedTimeFormat = "12" | "24";
 
@@ -12,20 +13,38 @@ let dateStampFormatter: { timeZone: string; formatter: Intl.DateTimeFormat } | u
 let userTimeFormatter:
   | { timeZone: string; format: ResolvedTimeFormat; formatter: Intl.DateTimeFormat }
   | undefined;
+// One value across bundled copies of this module. Schedules keep the host's zone.
+const knownUserTimezone = resolveGlobalSingleton(Symbol.for("openclaw.knownUserTimezone"), () => ({
+  timeZone: undefined as string | undefined,
+}));
 
-/** Resolve a valid IANA timezone from config, host preferences, or UTC. */
-export function resolveUserTimezone(configured?: string): string {
-  const trimmed = configured?.trim();
-  if (trimmed) {
-    try {
-      getDateStampFormatter(trimmed);
-      return trimmed;
-    } catch {
-      // ignore invalid timezone
-    }
+function validTimezone(timeZone?: string): string | undefined {
+  const trimmed = timeZone?.trim();
+  if (!trimmed) {
+    return undefined;
   }
+  try {
+    getDateStampFormatter(trimmed);
+    return trimmed;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Set the zone a plugin knows for the user, used when config names none; undefined clears it. */
+export function setKnownUserTimezone(timeZone?: string): void {
+  knownUserTimezone.timeZone = validTimezone(timeZone);
+}
+
+/** The zone a plugin knows for the user, if any. */
+export function getKnownUserTimezone(): string | undefined {
+  return knownUserTimezone.timeZone;
+}
+
+/** Resolve a valid IANA timezone from config, the known user zone, host preferences, or UTC. */
+export function resolveUserTimezone(configured?: string): string {
   const host = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return host?.trim() || "UTC";
+  return validTimezone(configured) ?? knownUserTimezone.timeZone ?? (host?.trim() || "UTC");
 }
 
 /** Resolve 12/24-hour display preference, detecting the host for `auto`. */

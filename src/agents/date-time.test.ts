@@ -6,6 +6,7 @@ import {
   formatUserTime,
   resolveUserTimeFormat,
   resolveUserTimezone,
+  setKnownUserTimezone,
 } from "./date-time.js";
 
 vi.mock("node:child_process", () => ({
@@ -57,6 +58,23 @@ describe("resolveUserTimezone", () => {
       for (const configured of [undefined, "", "Invalid/Timezone"]) {
         expect(resolveUserTimezone(configured)).toBe(timezone);
       }
+    }
+  });
+
+  it("uses the known user zone when config names none", () => {
+    const host = resolveUserTimezone();
+    try {
+      setKnownUserTimezone("Asia/Tokyo");
+      expect(resolveUserTimezone()).toBe("Asia/Tokyo");
+      expect(resolveUserTimezone("Invalid/Timezone")).toBe("Asia/Tokyo");
+      expect(resolveUserTimezone("Europe/Madrid")).toBe("Europe/Madrid");
+      const { timeLine } = resolveCronStyleNow({}, Date.parse("2026-11-02T20:42:00.000Z"));
+      expect(timeLine).toContain("Current time: Tuesday, November 3rd, 2026");
+      expect(timeLine).toContain("(Asia/Tokyo)\nReference UTC: 2026-11-02 20:42 UTC");
+      setKnownUserTimezone("Invalid/Timezone");
+      expect(resolveUserTimezone()).toBe(host);
+    } finally {
+      setKnownUserTimezone();
     }
   });
 });
