@@ -18,11 +18,7 @@ import {
 } from "../../../sessions/input-provenance.js";
 import type { PersistedUserTurnMessage } from "../../../sessions/user-turn-transcript.types.js";
 import { createPreparedEmbeddedAgentSettingsManager } from "../../agent-project-settings.js";
-import {
-  applyAgentAutoCompactionGuard,
-  isSilentOverflowProneModel,
-  resolveEffectiveCompactionMode,
-} from "../../agent-settings.js";
+import { applyAgentAutoCompactionGuard, isSilentOverflowProneModel } from "../../agent-settings.js";
 import { toToolDefinitions } from "../../agent-tool-definition-adapter.js";
 import { sanitizeCompactionReplayMessages } from "../../compaction-replay.js";
 import { resolveUserTimezone } from "../../date-time.js";
@@ -41,7 +37,7 @@ import { sessionManagerOpenTranscriptCohort } from "../../sessions/session-manag
 import { withSessionManagerWrite } from "../../sessions/session-manager-write-admission.js";
 import { wrapToolDefinition } from "../../sessions/tools/tool-definition-wrapper.js";
 import { resolveToolSearchCatalogTool } from "../../tool-search.js";
-import { resolveColdCacheCompaction } from "../cold-cache-compaction.js";
+import { resolveAttemptCompactionPolicy } from "../cold-cache-compaction.js";
 import { runContextEngineMaintenance } from "../context-engine-maintenance.js";
 import { buildEmbeddedExtensionFactories } from "../extensions.js";
 import { log } from "../logger.js";
@@ -127,20 +123,7 @@ export async function prepareEmbeddedAttemptAgentSession(input: {
   applyAgentAutoCompactionGuard({
     settingsManager,
     contextEngineInfo: input.activeContextEngineInfo,
-    // Safeguard hands compaction to the reply path's explicit preflight, which a
-    // cron run never takes; a persistent cron session compacts at its own window,
-    // or earlier when its prompt cache has expired since the last run.
-    compactionMode:
-      attempt.trigger === "cron" ? undefined : resolveEffectiveCompactionMode(attempt.config),
-    coldCache:
-      attempt.trigger === "cron"
-        ? resolveColdCacheCompaction({
-            cfg: attempt.config,
-            provider: attempt.provider,
-            modelId: attempt.modelId,
-            agentId: input.sessionAgentId,
-          })
-        : undefined,
+    ...resolveAttemptCompactionPolicy(attempt, input.sessionAgentId),
     silentOverflowProneProvider: isSilentOverflowProneModel({
       provider: attempt.provider,
       modelId: attempt.modelId,

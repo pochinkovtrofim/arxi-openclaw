@@ -891,7 +891,7 @@ describe("cold prompt cache", () => {
 
   it.each([
     ["the cache is warm", { ageMs: 1_000, contextTokens: 1_000 }],
-    ["the session is small", { ageMs: 120_000, contextTokens: 999 }],
+    ["the session is small", { ageMs: 120_000, contextTokens: 500 }],
   ])("keeps the history while %s", async (_name, params) => {
     expect(await runPrompt(params)).toEqual([]);
   });

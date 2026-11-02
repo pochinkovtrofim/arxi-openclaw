@@ -1,4 +1,5 @@
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { resolveEffectiveCompactionMode } from "../agent-settings.js";
 import { resolveModelExtraParamSources } from "../model-extra-params.js";
 import { resolveCacheRetention } from "./prompt-cache-retention.js";
 
@@ -38,4 +39,22 @@ export function resolveColdCacheCompaction(params: {
   return retention === "short" || retention === "long"
     ? { minTokens, ttlMs: PROMPT_CACHE_TTL_MS[retention] }
     : undefined;
+}
+
+/**
+ * Safeguard hands compaction to the reply path's explicit preflight, which a cron run never
+ * takes. A persistent cron session compacts at its own window, or earlier when its prompt
+ * cache has expired since the last run.
+ */
+export function resolveAttemptCompactionPolicy(
+  attempt: { trigger?: string; config?: OpenClawConfig; provider: string; modelId: string },
+  agentId: string,
+) {
+  const { trigger, config: cfg, provider, modelId } = attempt;
+  return trigger === "cron"
+    ? {
+        compactionMode: undefined,
+        coldCache: resolveColdCacheCompaction({ cfg, provider, modelId, agentId }),
+      }
+    : { compactionMode: resolveEffectiveCompactionMode(cfg), coldCache: undefined };
 }
