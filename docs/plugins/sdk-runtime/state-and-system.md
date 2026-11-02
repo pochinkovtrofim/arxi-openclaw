@@ -65,7 +65,10 @@ closing the connection.
     });
     const output = await api.runtime.system.runCommandWithTimeout(cmd, args, opts);
     const hint = api.runtime.system.formatNativeDependencyHint(pkg);
+    api.runtime.system.setUserTimezone("Asia/Tokyo");
     ```
+
+    `setUserTimezone(...)` sets the zone for the dates and times agents see when `agents.defaults.userTimezone` names none, such as the one the user's device reports. `undefined` or an invalid zone clears it. Cron schedules without a `tz` keep the host's zone.
 
     `requestHeartbeatNow(...)` is tracked as `plugin-runtime-api-compat-aliases` in the [compatibility registry](/plugins/compatibility#current-compatibility-areas) with a `removeAfter` date of 2026-10-01; use `requestHeartbeat({ source, intent, reason })` in new code.
 

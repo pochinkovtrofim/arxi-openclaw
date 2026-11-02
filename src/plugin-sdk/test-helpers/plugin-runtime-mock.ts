@@ -641,6 +641,7 @@ export function createPluginRuntimeMock(overrides: PluginRuntimeMockOverrides = 
       formatNativeDependencyHint: vi.fn<PluginRuntime["system"]["formatNativeDependencyHint"]>(
         () => "",
       ),
+      setUserTimezone: vi.fn<PluginRuntime["system"]["setUserTimezone"]>(),
     },
     media: {
       loadWebMedia: vi.fn<PluginRuntime["media"]["loadWebMedia"]>(),

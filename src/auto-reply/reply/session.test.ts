@@ -7,6 +7,7 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import * as bootstrapCache from "../../agents/bootstrap-cache.js";
+import { setKnownUserTimezone } from "../../agents/date-time.js";
 import {
   clearEmbeddedSessionPromptStates,
   getEmbeddedSessionPromptState,
@@ -3055,6 +3056,30 @@ describe("drainFormattedSystemEvents", () => {
       // The cron event stays queued so the heartbeat path remains its single owner.
       expect(peekSystemEvents("agent:main:main")).toEqual(["Reminder: rotate API keys"]);
     } finally {
+      resetSystemEventsForTest();
+    }
+  });
+
+  it("stamps events in the known user zone when config names none", async () => {
+    try {
+      setKnownUserTimezone("Asia/Tokyo");
+      const event = expectDefined(
+        enqueueSystemEventEntry("Model switched.", { sessionKey: "agent:main:main" }),
+        "queued event",
+      );
+
+      const result = await drainFormattedSystemEvents({
+        cfg: {} as OpenClawConfig,
+        agentId: "main",
+        sessionKey: "agent:main:main",
+        isMainSession: true,
+        isNewSession: false,
+        events: [event],
+      });
+
+      expect(result).toMatch(/^System: \[\S+ \S+ GMT\+9\] Model switched\.$/);
+    } finally {
+      setKnownUserTimezone();
       resetSystemEventsForTest();
     }
   });

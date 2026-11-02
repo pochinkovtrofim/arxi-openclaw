@@ -213,9 +213,9 @@ SCOPE: Authenticated configured channel owner and Control UI administrator turns
 ADD: job requires schedule+payload.
 
 SCHEDULE:
-- {kind:"at",at:"ISO-8601"} one-shot; no tz=UTC; auto-deletes after successful completion (unless an explicit session continuation calls next_check): delivery confirmed, not requested, intentionally silent, or explicitly bestEffort. Failed/unknown required delivery retains it disabled.
+- {kind:"at",at:"ISO-8601"} one-shot; no offset=UTC, so give the offset of the time you mean; auto-deletes after successful completion (unless an explicit session continuation calls next_check): delivery confirmed, not requested, intentionally silent, or explicitly bestEffort. Failed/unknown required delivery retains it disabled.
 - {kind:"every",everyMs}.
-- {kind:"cron",expr,tz?:"IANA"}: expr is wall time in tz; never pre-convert to UTC; no tz=gateway host local. 18:00 Shanghai => {expr:"0 18 * * *",tz:"Asia/Shanghai"}.${streamScheduleLine}
+- {kind:"cron",expr,tz?:"IANA"}: expr is wall time in tz; never pre-convert to UTC; no tz=gateway host local, which may not be the user's zone, so pass tz. 18:00 Shanghai => {expr:"0 18 * * *",tz:"Asia/Shanghai"}.${streamScheduleLine}
 
 TARGET+PAYLOAD:
 - "current" (agentTurn default) = this conversation: the run stays detached, reads bounded chat context, then commits its final visible assistant result to this conversation's durable history. Delayed work/loop = at|every + agentTurn + current. This is not a resumed parent turn: it uses the scheduled agent workspace with its own session identity, not the conversation worktree or cloud worker placement. In-flight turns sent through the job's stable cron key are canceled if that key is reassigned. Verify required checkout/tool access before delegating repository work; result delivery alone does not resume the original agent.

@@ -474,6 +474,11 @@ export type PluginRuntimeCore = {
     runHeartbeatOnce: (opts?: RunHeartbeatOnceOptions) => Promise<HeartbeatRunResult>;
     runCommandWithTimeout: typeof import("../../process/exec.js").runCommandWithTimeout;
     formatNativeDependencyHint: typeof import("./native-deps.js").formatNativeDependencyHint;
+    /**
+     * Zone for the dates and times agents see when config names none, such as the one
+     * the user's device reports. Cron schedules without a `tz` keep the host's zone.
+     */
+    setUserTimezone: typeof import("../../agents/date-time.js").setKnownUserTimezone;
   };
   media: {
     loadWebMedia: typeof import("../../media/web-media.js").loadWebMedia;
