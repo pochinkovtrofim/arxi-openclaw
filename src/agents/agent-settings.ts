@@ -108,6 +108,7 @@ export function applyAgentAutoCompactionGuard(params: {
   compactionMode?: AgentCompactionMode;
   silentOverflowProneProvider?: boolean;
   compactionForbidden?: boolean;
+  coldCache?: { minTokens: number; ttlMs: number };
 }): void {
   // Leave compaction with its selected owner so prompt-time runtime compaction
   // cannot rewrite the transcript before OpenClaw's provider call.
@@ -118,5 +119,8 @@ export function applyAgentAutoCompactionGuard(params: {
     params.compactionForbidden === true;
   if (disable) {
     params.settingsManager.setCompactionEnabled(false);
+  }
+  if (params.coldCache) {
+    params.settingsManager.applyOverrides({ compaction: { coldCache: params.coldCache } });
   }
 }

@@ -11,13 +11,12 @@ import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-bu
 import { resolveCliBackendConfig } from "../../agents/cli-backends.js";
 import { estimateMessagesTokens } from "../../agents/compaction.js";
 import { isBenignCompactionSkipResult } from "../../agents/embedded-agent-runner/compact-reasons.js";
+import { resolveColdCacheCompaction } from "../../agents/embedded-agent-runner/cold-cache-compaction.js";
 import type { AcceptedCompactionSuccessor } from "../../agents/embedded-agent-runner/compaction-successor.js";
-import { resolveCacheRetention } from "../../agents/embedded-agent-runner/prompt-cache-retention.js";
 import { runEmbeddedAgentEntry } from "../../agents/embedded-agent-runner/run-entry.js";
 import { createDeferredEmbeddedRunLifecycleManager } from "../../agents/embedded-agent-runner/run/deferred-lifecycle-owner.js";
 import { createToolResultPromptProjectionState } from "../../agents/embedded-agent-runner/session-prompt-state.js";
 import { findModelInCatalog } from "../../agents/model-catalog-lookup.js";
-import { resolveModelExtraParamSources } from "../../agents/model-extra-params.js";
 import { isCliRuntimeAliasForProvider } from "../../agents/model-runtime-aliases.js";
 import { isCliProvider } from "../../agents/model-selection.js";
 import { resolveContextConfigProviderForRuntime } from "../../agents/openai-routing.js";
@@ -210,43 +209,6 @@ function hasUsableProviderPromptUsage(
 
 // Leave room for large assistant outputs when checking near-threshold usage.
 const TRANSCRIPT_OUTPUT_READ_BUFFER_TOKENS = 8192;
-
-const DEFAULT_COLD_CACHE_COMPACTION_TOKENS = 150_000;
-// Anthropic prompt-cache lifetimes for the "short" (5m) and "long" (1h) retentions.
-const PROMPT_CACHE_TTL_MS = { short: 5 * 60_000, long: 60 * 60_000 } as const;
-
-/**
- * Once a session's prompt cache has expired, its next request rewrites the whole history
- * at the cache-write rate. Compacting first makes that rewrite the summary instead.
- */
-function resolveColdCacheCompaction(
-  { cfg, followupRun, defaultModel }: FollowupRuntimeParams & { defaultModel: string },
-  agentId: string,
-): { minTokens: number; ttlMs: number } | undefined {
-  const minTokens =
-    cfg.agents?.defaults?.compaction?.coldCacheTokens ?? DEFAULT_COLD_CACHE_COMPACTION_TOKENS;
-  if (minTokens <= 0) {
-    return undefined;
-  }
-  const { provider } = followupRun.run;
-  const modelId = followupRun.run.model ?? defaultModel;
-  const sources = resolveModelExtraParamSources({ config: cfg, provider, modelId, agentId });
-  const retention = resolveCacheRetention(
-    Object.assign(
-      {},
-      sources.defaultParams,
-      sources.modelParams,
-      sources.agentModelParams,
-      sources.agentParams,
-    ),
-    provider,
-    undefined,
-    modelId,
-  );
-  return retention === "short" || retention === "long"
-    ? { minTokens, ttlMs: PROMPT_CACHE_TTL_MS[retention] }
-    : undefined;
-}
 
 type TranscriptTokenEstimate = {
   promptTokens: number;
@@ -476,7 +438,12 @@ export async function runSessionCompactionIfNeeded(params: {
     freshPersistedTokens + promptTokenEstimate >= threshold - TRANSCRIPT_OUTPUT_READ_BUFFER_TOKENS;
   const maxActiveTranscriptBytes = resolveMaxActiveTranscriptBytes(params.cfg);
   const shouldCheckActiveTranscriptBytes = typeof maxActiveTranscriptBytes === "number";
-  const coldCache = resolveColdCacheCompaction(params, compactionAgentId);
+  const coldCache = resolveColdCacheCompaction({
+    cfg: params.cfg,
+    provider: params.followupRun.run.provider,
+    modelId: params.followupRun.run.model ?? params.defaultModel,
+    agentId: compactionAgentId,
+  });
   // Only a large session needs the transcript read that dates its latest model call.
   const coldCacheNeedsUsageRead =
     coldCache !== undefined &&

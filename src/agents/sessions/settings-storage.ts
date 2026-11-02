@@ -10,6 +10,7 @@ interface CompactionSettings {
   enabled?: boolean; // default: true
   reserveTokens?: number; // default: 16384
   keepRecentTokens?: number; // default: 20000
+  coldCache?: { minTokens: number; ttlMs: number }; // runtime override, off by default
 }
 
 interface BranchSummarySettings {

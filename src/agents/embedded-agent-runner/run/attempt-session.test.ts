@@ -938,6 +938,30 @@ describe("prepareEmbeddedAttemptAgentSession", () => {
     );
   });
 
+  it.each([
+    ["cron", { minTokens: 150_000, ttlMs: 60 * 60_000 }],
+    ["user", undefined],
+  ] as const)("a %s run hands cold-cache compaction %j to the guard", async (trigger, expected) => {
+    const fixture = createInput();
+    fixture.input.attempt = {
+      ...fixture.input.attempt,
+      trigger,
+      config: {
+        agents: {
+          defaults: {
+            models: { "anthropic/model-1": { params: { cacheRetention: "long" } } },
+          },
+        },
+      },
+    };
+
+    await prepareEmbeddedAttemptAgentSession(fixture.input);
+
+    expect(hoisted.applyAgentAutoCompactionGuard).toHaveBeenCalledWith(
+      expect.objectContaining({ coldCache: expected }),
+    );
+  });
+
   it("publishes session ownership before activation can fail", async () => {
     const fixture = createInput({ activationError: new Error("activation failed") });
 

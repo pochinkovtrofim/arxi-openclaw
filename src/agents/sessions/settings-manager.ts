@@ -363,6 +363,10 @@ export class SettingsManager {
     return this.settings.compaction?.keepRecentTokens ?? 20000;
   }
 
+  getCompactionColdCache(): { minTokens: number; ttlMs: number } | undefined {
+    return this.settings.compaction?.coldCache;
+  }
+
   getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
     return {
       enabled: this.getCompactionEnabled(),
