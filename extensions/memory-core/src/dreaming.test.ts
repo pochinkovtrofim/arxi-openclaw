@@ -284,11 +284,7 @@ async function triggerDreamingServiceStart(
   api: DreamingPluginApiTestDouble,
   ctx: { config: OpenClawConfig; workspaceDir?: string; getCron?: () => unknown },
 ): Promise<void> {
-  const context = {
-    ...ctx,
-    stateDir: ".",
-    logger: api.logger,
-  } as OpenClawPluginServiceContext;
+  const context = { ...ctx, stateDir: ".", logger: api.logger } as OpenClawPluginServiceContext;
   // Start leaves its reconcile in the background; these tests read its outcome.
   const background = collectBackgroundTasks(api.lifecycle);
   await getDreamingService(api).start({ ...context, scheduler: api.scheduler });
