@@ -19,7 +19,11 @@ import { resetSystemEventsForTest } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerShortTermPromotionDreaming } from "./dreaming.js";
 import { recordShortTermRecalls } from "./short-term-promotion.js";
-import { createMemoryCoreTestHarness, shortTermTestState } from "./test-helpers.js";
+import {
+  collectBackgroundTasks,
+  createMemoryCoreTestHarness,
+  shortTermTestState,
+} from "./test-helpers.js";
 
 // `runDreamingSweepPhases` is the only binding the dreaming trigger imports from this module.
 const runDreamingSweepPhasesMock = vi.hoisted(() =>
@@ -286,12 +290,7 @@ async function triggerDreamingServiceStart(
     logger: api.logger,
   } as OpenClawPluginServiceContext;
   // Start leaves its reconcile in the background; these tests read its outcome.
-  const background: Promise<unknown>[] = [];
-  api.lifecycle.runInBackgroundContext = (run) => {
-    const task = run();
-    background.push(task as Promise<unknown>);
-    return task;
-  };
+  const background = collectBackgroundTasks(api.lifecycle);
   await getDreamingService(api).start({ ...context, scheduler: api.scheduler });
   await Promise.allSettled(background);
 }
@@ -1098,4 +1097,3 @@ describe("dreaming service reconciliation", () => {
     await expect(fs.access(path.join(workspaceDir, "DREAMS.md"))).rejects.toThrow();
   });
 });
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
