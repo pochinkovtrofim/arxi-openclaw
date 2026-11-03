@@ -285,7 +285,17 @@ async function triggerDreamingServiceStart(
     stateDir: ".",
     logger: api.logger,
   } as OpenClawPluginServiceContext;
+  // Start leaves its reconcile in the background; these tests read its outcome.
+  const background = new Set<Promise<unknown>>();
+  const runInBackgroundContext = api.lifecycle.runInBackgroundContext;
+  api.lifecycle.runInBackgroundContext = (run) => {
+    const task = run();
+    background.add(task);
+    return task;
+  };
   await getDreamingService(api).start({ ...context, scheduler: api.scheduler });
+  api.lifecycle.runInBackgroundContext = runInBackgroundContext;
+  await Promise.allSettled(background);
 }
 
 async function triggerDreamingServiceStop(api: DreamingPluginApiTestDouble): Promise<void> {
@@ -308,6 +318,40 @@ function registerShortTermPromotionDreamingForTest(api: DreamingPluginApiTestDou
 }
 
 describe("dreaming service reconciliation", () => {
+  it("does not hold service start for a slow startup reconcile", async () => {
+    let releaseList: (jobs: CronJobLike[]) => void = () => undefined;
+    const list = new Promise<CronJobLike[]>((resolve) => {
+      releaseList = resolve;
+    });
+    let listed = false;
+    const cron: CronParam = {
+      async list() {
+        listed = true;
+        return list;
+      },
+      async add() {
+        return {};
+      },
+      async update() {
+        return {};
+      },
+      async remove() {
+        return { removed: false };
+      },
+    };
+    const { api } = createDreamingTestContext();
+    registerShortTermPromotionDreamingForTest(api);
+    await getDreamingService(api).start({
+      config: api.config,
+      stateDir: ".",
+      logger: api.logger,
+      scheduler: api.scheduler,
+      getCron: () => cron,
+    } as OpenClawPluginServiceContext);
+    await vi.waitFor(() => expect(listed).toBe(true));
+    releaseList([]);
+  });
+
   it("drains pending reconciliation on service stop without arming runtime recovery", async () => {
     vi.useFakeTimers();
     let rejectStartupList: (reason?: unknown) => void = () => undefined;
