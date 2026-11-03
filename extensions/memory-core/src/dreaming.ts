@@ -536,7 +536,9 @@ export function registerShortTermPromotionDreaming(api: OpenClawPluginApi): void
       serviceStartedAtMs = Date.now();
       disposed = false;
       resolveServiceCron = () => resolveCronServiceFromGatewayContext(ctx);
-      await trackDreamingTask(async () => {
+      // Gateway readiness waits for every service start, and this reconcile first
+      // loads the whole cron store. Maintenance, not activation; stop still joins it.
+      void trackDreamingTask(async () => {
         try {
           await reconcileManagedDreamingCron({
             reason: "startup",
@@ -549,6 +551,10 @@ export function registerShortTermPromotionDreaming(api: OpenClawPluginApi): void
         } finally {
           startRuntimeCronReconcileTimer();
         }
+      }).catch((err: unknown) => {
+        api.logger.error(
+          `memory-core: dreaming startup reconciliation failed: ${formatErrorMessage(err)}`,
+        );
       });
     },
     async stop() {

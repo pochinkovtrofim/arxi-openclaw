@@ -212,3 +212,16 @@ export function createMemoryCoreTestHarness() {
     createTempWorkspace,
   };
 }
+
+/** Collects what a plugin leaves running in the background, for a test to wait on. */
+export function collectBackgroundTasks(lifecycle: {
+  runInBackgroundContext?: <T>(run: () => Promise<T>) => Promise<T>;
+}): Promise<unknown>[] {
+  const tasks: Promise<unknown>[] = [];
+  lifecycle.runInBackgroundContext = (run) => {
+    const task = run();
+    tasks.push(task);
+    return task;
+  };
+  return tasks;
+}

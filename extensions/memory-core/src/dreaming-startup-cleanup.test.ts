@@ -103,8 +103,9 @@ function createGateway(
   const startService = async () => {
     await service.start(serviceContext);
   };
-  const start = async () => {
+  const start = async (beforeGatewayStart?: Promise<unknown>) => {
     await startService();
+    await beforeGatewayStart;
     const hook = onMock.mock.calls.find(([name]) => name === "gateway_start")?.[1] as
       | GatewayHook
       | undefined;
@@ -260,6 +261,24 @@ describe("dreaming gateway restart cleanup", () => {
     expect(hasSession(activeWithoutTranscript)).toBe(true);
   });
 
+  it("does not hold service start for a cron reconcile that has not finished", async () => {
+    const gateway = createGateway();
+    let finishList: (jobs: never[]) => void = () => undefined;
+    gateway.cron.list.mockImplementationOnce(
+      () =>
+        new Promise<never[]>((resolve) => {
+          finishList = resolve;
+        }),
+    );
+
+    await gateway.startService();
+
+    await vi.waitFor(() => expect(gateway.cron.list).toHaveBeenCalled());
+    expect(gateway.cron.add).not.toHaveBeenCalled();
+    finishList([]);
+    await vi.waitFor(() => expect(gateway.cron.add).toHaveBeenCalled());
+  });
+
   it("does not reclaim post-startup runs when cron startup reconciliation stalls", async () => {
     vi.useFakeTimers({ now: new Date("2026-08-01T12:00:00.000Z") });
     const staleAtStartup = await seedSession({
@@ -269,6 +288,10 @@ describe("dreaming gateway restart cleanup", () => {
     const postStartupSessions: Array<{ agentId: string; sessionKey: string }> = [];
     let postStartupUpdatedAt = 0;
     const gateway = createGateway();
+    let reconciled: () => void = () => undefined;
+    const reconcileSeeded = new Promise<void>((resolve) => {
+      reconciled = resolve;
+    });
     gateway.cron.list.mockImplementationOnce(async () => {
       await vi.advanceTimersByTimeAsync(1);
       postStartupUpdatedAt = Date.now();
@@ -284,10 +307,11 @@ describe("dreaming gateway restart cleanup", () => {
         }),
       );
       vi.setSystemTime(postStartupUpdatedAt + ORPHAN_AGE_MS + 1);
+      reconciled();
       return [];
     });
 
-    await gateway.start();
+    await gateway.start(reconcileSeeded);
 
     expect(Date.now() - postStartupUpdatedAt).toBeGreaterThan(ORPHAN_AGE_MS);
     expect(hasSession(staleAtStartup)).toBe(false);

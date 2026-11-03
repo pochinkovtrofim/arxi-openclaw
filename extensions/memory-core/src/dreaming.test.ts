@@ -19,7 +19,11 @@ import { resetSystemEventsForTest } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerShortTermPromotionDreaming } from "./dreaming.js";
 import { recordShortTermRecalls } from "./short-term-promotion.js";
-import { createMemoryCoreTestHarness, shortTermTestState } from "./test-helpers.js";
+import {
+  collectBackgroundTasks,
+  createMemoryCoreTestHarness,
+  shortTermTestState,
+} from "./test-helpers.js";
 
 // `runDreamingSweepPhases` is the only binding the dreaming trigger imports from this module.
 const runDreamingSweepPhasesMock = vi.hoisted(() =>
@@ -280,12 +284,11 @@ async function triggerDreamingServiceStart(
   api: DreamingPluginApiTestDouble,
   ctx: { config: OpenClawConfig; workspaceDir?: string; getCron?: () => unknown },
 ): Promise<void> {
-  const context = {
-    ...ctx,
-    stateDir: ".",
-    logger: api.logger,
-  } as OpenClawPluginServiceContext;
+  const context = { ...ctx, stateDir: ".", logger: api.logger } as OpenClawPluginServiceContext;
+  // Start leaves its reconcile in the background; these tests read its outcome.
+  const background = collectBackgroundTasks(api.lifecycle);
   await getDreamingService(api).start({ ...context, scheduler: api.scheduler });
+  await Promise.allSettled(background);
 }
 
 async function triggerDreamingServiceStop(api: DreamingPluginApiTestDouble): Promise<void> {
