@@ -260,6 +260,24 @@ describe("dreaming gateway restart cleanup", () => {
     expect(hasSession(activeWithoutTranscript)).toBe(true);
   });
 
+  it("does not hold service start for a cron reconcile that has not finished", async () => {
+    const gateway = createGateway();
+    let finishList: (jobs: never[]) => void = () => undefined;
+    gateway.cron.list.mockImplementationOnce(
+      () =>
+        new Promise<never[]>((resolve) => {
+          finishList = resolve;
+        }),
+    );
+
+    await gateway.startService();
+
+    await vi.waitFor(() => expect(gateway.cron.list).toHaveBeenCalled());
+    expect(gateway.cron.add).not.toHaveBeenCalled();
+    finishList([]);
+    await vi.waitFor(() => expect(gateway.cron.add).toHaveBeenCalled());
+  });
+
   it("does not reclaim post-startup runs when cron startup reconciliation stalls", async () => {
     vi.useFakeTimers({ now: new Date("2026-08-01T12:00:00.000Z") });
     const staleAtStartup = await seedSession({
