@@ -103,8 +103,9 @@ function createGateway(
   const startService = async () => {
     await service.start(serviceContext);
   };
-  const start = async () => {
+  const start = async (beforeGatewayStart?: Promise<unknown>) => {
     await startService();
+    await beforeGatewayStart;
     const hook = onMock.mock.calls.find(([name]) => name === "gateway_start")?.[1] as
       | GatewayHook
       | undefined;
@@ -287,6 +288,10 @@ describe("dreaming gateway restart cleanup", () => {
     const postStartupSessions: Array<{ agentId: string; sessionKey: string }> = [];
     let postStartupUpdatedAt = 0;
     const gateway = createGateway();
+    let reconciled: () => void = () => undefined;
+    const reconcileSeeded = new Promise<void>((resolve) => {
+      reconciled = resolve;
+    });
     gateway.cron.list.mockImplementationOnce(async () => {
       await vi.advanceTimersByTimeAsync(1);
       postStartupUpdatedAt = Date.now();
@@ -302,10 +307,11 @@ describe("dreaming gateway restart cleanup", () => {
         }),
       );
       vi.setSystemTime(postStartupUpdatedAt + ORPHAN_AGE_MS + 1);
+      reconciled();
       return [];
     });
 
-    await gateway.start();
+    await gateway.start(reconcileSeeded);
 
     expect(Date.now() - postStartupUpdatedAt).toBeGreaterThan(ORPHAN_AGE_MS);
     expect(hasSession(staleAtStartup)).toBe(false);
