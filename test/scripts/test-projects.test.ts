@@ -3644,12 +3644,12 @@ describe("scripts/test-projects full-suite sharding", () => {
     [
       "null whole-config selection",
       fastTooling,
-      { config: "test/vitest/vitest.gateway.config.ts", includePatterns: null },
+      { config: "test/vitest/vitest.infra.config.ts", includePatterns: null },
     ],
     [
       "empty whole-config selection",
       fastTooling,
-      { config: "test/vitest/vitest.gateway.config.ts", includePatterns: [] },
+      { config: "test/vitest/vitest.infra.config.ts", includePatterns: [] },
     ],
     ["expensive selected files", runtime, slowTooling],
     [
@@ -3671,6 +3671,23 @@ describe("scripts/test-projects full-suite sharding", () => {
     expect(orderFullSuiteSpecsForParallelRun([fastTooling, slowTooling, runtime], timings)).toEqual(
       [slowTooling, fastTooling, runtime],
     );
+  });
+
+  it("runs exclusive plans after the others, so no lane waits idle for one", () => {
+    const gateway = {
+      config: "test/vitest/vitest.gateway.config.ts",
+      includePatterns: ["src/gateway/server-close.test.ts"],
+    };
+    const timings = new Map([
+      [resolveShardTimingKey(gateway), 500_000],
+      [resolveShardTimingKey(slowTooling), 153_000],
+      [resolveShardTimingKey(runtime), 35_000],
+    ]);
+    expect(orderFullSuiteSpecsForParallelRun([gateway, slowTooling, runtime], timings)).toEqual([
+      slowTooling,
+      runtime,
+      gateway,
+    ]);
   });
 
   it("keeps CI=1 full-suite runs on aggregate shard configs", () => {

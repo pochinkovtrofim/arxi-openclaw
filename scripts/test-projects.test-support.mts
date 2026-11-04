@@ -106,6 +106,7 @@ import {
   splitTestTargetChunks as splitTargetChunks,
 } from "./lib/gateway-server-test-plan.mts";
 import { GIT_LS_FILES_MAX_BUFFER_BYTES } from "./lib/list-test-files.mts";
+import { isExclusiveCiTestConfig } from "./lib/local-check-runtime.mts";
 import {
   readTestSelectorExportNames,
   readTestSelectorImportNames,
@@ -479,7 +480,13 @@ export function orderFullSuiteSpecsForParallelRun<T extends VitestShardTimingSpe
     }
     return a.config.localeCompare(b.config);
   });
-  return interleaveSlowAndFastSpecs(sortedSpecs);
+  // Every lane drains before an exclusive plan, so one in the middle leaves lanes idle.
+  return [
+    ...interleaveSlowAndFastSpecs(
+      sortedSpecs.filter((spec) => !isExclusiveCiTestConfig(spec.config)),
+    ),
+    ...sortedSpecs.filter((spec) => isExclusiveCiTestConfig(spec.config)),
+  ];
 }
 const PROCESS_VITEST_CONFIG = "test/vitest/vitest.process.config.ts";
 const RUNTIME_CONFIG_VITEST_CONFIG = "test/vitest/vitest.runtime-config.config.ts";

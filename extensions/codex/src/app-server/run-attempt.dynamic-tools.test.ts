@@ -54,6 +54,8 @@ describe("runCodexAppServerAttempt dynamic tools", () => {
   it("retains native scheduled input provenance through tool preparation and finalization", async () => {
     const harness = createStartedThreadHarness();
     const params = createTestParams();
+    // The production host below loads on this first call; a busy machine spends the default 5 s there.
+    params.timeoutMs = 60_000;
     params.trigger = "cron";
     params.sessionKey = "agent:main:resource-steward";
     params.inputProvenance = {
