@@ -25,6 +25,8 @@ export function createContext(
   const context = {
     trackExecution: trackAsyncWork,
     dedupe: new Map(),
+    // A live Gateway always has it; replaying a cached agent turn reads it.
+    chatAbortControllers: new Map(),
     getRuntimeConfig,
     logGateway: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
   } as unknown as GatewayRequestContext;
