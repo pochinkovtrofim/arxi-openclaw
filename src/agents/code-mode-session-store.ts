@@ -202,8 +202,36 @@ export function createCodeModeSessionStoreAccess(ctx: ToolSearchToolContext, sig
     active.projection ??= (async () => {
       const manager = active.manager;
       if (target) {
-        const { SessionManager } = await import("./sessions/session-manager.js");
+        const [
+          { isIncognitoSessionKey },
+          { captureSessionManagerIncognitoBinding },
+          { readTranscriptBranchCustomEntriesSync },
+          { SessionManager },
+        ] = await Promise.all([
+          import("../routing/session-key.js"),
+          import("./sessions/session-manager-incognito-scope.js"),
+          import("../config/sessions/session-accessor.sqlite-read.js"),
+          import("./sessions/session-manager.js"),
+        ]);
         assertOwner();
+        // Hydrating a long transcript costs hundreds of MiB of heap; read only this branch's store rows.
+        if (
+          !isIncognitoSessionKey(target.sessionKey) &&
+          !captureSessionManagerIncognitoBinding(target)
+        ) {
+          return active.withOwnedTranscriptWrite(() => {
+            assertOwner();
+            const leaf = manager.getLeafId();
+            const entries =
+              leaf === null ? [] : readTranscriptBranchCustomEntriesSync(target, leaf, CUSTOM_TYPE);
+            if (!entries) {
+              throw new Error(
+                "Code Mode session store could not match the active transcript branch; retry in a new reply.",
+              );
+            }
+            return replay(entries as SessionEntry[]);
+          });
+        }
         const replaySignal = ctx.abortSignal
           ? AbortSignal.any([ctx.abortSignal, active.controller.signal])
           : active.controller.signal;

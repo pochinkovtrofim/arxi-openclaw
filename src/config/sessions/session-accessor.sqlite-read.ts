@@ -63,6 +63,7 @@ import {
   transcriptEventNavigationSql,
   transcriptEventResetNavigationSql,
 } from "./transcript-payload.js";
+import { scanSessionTranscriptTree, selectSessionTranscriptTreePathNodes } from "./transcript-tree.js";
 
 export type SqliteTranscriptSnapshotRow = {
   eventJson: string;
@@ -383,6 +384,65 @@ export function loadTranscriptEventsFromDatabase(
       return options.projectEvent ? options.projectEvent(event) : event;
     });
   });
+}
+
+/**
+ * Reads one custom entry type on the branch ending at `leafId`, or undefined when
+ * the leaf is absent. Navigation rows place the branch and only the selected rows
+ * decode payloads, so the cost follows those entries rather than the transcript.
+ */
+export function readTranscriptBranchCustomEntriesSync(
+  scope: SessionTranscriptReadScope,
+  leafId: string,
+  customType: string,
+): TranscriptEvent[] | undefined {
+  const resolved = resolveSqliteTranscriptReadScope(scope);
+  const database = openOpenClawAgentDatabase(toDatabaseOptions(resolved));
+  return runSqliteDeferredTransactionSync(
+    database.db,
+    () =>
+      readHotSessionTranscriptSnapshot(database, resolved.sessionId, "events", () => {
+        const fence = resolveSqliteSessionTranscriptReadFence({ database, ...resolved });
+        const events = () =>
+          prepareTranscriptEventReadQuery(database, resolved.sessionId, {
+            beforeEventSeq: fence?.beforeRawSeq,
+          });
+        const rows = Array.from(
+          iterateSqliteQuerySync(
+            database.db,
+            events()
+              .select(["seq", transcriptEventResetNavigationSql().as("event_json")])
+              .orderBy("seq", "asc"),
+          ),
+          (row) => ({ seq: sqliteNumber(row.seq), entry: JSON.parse(row.event_json) as unknown }),
+        );
+        const tree = scanSessionTranscriptTree(rows.map((row) => row.entry));
+        if (!tree.byId.has(leafId)) {
+          return undefined;
+        }
+        const seqs = selectSessionTranscriptTreePathNodes(tree, leafId).flatMap((node) => {
+          const entry = asOptionalRecord(node.entry);
+          return entry?.type === "custom" && entry.customType === customType
+            ? [rows[node.index]!.seq]
+            : [];
+        });
+        const selected: TranscriptEvent[] = [];
+        // Stay well under SQLite's bound-parameter limit however many entries match.
+        for (let start = 0; start < seqs.length; start += 500) {
+          for (const row of iterateSqliteQuerySync(
+            database.db,
+            events()
+              .select(transcriptEventJsonSql(database.db).as("event_json"))
+              .where("seq", "in", seqs.slice(start, start + 500))
+              .orderBy("seq", "asc"),
+          )) {
+            selected.push(JSON.parse(row.event_json) as TranscriptEvent);
+          }
+        }
+        return selected;
+      }),
+    { databaseLabel: database.path, operationLabel: "session transcript branch custom entries" },
+  );
 }
 
 export function readTranscriptSnapshot(
