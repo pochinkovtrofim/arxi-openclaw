@@ -5,6 +5,7 @@ import {
   describe0AfterEach0,
   getAgentTestMocks,
   invokeAgent,
+  makeContext,
   mockMainSessionEntry,
   mockSuccessfulAgentCommand,
 } from "./agent.test-harness.js";
@@ -14,7 +15,7 @@ const mocks = getAgentTestMocks();
 describe("gateway agent redelivery of a restart-recovered turn", () => {
   afterEach(describe0AfterEach0);
 
-  const redeliver = async (runId: string) =>
+  const redeliver = async (runId: string, context = makeContext()) =>
     await invokeAgent(
       {
         message: "what is the weather this weekend?",
@@ -22,7 +23,7 @@ describe("gateway agent redelivery of a restart-recovered turn", () => {
         sessionKey: "agent:main:main",
         idempotencyKey: runId,
       },
-      { client: backendGatewayClient() },
+      { client: backendGatewayClient(), context },
     );
 
   it.each([
@@ -42,9 +43,11 @@ describe("gateway agent redelivery of a restart-recovered turn", () => {
     mockSuccessfulAgentCommand();
     mocks.agentCommand.mockClear();
 
-    // A second redelivery, after the first answer was lost, gets the same answer.
+    // A second redelivery to the same Gateway, after the first answer was lost,
+    // gets the same answer.
+    const context = makeContext();
     for (let attempt = 0; attempt < 2; attempt++) {
-      const respond = await redeliver("external:interrupted");
+      const respond = await redeliver("external:interrupted", context);
       expect(respond).toHaveBeenCalledWith(
         true,
         { runId: "external:interrupted", status: "ok" },
