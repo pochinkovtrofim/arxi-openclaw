@@ -286,10 +286,10 @@ export function createAgentAdmissionController(params: {
     hasOutcome: () =>
       Boolean(
         postAdmissionAbort ||
-          postAdmissionTimeout ||
-          postAdmissionSuperseded ||
-          postAdmissionRecovered ||
-          lifecycleRotated,
+        postAdmissionTimeout ||
+        postAdmissionSuperseded ||
+        postAdmissionRecovered ||
+        lifecycleRotated,
       ),
     getAdmission: () => admission,
     getAdmittedRunAbort: () => admittedRunAbort,
