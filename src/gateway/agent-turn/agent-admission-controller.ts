@@ -3,6 +3,10 @@ import {
   AGENT_RUN_RESTART_ABORT_STOP_REASON,
   isAgentRunRestartAbortReason,
 } from "../../agents/run-termination.js";
+import {
+  hasRestartRecoveryTerminalRun,
+  isRetryableUnadoptedChatClaim,
+} from "../../config/sessions/restart-recovery-state.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import {
   beginSessionWorkAdmission,
@@ -34,6 +38,7 @@ export function createAgentAdmissionController(params: {
   preAcceptedReservedSessionKey?: string;
   expectedSession?: ExpectedExistingSessionConstraint;
   admissionOwner?: symbol;
+  restartRecoveryResumeRun?: boolean;
   context: AgentTurnContext;
   io: AgentTurnIo;
   dedupeLifecycle: AgentDedupeLifecycle;
@@ -51,6 +56,7 @@ export function createAgentAdmissionController(params: {
   let postAdmissionAbort: ReturnType<typeof readGatewayDedupeEntry>;
   let postAdmissionTimeout: ReturnType<typeof buildAbortedAgentPayload> | undefined;
   let postAdmissionSuperseded = false;
+  let postAdmissionRecovered = false;
   let lifecycleRotated = false;
 
   const admissionAgentId = () => {
@@ -151,6 +157,20 @@ export function createAgentAdmissionController(params: {
     if (archivedError) {
       throw new Error(archivedError);
     }
+    // A redelivery of a turn that restart recovery took over is answered by that
+    // recovery, as a chat.send retry is: a second run would answer it twice.
+    if (
+      !params.restartRecoveryResumeRun &&
+      ((latestEntry?.restartRecoveryDeliveryRunId &&
+        latestEntry.restartRecoveryDeliverySourceRunId === params.runId &&
+        !isRetryableUnadoptedChatClaim(latestEntry, params.runId)) ||
+        hasRestartRecoveryTerminalRun(latestEntry, params.runId))
+    ) {
+      if (commitOutcome) {
+        postAdmissionRecovered = true;
+      }
+      return undefined;
+    }
     if (
       commitOutcome &&
       latestEntry?.sessionId &&
@@ -227,6 +247,15 @@ export function createAgentAdmissionController(params: {
   };
 
   const respondToOutcome = () => {
+    if (postAdmissionRecovered) {
+      admission?.release();
+      params.dedupeLifecycle.markAccepted(true);
+      params.io.emitAcceptance([true, { runId: params.runId, status: "ok" as const }, undefined], {
+        cached: true,
+        runId: params.runId,
+      });
+      return true;
+    }
     if (postAdmissionAbort || postAdmissionTimeout || postAdmissionSuperseded) {
       admission?.release();
       params.dedupeLifecycle.markAccepted(true);
@@ -256,7 +285,11 @@ export function createAgentAdmissionController(params: {
     respondToOutcome,
     hasOutcome: () =>
       Boolean(
-        postAdmissionAbort || postAdmissionTimeout || postAdmissionSuperseded || lifecycleRotated,
+        postAdmissionAbort ||
+          postAdmissionTimeout ||
+          postAdmissionSuperseded ||
+          postAdmissionRecovered ||
+          lifecycleRotated,
       ),
     getAdmission: () => admission,
     getAdmittedRunAbort: () => admittedRunAbort,

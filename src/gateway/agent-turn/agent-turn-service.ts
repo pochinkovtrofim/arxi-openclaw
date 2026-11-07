@@ -211,7 +211,10 @@ export function createAgentTurnService(
         preAcceptedReservedSessionKey,
         expectedSession,
         ...(isRestartRecoveryResumeRun
-          ? { admissionOwner: MAIN_SESSION_RECOVERY_WORK_ADMISSION_OWNER }
+          ? {
+              admissionOwner: MAIN_SESSION_RECOVERY_WORK_ADMISSION_OWNER,
+              restartRecoveryResumeRun: true,
+            }
           : {}),
         context,
         io,
