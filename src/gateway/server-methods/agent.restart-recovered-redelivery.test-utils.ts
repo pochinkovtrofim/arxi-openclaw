@@ -42,14 +42,16 @@ describe("gateway agent redelivery of a restart-recovered turn", () => {
     mockSuccessfulAgentCommand();
     mocks.agentCommand.mockClear();
 
-    const respond = await redeliver("external:interrupted");
-
-    expect(respond).toHaveBeenCalledWith(
-      true,
-      { runId: "external:interrupted", status: "ok" },
-      undefined,
-      expect.objectContaining({ runId: "external:interrupted" }),
-    );
+    // A second redelivery, after the first answer was lost, gets the same answer.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const respond = await redeliver("external:interrupted");
+      expect(respond).toHaveBeenCalledWith(
+        true,
+        { runId: "external:interrupted", status: "ok" },
+        undefined,
+        expect.objectContaining({ runId: "external:interrupted" }),
+      );
+    }
     expect(mocks.agentCommand).not.toHaveBeenCalled();
   });
 

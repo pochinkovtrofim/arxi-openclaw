@@ -248,8 +248,9 @@ export function createAgentAdmissionController(params: {
 
   const respondToOutcome = () => {
     if (postAdmissionRecovered) {
+      // The reservation is left unaccepted so cleanup drops it: no run owns this
+      // key, and the next redelivery checks the session entry again.
       admission?.release();
-      params.dedupeLifecycle.markAccepted(true);
       params.io.emitAcceptance([true, { runId: params.runId, status: "ok" as const }, undefined], {
         cached: true,
         runId: params.runId,
