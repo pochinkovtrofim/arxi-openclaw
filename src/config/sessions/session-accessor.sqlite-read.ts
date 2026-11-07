@@ -388,7 +388,7 @@ export function loadTranscriptEventsFromDatabase(
 
 /**
  * Reads one custom entry type on the branch ending at `leafId`, or undefined when
- * the leaf is absent. Navigation rows place the branch and only the selected rows
+ * no valid branch ends there. Navigation rows place the branch and only the selected rows
  * decode payloads, so the cost follows those entries rather than the transcript.
  */
 export function readTranscriptBranchCustomEntriesSync(
@@ -416,11 +416,14 @@ export function readTranscriptBranchCustomEntriesSync(
           ),
           (row) => ({ seq: sqliteNumber(row.seq), entry: JSON.parse(row.event_json) as unknown }),
         );
-        const tree = scanSessionTranscriptTree(rows.map((row) => row.entry));
-        if (!tree.byId.has(leafId)) {
+        const path = selectSessionTranscriptTreePathNodes(
+          scanSessionTranscriptTree(rows.map((row) => row.entry)),
+          leafId,
+        );
+        if (path.at(-1)?.id !== leafId) {
           return undefined;
         }
-        const seqs = selectSessionTranscriptTreePathNodes(tree, leafId).flatMap((node) => {
+        const seqs = path.flatMap((node) => {
           const entry = asOptionalRecord(node.entry);
           return entry?.type === "custom" && entry.customType === customType
             ? [rows[node.index]!.seq]
