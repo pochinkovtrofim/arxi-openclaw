@@ -23,6 +23,7 @@ import type {
 } from "./subagent-registry-lifecycle.js";
 import { subagentRuns } from "./subagent-registry-memory.js";
 import { mutateSubagentRuns } from "./subagent-registry-persistence.js";
+import { createRecoveryHoldLimit } from "./subagent-registry-recovery-hold.js";
 import { createInterruptedRecoveryCoordinator } from "./subagent-registry-restart-recovery-coordinator.js";
 import { isRestoredQueuedFailureSettlementClaimed } from "./subagent-registry-restore.js";
 import {
@@ -124,8 +125,11 @@ export function createSubagentRegistrySweeper(params: {
     }
   }
 
+  const recoveryHold = createRecoveryHoldLimit({ runs, warn: params.warn });
+
   function stop() {
     recovery.reset();
+    recoveryHold.reset();
     intervalStarted = false;
     clearTimeout(scheduled?.timer);
     scheduled = undefined;
@@ -345,7 +349,7 @@ export function createSubagentRegistrySweeper(params: {
           });
           continue;
         }
-        if (await recovery.recover(runId, entry)) {
+        if ((await recovery.recover(runId, entry)) && !recoveryHold.expired(runId, entry, now)) {
           continue;
         }
         if (typeof entry.execution.endedAt !== "number") {

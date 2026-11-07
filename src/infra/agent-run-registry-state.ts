@@ -37,6 +37,20 @@ export function listAgentRunsForSession(params: {
   return runs.toSorted((a, b) => a.runId.localeCompare(b.runId));
 }
 
+/** Reports a run of the current lifecycle in a session, whatever its session id. */
+export function hasAgentRunForSessionKey(sessionKey: string): boolean {
+  const state = getAgentRunRegistryState();
+  for (const context of state.contexts.values()) {
+    if (
+      context.sessionKey === sessionKey &&
+      context.lifecycleGeneration === state.lifecycleGeneration
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function getAgentRunContextOwnerStatus(
   runId: string,
   claimId: string,
