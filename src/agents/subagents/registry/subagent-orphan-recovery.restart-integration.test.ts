@@ -904,9 +904,9 @@ describe("subagent orphan recovery — faithful restart path", () => {
 
     const restored = subagentRuns.get(runId);
     expect(restored).toBeDefined();
-    expect(
-      dispatchAgent.mock.calls.length > 0 || restored?.execution.status !== "running",
-    ).toBe(true);
+    expect(dispatchAgent.mock.calls.length > 0 || restored?.execution.status !== "running").toBe(
+      true,
+    );
   });
 
   it("preserves a newer restart marker when cold-restoring a retired accepted receipt", async () => {
