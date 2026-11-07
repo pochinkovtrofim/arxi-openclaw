@@ -28,7 +28,13 @@ const tempDirs = useAutoCleanupTempDirTracker((cleanup) =>
 
 function cell(manager: SessionManager) {
   const catalogRef: ToolSearchCatalogRef = {
-    current: { entries: [], counterScope: "store-test", searchCount: 0, describeCount: 0, callCount: 0 },
+    current: {
+      entries: [],
+      counterScope: "store-test",
+      searchCount: 0,
+      describeCount: 0,
+      callCount: 0,
+    },
   };
   owners.push(catalogRef);
   bindCodeModeSessionStore(catalogRef, manager);

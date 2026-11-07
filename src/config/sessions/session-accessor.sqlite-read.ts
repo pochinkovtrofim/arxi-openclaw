@@ -63,7 +63,10 @@ import {
   transcriptEventNavigationSql,
   transcriptEventResetNavigationSql,
 } from "./transcript-payload.js";
-import { scanSessionTranscriptTree, selectSessionTranscriptTreePathNodes } from "./transcript-tree.js";
+import {
+  scanSessionTranscriptTree,
+  selectSessionTranscriptTreePathNodes,
+} from "./transcript-tree.js";
 
 export type SqliteTranscriptSnapshotRow = {
   eventJson: string;
