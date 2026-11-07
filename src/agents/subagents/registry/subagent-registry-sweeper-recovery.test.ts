@@ -599,6 +599,41 @@ describe("subagent registry recovery scheduling", () => {
     expect(finalizeInterruptedSubagentRun).not.toHaveBeenCalled();
   });
 
+  it("settles a dead lifecycle's run that restart recovery keeps holding", async () => {
+    // 2026-11-06: hard-killed swarm collectors stayed running through two
+    // fresh Gateways for 70 minutes while their requester waited on them.
+    recoverRow.mockResolvedValue({ status: "deferred" });
+    await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      const { entry, completeSubagentRunWithRecovery, sweeper, warn } = createHarness({});
+      entry.execution = {
+        status: "running",
+        startedAt: Date.now() - 55_000,
+        lifecycleGeneration: getAgentEventLifecycleGeneration(),
+      };
+      rotateAgentEventLifecycleGeneration();
+      await sweeper.sweepOnce();
+      await vi.advanceTimersByTimeAsync(9 * 60_000);
+      await sweeper.sweepOnce();
+      expect(completeSubagentRunWithRecovery).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(2 * 60_000);
+      await sweeper.sweepOnce();
+      // The settlement reads the child session after the sweep that expired it.
+      await vi.waitFor(() =>
+        expect(completeSubagentRunWithRecovery).toHaveBeenCalledWith(
+          expect.objectContaining({
+            runId: entry.runId,
+            outcome: expect.objectContaining({ status: "error" }),
+          }),
+          "sweeper-lost-context",
+        ),
+      );
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("held a dead lifecycle's subagent run too long"),
+        expect.objectContaining({ runId: entry.runId }),
+      );
+    });
+  });
+
   it.each(["session", "registry", "generation"] as const)(
     "rechecks a changed %s without waiting for the row's backoff",
     async (change) => {
