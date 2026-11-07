@@ -2,7 +2,10 @@ import type { AgentWaitParams } from "../../../../packages/gateway-protocol/src/
 import { getRuntimeConfig } from "../../../config/config.js";
 import type { callGateway } from "../../../gateway/call.js";
 import type { GatewayContextResolver } from "../../../gateway/server-methods/types.js";
-import { onAgentEvent } from "../../../infra/agent-events.js";
+import {
+  onAgentEvent,
+  registerAgentEventLifecycleRotationHandler,
+} from "../../../infra/agent-events.js";
 import { registerSystemEventStoreOwner } from "../../../infra/system-event-ownership.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import {
@@ -448,6 +451,12 @@ const subagentRestorer = createSubagentRegistryRestorer({
   completeCollectorLaunchCleanup: (runId) => publicApi.completeCollectorLaunchCleanup(runId),
   warn,
 });
+// A Gateway restarted in place keeps this module, but not the state its first
+// start restored: a warm Owner wake first starts on a golden's empty store. The
+// next start restores and recovers again, as a fresh process would.
+registerAgentEventLifecycleRotationHandler("subagent-registry-restore", () =>
+  subagentRestorer.reset(),
+);
 
 function retireSupersededSubagentRun(
   runId: string,
