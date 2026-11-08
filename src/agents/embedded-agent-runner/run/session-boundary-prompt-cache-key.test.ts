@@ -29,6 +29,45 @@ describe("resolveSessionBoundaryPromptCacheKey", () => {
     ).toBe("caller-key");
   });
 
+  it("shares one ChatGPT subscription key across an agent's sessions and boundaries", () => {
+    const resolve = (
+      sessionId: string,
+      boundaryCount: number,
+      agentId = "main",
+      modelId = "gpt-6.1",
+    ) =>
+      resolveSessionBoundaryPromptCacheKey({
+        api: "openai-chatgpt-responses",
+        boundaryCount,
+        sessionId,
+        agentId,
+        modelId,
+      });
+
+    const key = resolve("steward-run", 0);
+    expect(key).toMatch(/^openclaw-agent-[0-9a-f]{32}$/);
+    expect(resolve("free-will-run", 3)).toBe(key);
+    expect(resolve("steward-run", 0, "other")).not.toBe(key);
+    expect(resolve("steward-run", 0, "main", "gpt-6.1-mini")).not.toBe(key);
+    expect(
+      resolveSessionBoundaryPromptCacheKey({
+        api: "openai-chatgpt-responses",
+        boundaryCount: 0,
+        promptCacheKey: "caller-key",
+        sessionId: "steward-run",
+        agentId: "main",
+      }),
+    ).toBe("caller-key");
+    expect(
+      resolveSessionBoundaryPromptCacheKey({
+        api: "openai-responses",
+        boundaryCount: 0,
+        sessionId: "steward-run",
+        agentId: "main",
+      }),
+    ).toBe("steward-run:0");
+  });
+
   it("keeps long Unicode derived keys distinct across boundaries within the 64-char limit", () => {
     const longSessionId = `internal-session-effects-${"🦞".repeat(64)}`;
     const keys = [0, 1, 2].map((boundaryCount) =>

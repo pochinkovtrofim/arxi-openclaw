@@ -6,6 +6,7 @@ import { createDeferred } from "../../../test/helpers/promise.js";
 import { bindAgentToolExecutionLocation } from "../../agents/agent-tool-metadata.js";
 import * as authProfileStore from "../../agents/auth-profiles/store-runtime.js";
 import * as authProfileUsage from "../../agents/auth-profiles/usage.js";
+import { resolveSessionBoundaryPromptCacheKey } from "../../agents/embedded-agent-runner/run/session-boundary-prompt-cache-key.js";
 import * as modelAuth from "../../agents/model-auth.js";
 import * as providerStreamRuntime from "../../agents/provider-stream.js";
 import { AuthStorage } from "../../agents/sessions/auth-storage.js";
@@ -55,6 +56,16 @@ const MODEL_ERROR = {
   reason: "model-not-approved",
   message: "Model is not approved for this agent.",
 };
+
+// The test model runs on the ChatGPT subscription route, whose prompt cache key
+// is shared by every session of one agent and model.
+const AGENT_CACHE_KEY = resolveSessionBoundaryPromptCacheKey({
+  api: "openai-chatgpt-responses",
+  boundaryCount: 0,
+  sessionId: SESSION_ID,
+  agentId: "runtime-agent",
+  modelId: MODEL,
+});
 
 describe("worker inference provider runtime", () => {
   it("constructs only the embedded provider stream when preparing a worker turn", async () => {
@@ -126,10 +137,10 @@ describe("worker inference provider runtime", () => {
 
   it.each([
     {
-      name: "boundary rotation",
+      name: "one ChatGPT key across boundaries",
       boundaries: [0, 0, 2],
       explicitKey: undefined,
-      keys: [`${SESSION_ID}:0`, `${SESSION_ID}:0`, `${SESSION_ID}:2`],
+      keys: [AGENT_CACHE_KEY, AGENT_CACHE_KEY, AGENT_CACHE_KEY],
     },
     {
       name: "explicit key",
@@ -428,7 +439,7 @@ describe("worker inference provider runtime", () => {
       ...inferenceRequest.options,
       signal: expect.any(AbortSignal),
       sessionId: SESSION_ID,
-      promptCacheKey: `${SESSION_ID}:0`,
+      promptCacheKey: AGENT_CACHE_KEY,
       apiKey: AUTH_MARKER,
     });
     expect(emitted.map((event) => event.type)).toEqual([
