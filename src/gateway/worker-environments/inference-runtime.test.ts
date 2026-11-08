@@ -6,11 +6,11 @@ import { createDeferred } from "../../../test/helpers/promise.js";
 import { bindAgentToolExecutionLocation } from "../../agents/agent-tool-metadata.js";
 import * as authProfileStore from "../../agents/auth-profiles/store-runtime.js";
 import * as authProfileUsage from "../../agents/auth-profiles/usage.js";
+import { resolveSessionBoundaryPromptCacheKey } from "../../agents/embedded-agent-runner/run/session-boundary-prompt-cache-key.js";
 import * as modelAuth from "../../agents/model-auth.js";
 import * as providerStreamRuntime from "../../agents/provider-stream.js";
 import { AuthStorage } from "../../agents/sessions/auth-storage.js";
 import { ModelRegistry } from "../../agents/sessions/model-registry.js";
-import { resolveSessionBoundaryPromptCacheKey } from "../../agents/embedded-agent-runner/run/session-boundary-prompt-cache-key.js";
 import * as simpleCompletionRuntime from "../../agents/simple-completion-runtime.js";
 import { createToolSurfacePresentationForTest } from "../../agents/tool-surface-plan.test-support.js";
 import { makeZeroUsageSnapshot } from "../../agents/usage.js";
@@ -56,7 +56,6 @@ const MODEL_ERROR = {
   reason: "model-not-approved",
   message: "Model is not approved for this agent.",
 };
-
 
 // The test model runs on the ChatGPT subscription route, whose prompt cache key
 // is shared by every session of one agent and model.

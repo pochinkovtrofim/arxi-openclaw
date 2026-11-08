@@ -30,7 +30,12 @@ describe("resolveSessionBoundaryPromptCacheKey", () => {
   });
 
   it("shares one ChatGPT subscription key across an agent's sessions and boundaries", () => {
-    const resolve = (sessionId: string, boundaryCount: number, agentId = "main", modelId = "gpt-6.1") =>
+    const resolve = (
+      sessionId: string,
+      boundaryCount: number,
+      agentId = "main",
+      modelId = "gpt-6.1",
+    ) =>
       resolveSessionBoundaryPromptCacheKey({
         api: "openai-chatgpt-responses",
         boundaryCount,
