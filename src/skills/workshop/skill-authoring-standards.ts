@@ -7,6 +7,7 @@ export const SKILL_AUTHORING_STANDARDS_PROMPT = [
   "- Write plain instructions: every sentence should change what the agent does, so drop emphasis and praise.",
   "- description, in the user's language because they read it in their list of learned skills (aim for ≤160 characters; keep existing triggers when editing): open with the trigger situations, one phrase per distinct case, then what the skill produces. Name the class of work, not today's task.",
   "- Keep in SKILL.md what every run needs; move what only some runs need into references/, templates/, or scripts/ and point to it from the step that needs it.",
+  "- Name each tool exactly as the current tools do. Tools once named arxi_* are now ro_* with the same suffix; rewrite such a step. A tool missing from the visible list may still be in the catalog, so a missing name alone is no reason to rewrite a step.",
 ].join("\n");
 
 export const SKILL_DO_NOT_CAPTURE_PROMPT = [
