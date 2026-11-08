@@ -675,6 +675,8 @@ export async function prepareEmbeddedAttemptSessionManager(
     api: attempt.model.api,
     boundaryCount: sessionManager.getBoundaryCount(),
     promptCacheKey: attempt.promptCacheKey,
+    agentId: input.sessionAgentId,
+    modelId: attempt.model.id,
     // A detached helper routes under its private identity but reads the caller's prompt bytes.
     sessionId:
       attempt.sessionPersistence === "detached" &&

@@ -379,6 +379,8 @@ export const executeWorkerInference: WorkerInferenceExecutor = async (params) =>
           ...promptCacheContext,
           api: model.api,
           sessionId: request.sessionId,
+          agentId: target.agentId,
+          modelId: model.id,
         }),
       });
       for await (const event of events) {
