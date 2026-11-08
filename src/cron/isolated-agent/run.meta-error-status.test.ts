@@ -132,7 +132,11 @@ describe("runCronIsolatedAgentTurn - meta.error status propagation", () => {
       payloads: [{ text: blocked, isError: true }],
       meta: {
         livenessState: "blocked",
-        error: { kind: "hook_block", message: blocked, heldReason: "on hold until resume (held by policy)" },
+        error: {
+          kind: "hook_block",
+          message: blocked,
+          heldReason: "on hold until resume (held by policy)",
+        },
       },
     });
     expectObjectFields(await runTurn(), {

@@ -9,12 +9,12 @@ import { createTempDirTracker } from "../../../../test/helpers/temp-dir.js";
 import { sleepWithAbort } from "../../../infra/backoff.js";
 import { flushDiagnosticsTimeline } from "../../../infra/diagnostics-timeline.js";
 import { withEnvAsync } from "../../../test-utils/env.js";
+import { AgentRunBlockedError } from "../../harness/before-agent-run.js";
 import {
   buildEmbeddedRunnerAssistant,
   createMockUsage,
   makeEmbeddedRunnerAttempt,
 } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
-import { AgentRunBlockedError } from "../../harness/before-agent-run.js";
 import { normalizeUsage } from "../../usage.js";
 import { createUsageAccumulator } from "../usage-accumulator.js";
 import { handleEmbeddedAssistantFailure } from "./assistant-failure.js";

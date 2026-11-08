@@ -82,7 +82,14 @@ export function isHookDecision(value: unknown): value is HookDecision {
   if (v.outcome !== "block") {
     return false;
   }
-  const allowedBlockKeys = new Set(["outcome", "reason", "message", "category", "metadata", "hold"]);
+  const allowedBlockKeys = new Set([
+    "outcome",
+    "reason",
+    "message",
+    "category",
+    "metadata",
+    "hold",
+  ]);
   if (keys.some((key) => !allowedBlockKeys.has(key))) {
     return false;
   }

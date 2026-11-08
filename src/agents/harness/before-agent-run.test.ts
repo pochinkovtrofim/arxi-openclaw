@@ -19,7 +19,12 @@ const gate = (decision: Record<string, unknown>) =>
 
 describe("runBeforeAgentRunGate", () => {
   it("carries a held run's reason next to the refusal text", async () => {
-    const block = await gate({ outcome: "block", reason: "internal", message: "Waiting", hold: true });
+    const block = await gate({
+      outcome: "block",
+      reason: "internal",
+      message: "Waiting",
+      hold: true,
+    });
     expect(block).toEqual({
       blockedBy: "policy",
       message: "Your message could not be sent: Waiting (blocked by policy)",
