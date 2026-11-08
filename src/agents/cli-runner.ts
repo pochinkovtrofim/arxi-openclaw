@@ -309,7 +309,7 @@ async function runPreparedCliAgentOwned(
   const finishFailedAgentEndHook = (error: unknown) =>
     finishAgentEndHook(buildAgentEndMessages(), formatErrorMessage(error));
 
-  const finishBlockedRun = async (message: string, pluginId: string) => {
+  const finishBlockedRun = async (message: string, pluginId: string, heldReason?: string) => {
     await persistCliRunBlock(params, { message, pluginId });
     await finishAgentEndHook(
       buildAgentHookConversationMessages({
@@ -318,7 +318,7 @@ async function runPreparedCliAgentOwned(
       }),
       message,
     );
-    return buildBlockedCliRunResult({ ...resultContext, message });
+    return buildBlockedCliRunResult({ ...resultContext, message, heldReason });
   };
 
   let deliveredMessagingSideEffect = false;
@@ -644,7 +644,7 @@ async function runPreparedCliAgentOwned(
       buildAgentHookContext(hookContext),
     );
     if (block) {
-      return finishBlockedRun(block.message, block.blockedBy);
+      return finishBlockedRun(block.message, block.blockedBy, block.heldReason);
     }
 
     userTurnHandled = await persistApprovedCliUserTurnTranscript(params);

@@ -153,7 +153,10 @@ the current user input as `prompt`, plus loaded session history in `messages`
 and the active system prompt. Return `{ outcome: "block", reason, message? }`
 to stop the run before the model reads the prompt. `reason` is internal;
 `message` is the user-facing replacement. Only `pass` and `block` outcomes are
-supported; unsupported decision shapes fail closed.
+supported; unsupported decision shapes fail closed. Add `hold: true` when the
+run waits for a condition the plugin owns rather than being refused: other runs
+are blocked as usual, and an isolated cron run settles as skipped with
+"`message` (held by <plugin id>)" as its reason instead of failing.
 
 When a run is blocked, OpenClaw stores only the replacement text in
 `message.content` plus non-sensitive block metadata such as the blocking

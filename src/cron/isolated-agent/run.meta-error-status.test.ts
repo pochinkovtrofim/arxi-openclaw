@@ -125,6 +125,33 @@ describe("runCronIsolatedAgentTurn - meta.error status propagation", () => {
     expect(callGatewayMock).toHaveBeenCalledTimes(1);
   });
 
+  it("settles a run a plugin held as skipped with its reason, and a refusal as an error", async () => {
+    await useRealOutcome();
+    const blocked = "Your message could not be sent: on hold until resume (blocked by policy)";
+    mockAgentRun({
+      payloads: [{ text: blocked, isError: true }],
+      meta: {
+        livenessState: "blocked",
+        error: {
+          kind: "hook_block",
+          message: blocked,
+          heldReason: "on hold until resume (held by policy)",
+        },
+      },
+    });
+    expectObjectFields(await runTurn(), {
+      status: "skipped",
+      error: "on hold until resume (held by policy)",
+    });
+    expect(dispatchCronDeliveryMock).not.toHaveBeenCalled();
+
+    mockAgentRun({
+      payloads: [{ text: blocked, isError: true }],
+      meta: { livenessState: "blocked", error: { kind: "hook_block", message: blocked } },
+    });
+    expect((await runTurn()).status).toBe("error");
+  });
+
   it("keeps explicit silent replies as successful cron completions", async () => {
     await useRealOutcome();
     mockAgentRun({

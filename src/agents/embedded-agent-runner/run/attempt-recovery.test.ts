@@ -9,6 +9,7 @@ import { createTempDirTracker } from "../../../../test/helpers/temp-dir.js";
 import { sleepWithAbort } from "../../../infra/backoff.js";
 import { flushDiagnosticsTimeline } from "../../../infra/diagnostics-timeline.js";
 import { withEnvAsync } from "../../../test-utils/env.js";
+import { AgentRunBlockedError } from "../../harness/before-agent-run.js";
 import {
   buildEmbeddedRunnerAssistant,
   createMockUsage,
@@ -850,7 +851,11 @@ describe("recoverEmbeddedRunAttempt", () => {
       terminal: {
         kind: "failed",
         source: "hook:before_agent_run",
-        error: new Error("Blocked by before-run policy."),
+        error: new AgentRunBlockedError({
+          blockedBy: "policy",
+          message: "Blocked by before-run policy.",
+          heldReason: "Waiting for resume (held by policy)",
+        }),
       },
       lastAssistant: historicalAssistant,
       currentAttemptAssistant: undefined,
@@ -914,6 +919,7 @@ describe("recoverEmbeddedRunAttempt", () => {
           error: {
             kind: "hook_block",
             message: "Blocked by before-run policy.",
+            heldReason: "Waiting for resume (held by policy)",
           },
           livenessState: "blocked",
           agentMeta: {

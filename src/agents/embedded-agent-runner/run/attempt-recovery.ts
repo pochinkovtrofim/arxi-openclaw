@@ -17,6 +17,7 @@ import { classifyFailoverSignal } from "../../failover/classify.js";
 import { getFailoverErrorCode } from "../../failover/error.js";
 import { resolveRetryAfterMs } from "../../failover/retry-evidence.js";
 import type { FailoverReason } from "../../failover/signal.js";
+import { resolveAgentRunHeldReason } from "../../harness/before-agent-run.js";
 import { LiveSessionModelSwitchError } from "../../live-model-switch-error.js";
 import { shouldSwitchToLiveModel, clearLiveModelSwitchPending } from "../../live-model-switch.js";
 import { observeReplyDelivery } from "../../reply-completion.js";
@@ -279,6 +280,7 @@ export async function recoverEmbeddedRunAttempt(input: {
     errorMessage: string,
     text = errorMessage,
     finalPromptText?: string,
+    heldReason?: string,
   ) => {
     const replayInvalid = resolveReplayInvalidForAttempt();
     setTerminalLifecycleMeta({ replayInvalid, livenessState: "blocked" });
@@ -293,13 +295,21 @@ export async function recoverEmbeddedRunAttempt(input: {
         attempt,
         replayInvalid,
         finalPromptText,
+        heldReason,
       }),
     };
   };
 
   if (promptErrorSource === "hook:before_agent_run" && !terminalInterrupted) {
     recordRecoveryDecision("rejected", "hook_block");
-    return completeBlocked("hook_block", formatErrorMessage(promptError));
+    const message = formatErrorMessage(promptError);
+    return completeBlocked(
+      "hook_block",
+      message,
+      message,
+      undefined,
+      resolveAgentRunHeldReason(promptError),
+    );
   }
   const requestedSelection = await shouldSwitchToLiveModel({
     cfg: params.config,
