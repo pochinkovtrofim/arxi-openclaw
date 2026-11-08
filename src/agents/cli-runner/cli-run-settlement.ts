@@ -398,11 +398,13 @@ function buildCliExecutionMetadata(
 
 export function buildBlockedCliRunResult(params: {
   message: string;
+  heldReason?: string;
   context: PreparedCliRunContext;
   preparedContextAgentMeta: { contextTokens?: number };
   sessionBindingDisabled: boolean;
 }): EmbeddedAgentRunResult {
-  const { context, message, preparedContextAgentMeta, sessionBindingDisabled } = params;
+  const { context, message, heldReason, preparedContextAgentMeta, sessionBindingDisabled } =
+    params;
   const runParams = context.params;
   return {
     payloads: [{ text: message, isError: true }],
@@ -414,6 +416,7 @@ export function buildBlockedCliRunResult(params: {
       error: {
         kind: "hook_block",
         message,
+        ...(heldReason ? { heldReason } : {}),
       },
       systemPromptReport: context.systemPromptReport,
       ...buildCliExecutionMetadata(context, {

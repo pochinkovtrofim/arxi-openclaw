@@ -191,6 +191,24 @@ export async function finalizeCronRun(params: {
       ...telemetry,
     });
   }
+  // A plugin held this run before it started: a recorded wait, not a failure.
+  const heldReason =
+    finalRunResult.meta?.error?.kind === "hook_block"
+      ? finalRunResult.meta.error.heldReason
+      : undefined;
+  if (heldReason) {
+    await cleanupRunSession("cron-delete-after-run-held");
+    return prepared.withRunSession({
+      status: "skipped",
+      error: heldReason,
+      replyDisposition,
+      diagnostics: mergeCronRunDiagnostics(
+        prepared.preflightDiagnostics,
+        createCronRunDiagnosticsFromError("agent-run", heldReason, { severity: "warn" }),
+      ),
+      ...telemetry,
+    });
+  }
   const cronPayloadOutcome = resolveCronPayloadOutcome({
     payloads,
     runLevelError: finalRunResult.meta?.error,

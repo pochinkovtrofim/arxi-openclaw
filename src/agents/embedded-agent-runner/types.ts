@@ -203,6 +203,8 @@ export type EmbeddedAgentRunMeta = {
     fallbackSafe?: boolean;
     /** True when the payload includes a trusted structured terminal tool summary. */
     terminalPresentation?: boolean;
+    /** A before_agent_run plugin held the run: the reason a scheduled run records as skipped. */
+    heldReason?: string;
   };
   failureSignal?: EmbeddedRunFailureSignal;
   /** Bounded, sanitized unresolved Code Mode failure for operator diagnostics. */

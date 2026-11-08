@@ -1,4 +1,4 @@
-import { resolveBlockMessage } from "../../plugins/hook-decision-types.js";
+import { resolveBlockMessage, resolveHoldReason } from "../../plugins/hook-decision-types.js";
 import type { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
 import type {
   PluginHookAgentContext,
@@ -9,7 +9,22 @@ type HookRunner = Pick<
   NonNullable<ReturnType<typeof getGlobalHookRunner>>,
   "hasHooks" | "runBeforeAgentRun"
 >;
-type AgentRunBlock = { blockedBy: string; message: string };
+type AgentRunBlock = { blockedBy: string; message: string; heldReason?: string };
+
+/** A blocked run's prompt error; a held run also carries the reason scheduled work records. */
+export class AgentRunBlockedError extends Error {
+  readonly heldReason?: string;
+  constructor(block: AgentRunBlock) {
+    super(block.message);
+    if (block.heldReason) {
+      this.heldReason = block.heldReason;
+    }
+  }
+}
+
+export function resolveAgentRunHeldReason(error: unknown): string | undefined {
+  return error instanceof AgentRunBlockedError ? error.heldReason : undefined;
+}
 
 export async function runBeforeAgentRunGate(
   runner: HookRunner | null | undefined,
@@ -35,7 +50,12 @@ export async function runBeforeAgentRunGate(
     return undefined;
   }
   const blockedBy = result.pluginId ?? "unknown";
-  return { blockedBy, message: resolveBlockMessage(result.decision, { blockedBy }) };
+  const heldReason = resolveHoldReason(result.decision, { blockedBy });
+  return {
+    blockedBy,
+    message: resolveBlockMessage(result.decision, { blockedBy }),
+    ...(heldReason ? { heldReason } : {}),
+  };
 }
 
 export function buildAgentRunBlockedUserMessage(runId: string, block: AgentRunBlock) {

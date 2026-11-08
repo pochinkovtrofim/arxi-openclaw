@@ -1,6 +1,7 @@
 import type { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
 import { sanitizeCompactionReplayMessages } from "../../compaction-replay.js";
 import {
+  AgentRunBlockedError,
   buildAgentRunBlockedUserMessage,
   runBeforeAgentRunGate,
 } from "../../harness/before-agent-run.js";
@@ -75,5 +76,5 @@ export async function runEmbeddedAttemptBeforeAgentRun(input: {
       );
     }
   }
-  return { blockedBy: block.blockedBy, promptError: new Error(block.message) };
+  return { blockedBy: block.blockedBy, promptError: new AgentRunBlockedError(block) };
 }

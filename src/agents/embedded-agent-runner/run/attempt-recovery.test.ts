@@ -14,6 +14,7 @@ import {
   createMockUsage,
   makeEmbeddedRunnerAttempt,
 } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
+import { AgentRunBlockedError } from "../../harness/before-agent-run.js";
 import { normalizeUsage } from "../../usage.js";
 import { createUsageAccumulator } from "../usage-accumulator.js";
 import { handleEmbeddedAssistantFailure } from "./assistant-failure.js";
@@ -850,7 +851,11 @@ describe("recoverEmbeddedRunAttempt", () => {
       terminal: {
         kind: "failed",
         source: "hook:before_agent_run",
-        error: new Error("Blocked by before-run policy."),
+        error: new AgentRunBlockedError({
+          blockedBy: "policy",
+          message: "Blocked by before-run policy.",
+          heldReason: "Waiting for resume (held by policy)",
+        }),
       },
       lastAssistant: historicalAssistant,
       currentAttemptAssistant: undefined,
@@ -914,6 +919,7 @@ describe("recoverEmbeddedRunAttempt", () => {
           error: {
             kind: "hook_block",
             message: "Blocked by before-run policy.",
+            heldReason: "Waiting for resume (held by policy)",
           },
           livenessState: "blocked",
           agentMeta: {

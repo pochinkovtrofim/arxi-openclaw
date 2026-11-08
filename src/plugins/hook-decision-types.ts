@@ -27,6 +27,12 @@ type HookDecisionBlock = {
   category?: string;
   /** Opaque metadata for the plugin's own use. Core does not interpret it. */
   metadata?: Record<string, unknown>;
+  /**
+   * The run waits for a condition the plugin owns instead of being refused. A
+   * scheduled run then settles as skipped with `message` as its recorded reason,
+   * not as a failure; any other run is blocked as usual.
+   */
+  hold?: true;
 };
 
 export function resolveBlockMessage(
@@ -45,6 +51,22 @@ export function resolveBlockMessage(
     : `${BLOCK_MESSAGE_PREFIX}: blocked`;
 }
 
+/** The reason a scheduled run records when a plugin held it; undefined for a refusal. */
+export function resolveHoldReason(
+  decision: HookDecisionBlock,
+  params: { blockedBy?: string } = {},
+): string | undefined {
+  if (decision.hold !== true) {
+    return undefined;
+  }
+  const message = typeof decision.message === "string" ? decision.message.trim() : "";
+  const heldBy = params.blockedBy?.trim();
+  if (message) {
+    return heldBy ? `${message} (held by ${heldBy})` : message;
+  }
+  return heldBy ? `held by ${heldBy}` : "held";
+}
+
 /**
  * Type guard: does this object look like a HookDecision (has `outcome` field)?
  */
@@ -60,7 +82,7 @@ export function isHookDecision(value: unknown): value is HookDecision {
   if (v.outcome !== "block") {
     return false;
   }
-  const allowedBlockKeys = new Set(["outcome", "reason", "message", "category", "metadata"]);
+  const allowedBlockKeys = new Set(["outcome", "reason", "message", "category", "metadata", "hold"]);
   if (keys.some((key) => !allowedBlockKeys.has(key))) {
     return false;
   }
@@ -71,6 +93,9 @@ export function isHookDecision(value: unknown): value is HookDecision {
     return false;
   }
   if ("category" in v && (typeof v.category !== "string" || !v.category.trim())) {
+    return false;
+  }
+  if ("hold" in v && v.hold !== true) {
     return false;
   }
   if (

@@ -10,6 +10,7 @@ export function buildEmbeddedRunBlockedResult(input: {
   attempt?: Pick<EmbeddedRunAttemptResult, "systemPromptReport">;
   replayInvalid: boolean;
   finalPromptText?: string;
+  heldReason?: string;
 }): EmbeddedAgentRunResult {
   return {
     payloads: [{ text: input.text, isError: true }],
@@ -22,7 +23,11 @@ export function buildEmbeddedRunBlockedResult(input: {
       finalPromptText: input.finalPromptText,
       replayInvalid: input.replayInvalid,
       livenessState: "blocked",
-      error: { kind: input.errorKind, message: input.errorMessage },
+      error: {
+        kind: input.errorKind,
+        message: input.errorMessage,
+        ...(input.heldReason ? { heldReason: input.heldReason } : {}),
+      },
     },
   };
 }

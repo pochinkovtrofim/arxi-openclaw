@@ -152,6 +152,7 @@ export async function gateWorkerTurnInput({
     text: block.message,
     errorKind: "hook_block",
     errorMessage: block.message,
+    heldReason: block.heldReason,
     durationMs: Date.now() - startedAt,
     agentMeta: { sessionId: identity.sessionId, ...modelRef },
     replayInvalid: false,
