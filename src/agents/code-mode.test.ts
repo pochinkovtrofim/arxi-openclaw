@@ -77,7 +77,9 @@ function indexOf(description: string) {
 describe("Code Mode catalog and model-visible surface", () => {
   it("removes shell-computation guidance when a client shadows the shell tool", () => {
     const { ctx, exec } = catalog([fakeTool("exec", "Run shell command")]);
-    expect(exec.description).toContain("Use the shell tool `exec` for heavier computation");
+    expect(exec.description).toContain(
+      "Shell commands run from your JavaScript through `await shell({command})`",
+    );
     addClientToolsToToolCatalog({
       enabled: true,
       ...ctx,
@@ -94,6 +96,19 @@ describe("Code Mode catalog and model-visible surface", () => {
     expect(exec.description).toContain("- exec unknown -> ?");
     expect(exec.description).not.toContain("heavier computation");
     expect(exec.description).toContain("10000 ms wall-clock budget");
+  });
+
+  it("names the shell `shell` in the guest so the catalog has one `exec`", () => {
+    const { exec } = catalog([
+      fakeTool("exec", "Run shell command"),
+      fakeTool("web_fetch", "Fetch URL"),
+    ]);
+    const index = indexOf(exec.description);
+    expect(index).toContain("- shell ");
+    expect(index).not.toMatch(/^- exec /mu);
+    expect(exec.description).toContain(
+      'For an HTTP API, `await web_fetch({url, extractMode: "json"})` returns the parsed body as `.json`.',
+    );
   });
 
   it("keeps direct-only tools model-visible and out of the guest catalog", () => {

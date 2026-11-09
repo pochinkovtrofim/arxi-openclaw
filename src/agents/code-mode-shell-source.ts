@@ -166,6 +166,7 @@ export function isShellLikeCodeModeSource(source: string): boolean {
 
 export const CODE_MODE_SHELL_SOURCE_ERROR =
   "code-mode exec runs JavaScript, not shell commands. " +
-  "Call an enabled async tool global from guest JavaScript; use " +
+  "When the shell is enabled, run the command from guest JavaScript with " +
+  'await shell({ command: "..." }). Otherwise call an enabled async tool global; use ' +
   "catalog.search(query) when the bounded quick index omits it. " +
   "Do not retry the same shell command as code.";

@@ -26,12 +26,15 @@ await web_fetch({ url: "https://example.com/article" });
 URL to fetch. `http(s)` only.
 </ParamField>
 
-<ParamField path="extractMode" type="'markdown' | 'text'" default="markdown">
-Output format after main-content extraction.
+<ParamField path="extractMode" type="'markdown' | 'text' | 'json' | 'raw'" default="markdown">
+`markdown` and `text` extract a page's readable content. `json` and `raw` return
+an API's body as data for code; see [JSON and raw bodies](#json-and-raw-bodies).
 </ParamField>
 
 <ParamField path="maxChars" type="number">
 Truncate output to this many characters. Clamped to `tools.web.fetch.maxCharsCap`.
+For `json` and `raw` it bounds only the text shown to the model, not the value
+code receives.
 </ParamField>
 
 ## Result
@@ -41,7 +44,7 @@ Truncate output to this many characters. Clamped to `tools.web.fetch.maxCharsCap
 - Request metadata: `url`, `finalUrl`, `status`, `extractMode`, and `extractor`
 - Optional response metadata: `contentType`, `title`, and `warning` (omitted when absent)
 - Wrapped content metadata: `externalContent`, `truncated`, `length`, `rawLength`,
-  `fetchedAt`, `tookMs`, and `text`
+  `fetchedAt`, `tookMs`, and `text`; `json` mode returns `json` instead of `text`
 - Optional `cached: true` on a cache hit
 - Optional `spill: { path, chars, truncated? }` when truncated content was written
   to a private temporary file; `truncated` is present only when that file contains
@@ -62,6 +65,35 @@ JSON framing and protocol metadata are additional overhead. `contentType`,
 URLs stay whole for follow-up requests: a returned redirect/provider URL longer
 than 2,048 characters falls back to the requested `url` and marks the result
 truncated. The caller's requested URL is preserved.
+
+## JSON and raw bodies
+
+`extractMode: "json"` parses the response body, whatever its content type, and
+returns it as `json`; `extractMode: "raw"` returns the body exactly as received
+as `text`. Neither runs readability, a fetch provider fallback or the fetch
+cache, and both send an `Accept` header for the mode (`application/json` for
+`json`, `*/*` for `raw`).
+
+The body is data for code, so it carries no inline boundary markers:
+`externalContent` is `{ untrusted: true, source: "web_fetch", wrapped: false }`.
+Code Mode guests get the whole value (up to `tools.web.fetch.maxResponseBytes`),
+so `JSON.parse` and spill files are not needed:
+
+```javascript
+const { json } = await web_fetch({ url: "https://api.example.com/items", extractMode: "json" });
+return json.items.map((item) => item.name);
+```
+
+The content is still untrusted. The call marks the turn as network-tainted like
+any `web_fetch`, and Code Mode wraps whatever part of it the program returns to
+the model. A direct (non-Code Mode) call shows the model the same wrapped,
+`maxChars`-bounded and spilled text as `markdown` mode.
+
+`json` keeps integers beyond 2^53 and numbers outside double range as their
+source text (strings), so an id is never silently rounded. A body that is not
+valid JSON, or that exceeds `maxResponseBytes` and is therefore incomplete,
+fails with an error naming what to try instead. `raw` returns an incomplete
+body with `truncated: true` and a `warning`.
 
 ## How it works
 

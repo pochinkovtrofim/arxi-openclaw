@@ -404,7 +404,8 @@ describe("Code Mode subscribed host denial", () => {
       if (name === "record_mutation") {
         mutated.resolve();
       }
-      if (name === "exec") {
+      // Guest code calls the alias `exec`; the bridge routes the canonical `shell`.
+      if (name === "shell") {
         denied.resolve();
       }
       return settled;
@@ -468,11 +469,11 @@ describe("Code Mode subscribed host denial", () => {
       if (parallel) {
         expect(dispatchOrder).toEqual(
           order.startsWith("denial-first")
-            ? ["exec", "record_mutation"]
-            : ["record_mutation", "exec"],
+            ? ["shell", "record_mutation"]
+            : ["record_mutation", "shell"],
         );
         expect(settlementOrder).toEqual(
-          mutationFirstSettlement ? ["record_mutation", "exec"] : ["exec", "record_mutation"],
+          mutationFirstSettlement ? ["record_mutation", "shell"] : ["shell", "record_mutation"],
         );
       }
       expect(harness.spawn).not.toHaveBeenCalled();

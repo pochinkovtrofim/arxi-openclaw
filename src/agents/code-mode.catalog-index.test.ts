@@ -67,7 +67,7 @@ it("keeps core shell and file signatures visible when the real catalog overflows
     expect(index).toContain("additional tools omitted");
     expect(index.length).toBeLessThanOrEqual(8_000);
     const lines = index.split("\n");
-    const shell = lines.find((line) => line.startsWith("- exec "));
+    const shell = lines.find((line) => line.startsWith("- shell "));
     expect(shell, "shell signature must survive catalog overflow").toBeDefined();
     expect(shell).toContain("command: string");
     expect(shell).toContain("workdir?: string");

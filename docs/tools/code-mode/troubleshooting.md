@@ -93,7 +93,7 @@ The run metadata (`meta.agentMeta` in `openclaw agent --json`, mirrored on the
 
 - `codeModeEngaged`: `true` only when code mode actually owned the model tool
   surface. This is the reliable engagement signal — do not infer engagement
-  from config or tool names: the shell tool is also named `exec`, and the
+  from config or tool names: the shell tool is also named `exec` (its guest global is `shell`), and the
   `"auto"` tier engages per model capability. Harnesses that bridge OpenClaw's
   tool surface (Copilot) report their resolved gate, so
   `codeModeEngaged: false` with `tools.codeMode.enabled=true` makes a silent

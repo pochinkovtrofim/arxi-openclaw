@@ -15,7 +15,17 @@ type CompactCatalogEntry = {
 export type CodeModeCatalogBinding = Omit<CompactCatalogEntry, "id"> & {
   id: string;
   callableName: string;
+  /** Unadvertised guest globals for the same handle, kept for saved scripts. */
+  aliases?: string[];
 };
+
+/** The core shell tool: policy name `exec`, guest global `shell`. */
+export const CODE_MODE_SHELL_TOOL_ID = "openclaw:core:exec";
+// The model-visible control tool is also `exec` and takes JavaScript; one name
+// for two tools made models send shell commands as `code`. Inside the guest the
+// shell is `shell`; `exec` stays a hidden alias so saved scripts keep working.
+const CODE_MODE_SHELL_CALLABLE_NAME = "shell";
+const CODE_MODE_SHELL_LEGACY_ALIAS = "exec";
 
 const RESERVED_GLOBAL_NAMES = new Set(
   "ALL_TOOLS API MCP agents catalog clearTimeout globalThis json load log namespaces nodes phase results setTimeout skills store text tools yield_control AggregateError Array ArrayBuffer Atomics BigInt BigInt64Array BigUint64Array Boolean DataView Date Error EvalError FinalizationRegistry Float32Array Float64Array Function Infinity Int16Array Int32Array Int8Array Intl JSON Map Math NaN Number Object Promise Proxy RangeError ReferenceError Reflect RegExp Set SharedArrayBuffer String Symbol SyntaxError TextDecoder TextEncoder TypeError URIError Uint16Array Uint32Array Uint8Array Uint8ClampedArray WeakMap WeakRef WeakSet WebAssembly console decodeURI decodeURIComponent encodeURI encodeURIComponent escape eval isFinite isNaN parseFloat parseInt undefined unescape".split(
@@ -77,15 +87,17 @@ export function createCodeModeCatalogBindings(
   const used = new Set([...RESERVED_GLOBAL_NAMES, ...(options?.reservedNames ?? [])]);
   const candidates = selectEffectiveEntries(entries)
     .map((entry) => {
-      const base = normalizedCallableBase(entry.name);
+      const shell = entry.id === CODE_MODE_SHELL_TOOL_ID;
+      const base = shell ? CODE_MODE_SHELL_CALLABLE_NAME : normalizedCallableBase(entry.name);
       const canKeepExactName =
-        entry.name === base && !RESERVED_WORDS.has(entry.name) && !used.has(entry.name);
-      return { entry, base, canKeepExactName };
+        (shell || entry.name === base) && !RESERVED_WORDS.has(base) && !used.has(base);
+      return { entry, base, canKeepExactName, shell };
     })
     .toSorted(
       (left, right) =>
         Number(right.canKeepExactName) - Number(left.canKeepExactName) ||
         left.base.localeCompare(right.base) ||
+        Number(right.shell) - Number(left.shell) ||
         left.entry.id.localeCompare(right.entry.id),
     );
   const bindings: CodeModeCatalogBinding[] = [];
@@ -97,6 +109,11 @@ export function createCodeModeCatalogBindings(
     used.add(callableName);
     const { id, source, name, label, description, input, output } = candidate.entry;
     bindings.push({ id, source, name, label, description, input, output, callableName });
+  }
+  // The shell is the one effective `exec` entry, so its alias never hides another tool.
+  const shell = bindings.find((binding) => binding.id === CODE_MODE_SHELL_TOOL_ID);
+  if (shell && !used.has(CODE_MODE_SHELL_LEGACY_ALIAS)) {
+    shell.aliases = [CODE_MODE_SHELL_LEGACY_ALIAS];
   }
   bindings.sort((left, right) => left.callableName.localeCompare(right.callableName));
   return bindings;

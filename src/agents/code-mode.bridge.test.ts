@@ -119,6 +119,24 @@ describe("Code Mode bridge settlement and cancellation", () => {
     },
   );
 
+  it("calls the core shell as `shell`, with `exec` kept as a hidden alias", async () => {
+    const shell = fakeTool("exec", "Run shell");
+    shell.execute = vi.fn(async (_id, input) => jsonResult(input));
+    shell.parameters = execSchema;
+    const details = await bridge([shell])(`return [
+      (await shell({ command: "new", background: true })).command,
+      (await exec({ command: "saved", background: true })).command,
+      shell === exec,
+      Object.keys(globalThis).includes("shell"),
+      Object.keys(globalThis).includes("exec"),
+    ];`);
+    expect(details).toMatchObject({
+      status: "completed",
+      value: ["new", "saved", true, true, false],
+    });
+    expect(shell.execute).toHaveBeenCalledTimes(2);
+  });
+
   it("bounds nested exec yield by the shared remaining deadline", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
     const consume = pluginToolWithExecute("consume", "Consume the shared deadline", async () => {
