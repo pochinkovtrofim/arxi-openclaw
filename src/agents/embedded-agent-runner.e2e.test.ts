@@ -172,6 +172,7 @@ const installRunEmbeddedMocks = () => {
         maybeRefreshRuntimeAuthForAuthError: vi.fn(async (_errorText: string, runtimeAuthRetry) => {
           return refreshRuntimeAuthOnFirstPromptError && runtimeAuthRetry !== true;
         }),
+        startOAuthLoginRenewal: vi.fn(),
         stopRuntimeAuthRefreshTimer: vi.fn(),
       }),
     };

@@ -231,7 +231,19 @@ export function createEmbeddedRunAuthController(params: {
     runtimeAuthState.refreshTimer = undefined;
   };
 
+  // A run resolves its credential once and reuses it for every model call, so an
+  // OAuth login can expire in the middle of a long turn and the provider refuses
+  // the next call although the login is fine (production 2026-11-09). The run
+  // renews it before expiry from the start of its attempts until it settles, and
+  // once more on such a refusal.
+  let oauthRenewalTimer: ReturnType<typeof setTimeout> | undefined;
+  let oauthRenewalArmed = false;
+
+  const clearOAuthRenewalTimer = () => clearTimeout(oauthRenewalTimer);
+
   const stopRuntimeAuthRefreshTimer = () => {
+    oauthRenewalArmed = false;
+    clearOAuthRenewalTimer();
     if (!state.runtimeAuthState) {
       return;
     }
@@ -362,6 +374,71 @@ export function createEmbeddedRunAuthController(params: {
     runtimeAuthState.refreshTimer = setTimeout(() => refresh("scheduled"), delayMs);
   };
 
+  /** Renews the active OAuth login through its refresh path; false when the run moved on. */
+  const renewOAuthLogin = async (): Promise<boolean> => {
+    const info = state.apiKeyInfo;
+    if (info?.mode !== "oauth" || !info.profileId || state.runtimeAuthState) {
+      return false;
+    }
+    const runtimeModel = state.models.runtime;
+    const renewed = await getApiKeyForModelCore({
+      model: runtimeModel,
+      cfg: params.config,
+      profileId: info.profileId,
+      store: params.authStore,
+      agentDir: params.agentDir,
+      workspaceDir: params.workspaceDir,
+      lockedProfile: true,
+      secretSentinels: true,
+      forceRefresh: true,
+      includeOAuthExpiry: true,
+    });
+    if (!oauthRenewalArmed) {
+      return false;
+    }
+    if (state.apiKeyInfo !== info) {
+      // Another renewal of the same login may have won the refresh queue.
+      return state.apiKeyInfo?.mode === "oauth" && state.apiKeyInfo.profileId === info.profileId;
+    }
+    if (renewed.mode !== "oauth" || !renewed.apiKey) {
+      return false;
+    }
+    state.apiKeyInfo = renewed;
+    params.authStorage.setRuntimeApiKey(runtimeModel.provider, renewed.apiKey);
+    return true;
+  };
+
+  const scheduleOAuthRenewal = (minDelayMs: number): void => {
+    clearOAuthRenewalTimer();
+    const expires = state.apiKeyInfo?.mode === "oauth" ? state.apiKeyInfo.expires : undefined;
+    if (!oauthRenewalArmed || state.runtimeAuthState || expires === undefined) {
+      return;
+    }
+    oauthRenewalTimer = setTimeout(
+      () => {
+        renewOAuthLogin().then(
+          () => scheduleOAuthRenewal(RUNTIME_AUTH_REFRESH_RETRY_MS),
+          (error: unknown) => {
+            params.log.warn(`OAuth login renewal failed: ${formatErrorMessage(error)}`);
+            scheduleOAuthRenewal(RUNTIME_AUTH_REFRESH_RETRY_MS);
+          },
+        );
+      },
+      clampRuntimeAuthRefreshDelayMs({
+        refreshAt: expires - RUNTIME_AUTH_REFRESH_MARGIN_MS,
+        now: Date.now(),
+        minDelayMs,
+      }),
+    );
+    oauthRenewalTimer.unref?.();
+  };
+
+  /** Keeps the OAuth login fresh until stopRuntimeAuthRefreshTimer settles the run. */
+  const startOAuthLoginRenewal = (): void => {
+    oauthRenewalArmed = true;
+    scheduleOAuthRenewal(RUNTIME_AUTH_REFRESH_MIN_DELAY_MS);
+  };
+
   const resolveAuthProfileFailoverReason = (failoverParams: {
     allInCooldown: boolean;
     message: string;
@@ -479,6 +556,7 @@ export function createEmbeddedRunAuthController(params: {
   };
 
   const applyApiKeyInfo = async (candidate?: string, attemptIndex?: number): Promise<void> => {
+    clearOAuthRenewalTimer();
     const preparedModel = await params.prepareModelForAuthProfile?.(candidate, attemptIndex);
     const apiKeyInfo = await getApiKeyForModelCore({
       model: preparedModel?.runtimeModel ?? state.models.runtime,
@@ -490,6 +568,7 @@ export function createEmbeddedRunAuthController(params: {
       lockedProfile: candidate != null && candidate === params.lockedProfileId,
       allowAuthProfileFallback: preparedModel?.allowAuthProfileFallback,
       secretSentinels: true,
+      includeOAuthExpiry: true,
     });
     if (
       preparedModel?.authRequirement &&
@@ -564,6 +643,7 @@ export function createEmbeddedRunAuthController(params: {
       state.runtimeAuthState = null;
     }
     state.lastProfileId = profileId;
+    scheduleOAuthRenewal(RUNTIME_AUTH_REFRESH_MIN_DELAY_MS);
   };
 
   const advanceAuthProfile = async (): Promise<boolean> => {
@@ -625,11 +705,25 @@ export function createEmbeddedRunAuthController(params: {
     errorText: string,
     retried: boolean,
   ): Promise<boolean> => {
-    if (!state.runtimeAuthState || retried) {
+    if (retried) {
       return false;
     }
     if (classifyFailoverReason(errorText, { provider: params.provider }) !== "auth") {
       return false;
+    }
+    if (!state.runtimeAuthState) {
+      try {
+        const renewed = await renewOAuthLogin();
+        if (renewed) {
+          scheduleOAuthRenewal(RUNTIME_AUTH_REFRESH_RETRY_MS);
+        }
+        return renewed;
+      } catch (error) {
+        params.log.warn(
+          `OAuth login renewal after an auth error failed: ${formatErrorMessage(error)}`,
+        );
+        return false;
+      }
     }
     try {
       await refreshRuntimeAuth("auth-error");
@@ -645,6 +739,7 @@ export function createEmbeddedRunAuthController(params: {
     advanceAuthProfile,
     initializeAuthProfile,
     maybeRefreshRuntimeAuthForAuthError,
+    startOAuthLoginRenewal,
     stopRuntimeAuthRefreshTimer,
   };
 }

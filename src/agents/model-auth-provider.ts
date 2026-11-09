@@ -199,6 +199,8 @@ export async function resolveApiKeyForProviderCore(input: {
   capability?: string;
   /** Keep SecretRef-backed model credentials opaque until a sentinel-aware transport boundary. */
   secretSentinels?: boolean;
+  /** Return an OAuth profile's access expiry, for a caller that renews it ahead of time. */
+  includeOAuthExpiry?: boolean;
 }): Promise<ResolvedProviderAuth> {
   input.signal?.throwIfAborted();
   const modelAuthConfig = resolveModelProviderAuthConfig({
@@ -239,7 +241,7 @@ export async function resolveApiKeyForProviderCore(input: {
     store: AuthProfileStore,
   ) => {
     const mode = resolved.profileType ?? credential?.type;
-    return authConfig.projectResolvedProfileAuth({
+    const projected = authConfig.projectResolvedProfileAuth({
       apiKey: resolved.apiKey,
       enabled: params.secretSentinels,
       profileId: resolvedProfileId,
@@ -248,6 +250,11 @@ export async function resolveApiKeyForProviderCore(input: {
       mode: mode ? authConfig.profileTypeToAuthMode(mode) : "api-key",
       authFlow: credential?.type === "oauth" ? credential.authFlow : undefined,
     });
+    return params.includeOAuthExpiry &&
+      credential?.type === "oauth" &&
+      Number.isFinite(credential.expires)
+      ? { ...projected, expires: credential.expires }
+      : projected;
   };
 
   if (profileId) {
