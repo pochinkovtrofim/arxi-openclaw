@@ -332,6 +332,69 @@ describe("container image replacement Doctor repair and startup readiness", () =
     });
   });
 
+  it("an age cutoff releases a startup-migration group no later migration completed", async () => {
+    await withContainerState(async (stateDir) => {
+      const databasePath = seedSchema19Agent(stateDir);
+      await withAgentDatabaseStartupAdmission(async () => {
+        await repairContainerState();
+      });
+      await cleanupSessionStateForTest();
+      const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+      // A run that never recorded its completion keeps its group, like an unsuperseded one.
+      const [manifestPath] = listSessionSqliteMigrationManifestPaths(env);
+      const manifest = readSessionSqliteMigrationManifest(manifestPath!)!;
+      delete manifest.completedAt;
+      writeSessionSqliteMigrationManifest({ manifest, manifestPath: manifestPath! });
+      const startedAt = Date.parse(manifest.startedAt);
+      const inspect = (expiredBefore?: number) =>
+        inspectSessionSqliteRecovery({ cfg: {}, env, expiredBefore });
+      expect(inspect().artifacts.map((item) => item.reason)).toEqual([
+        "incomplete-recovery-operation",
+        "incomplete-recovery-operation",
+      ]);
+      expect(inspect(startedAt).artifacts.map((item) => item.outcome)).toEqual([
+        "protected",
+        "protected",
+      ]);
+      // A failed validation keeps the whole group whatever its age.
+      const failed = structuredClone(manifest);
+      failed.targets[0]!.validationBeforeArchive = "failed";
+      writeSessionSqliteMigrationManifest({ manifest: failed, manifestPath: manifestPath! });
+      expect(inspect(startedAt + 1).artifacts.map((item) => item.outcome)).toEqual([
+        "protected",
+        "protected",
+      ]);
+      writeSessionSqliteMigrationManifest({ manifest, manifestPath: manifestPath! });
+      const preview = inspect(startedAt + 1);
+      expect(preview.artifacts.map((item) => [item.outcome, item.reason])).toEqual([
+        ["candidate", "expired-recovery-original"],
+        ["candidate", "expired-recovery-original"],
+      ]);
+      const retired = await retireSessionSqliteRecovery({
+        env,
+        expiredBefore: startedAt + 1,
+        preview,
+        readConfig: async () => ({}),
+        confirm: async () => true,
+      });
+      expect(retired.status).toBe("complete");
+      expect(retired.totals.removedFiles).toBe(2);
+      expect(
+        fs
+          .readdirSync(path.dirname(databasePath))
+          .filter((name) => name.includes(".pre-startup-migration-")),
+      ).toEqual([]);
+      expect(fs.existsSync(databasePath)).toBe(true);
+      // The manifest records the disposal, so the missing originals read as retired, not lost.
+      expect(inspect().artifacts.map((item) => item.outcome)).toEqual(["disposed", "disposed"]);
+      await cleanupSessionStateForTest();
+      await withAgentDatabaseStartupAdmission(async () => {
+        await repairContainerState();
+      });
+      await runStartupConfigPreflight({ gateway: true });
+    });
+  });
+
   it("leaves legacy workspace and audit state untouched until Doctor repairs them", async () => {
     await withContainerState(async (stateDir, workspace) => {
       closeOpenClawStateDatabaseForTest();

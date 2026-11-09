@@ -166,6 +166,8 @@ export async function settleDuplicateSessionSqliteArchives(params: {
 /** The CLI supplies source-only configuration again under authority before exact confirmation. */
 export async function retireSessionSqliteRecovery(params: {
   env: NodeJS.ProcessEnv;
+  /** The preview's age cutoff, so both inventories select the same originals. */
+  expiredBefore?: number;
   preview: RecoveryCleanupReport;
   readConfig(): Promise<OpenClawConfig>;
   confirm(report: RecoveryCleanupReport): Promise<boolean>;
@@ -184,6 +186,7 @@ export async function retireSessionSqliteRecovery(params: {
       const { report, references, manifestPaths } = collectRecoveryInventory({
         cfg: await params.readConfig(),
         env: params.env,
+        expiredBefore: params.expiredBefore,
       });
       authority.assertCurrent();
       if (
@@ -256,7 +259,11 @@ export async function retireSessionSqliteRecovery(params: {
       }
       authority.assertCurrent();
       const currentConfig = await params.readConfig();
-      const rechecked = collectRecoveryInventory({ cfg: currentConfig, env: params.env });
+      const rechecked = collectRecoveryInventory({
+        cfg: currentConfig,
+        env: params.env,
+        expiredBefore: params.expiredBefore,
+      });
       // Existing artifacts can become protected during confirmation, not only newly added manifests.
       // Revalidate the whole selection before retiring any dependent originals.
       if (

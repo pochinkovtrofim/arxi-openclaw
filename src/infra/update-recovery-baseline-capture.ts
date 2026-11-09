@@ -627,13 +627,14 @@ const STANDALONE_DOCTOR_CAPTURE_NAME =
 
 /**
  * After Doctor verifies repaired state, the newest sealed standalone capture is the only
- * rollback point kept. Incomplete captures left by earlier runs never established a
- * rollback point and are retired too; linked, update-owned and outcome-bearing captures stay.
+ * rollback point kept, until older than `expiredBefore`. Incomplete captures left by earlier
+ * runs never established one and go too; linked, update-owned and outcome-bearing ones stay.
  */
 export async function retireSupersededStandaloneDoctorCaptures(params: {
   stateDir: string;
   runStartedAtMs: number;
   assertCurrent: () => void;
+  expiredBefore?: number;
 }): Promise<{ retired: string[]; warnings: string[] }> {
   const retired: string[] = [];
   const warnings: string[] = [];
@@ -699,8 +700,9 @@ export async function retireSupersededStandaloneDoctorCaptures(params: {
     (latest, capture) => (!latest || capture.createdAt >= latest.createdAt ? capture : latest),
     undefined,
   );
+  const expiredBefore = Math.min(params.runStartedAtMs, params.expiredBefore ?? -Infinity);
   for (const directory of [
-    ...sealed.flatMap((capture) => (capture === newest ? [] : [capture.directory])),
+    ...sealed.flatMap((c) => (c === newest && c.createdAt >= expiredBefore ? [] : [c.directory])),
     ...incomplete,
   ]) {
     try {

@@ -681,6 +681,20 @@ it("retires superseded and earlier incomplete Doctor captures and preserves the 
     }
     expect((await fs.lstat(linked)).isSymbolicLink()).toBe(true);
     expect(await fs.readlink(linked)).toBe(linkedTarget);
+
+    // An age cutoff releases the newest sealed capture too; nothing else changes.
+    const retire = (expiredBefore: number) =>
+      retireSupersededStandaloneDoctorCaptures({
+        stateDir: state.stateDir,
+        runStartedAtMs: now + 1,
+        assertCurrent,
+        expiredBefore,
+      });
+    expect(await retire(now)).toEqual({ retired: [], warnings: [] });
+    expect(await retire(now + 1)).toEqual({ retired: [newest], warnings: [] });
+    for (const retained of [incomplete, update, linkedTarget, ...interrupted]) {
+      expect((await fs.lstat(retained)).isDirectory()).toBe(true);
+    }
   });
 });
 

@@ -235,12 +235,14 @@ const CRON_DOCTOR_BACKUP_SUFFIX =
 
 /**
  * Called after Doctor verified the repaired state. Backups from this run keep its staged
- * originals; otherwise the newest earlier backup stays as the single cron rollback point.
+ * originals; otherwise the newest earlier backup stays as the single cron rollback point,
+ * until it was created before `expiredBefore` (epoch ms).
  */
 export function retireSupersededCronDoctorBackups(params: {
   env: NodeJS.ProcessEnv;
   runStartedAtMs: number;
   assertCurrent: () => void;
+  expiredBefore?: number;
 }): { retired: string[]; warnings: string[] } {
   const sourcePath = resolveOpenClawStateSqlitePath(params.env);
   const directory = path.dirname(sourcePath);
@@ -269,7 +271,10 @@ export function retireSupersededCronDoctorBackups(params: {
     ? params.runStartedAtMs
     : Math.max(...backups.map(({ createdAtMs }) => createdAtMs));
   for (const backup of backups) {
-    if (backup.createdAtMs >= keepSince) {
+    const expired =
+      backup.createdAtMs < params.runStartedAtMs &&
+      backup.createdAtMs < (params.expiredBefore ?? Number.NEGATIVE_INFINITY);
+    if (backup.createdAtMs >= keepSince && !expired) {
       continue;
     }
     try {
