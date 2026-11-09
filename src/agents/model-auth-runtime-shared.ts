@@ -19,6 +19,8 @@ export type ResolvedProviderAuth = {
   mode: "api-key" | "oauth" | "token" | "aws-sdk";
   /** Provider-owned OAuth grant family; distinct from credential renewal mode. */
   authFlow?: string;
+  /** OAuth access expiry (ms), returned only to callers that ask for it. */
+  expires?: number;
 };
 
 export function resolveDirectProviderCredentialMode(params: {

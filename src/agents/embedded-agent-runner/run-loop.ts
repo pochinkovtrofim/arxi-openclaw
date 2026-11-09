@@ -203,6 +203,8 @@ export async function runPreparedEmbeddedLoop(
   startupStages.mark("context-engine");
   notifyExecutionPhase("context_engine", { provider, model: modelId });
   try {
+    // Stopped first thing in the finally below, whatever settlement then does.
+    preparedRuntime.startOAuthLoginRenewal();
     await providerReview.admit();
     const compactionRuntime = createEmbeddedRunCompactionRuntime({
       runParams: params,
@@ -587,6 +589,7 @@ export async function runPreparedEmbeddedLoop(
       return providerReview.finish(terminalResolution.result);
     }
   } finally {
+    preparedRuntime.stopRuntimeAuthRefreshTimer();
     // Successful registration already cleared the marker; every earlier exit
     // must restore terminal suppression before asynchronous settlement begins.
     contextRecoveryState.restoreTimeoutRecoveryAbandonment();

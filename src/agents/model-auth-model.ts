@@ -229,6 +229,9 @@ export async function getApiKeyForModelCore(params: {
   allowAuthProfileFallback?: boolean;
   skipSetupProviderFallback?: boolean;
   secretSentinels?: boolean;
+  /** Renew an OAuth login even when its recorded expiry still looks usable. */
+  forceRefresh?: boolean;
+  includeOAuthExpiry?: boolean;
 }): Promise<ResolvedProviderAuth> {
   return resolveApiKeyForProviderCore({
     provider: params.model.provider,
@@ -246,6 +249,8 @@ export async function getApiKeyForModelCore(params: {
     modelApi: params.model.api,
     modelBaseUrl: params.model.baseUrl,
     secretSentinels: params.secretSentinels,
+    forceRefresh: params.forceRefresh,
+    includeOAuthExpiry: params.includeOAuthExpiry,
   });
 }
 
