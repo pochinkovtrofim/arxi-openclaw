@@ -54,8 +54,10 @@ const MODEL_NOT_FOUND_USER_TEXT =
 const RUNTIME_FAILURE_COPY: Partial<
   Record<ReturnType<typeof classifyProviderRuntimeFailureKind>, string>
 > = {
-  auth_refresh:
-    "Couldn't sign in to the AI service. Sign in again under Models in the Control UI or run `openclaw configure`.",
+  // A refused or unreadable sign-in is the invalid-token notice the owner's channel words.
+  get auth_refresh() {
+    return renderInvalidTokenText();
+  },
   refresh_contention: "Another sign-in is still in progress. Wait a moment, then try again.",
   refresh_timeout:
     "Signing in took too long. Try again in a moment. If it keeps happening, sign in again under Models in the Control UI.",
@@ -65,8 +67,9 @@ const RUNTIME_FAILURE_COPY: Partial<
     "The sign-in link wasn't accepted. Try signing in again. If asked for a link, paste the full link from your browser.",
   auth_scope:
     "This login doesn't have the access OpenClaw needs. Sign in again under Models in the Control UI.",
-  auth_html:
-    "Couldn't sign in to the AI service. Sign in again under Models in the Control UI or run `openclaw configure`.",
+  get auth_html() {
+    return renderInvalidTokenText();
+  },
   get auth_invalid_token() {
     return renderInvalidTokenText();
   },

@@ -16,6 +16,7 @@ import type { SessionMemoryTranscript } from "../../hooks/bundled/session-memory
 import type { SessionCostUsageCacheReadResult } from "../../infra/session-cost-usage-cache-read.js";
 import type { SensitiveTextRedactionSnapshot } from "../../logging/redact.js";
 import type { UserTurnTranscriptAdmissionReceipt } from "../../sessions/user-turn-transcript.types.js";
+import type { UserMessageCopy } from "../../shared/user-message.js";
 import type { OpenClawRegisteredAgentDatabase } from "../../state/openclaw-agent-db-contract.js";
 import type { OpenClawAgentDatabaseReadValidation } from "../../state/openclaw-agent-db-validation-cache.js";
 import type { VoiceSessionMatch } from "../../talk/client-voice-session-store.js";
@@ -222,6 +223,8 @@ export type SessionTranscriptHistoryWorkerInput = {
   request: SessionHistoryWorkerRequest;
   target: Omit<PreparedSessionHistoryReadTarget, "database">;
   admission?: UserTurnTranscriptAdmissionReceipt;
+  /** Failure copy the history shows, rendered by the main thread's hook. */
+  userCopy?: UserMessageCopy;
 };
 
 export type SessionPreviewWorkerInput = {
