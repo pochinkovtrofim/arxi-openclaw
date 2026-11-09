@@ -5,6 +5,7 @@ import type {
   UsageCostWorkerReply,
 } from "../../infra/session-cost-usage-worker.types.js";
 import { serveOwnedWorkerTasks } from "../../infra/worker-task-server.js";
+import { installUserMessageCopy } from "../../shared/user-message.js";
 import { cloneEnvWithPlatformSemantics } from "../config-env-vars.js";
 import type { SessionIdentityEvidenceResult } from "./session-accessor.sqlite-entry-availability.js";
 import {
@@ -586,6 +587,7 @@ serveOwnedWorkerTasks(
           if (request.kind === "history-page") {
             const { readSessionHistoryRequest } =
               await import("../../gateway/session-history-worker-reader.js");
+            installUserMessageCopy(request.userCopy);
             return readSessionHistoryRequest(request.request, {
               ...request.target,
               database: request.database,

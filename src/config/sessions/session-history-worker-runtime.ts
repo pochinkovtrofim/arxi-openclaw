@@ -8,6 +8,7 @@ import {
 import { WorkerTaskError } from "../../infra/worker-task-pool.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { createDeferredCore } from "../../shared/deferred.js";
+import { captureUserMessageCopy } from "../../shared/user-message.js";
 import {
   createOpenClawAgentDatabasePathMatcher,
   resolveOpenClawAgentSqlitePath,
@@ -452,12 +453,20 @@ export async function readSessionHistoryPageInWorker(
           : { sourceDatabases: {} }),
         ...(entryValidationKey ? { entryValidationKey } : {}),
       };
+      // Only these reads project assistant failure text in the worker.
+      const userCopy =
+        capturedRequest.kind === "rpc" ||
+        capturedRequest.kind === "rpc-message" ||
+        capturedRequest.kind === "http"
+          ? captureUserMessageCopy()
+          : undefined;
       const input: SessionTranscriptHistoryWorkerInput = {
         kind: "history-page",
         database: currentSource,
         request: capturedRequest,
         target,
         ...(admission ? { admission } : {}),
+        ...(userCopy ? { userCopy } : {}),
       };
       const key = JSON.stringify({ ...input, request: keyedRequest });
       const metadataInput: SessionColdMetadataWorkerInput = {
