@@ -396,7 +396,7 @@ export function collectRecoveryInventory(params: {
       }
     }
   }
-  protectRecoveryDependencies(artifacts, references);
+  protectRecoveryDependencies(artifacts, references, undefined, params.expiredBefore);
   return {
     references,
     manifestPaths,
@@ -404,10 +404,17 @@ export function collectRecoveryInventory(params: {
   };
 }
 
+/**
+ * Before `expiredBefore`, an untrusted backup group member whose backup is already gone (a
+ * host's credential database outside the state root, on a disk replaced since) no longer
+ * binds its group: the trusted members may go, and then no file of the group is left for
+ * Doctor to find half there. A failed or blocked member still binds it.
+ */
 export function protectRecoveryDependencies(
   artifacts: RecoveryCleanupArtifact[],
   refs: Map<string, RecoveryArtifactReference[]>,
   adoptions?: ReadonlyMap<RecoveryArtifactReference, MigrationArtifact>,
+  expiredBefore?: number,
 ): void {
   const active = (ref: RecoveryArtifactReference) =>
     (!ref.consumedByRestore || statMigrationPath(ref.move.archivePath) !== undefined) &&
@@ -429,7 +436,14 @@ export function protectRecoveryDependencies(
   const backupGroups = new Map<string, string>();
   for (const [archive, references] of refs) {
     for (const ref of references.filter(active)) {
-      if (ref.target.databaseIdentity) {
+      const unbound =
+        !ref.trusted &&
+        ref.target.validationBeforeArchive !== "failed" &&
+        ref.target.issues.every(isSessionSqliteMigrationWarning) &&
+        (Date.parse(ref.run.manifest.startedAt) || Number.POSITIVE_INFINITY) <
+          (expiredBefore ?? Number.NEGATIVE_INFINITY) &&
+        statMigrationPath(ref.move.archivePath) === undefined;
+      if (ref.target.databaseIdentity && !unbound) {
         const sibling = backupGroups.get(ref.run.manifestPath);
         if (sibling) {
           connect(archive, sibling);
