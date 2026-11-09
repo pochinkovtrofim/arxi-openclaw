@@ -49,13 +49,11 @@ describe("user message copy for a thread without the hook runner", () => {
     installUserMessageCopy(copy);
 
     expect(resolveUserMessage({ code: "rate_limit" })).toBe("copy:rate_limit");
-    expect(resolveUserMessage({ code: "auth_profile_failure", reason: "billing" })).toBe(
-      "copy:auth_profile_failure",
-    );
     expect(resolveUserMessage({ code: "assistant_request_failure", reason: "overloaded" })).toBe(
       "failure:overloaded",
     );
     expect(resolveUserMessage({ code: "model_fallback", activeModel: "m" })).toBeUndefined();
+    expect(resolveUserMessage({ code: "auth_profile_failure", reason: "billing" })).toBeUndefined();
   });
 
   it("captures nothing without a hook and installs nothing from it", () => {

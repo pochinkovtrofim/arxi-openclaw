@@ -34,7 +34,7 @@ export type UserMessageCopy = Readonly<Record<string, string>>;
 const FIXED_CODES: ReadonlySet<string> = new Set(FIXED_USER_MESSAGE_CODES);
 
 function userMessageCopyKey(event: UserMessageEvent): string | undefined {
-  if (event.code === "assistant_request_failure" || event.code === "auth_profile_failure") {
+  if (event.code === "assistant_request_failure") {
     return `${event.code}:${event.reason}`;
   }
   return FIXED_CODES.has(event.code) ? event.code : undefined;
@@ -59,7 +59,6 @@ export function captureUserMessageCopy(): UserMessageCopy | undefined {
   }
   for (const reason of FAILOVER_REASONS) {
     add({ code: "assistant_request_failure", reason });
-    add({ code: "auth_profile_failure", reason });
   }
   return copy;
 }

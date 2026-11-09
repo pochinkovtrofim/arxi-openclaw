@@ -453,7 +453,13 @@ export async function readSessionHistoryPageInWorker(
           : { sourceDatabases: {} }),
         ...(entryValidationKey ? { entryValidationKey } : {}),
       };
-      const userCopy = captureUserMessageCopy();
+      // Only these reads project assistant failure text in the worker.
+      const userCopy =
+        capturedRequest.kind === "rpc" ||
+        capturedRequest.kind === "rpc-message" ||
+        capturedRequest.kind === "http"
+          ? captureUserMessageCopy()
+          : undefined;
       const input: SessionTranscriptHistoryWorkerInput = {
         kind: "history-page",
         database: currentSource,
