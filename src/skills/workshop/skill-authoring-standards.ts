@@ -8,6 +8,7 @@ export const SKILL_AUTHORING_STANDARDS_PROMPT = [
   "- description, in the user's language because they read it in their list of learned skills (aim for ≤160 characters; keep existing triggers when editing): open with the trigger situations, one phrase per distinct case, then what the skill produces. Name the class of work, not today's task.",
   "- Keep in SKILL.md what every run needs; move what only some runs need into references/, templates/, or scripts/ and point to it from the step that needs it.",
   "- Name each tool exactly as the current tools do. Tools once named arxi_* are now ro_* with the same suffix; rewrite such a step. A tool missing from the visible list may still be in the catalog, so a missing name alone is no reason to rewrite a step.",
+  '- In an OpenClaw Code Mode program, read a public JSON URL (a plain GET with no key) with `await web_fetch({url, extractMode: "json"})` and use `.json`, because it returns the parsed body whole; rewrite such a step that pipes curl into a JSON parser or reads a saved web_fetch spill file (openclaw-web-fetch-*). Keep curl for any other request and outside OpenClaw Code Mode.',
 ].join("\n");
 
 export const SKILL_DO_NOT_CAPTURE_PROMPT = [
