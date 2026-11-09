@@ -514,6 +514,16 @@ export const CODE_MODE_CONTROLLER_SOURCE = String.raw`
       configurable: true,
     });
   }
+  // Aliases are hidden old names (the shell's exec); a real binding always wins.
+  for (const binding of catalogBindings) {
+    const handle = callableHandles.get(binding?.callableName);
+    if (!handle || !Array.isArray(binding.aliases)) continue;
+    for (const alias of binding.aliases) {
+      if (typeof alias !== "string" || !/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(alias)) continue;
+      if (Object.hasOwn(globalThis, alias)) continue;
+      Object.defineProperty(globalThis, alias, { value: handle, configurable: true });
+    }
+  }
 
   Object.defineProperties(globalThis, {
     API: { value: api, enumerable: true },

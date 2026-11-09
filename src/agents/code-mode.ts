@@ -4,7 +4,11 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { finalizeAgentToolAvailability } from "./agent-tool-availability.js";
 import type { HookContext } from "./agent-tools.before-tool-call.js";
 import { CODE_MODE_NODES_TOOL_ID, isCodeModeSwarmAvailable } from "./code-mode-bridge.js";
-import { createCodeModeCatalogBindings, type CodeModeCatalogBinding } from "./code-mode-catalog.js";
+import {
+  CODE_MODE_SHELL_TOOL_ID,
+  createCodeModeCatalogBindings,
+  type CodeModeCatalogBinding,
+} from "./code-mode-catalog.js";
 import {
   CODE_MODE_EXEC_TOOL_NAME,
   CODE_MODE_WAIT_TOOL_NAME,
@@ -171,14 +175,19 @@ function createCodeModeExecDescription(
     : undefined;
   const catalogIndex = bindings ? formatCodeModeCatalogIndex(bindings) : "";
   // Only the effective core binding proves shell capability after client overrides.
-  const shellTool = bindings?.find((entry) => entry.id === "openclaw:core:exec");
+  const shellTool = bindings?.find((entry) => entry.id === CODE_MODE_SHELL_TOOL_ID);
   const shellGuidance = shellTool
-    ? ` Use the shell tool \`${shellTool.callableName}\` for heavier computation.`
+    ? ` Shell commands run from your JavaScript through \`await ${shellTool.callableName}({command})\`; use it for heavier computation.`
+    : "";
+  const webFetchTool = bindings?.find((entry) => entry.id === "openclaw:core:web_fetch");
+  const webFetchGuidance = webFetchTool
+    ? ` For an HTTP API, \`await ${webFetchTool.callableName}({url, extractMode: "json"})\` returns the parsed body as \`.json\`.`
     : "";
   return (
     `Run JavaScript in OpenClaw. Each \`exec\` runs in a fresh JavaScript context; variables, functions and imports never carry over between cells. Set \`title\` to a 3–7 word purpose. Guest work and inline tool waits share a ${timeoutMs} ms wall-clock budget per \`exec\`/\`wait\`; approvals pause it. Guest computation over this budget times out. awaitResults:true keeps needed results owned and pauses only off-VM tool waits; run/tool deadlines still apply. Other pending tools may return \`waiting\` for \`wait\`.` +
     shellGuidance +
     ` Enabled tools are async global functions. Await dependent calls in order; independent calls may run with Promise.all. Declared output fields may feed later calls in the same program; avoid extra inspection calls. Emit output with \`text(value)\` or \`json(value)\`. Return the final value, otherwise \`null\`. Oversized final objects/arrays may return \`value.reference\`. \`-> ?\` means unknown output: do not feed it into guessed field-dependent logic in the same program. Return it raw or \`await results.save(value)\`; use a later \`exec\` for dependent composition. Save returns \`{id,bytes,count,shape,preview,previewTruncated}\`: emit that descriptor directly; full JSON stays stored. Load/delete with \`results.load(id)\`/\`results.delete(id)\`. Saved results references expire when the current reply ends; never reuse reference ids from earlier turns; use \`store\` for data needed later. \`await store(key, value)\`/\`await load(key)\` keep small JSON values across cells and turns in this session (survive restarts); contract: \`API.read("results.d.ts")\`. For omitted tools, use \`catalog.search(query)\`; results are callable: \`const [tool] = await catalog.search("..."); return await tool({...});\`. Use handle \`describe()\` for schemas. \`setTimeout\` and \`clearTimeout\` work. \`TextEncoder\`/\`TextDecoder\` convert local text and bytes. Console log/info/warn/error/debug emit bounded text. Nested calls enforce normal tool policy and approvals. Tool failures are catchable; inspect possible effects before retrying. Nested results are intact or throw resource errors. Cell reply inbox: ${Math.min(config.memoryLimitBytes, config.maxSnapshotBytes)} bytes; consume replies or paginate if full. Output/value/errors share ${maxOutputBytes} bytes across waits. Other truncation reports original JSON prefixes/omitted bytes; rerun with narrower args. Output is incremental; changed cumulative summaries replace earlier ones. Node.js modules and \`require\`/\`import\` are NOT available; use tools for external actions.` +
+    webFetchGuidance +
     apiGuidance +
     mcpGuidance +
     swarmGuidance +

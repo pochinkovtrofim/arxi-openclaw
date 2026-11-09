@@ -10,7 +10,11 @@ import type { NodeListNode } from "../shared/node-list-types.js";
 import { resolveEligibleNodeFromList } from "../shared/node-resolve.js";
 import { resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
 import { getBeforeToolCallFailureDisposition } from "./agent-tools.before-tool-call.js";
-import { redactCodeModeCatalogIds, type CodeModeCatalogProjection } from "./code-mode-catalog.js";
+import {
+  CODE_MODE_SHELL_TOOL_ID,
+  redactCodeModeCatalogIds,
+  type CodeModeCatalogProjection,
+} from "./code-mode-catalog.js";
 import type { CodeModeNamespaceRuntime } from "./code-mode-namespaces.js";
 import type { CodeModeReplyLease } from "./code-mode-program-data.js";
 import type { CodeModeResultsAccess } from "./code-mode-results.js";
@@ -196,7 +200,7 @@ export function requiresCodeModeCompletion(
       typeof request.args[0] === "string"
         ? catalogProjection.byCallableName.get(request.args[0])
         : undefined;
-    return binding?.id === "openclaw:core:exec" || binding?.id === "openclaw:core:agents_wait";
+    return binding?.id === CODE_MODE_SHELL_TOOL_ID || binding?.id === "openclaw:core:agents_wait";
   });
 }
 
@@ -339,7 +343,7 @@ export async function runBridgeRequest(params: {
         }
         let input = values[1] ?? {};
         if (
-          binding.id === "openclaw:core:exec" &&
+          binding.id === CODE_MODE_SHELL_TOOL_ID &&
           isRecord(input) &&
           input.background !== true &&
           params.completionRequired

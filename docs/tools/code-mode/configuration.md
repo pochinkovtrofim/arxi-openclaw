@@ -53,8 +53,9 @@ can instead return `waiting`, so a later `wait` can resume them with a fresh cal
 budget. Headless continuations also honor the exact worker-admission budget after
 queueing and initialization, alongside their configured slice limit and single
 headless wall-clock deadline. A checkpoint does not reset that wall deadline.
-When the shell `exec` tool is available, use it for heavier computation
-and keep guest JavaScript focused on coordinating tools and processing results.
+When the shell `exec` tool is available, guest JavaScript calls it as
+`shell({command})`; use it for heavier computation and keep guest JavaScript
+focused on coordinating tools and processing results.
 
 If code mode is enabled but the selected executor cannot load, OpenClaw fails closed
 for that run; it does not silently expose normal tools as a fallback. This

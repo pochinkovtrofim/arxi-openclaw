@@ -129,7 +129,7 @@ and namespace calls including MCP — are auto-drained inside the same
 `exec`/`wait` call while they resolve within the deadline, so a compact code
 block that awaits several tools runs to completion in one model turn instead of
 forcing one model tool call per await.
-A bridged shell `exec` without `yieldMs` or `background: true` waits for the
+A bridged shell call (`shell(...)`) without `yieldMs` or `background: true` waits for the
 remaining call budget (`tools.codeMode.timeoutMs`, default 10 s) minus a resume
 margin before backgrounding, so commands that finish within that window return
 inline in the same turn. Late sequential calls background sooner and still
@@ -163,7 +163,7 @@ Ordinary cells retain their existing explicit-yield behavior.
 
 Required cells collect ordinary shell commands to completion. Explicit
 `background: true` remains the opt-out for intentionally detached servers.
-A shell `exec({awaitResults: true, ...})` or `agents_wait({awaitResults: true, ...})`
+A `shell({awaitResults: true, ...})` or `agents_wait({awaitResults: true, ...})`
 inside an ordinary cell also makes that cell required. These declarations do
 not enable `tools.exec.notifyOnExit`.
 
@@ -340,6 +340,8 @@ Inside the guest runtime:
   `catalog`, `MCP`, `API`, `nodes`, `skills`, `namespaces`, `results`, `store`,
   `load`, output/timer helpers,
   or optional Swarm globals.
-- The normal shell `exec` tool is callable as the `exec(...)` guest global when
-  policy allows it. The code-mode control `exec` is not recursively available
-  inside the guest.
+- The normal shell `exec` tool is callable as the `shell(...)` guest global when
+  policy allows it, so the guest never has a second `exec` beside the
+  model-visible one. Policy, approvals and `toolsAllow` still name it `exec`, and
+  `exec(...)` stays an unadvertised guest alias for saved scripts. The code-mode
+  control `exec` is not recursively available inside the guest.

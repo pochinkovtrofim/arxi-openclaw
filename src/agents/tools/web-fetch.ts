@@ -11,6 +11,7 @@ import {
 import { containsAsciiControlCharacter } from "@openclaw/normalization-core/string-normalization";
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { Type, type Static } from "typebox";
+import type { AgentToolResult } from "../../../packages/agent-core/src/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { sha256Hex } from "../../infra/crypto-digest.js";
 import { SsrFBlockedError, type LookupFn, type SsrFPolicy } from "../../infra/net/ssrf.js";
@@ -37,6 +38,7 @@ import {
   readPositiveIntegerParam,
   readToolStringParam,
   scheduleToolProgress,
+  textResult,
 } from "./common.js";
 import {
   extractBasicHtmlContent,
@@ -58,7 +60,18 @@ import {
 import type { CacheEntry } from "./web-shared.js";
 import { resolveWebToolRuntimeContext } from "./web-tool-runtime-context.js";
 
-const EXTRACT_MODES = ["markdown", "text"] as const;
+const EXTRACT_MODES = ["markdown", "text", "json", "raw"] as const;
+type WebFetchExtractMode = (typeof EXTRACT_MODES)[number];
+/** json/raw return the response body as data for code, not page text for reading. */
+type WebFetchDataMode = Extract<WebFetchExtractMode, "json" | "raw">;
+
+function isDataExtractMode(mode: WebFetchExtractMode): mode is WebFetchDataMode {
+  return mode === "json" || mode === "raw";
+}
+
+function readExtractMode(value: string | undefined): WebFetchExtractMode {
+  return EXTRACT_MODES.find((mode) => mode === value) ?? "markdown";
+}
 
 const DEFAULT_FETCH_MAX_CHARS = 20_000;
 const DEFAULT_FETCH_MAX_RESPONSE_BYTES = 750_000;
@@ -105,13 +118,14 @@ const WebFetchSchema = Type.Object({
   url: Type.String({ description: "HTTP(S) URL." }),
   extractMode: Type.Optional(
     stringEnum(EXTRACT_MODES, {
-      description: "Extract as markdown/text.",
+      description:
+        "markdown/text: readable page. json: parsed body in `json` (unsafe integers as strings). raw: body as sent in `text`. json/raw carry no inline markers; still untrusted.",
       default: "markdown",
     }),
   ),
   maxChars: Type.Optional(
     Type.Integer({
-      description: "Max chars returned; truncates.",
+      description: "Max chars returned; truncates. json/raw values stay whole for code.",
       minimum: 100,
     }),
   ),
@@ -130,7 +144,8 @@ const WebFetchOutputSchema = Type.Object(
       {
         untrusted: Type.Literal(true),
         source: Type.Literal("web_fetch"),
-        wrapped: Type.Literal(true),
+        // false for json/raw: their data has no inline boundary markers.
+        wrapped: Type.Boolean(),
         provider: Type.Optional(Type.String()),
       },
       { additionalProperties: false },
@@ -150,7 +165,8 @@ const WebFetchOutputSchema = Type.Object(
     ),
     fetchedAt: Type.String(),
     tookMs: Type.Integer({ minimum: 0 }),
-    text: Type.String(),
+    text: Type.Optional(Type.String()),
+    json: Type.Optional(Type.Unknown()),
     warning: Type.Optional(Type.String()),
     cached: Type.Optional(Type.Literal(true)),
   },
@@ -311,8 +327,8 @@ function wrapWebFetchContent(value: string, maxChars: number): WebFetchWrappedCo
 
 type WebFetchWrappedContent = Pick<
   Static<typeof WebFetchOutputSchema>,
-  "text" | "truncated" | "rawLength" | "length" | "spill"
->;
+  "truncated" | "rawLength" | "length" | "spill"
+> & { text: string };
 
 async function spillWebFetchContent(
   value: string,
@@ -369,7 +385,7 @@ function normalizeContentType(value: string | null | undefined): string | undefi
 
 type WebFetchRuntimeParams = {
   url: string;
-  extractMode: ExtractMode;
+  extractMode: WebFetchExtractMode;
   maxChars: number;
   maxResponseBytes: number;
   maxRedirects: number;
@@ -419,11 +435,140 @@ function sanitizeWebFetchUrl(raw: string): string {
   return repaired.replace(/^(https?:\/\/[^/?#\s]+)\s+$/i, "$1");
 }
 
+function resolveResultFinalUrl(
+  url: string,
+  candidate: unknown,
+): { finalUrl: string; oversizedFinalUrl: boolean } {
+  const resolvedFinalUrl = normalizeProviderFinalUrl(candidate) ?? url;
+  const oversizedFinalUrl =
+    resolvedFinalUrl !== url && resolvedFinalUrl.length > WEB_FETCH_RESULT_URL_MAX_CHARS;
+  // As with invalid provider URLs, retain the requested URL rather than invent
+  // a different destination by clipping a redirect's path or query.
+  return { finalUrl: oversizedFinalUrl ? url : resolvedFinalUrl, oversizedFinalUrl };
+}
+
+/**
+ * Parse an API body for code. Integers past 2^53 and numbers outside double
+ * range keep their source text as a string: a rounded id would silently name a
+ * different record.
+ */
+function parseWebFetchJson(body: string): { value: unknown } | undefined {
+  try {
+    return {
+      value: JSON.parse(
+        body.replace(/^\uFEFF/u, ""),
+        (_key, value: unknown, context?: { source?: string }) =>
+          typeof value === "number" &&
+          context?.source !== undefined &&
+          (!Number.isFinite(value) ||
+            (!Number.isSafeInteger(value) && /^-?\d+$/u.test(context.source)))
+            ? context.source
+            : value,
+      ),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * json/raw results: the body is data for guest code, so it carries no inline
+ * boundary markers. `externalContent.untrusted` marks it instead, the tool's
+ * network source taints the turn, and Code Mode wraps any of it that reaches
+ * the model. Model-visible text is rendered separately by
+ * `buildWebFetchDataResult`.
+ */
+function buildWebFetchDataPayload(params: {
+  mode: WebFetchDataMode;
+  requestedUrl: string;
+  finalUrl: string;
+  status: number;
+  contentType: string;
+  body: string;
+  bodyTruncated: boolean;
+  bytesRead: number;
+  maxResponseBytes: number;
+  tookMs: number;
+}): Record<string, unknown> {
+  const { mode, body } = params;
+  const contentType = truncateWebFetchText(params.contentType, 256).text;
+  let data: { json: unknown } | { text: string };
+  if (mode === "json") {
+    if (params.bodyTruncated) {
+      throw new Error(
+        `Web fetch json: the response is larger than ${params.maxResponseBytes} bytes, so its JSON is incomplete. Ask the API for less (a filter, limit or smaller page), or use extractMode "raw" for the first ${params.maxResponseBytes} bytes.`,
+      );
+    }
+    const parsed = parseWebFetchJson(body);
+    if (!parsed) {
+      throw new Error(
+        `Web fetch json: the ${contentType} response is not valid JSON. Use extractMode "raw" for its text, or "markdown" to read it as a page.`,
+      );
+    }
+    data = { json: parsed.value };
+  } else {
+    data = { text: body };
+  }
+  const { finalUrl, oversizedFinalUrl } = resolveResultFinalUrl(
+    params.requestedUrl,
+    params.finalUrl,
+  );
+  return {
+    url: params.requestedUrl,
+    finalUrl,
+    contentType,
+    status: params.status,
+    extractMode: mode,
+    extractor: mode,
+    externalContent: { untrusted: true, source: "web_fetch", wrapped: false },
+    truncated: params.bodyTruncated || oversizedFinalUrl,
+    length: body.length,
+    rawLength: body.length,
+    fetchedAt: new Date().toISOString(),
+    tookMs: params.tookMs,
+    ...data,
+    ...(params.bodyTruncated
+      ? { warning: `Response body incomplete after ${params.bytesRead} bytes.` }
+      : {}),
+  };
+}
+
+/**
+ * Direct callers read the text block, not `details`: give them the same wrapped,
+ * bounded and spilled view as markdown mode, while code receives the whole value.
+ */
+async function buildWebFetchDataResult(
+  details: Record<string, unknown>,
+  maxChars: number,
+): Promise<AgentToolResult<Record<string, unknown>>> {
+  const mode = details.extractMode === "json" ? "json" : "raw";
+  const display = await buildWebFetchPayload({
+    payload: {
+      ...details,
+      text:
+        mode === "json"
+          ? JSON.stringify(details.json, null, 2)
+          : typeof details.text === "string"
+            ? details.text
+            : "",
+    },
+    requestedUrl: typeof details.url === "string" ? details.url : "",
+    extractMode: mode,
+    maxChars,
+    tookMs: typeof details.tookMs === "number" ? details.tookMs : 0,
+  });
+  return textResult(JSON.stringify(display, null, 2), {
+    ...details,
+    // Aggregate truncation keeps the recovery footer only when details name it.
+    ...(display.spill ? { spill: display.spill } : {}),
+  });
+}
+
 async function buildWebFetchPayload(params: {
   providerId?: string;
   payload: unknown;
   requestedUrl: string;
-  extractMode: ExtractMode;
+  extractMode: WebFetchExtractMode;
   maxChars: number;
   tookMs: number;
 }): Promise<Record<string, unknown>> {
@@ -474,12 +619,7 @@ async function buildWebFetchPayload(params: {
   const providerRawLength =
     resolveOptionalIntegerOption(payload.rawLength, { min: 0 }) ?? wrapped.rawLength;
   const url = params.requestedUrl;
-  const resolvedFinalUrl = normalizeProviderFinalUrl(payload.finalUrl) ?? url;
-  const oversizedFinalUrl =
-    resolvedFinalUrl !== url && resolvedFinalUrl.length > WEB_FETCH_RESULT_URL_MAX_CHARS;
-  // As with invalid provider URLs, retain the requested URL rather than invent
-  // a different destination by clipping a redirect's path or query.
-  const finalUrl = oversizedFinalUrl ? url : resolvedFinalUrl;
+  const { finalUrl, oversizedFinalUrl } = resolveResultFinalUrl(url, payload.finalUrl);
   metadataTruncated ||= oversizedFinalUrl;
   const status = resolveIntegerOption(payload.status, 200, { min: 0 });
   const contentType =
@@ -530,6 +670,13 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
   if (!parsedUrl || !["http:", "https:"].includes(parsedUrl.protocol)) {
     throw new Error("Invalid URL: must be http or https");
   }
+  if (isDataExtractMode(params.extractMode)) {
+    // API answers go stale fast, and whole parsed bodies would pin up to
+    // maxResponseBytes per entry in the shared cache.
+    const payload = await fetchWebPayload(params);
+    throwIfFetchAborted(params.signal);
+    return payload;
+  }
   // Routing headers partition the process-wide cache without retaining their secrets.
   const headersCacheKey = params.headers
     ? sha256Hex(JSON.stringify(Object.entries(params.headers)))
@@ -566,7 +713,13 @@ async function runWebFetch(params: WebFetchRuntimeParams): Promise<Record<string
 
 async function fetchWebPayload(params: WebFetchRuntimeParams): Promise<Record<string, unknown>> {
   const start = Date.now();
+  const dataMode = isDataExtractMode(params.extractMode) ? params.extractMode : undefined;
+  const pageExtractMode: ExtractMode = params.extractMode === "text" ? "text" : "markdown";
   async function fetchProviderPayload(urlToFetch: string): Promise<Record<string, unknown> | null> {
+    // Fetch providers return extracted page text; an API body has no stand-in there.
+    if (dataMode) {
+      return null;
+    }
     const tookMs = Date.now() - start;
     const providerFallback = await params.resolveProviderFallback();
     throwIfFetchAborted(params.signal);
@@ -576,7 +729,7 @@ async function fetchWebPayload(params: WebFetchRuntimeParams): Promise<Record<st
     let rawPayload: unknown;
     try {
       rawPayload = await providerFallback.definition.execute(
-        { url: urlToFetch, extractMode: params.extractMode, maxChars: params.maxChars },
+        { url: urlToFetch, extractMode: pageExtractMode, maxChars: params.maxChars },
         { signal: params.signal },
       );
     } catch (error) {
@@ -614,7 +767,12 @@ async function fetchWebPayload(params: WebFetchRuntimeParams): Promise<Record<st
       init: {
         // Preserve casing and order on the wire; operator headers are already collision-free.
         headers: {
-          Accept: "text/markdown, text/html;q=0.9, */*;q=0.1",
+          Accept:
+            dataMode === "json"
+              ? "application/json, */*;q=0.1"
+              : dataMode === "raw"
+                ? "*/*"
+                : "text/markdown, text/html;q=0.9, */*;q=0.1",
           "User-Agent": params.userAgent,
           "Accept-Language": "en-US,en;q=0.9",
           ...params.headers,
@@ -664,6 +822,20 @@ async function fetchWebPayload(params: WebFetchRuntimeParams): Promise<Record<st
     const bodyResult = await readResponseText(res, { maxBytes: params.maxResponseBytes });
     throwIfFetchAborted(params.signal);
     const body = bodyResult.text;
+    if (dataMode) {
+      return buildWebFetchDataPayload({
+        mode: dataMode,
+        requestedUrl: params.url,
+        finalUrl,
+        status: res.status,
+        contentType: normalizedContentType,
+        body,
+        bodyTruncated: bodyResult.truncated,
+        bytesRead: bodyResult.bytesRead,
+        maxResponseBytes: params.maxResponseBytes,
+        tookMs: Date.now() - start,
+      });
+    }
     const responseTruncatedWarning = bodyResult.truncated
       ? `Response body incomplete after ${bodyResult.bytesRead} bytes.`
       : undefined;
@@ -689,7 +861,7 @@ async function fetchWebPayload(params: WebFetchRuntimeParams): Promise<Record<st
       let extracted = await extractReadableContent({
         html: body,
         url: finalUrl,
-        extractMode: params.extractMode,
+        extractMode: pageExtractMode,
         config: params.config,
       });
       if (!extracted?.text) {
@@ -704,7 +876,7 @@ async function fetchWebPayload(params: WebFetchRuntimeParams): Promise<Record<st
         }
         const basic = await extractBasicHtmlContent({
           html: body,
-          extractMode: params.extractMode,
+          extractMode: pageExtractMode,
         });
         if (!basic?.text) {
           const providerLabel =
@@ -780,7 +952,8 @@ export function createWebFetchTool(options?: {
     label: "Web Fetch",
     name: "web_fetch",
     resultContentSource: "network",
-    description: "Fetch URL; extract readable markdown/text. Lightweight; no browser automation.",
+    description:
+      "Fetch URL; extract readable markdown/text, or an API's JSON/raw body. Lightweight; no browser automation.",
     parameters: WebFetchSchema,
     outputSchema: WebFetchOutputSchema,
     execute: async (_toolCallId, args, signal, onUpdate) => {
@@ -831,13 +1004,16 @@ export function createWebFetchTool(options?: {
       const url = sanitizeWebFetchUrl(
         readToolStringParam(params, "url", { required: true, trim: false }),
       );
-      const extractMode =
-        readToolStringParam(params, "extractMode") === "text" ? "text" : "markdown";
-      const maxChars = readPositiveIntegerParam(params, "maxChars");
+      const extractMode = readExtractMode(readToolStringParam(params, "extractMode"));
       const maxCharsCap = resolveIntegerOption(
         executionFetch?.maxCharsCap,
         DEFAULT_FETCH_MAX_CHARS,
         { min: 100 },
+      );
+      const maxChars = resolveIntegerOption(
+        readPositiveIntegerParam(params, "maxChars") ?? executionFetch?.maxChars,
+        DEFAULT_FETCH_MAX_CHARS,
+        { min: 100, max: maxCharsCap },
       );
       const hostnameAllowlist = options?.hostnameAllowlistRef?.value;
       // The progress line is emitted only if the fetch is still pending after
@@ -852,11 +1028,7 @@ export function createWebFetchTool(options?: {
         const result = await runWebFetch({
           url,
           extractMode,
-          maxChars: resolveIntegerOption(
-            maxChars ?? executionFetch?.maxChars,
-            DEFAULT_FETCH_MAX_CHARS,
-            { min: 100, max: maxCharsCap },
-          ),
+          maxChars,
           maxResponseBytes,
           maxRedirects: resolveIntegerOption(
             executionFetch?.maxRedirects,
@@ -881,7 +1053,9 @@ export function createWebFetchTool(options?: {
           signal,
           resolveProviderFallback,
         });
-        return jsonResult(result);
+        return isDataExtractMode(extractMode)
+          ? await buildWebFetchDataResult(result, maxChars)
+          : jsonResult(result);
       } finally {
         clearProgressTimer();
       }
