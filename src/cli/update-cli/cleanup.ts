@@ -6,7 +6,49 @@ import {
 } from "../../commands/doctor-session-sqlite-recovery-inventory.js";
 import { retireSessionSqliteRecovery } from "../../commands/doctor-session-sqlite-retirement.js";
 import { readSourceConfigBestEffort } from "../../config/io.js";
+import { resolveStateDir } from "../../config/paths.js";
+import { resolvePathViaExistingAncestorSync } from "../../infra/boundary-path.js";
 import { defaultRuntime, writeRuntimeJson } from "../../runtime.js";
+import { parseDurationMs } from "../parse-duration.js";
+
+type DoctorCopyRetirement = { retired: string[]; warnings: string[] };
+
+/** Standalone Doctor captures and pre-repair cron backups made before `expiredBefore`. */
+async function retireExpiredDoctorCopies(expiredBefore: number): Promise<DoctorCopyRetirement> {
+  const [
+    { withDoctorSqliteMaintenanceLock },
+    { retireSupersededStandaloneDoctorCaptures },
+    { retireSupersededCronDoctorBackups },
+  ] = await Promise.all([
+    import("../../commands/doctor-sqlite-maintenance-lock.js"),
+    import("../../infra/update-recovery-baseline-capture.js"),
+    import("../../commands/doctor/cron/store-repair.js"),
+  ]);
+  return withDoctorSqliteMaintenanceLock({
+    env: process.env,
+    operation: "update recovery cleanup",
+    run: async (authority) => {
+      const runStartedAtMs = Date.now();
+      const assertCurrent = () => authority.assertCurrent();
+      const captures = await retireSupersededStandaloneDoctorCaptures({
+        stateDir: resolvePathViaExistingAncestorSync(resolveStateDir(process.env)),
+        runStartedAtMs,
+        assertCurrent,
+        expiredBefore,
+      });
+      const cron = retireSupersededCronDoctorBackups({
+        env: process.env,
+        runStartedAtMs,
+        assertCurrent,
+        expiredBefore,
+      });
+      return {
+        retired: [...captures.retired, ...cron.retired],
+        warnings: [...captures.warnings, ...cron.warnings],
+      };
+    },
+  });
+}
 
 function renderCleanup(report: RecoveryCleanupReport): void {
   defaultRuntime.log(`Recovery cleanup: ${report.stateDir}`);
@@ -35,12 +77,19 @@ export async function updateCleanupCommand(options: {
   dryRun?: boolean;
   json?: boolean;
   yes?: boolean;
+  olderThan?: string;
 }): Promise<void> {
   let report: RecoveryCleanupReport | undefined;
+  let doctorCopies: DoctorCopyRetirement | undefined;
   try {
+    const expiredBefore =
+      options.olderThan === undefined
+        ? undefined
+        : Date.now() - parseDurationMs(options.olderThan, { defaultUnit: "d" });
     report = inspectSessionSqliteRecovery({
       cfg: await readSourceConfigBestEffort(),
       env: process.env,
+      expiredBefore,
     });
     if (!options.dryRun) {
       if (report.artifacts.length === 0 && !options.yes) {
@@ -50,6 +99,7 @@ export async function updateCleanupCommand(options: {
       } else {
         report = await retireSessionSqliteRecovery({
           env: process.env,
+          expiredBefore,
           preview: report,
           readConfig: readSourceConfigBestEffort,
           confirm: async (verified) => {
@@ -67,10 +117,23 @@ export async function updateCleanupCommand(options: {
         });
       }
     }
+    if (expiredBefore !== undefined && !options.dryRun && options.yes) {
+      doctorCopies = await retireExpiredDoctorCopies(expiredBefore);
+    }
     if (options.json) {
-      writeRuntimeJson(defaultRuntime, { ...report, dryRun: options.dryRun === true });
+      writeRuntimeJson(defaultRuntime, {
+        ...report,
+        ...(doctorCopies ? { doctorCopies } : {}),
+        dryRun: options.dryRun === true,
+      });
     } else {
       renderCleanup(report);
+      for (const retired of doctorCopies?.retired ?? []) {
+        defaultRuntime.log(`  removed Doctor copy: ${retired}`);
+      }
+      for (const warning of doctorCopies?.warnings ?? []) {
+        defaultRuntime.log(`  ${warning}`);
+      }
     }
     if (report.status === "refused") {
       defaultRuntime.error(
@@ -82,7 +145,12 @@ export async function updateCleanupCommand(options: {
     }
   } catch (error) {
     if (options.json) {
-      writeRuntimeJson(defaultRuntime, { ...report, status: "blocked", error: String(error) });
+      writeRuntimeJson(defaultRuntime, {
+        ...report,
+        ...(doctorCopies ? { doctorCopies } : {}),
+        status: "blocked",
+        error: String(error),
+      });
     } else {
       defaultRuntime.error(String(error));
     }

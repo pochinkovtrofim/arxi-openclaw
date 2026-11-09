@@ -390,6 +390,33 @@ it("retires cron backups superseded by a verified Doctor run", async () => {
   });
 });
 
+it("retires the newest earlier cron backup once it is older than an age cutoff", async () => {
+  await withOpenClawTestState({ label: "cron-backup-expiry" }, async () => {
+    const databasePath = openOpenClawStateDatabase().path;
+    const backup = (createdAtMs: number) =>
+      `${databasePath}.doctor-cron-${createdAtMs}-${randomUUID()}.bak`;
+    const runStartedAtMs = 1_791_900_000_000;
+    const earlier = backup(runStartedAtMs - 1000);
+    await fs.writeFile(earlier, "earlier backup");
+    const assertCurrent = vi.fn();
+    const retire = (expiredBefore: number) =>
+      retireSupersededCronDoctorBackups({
+        env: process.env,
+        runStartedAtMs,
+        assertCurrent,
+        expiredBefore,
+      });
+
+    expect(retire(runStartedAtMs - 1000)).toEqual({ retired: [], warnings: [] });
+    expect(retire(runStartedAtMs - 999)).toEqual({ retired: [earlier], warnings: [] });
+    // A backup this run made stays whatever the cutoff.
+    const current = backup(runStartedAtMs);
+    await fs.writeFile(current, "this run");
+    expect(retire(runStartedAtMs + 1000)).toEqual({ retired: [], warnings: [] });
+    expect(await backups()).toEqual([current]);
+  });
+});
+
 it.each([
   { name: "missing", mode: undefined, expected: "announce" },
   { name: "retired alias", mode: "deliver", expected: "announce" },

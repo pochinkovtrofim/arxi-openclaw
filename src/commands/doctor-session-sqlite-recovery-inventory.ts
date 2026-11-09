@@ -65,7 +65,16 @@ export function resolveRecoveryArtifact(
   );
 }
 
-export function collectRecoveryInventory(params: { cfg: OpenClawConfig; env: NodeJS.ProcessEnv }) {
+/**
+ * `expiredBefore` (epoch ms) lets a database backup whose every run started earlier go even
+ * when only rollback retention keeps it: a run that never recorded completion or a missing
+ * later completed one. Integrity, ownership, restore and dependency protection still apply.
+ */
+export function collectRecoveryInventory(params: {
+  cfg: OpenClawConfig;
+  env: NodeJS.ProcessEnv;
+  expiredBefore?: number;
+}) {
   const stateDir = canonicalMigrationFilePath(path.join(resolveStateDir(params.env), "anchor"));
   const root = path.dirname(stateDir);
   const stores = new Set<string>();
@@ -206,6 +215,17 @@ export function collectRecoveryInventory(params: { cfg: OpenClawConfig; env: Nod
       item.outcome = outcome;
       item.reason = reason;
     };
+    // Only a database backup whose run merely never recorded completion or a later run expires;
+    // failed validation and blocking issues keep any original.
+    const expired =
+      params.expiredBefore !== undefined &&
+      refs.every(
+        ({ run, target, move }) =>
+          move.kind === "database-backup" &&
+          target.validationBeforeArchive !== "failed" &&
+          target.issues.every(isSessionSqliteMigrationWarning) &&
+          (Date.parse(run.manifest.startedAt) || Number.POSITIVE_INFINITY) < params.expiredBefore!,
+      );
     if (refs.some((ref) => !ref.trusted)) {
       classify("protected", "unsupported-target-ownership");
     } else if (refs.every((ref) => ref.move.artifact?.disposal.state === "disposed")) {
@@ -223,6 +243,7 @@ export function collectRecoveryInventory(params: { cfg: OpenClawConfig; env: Nod
     ) {
       classify("blocked", "artifact-alias-or-nonregular");
     } else if (
+      !expired &&
       refs.some(
         ({ run, target }) =>
           !run.manifest.completedAt ||
@@ -238,6 +259,7 @@ export function collectRecoveryInventory(params: { cfg: OpenClawConfig; env: Nod
           .reason,
       );
     } else if (
+      !expired &&
       refs.some(({ target, run }) => {
         if (!target.databaseIdentity) {
           return false;
@@ -292,6 +314,8 @@ export function collectRecoveryInventory(params: { cfg: OpenClawConfig; env: Nod
       classify("blocked", "unexpectedly-missing-artifact");
     } else if (refs.some(({ move }) => move.artifact?.disposal.state === "pending-disposal")) {
       item.reason = "resume-pending-disposal";
+    } else if (expired && item.outcome === "candidate") {
+      item.reason = "expired-recovery-original";
     }
     artifacts.push(item);
   }
@@ -491,6 +515,7 @@ export function summarizeRecoveryCleanup(
 export function inspectSessionSqliteRecovery(params: {
   cfg: OpenClawConfig;
   env: NodeJS.ProcessEnv;
+  expiredBefore?: number;
 }): RecoveryCleanupReport {
   return collectRecoveryInventory(params).report;
 }

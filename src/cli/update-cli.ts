@@ -324,6 +324,10 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/update", "docs.openclaw.ai/cli/up
     .option("--dry-run", "Inspect recovery metadata without writes", false)
     .option("--json", "Output one JSON result; never implies consent", false)
     .option("--yes", "Acknowledge permanent loss of the selected rollback originals", false)
+    .option(
+      "--older-than <duration>",
+      "Also retire recovery originals and Doctor copies made longer ago (e.g. 7d), even the newest",
+    )
     .action(
       createUpdateLeafAction(
         async (opts, command) => {
@@ -343,6 +347,7 @@ ${theme.muted("Docs:")} ${formatDocsLink("/cli/update", "docs.openclaw.ai/cli/up
               Boolean(opts.dryRun) || Boolean(inheritOptionFromParent<boolean>(command, "dryRun")),
             json: Boolean(opts.json) || inheritedUpdateJson(command),
             yes: Boolean(opts.yes) || Boolean(inheritOptionFromParent<boolean>(command, "yes")),
+            ...(typeof opts.olderThan === "string" ? { olderThan: opts.olderThan } : {}),
           });
         },
         { supportsDryRun: true },
