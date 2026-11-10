@@ -33,7 +33,7 @@ export async function settlePreDispatchDeliveryError(params: {
     if (!hasSendEvidence) {
       error = new Error(
         `Not sent: this message is held until ${new Date(error.retryAtMs).toISOString()} and was not queued, so it will not be sent later on its own. ` +
-          "If this run's reply is delivered, include the message there; otherwise send it again after that time.",
+          "Include it in this run's reply instead. Only if this run delivers no reply, send it again after that time.",
         { cause: error },
       );
     } else {
