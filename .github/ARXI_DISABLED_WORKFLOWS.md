@@ -56,8 +56,6 @@ manual-only revision is on `main`; it is never an automatic Ro gate.
 - `pr-ci-sweeper.yml`
 - `stale.yml`
 
-The active automatic verification boundary is `arxi-ci.yml` plus generic
-security workflows: `opengrep-precise.yml`, `codeql.yml`,
-`dependency-guard.yml`, and `security-sensitive-guard.yml`. Manual release or
-diagnostic workflows can remain available because they do not run on ordinary
-Ro pushes or pull requests.
+No workflow runs automatically; `ARXI_CI.md` names the checks that do run.
+Manual release or diagnostic workflows can remain available because they do
+not run on ordinary Ro pushes or pull requests.

@@ -116,8 +116,8 @@ or runtime layers merely because they existed in the previous history.
 Ro patches merged after the update to `v2026.10.9` (#181). The next upstream
 update sorts each into removed, retained or redesigned.
 
-- Agent sessions: a scheduled (cron) session compacts before its prompt once
-  its prompt cache has expired and it has reached
+- Agent sessions: a persistent scheduled (cron) session compacts before its
+  prompt once its prompt cache has expired and it has reached
   `compaction.coldCacheTokens`, the rule chat already follows (#183).
 - Plugin runtime: a plugin can tell agents the user's time zone without a
   config change; the agent date-time, envelope and cron tool read it (#184).

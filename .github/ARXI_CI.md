@@ -10,8 +10,7 @@ only the Linux runtime and public seams that the composed Ro platform ships:
 
 - production type checking for shipped core and extension code;
 - the direct Telegram context, durable outbound, OpenAI capability projection,
-  active-model catalog projection, and catalog-worker plugin-metadata tests
-  consumed by Ro;
+  and catalog-worker plugin-metadata tests consumed by Ro;
 - model-authored message-action correlation into the durable owner-channel
   adapter, including the negative operator-send classification;
 - requester-scoped MCP identity propagation, resolver revalidation, and the
