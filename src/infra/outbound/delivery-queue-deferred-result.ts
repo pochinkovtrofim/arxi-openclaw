@@ -30,7 +30,13 @@ export async function settlePreDispatchDeliveryError(params: {
     if (!hasSendEvidence && params.platformQueueId) {
       return { accepted: false, propagate: true, error };
     }
-    if (hasSendEvidence || !params.platformQueueId) {
+    if (!hasSendEvidence) {
+      error = new Error(
+        `Not sent: this message is held until ${new Date(error.retryAtMs).toISOString()} and was not queued, so it will not be sent later on its own. ` +
+          "Include it in this run's reply instead. Only if this run delivers no reply, send it again after that time.",
+        { cause: error },
+      );
+    } else {
       error = new Error("Adapter deferred a delivery after platform dispatch began", {
         cause: error,
       });
