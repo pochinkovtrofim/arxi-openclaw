@@ -111,6 +111,54 @@ or runtime layers merely because they existed in the previous history.
   Upstream's container activation marker is kept; its capture-time 30-day
   retirement is not.
 
+## Added on v2026.10.9
+
+Ro patches merged after the update to `v2026.10.9` (#181). The next upstream
+update sorts each into removed, retained or redesigned.
+
+- Agent sessions: a scheduled (cron) session compacts before its prompt once
+  its prompt cache has expired and it has reached
+  `compaction.coldCacheTokens`, the rule chat already follows (#183).
+- Plugin runtime: a plugin can tell agents the user's time zone without a
+  config change; the agent date-time, envelope and cron tool read it (#184).
+- Gateway cron: `OPENCLAW_CRON_START_HELD=1` keeps a Gateway booted beside a
+  paused VM from starting its scheduler until the first completed
+  `gateway.suspend.resume` (#185).
+- Memory plugin: a slow dreaming cron reconcile no longer holds Gateway
+  readiness (#186).
+- Sub-agents: restart recovery settles a dead lifecycle's subagent run it held
+  for 10 minutes (#188), and sub-agents a dead Gateway left behind are
+  recovered after a warm restart, not only a cold one (#190).
+- Gateway agent turns: a redelivered turn that restart recovery already took
+  over is answered, not run twice (#189).
+- Code Mode: `store()` reads only its own session entries, so a long chat no
+  longer hydrates the whole transcript into the Gateway heap (#192).
+- Hooks: an Automation that a plugin holds in `before_agent_run` is recorded
+  as skipped with its reason, not as an error (#193).
+- Embedded runner: ChatGPT subscription runs of one agent and model share one
+  prompt cache key; websocket and continuation state stay keyed by session
+  (#194).
+- Skill Workshop: a Workshop skill gives way to a covering default skill,
+  keeping only what the default lacks, and follows renamed tools (#195);
+  learned skills read a public JSON API through `web_fetch` json mode, not
+  `curl` (#197).
+- Code Mode and `web_fetch`: Code Mode reads an API's JSON through
+  `web_fetch` data modes and calls the shell tool `shell` (#196).
+- Model auth: the embedded runner renews an expiring subscription OAuth login
+  during a long turn (#198).
+- User-facing errors: Ro's apps show a failed reply as a coded message in the
+  owner's words, never "run openclaw configure" (#199).
+- Update and Doctor: `openclaw update cleanup --older-than` also retires
+  database backups, the newest Doctor capture and pre-repair cron backups
+  older than the cutoff, including unfinished runs' (#200).
+- Session transcripts: a run reads its model context from the newest
+  boundary, not from the session's first day (#202).
+- Hooks and MCP: a `before_tool_call` hook on an MCP tool sees the requester
+  its MCP call carries (#203).
+- Test-only: parallel test projects keep their lanes busy and one Codex test
+  no longer aborts on a busy machine (#187); the in-process dispatch test
+  context carries chat abort controllers like a live Gateway (#191).
+
 ## Redesigned for v2026.10.5
 
 - Gateway state custody across a host suspension (#137) is removed. Upstream's
