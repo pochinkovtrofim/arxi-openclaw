@@ -47,6 +47,7 @@ import type {
   SessionTranscriptModelContext,
 } from "./session-history-read.types.js";
 import { projectModelContextEventSql } from "./session-model-context-projection.js";
+import { parseNavigationRows, readSessionContextSuffix } from "./session-model-context-suffix.js";
 import {
   resolveSqliteSessionTranscriptReadFence,
   runWithSessionTranscriptReadFence,
@@ -503,6 +504,7 @@ export function readSessionTranscriptModelContext(
       };
     },
     through,
+    limits ? "state" : undefined,
   );
   return result.found ? result.value : { events: [] };
 }
@@ -516,7 +518,7 @@ export function readSessionTranscriptContextMessages<T>(
     version?: SessionTranscriptContextVersion,
   ) => T,
 ): T {
-  const result = withTranscriptContextSnapshot(scope, ({ header, entries, readEntry, version }) => {
+  const consume = ({ header, entries, readEntry, version }: TranscriptContextSnapshot) => {
     const messages = iterateSessionContextMessages(entries, readEntry);
     try {
       return read(messages, header, version);
@@ -524,14 +526,21 @@ export function readSessionTranscriptContextMessages<T>(
       // Retained iterators cannot read after the snapshot closes, including early rejection.
       messages.return(undefined);
     }
-  });
+  };
+  const result = withTranscriptContextSnapshot(scope, consume, undefined, "messages");
   return result.found ? result.value : read([], undefined);
 }
 
+/**
+ * `suffix` names a reader that consumes only the context window: "messages" its
+ * messages, "state" also the newest model and thinking state. Such a reader gets the
+ * window's part of the active path when it can be selected without the older history.
+ */
 function withTranscriptContextSnapshot<T>(
   scope: SessionTranscriptReadScope,
   read: (snapshot: TranscriptContextSnapshot) => T,
   through?: TranscriptEntryAnchor,
+  suffix?: "messages" | "state",
 ): { found: true; value: T } | { found: false } {
   const resolved = resolveSqliteTranscriptReadScope(scope);
   return withOpenClawAgentDatabaseReadOnly(
@@ -567,35 +576,46 @@ function withTranscriptContextSnapshot<T>(
               .orderBy("seq", "asc")
               .limit(1),
           );
-          const tree = scanSessionTranscriptTree(
-            (function* () {
-              for (const row of iterateSqliteQuerySync(
-                database.db,
-                base
-                  .select(["seq", transcriptEventModelNavigationSql().as("navigation_json")])
-                  .orderBy("seq", "asc"),
-              )) {
-                // Only navigation crosses into JavaScript before the canonical context is selected.
-                // SAFETY: SQL preserves entry discriminants and replaces payloads with readable empty bodies.
-                yield { ...(JSON.parse(row.navigation_json) as SessionTreeEntry), seq: row.seq };
-              }
-            })(),
-          );
-          // Navigation entries belong to this snapshot; normalize ancestry without another copy.
-          if (through && !tree.byId.has(through.entryId)) {
-            throw new SessionTranscriptReadFenceError(
-              "Completed-turn anchor is outside the admitted context",
+          // Only navigation crosses into JavaScript before the canonical context is selected.
+          const navigation = (order: "asc" | "desc", limit?: number) => {
+            const rows = base
+              .select(["seq", transcriptEventModelNavigationSql().as("navigation_json")])
+              .orderBy("seq", order);
+            return parseNavigationRows<SessionTreeEntry>(
+              iterateSqliteQuerySync(database.db, limit === undefined ? rows : rows.limit(limit)),
             );
-          }
-          const entries = normalizeSessionContextEntryBoundaries(
-            selectSessionTranscriptTreePathNodes(tree, through?.entryId ?? tree.leafId).map(
-              ({ entry, parentId }) => {
-                entry.parentId = parentId;
-                return entry;
-              },
-            ),
-            tree.nodes,
-          );
+          };
+          const selectPath = (rows: Iterable<ContextEntry>) => {
+            const tree = scanSessionTranscriptTree(rows);
+            // Navigation entries belong to this snapshot; normalize ancestry without another copy.
+            if (through && !tree.byId.has(through.entryId)) {
+              throw new SessionTranscriptReadFenceError(
+                "Completed-turn anchor is outside the admitted context",
+              );
+            }
+            return normalizeSessionContextEntryBoundaries(
+              selectSessionTranscriptTreePathNodes(tree, through?.entryId ?? tree.leafId).map(
+                ({ entry, parentId }) => {
+                  entry.parentId = parentId;
+                  return entry;
+                },
+              ),
+              tree.nodes,
+            );
+          };
+          const tail =
+            suffix && !through
+              ? readSessionContextSuffix<ContextEntry>(database, resolved.sessionId, {
+                  state: suffix === "state",
+                  newestRows: (limit) => navigation("desc", limit),
+                })
+              : undefined;
+          const tailPath = tail && selectPath(tail.rows);
+          // Rows that continue one another are all on the path; anything else is not this case.
+          const entries =
+            tail && tailPath?.length === tail.rows.length && tailPath[0]?.seq === tail.rows[0]?.seq
+              ? [...tail.state, ...tailPath]
+              : selectPath(navigation("asc"));
           const readPayload = prepareSqliteQuerySync<ContextEntry, { event_json: string }>(
             database.db,
             (parameter) =>
