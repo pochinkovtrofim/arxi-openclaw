@@ -843,7 +843,9 @@ describe("host-admitted current message actions", () => {
   afterEach(() => resetPluginRuntimeStateForTest());
 
   it("lets a host-admitted turn react to its current message", async () => {
-    const handleAction = vi.fn(async () => jsonResult({ ok: true }));
+    const handleAction = vi.fn(async (_ctx: ChannelMessageActionContext) =>
+      jsonResult({ ok: true }),
+    );
     setActivePluginRegistry(
       createTestRegistry([
         {
@@ -889,7 +891,7 @@ describe("host-admitted current message actions", () => {
         ...secretDeps,
       });
       await tool.execute("react-call", { action: "react", emoji: "👍" });
-      const ctx = handleAction.mock.calls[0]?.[0] as ChannelMessageActionContext | undefined;
+      const ctx = handleAction.mock.calls[0]?.[0];
       expect(ctx?.toolContext?.currentMessageId).toBe("4242");
       expect(ctx?.runId).toBe("admitted-run");
     } finally {

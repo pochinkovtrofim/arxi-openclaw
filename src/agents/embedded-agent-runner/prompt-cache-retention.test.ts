@@ -24,7 +24,7 @@ describe("prompt cache retention", () => {
         conversation: false,
         detached: false,
         ...params,
-        lastCacheTouchAt: now - ("touchAgeMs" in params ? params.touchAgeMs : 60 * 60_000),
+        lastCacheTouchAt: now - (params.touchAgeMs ?? 60 * 60_000),
         now,
       }),
     ).toBe(params.expected);

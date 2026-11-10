@@ -534,7 +534,9 @@ describe("prepareEmbeddedAttemptTransport", () => {
     input.attempt.trigger = "user";
     input.attempt.sessionKey = sessionKey;
     input.attempt.sessionPersistence = detached ? "detached" : "durable";
-    input.attempt.config.agents!.defaults!.promptCacheKeepWarm = "12h";
+    input.attempt.config = {
+      agents: { defaults: { contextPruning: { mode: "off" }, promptCacheKeepWarm: "12h" } },
+    };
     input.attempt.runtimePlan!.transport.resolveExtraParams = () => ({ cacheRetention: "long" });
 
     try {

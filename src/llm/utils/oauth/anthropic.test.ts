@@ -136,7 +136,7 @@ describe("Anthropic OAuth token responses", () => {
   it("refreshes at the host facade the Arxi guest names", async () => {
     vi.stubEnv("ARXI_ANTHROPIC_OAUTH_TOKEN_URL", "http://127.0.0.1:18080/anthropic/oauth/token");
     const fetchMock = vi.fn(
-      async () =>
+      async (_input: string | URL | Request) =>
         new Response(
           '{"access_token":"new-access-token","refresh_token":"arxi-host-login-v1","expires_in":3600}',
           { status: 200 },
