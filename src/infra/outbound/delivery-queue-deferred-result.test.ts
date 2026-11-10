@@ -21,10 +21,11 @@ describe("settlePreDispatchDeliveryError for an unqueued deferral", () => {
 
     expect(settled.accepted).toBe(false);
     const message = errorMessage(!settled.accepted ? settled.error : undefined);
-    expect(message).not.toContain("dispatch began");
-    expect(message).toContain("Not sent");
-    expect(message).toContain(new Date(retryAtMs).toISOString());
-    expect(message).toContain("final reply, which is held until then");
+    const retryAt = new Date(retryAtMs).toISOString();
+    expect(message).toBe(
+      `Not sent: this message is held until ${retryAt} and was not queued, so it will not be sent later on its own. ` +
+        "If this run's reply is delivered, include the message there; otherwise send it again after that time.",
+    );
     expect(!settled.accepted && (settled.error as Error).cause).toBe(deferral);
   });
 
