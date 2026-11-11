@@ -11,6 +11,7 @@ import {
   racePromiseWithAbortSignal,
 } from "../../infra/abort-signal.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
+import { runWithDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -21,11 +22,13 @@ import {
 } from "../../plugins/runtime/gateway-request-scope.js";
 import { runWithGatewayIndependentRootWorkAdmission } from "../../process/gateway-work-admission.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
+import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
 import { createCommandBudget } from "../command/maintenance-budget.js";
 import {
   loadAgentRunnerMemoryRuntime,
   loadSessionStoreRuntime,
 } from "../command/runtime-loaders.js";
+import { resolveColdCacheCompaction } from "../embedded-agent-runner/cold-cache-compaction.js";
 import type { CompactionRequestBudget } from "../sessions/compaction/request-budget.js";
 import { createSessionMaintenanceOwner } from "./coordinator.js";
 
@@ -123,6 +126,68 @@ export function createSessionMaintenanceFollowup(params: {
 /** Optional work has a fresh root and writer admission after the foreground owner closes. */
 export function scheduleSessionMaintenance(
   request: SessionMaintenanceRequest,
+  afterOwnerSettles?: Promise<boolean>,
+): void {
+  startSessionMaintenance(request, "after_turn", afterOwnerSettles);
+}
+
+const coldCacheAheadTimers = resolveGlobalSingleton(
+  Symbol.for("openclaw.coldCacheAheadMaintenance"),
+  () => new Map<string, ReturnType<typeof setTimeout>>(),
+  (timers) => {
+    for (const timer of timers.values()) {
+      clearTimeout(timer);
+    }
+    timers.clear();
+  },
+);
+
+/**
+ * After a completed turn, runs the cold-cache compaction while the prompt cache is still warm,
+ * so the next turn does not wait for it. One timer per session: a later turn replaces it.
+ * Its maintenance owner is preemptible, so a turn arriving meanwhile cancels it and runs on the
+ * still-warm cache. Paused VMs, restarts and failures leave the next turn's own check in place.
+ */
+export function scheduleColdCacheAheadMaintenance(
+  request: SessionMaintenanceRequest,
+  afterOwnerSettles: Promise<boolean>,
+): void {
+  const sessionKey = request.prepared.sessionKey;
+  const coldCache = resolveColdCacheCompaction({
+    cfg: request.prepared.cfg,
+    provider: request.followupRun.run.provider,
+    modelId: request.followupRun.run.model,
+    agentId: request.followupRun.run.agentId,
+  });
+  if (!sessionKey || !coldCache) {
+    return;
+  }
+  void afterOwnerSettles.then(
+    (completed) => {
+      if (!completed) {
+        return;
+      }
+      clearTimeout(coldCacheAheadTimers.get(sessionKey));
+      const timer = setTimeout(() => {
+        if (coldCacheAheadTimers.get(sessionKey) !== timer) {
+          return;
+        }
+        coldCacheAheadTimers.delete(sessionKey);
+        // The finished turn's trace closed long ago; this work belongs to no message.
+        runWithDiagnosticTraceContext(undefined, () =>
+          startSessionMaintenance({ ...request, startedAt: Date.now() }, "cold_cache_ahead"),
+        );
+      }, coldCache.aheadMs);
+      timer.unref?.();
+      coldCacheAheadTimers.set(sessionKey, timer);
+    },
+    () => {},
+  );
+}
+
+function startSessionMaintenance(
+  request: SessionMaintenanceRequest,
+  mode: "after_turn" | "cold_cache_ahead",
   afterOwnerSettles?: Promise<boolean>,
 ): void {
   const { prepared, followupRun } = request;
@@ -287,10 +352,37 @@ export function scheduleSessionMaintenance(
                 assertCurrent();
                 followupRun.run.timeoutMs = budget.remainingMs();
                 assertCurrent();
-                const flushed = await memory.runMemoryFlushIfNeeded({
-                  ...maintenanceParams(),
-                  resolvedVerboseLevel: followupRun.run.verboseLevel ?? "off",
-                });
+                const flushMemory = (sessionEntry: SessionEntry) =>
+                  memory.runMemoryFlushIfNeeded({
+                    ...maintenanceParams(),
+                    sessionEntry,
+                    resolvedVerboseLevel: followupRun.run.verboseLevel ?? "off",
+                  });
+                if (mode === "cold_cache_ahead") {
+                  // The reply path's cold-cache step: flush memory only when compaction follows.
+                  await memory.runSessionCompactionIfNeeded({
+                    ...maintenanceParams(),
+                    coldCacheAhead: true,
+                    compactionRequestBudget: request.compactionRequestBudget
+                      ? { ...request.compactionRequestBudget, pendingTokens: 0 }
+                      : undefined,
+                    agentHarnessId: request.agentHarnessId,
+                    authorize: () => {
+                      assertCurrent();
+                      return true;
+                    },
+                    beforeCompaction: async (current) => {
+                      const flushed = await flushMemory(current);
+                      assertCurrent();
+                      entry = flushed.sessionEntry ?? current;
+                      followupRun.run.sessionId = entry.sessionId;
+                      followupRun.run.timeoutMs = budget.remainingMs();
+                      return flushed.sessionEntry;
+                    },
+                  });
+                  return;
+                }
+                const flushed = await flushMemory(entry);
                 // Flush reports aborted attempts as failed outcomes; cancellation still forbids compaction.
                 assertCurrent();
                 entry = flushed.sessionEntry ?? entry;

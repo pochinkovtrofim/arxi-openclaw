@@ -10,13 +10,15 @@ const PROMPT_CACHE_TTL_MS = { short: 5 * 60_000, long: 60 * 60_000 } as const;
 /**
  * Once a session's prompt cache has expired, its next request rewrites the whole history
  * at the cache-write rate. Compacting first makes that rewrite the summary instead.
+ * `aheadMs` is the idle time at which background maintenance does that compaction instead,
+ * a sixth of the lifetime before it ends, so a returning person never waits for it.
  */
 export function resolveColdCacheCompaction(params: {
   cfg?: OpenClawConfig;
   provider: string;
   modelId: string;
   agentId?: string;
-}): { minTokens: number; ttlMs: number } | undefined {
+}): { minTokens: number; ttlMs: number; aheadMs: number } | undefined {
   const { cfg, provider, modelId, agentId } = params;
   const minTokens =
     cfg?.agents?.defaults?.compaction?.coldCacheTokens ?? DEFAULT_COLD_CACHE_COMPACTION_TOKENS;
@@ -36,9 +38,11 @@ export function resolveColdCacheCompaction(params: {
     undefined,
     modelId,
   );
-  return retention === "short" || retention === "long"
-    ? { minTokens, ttlMs: PROMPT_CACHE_TTL_MS[retention] }
-    : undefined;
+  if (retention !== "short" && retention !== "long") {
+    return undefined;
+  }
+  const ttlMs = PROMPT_CACHE_TTL_MS[retention];
+  return { minTokens, ttlMs, aheadMs: ttlMs - ttlMs / 6 };
 }
 
 /**

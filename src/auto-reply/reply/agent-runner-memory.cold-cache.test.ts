@@ -52,6 +52,7 @@ async function runAfterIdle(params: {
   model?: string;
   compaction?: NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]>["compaction"];
   cacheRetention?: "short" | "long";
+  coldCacheAhead?: boolean;
 }) {
   const provider = params.provider ?? "anthropic";
   const model = params.model ?? "claude-opus-5-5";
@@ -92,6 +93,7 @@ async function runAfterIdle(params: {
     sessionKey: "main",
     storePath: path.join(followupRun.run.workspaceDir, "sessions.json"),
     isHeartbeat: false,
+    coldCacheAhead: params.coldCacheAhead,
     cfg: withTestModelContextTokens({
       cfg,
       followupRun,
@@ -149,4 +151,19 @@ it.each([
   const entry = await runAfterIdle({ idleMs: 2 * 60 * MINUTE });
   expect(compact).toHaveBeenCalledOnce();
   expect(entry).toMatchObject({ sessionId: "session", totalTokens: 600_000 });
+});
+
+it.each([
+  [49, false],
+  [51, true],
+  [61, false],
+])("background maintenance compacts after %i idle minutes: %s", async (idleMinutes, compacts) => {
+  // Before 50 minutes the cache is fresh; from 60 the next turn owns the compaction.
+  await runAfterIdle({ idleMs: idleMinutes * MINUTE, coldCacheAhead: true });
+  expect(compact).toHaveBeenCalledTimes(compacts ? 1 : 0);
+});
+
+it("background maintenance leaves a session below the cold-cache threshold", async () => {
+  await runAfterIdle({ idleMs: 55 * MINUTE, promptTokens: 120_000, coldCacheAhead: true });
+  expect(compact).not.toHaveBeenCalled();
 });

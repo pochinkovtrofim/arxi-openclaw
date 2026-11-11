@@ -37,6 +37,7 @@ import {
 import { claimNextQueuedFollowupRequestFrom, enqueueFollowupRun } from "./queue.js";
 import { isReplyOperationSuperseded } from "./reply-operation-abort.js";
 import { recordReplyOperationAgentTurn } from "./reply-operation-run-state.js";
+import { createReplyPreflightStages } from "./reply-preflight-stages.js";
 import type { ReplyOperation } from "./reply-run-registry.js";
 import { replyRunRegistry } from "./reply-run-registry.js";
 import { createReplyRestartRecoveryClaimController } from "./restart-recovery-claim.js";
@@ -160,10 +161,19 @@ export async function executePreparedReplyAgentRun(
 
   await typingSignals.signalRunStart();
 
+  // Content-free timing of the stretch before the agent run, for the work trace.
+  const preflightStage = createReplyPreflightStages({
+    startedAt: followupRun.enqueuedAt,
+    sessionKey,
+  });
+  preflightStage("prepare");
+  let memoryFlushed = false;
+  let compactionStarted = false;
   const preflightAdmission = readPendingUserTurnTranscriptAdmission(
     followupRun.userTurnTranscriptRecorder,
   );
   const checkpointMemory = async (entry: SessionEntry) => {
+    preflightStage("token_estimate");
     const flushed = await traceAgentPhase("reply.memory_flush", () =>
       runMemoryFlushIfNeeded({
         ...context,
@@ -173,6 +183,8 @@ export async function executePreparedReplyAgentRun(
         sessionStore: activeSessionStore,
       }),
     );
+    preflightStage("memory_flush");
+    memoryFlushed = true;
     setActiveSessionEntry(flushed.sessionEntry);
     replyOperation.abortSignal.throwIfAborted();
     if (flushed.outcome === "exhausted") {
@@ -193,7 +205,11 @@ export async function executePreparedReplyAgentRun(
         sessionStore: activeSessionStore,
         abortSignal: replyOperation.abortSignal,
         beforeCompaction: checkpointMemory,
-        onCompactionStart: () => replyOperation.setPhase("preflight_compacting"),
+        onCompactionStart: () => {
+          preflightStage(memoryFlushed ? "replan" : "token_estimate");
+          compactionStarted = true;
+          replyOperation.setPhase("preflight_compacting");
+        },
         onSessionIdChanged: (sessionId) => replyOperation.updateSessionId(sessionId),
         onCompactionNotice: sendDirectCompactionNotice,
       }),
@@ -222,6 +238,7 @@ export async function executePreparedReplyAgentRun(
     }
     throw error;
   }
+  preflightStage(compactionStarted ? "compaction" : memoryFlushed ? "replan" : "token_estimate");
   setActiveSessionEntry(activeSessionEntry);
   const preflightCompactionApplied =
     (activeSessionEntry?.compactionCount ?? 0) > prePreflightCompactionCount;
@@ -315,14 +332,16 @@ export async function executePreparedReplyAgentRun(
         return { ...hookResult, reply: hookReply };
       },
     },
-    () =>
-      traceAgentPhase("reply.run_agent_turn", () =>
+    () => {
+      preflightStage("run_admission");
+      return traceAgentPhase("reply.run_agent_turn", () =>
         executeAgentTurn({
           ...context,
           resolveVisibleReplyDelivery: input.resolveVisibleReplyDelivery,
           replyThreading: replyThreadingOverride ?? sessionCtx.ReplyThreading,
         }),
-      ),
+      );
+    },
   );
   const operationSuperseded = isReplyOperationSuperseded(replyOperation);
   recordReplyOperationAgentTurn(
