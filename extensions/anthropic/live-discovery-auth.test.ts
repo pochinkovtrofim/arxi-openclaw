@@ -177,7 +177,8 @@ describe("anthropic live model discovery auth", () => {
       result && "providers" in result
         ? result.providers.anthropic?.models?.find((entry) => entry.id === "claude-sonnet-5-5")
         : undefined;
-    expect(model?.contextWindows?.map((option) => option.id)).toEqual(["200k", "1m"]);
+    // Catalog rows carry selectable windows beyond the config model type.
+    expect(model).toMatchObject({ contextWindows: [{ id: "200k" }, { id: "1m" }] });
   });
 
   it("keeps the closest shipped model's request contract for a listed unknown id", async () => {
