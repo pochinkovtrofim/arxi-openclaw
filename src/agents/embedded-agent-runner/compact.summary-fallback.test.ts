@@ -461,6 +461,8 @@ describe("background compaction yielding to a turn", () => {
     await withSession(async (fixture) => {
       appendToolTurns(fixture, 0, 8);
       summaryMode = "stall";
+      // A fresh connection, so the stalled summary request owns the observed socket.
+      server.closeAllConnections();
       const requestClosed = createDeferred();
       server.once("connection", (socket) => socket.once("close", () => requestClosed.resolve()));
       const sessionKey = fixture.target.sessionKey;
