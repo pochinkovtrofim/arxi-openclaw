@@ -90,7 +90,9 @@ export async function createFixture(
     setRunAbort: vi.fn(() => order.push("set-run-abort")),
     setCompactionState: vi.fn(() => order.push("set-compaction-state")),
   };
-  const prepStages = { mark: vi.fn(() => order.push("stream-ready")) };
+  const prepStages = {
+    mark: vi.fn((name: string) => order.push(name === "stream-setup" ? "stream-ready" : `mark:${name}`)),
+  };
   const emitPrepStageSummary = vi.fn();
   const setToolSearchCatalogExecutor = vi.fn(() => order.push("set-catalog"));
   const replaySafeTool = { name: "read" };

@@ -247,6 +247,33 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
       );
       span.end(evt.ts);
     },
+    recordContextStages(
+      evt: Extract<DiagnosticEventPayload, { type: "context.stages" }>,
+      metadata: DiagnosticEventMetadata,
+    ) {
+      if (!runtime.tracesEnabled || !metadata.trusted) {
+        return;
+      }
+      // One span per preparation stage up to the first model request; the
+      // stage name is a fixed code label, never content.
+      const parentContext = runtime.activeTrustedParentContext(evt, metadata);
+      for (const stage of evt.stages) {
+        if (stage.endedAt < stage.startedAt) {
+          continue;
+        }
+        const spanAttrs: Record<string, string | number | boolean> = {
+          "openclaw.context.stage": normalizeDiagnosticValue(stage.name, "other"),
+        };
+        runtime.addRunAttrs(spanAttrs, evt);
+        const span = runtime.spanWithDuration(
+          "openclaw.context.stage",
+          spanAttrs,
+          stage.endedAt - stage.startedAt,
+          { parentContext, startTimeMs: stage.startedAt, endTimeMs: stage.endedAt },
+        );
+        span.end(stage.endedAt);
+      }
+    },
     recordModelFailover(evt: ModelFailoverDiagnosticEvent, metadata: DiagnosticEventMetadata) {
       const metricAttrs: Record<string, string> = {
         "openclaw.failover.reason": normalizeDiagnosticValue(evt.reason, "unknown"),

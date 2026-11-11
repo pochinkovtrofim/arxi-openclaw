@@ -18,6 +18,7 @@ import {
 import { createDiagnosticTraceContext } from "../../../infra/diagnostic-trace-context.js";
 import { createDiagnosticEmbeddedRunOwner } from "../../../logging/diagnostic-run-activity.js";
 import { AsyncWorkScope } from "../../../shared/async-work-scope.js";
+import { createStageTimingTracker } from "../../../shared/stage-timing.js";
 import {
   closeOpenClawAgentDatabasesAsync,
   closeOpenClawAgentDatabasesForTest,
@@ -197,7 +198,7 @@ async function createFixture(
         },
       },
     },
-    setup: { sessionAgentId: "main" },
+    setup: { sessionAgentId: "main", prepStages: createStageTimingTracker() },
     diagnostics: { runTrace: createDiagnosticTraceContext() },
     lifecycle: { readYieldState: () => ({ yieldDetected: false }) },
   } as unknown as EmbeddedAttemptExecutionPhaseInput;

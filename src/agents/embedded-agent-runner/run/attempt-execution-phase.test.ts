@@ -514,6 +514,7 @@ describe("runEmbeddedAttemptExecutionPhase", () => {
       "guards",
       "stream-ready",
       "history",
+      "mark:history",
       "abort",
       "set-run-abort",
       "stream",

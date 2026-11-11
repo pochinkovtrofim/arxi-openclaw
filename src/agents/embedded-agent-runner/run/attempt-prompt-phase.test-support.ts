@@ -230,6 +230,7 @@ export function createFixture({ pendingPrompt = "hello", pendingImageCount = 1 }
     setup: {
       effectiveFsWorkspaceOnly: false,
       effectiveWorkspace: "/tmp/workspace",
+      prepStages: { mark: vi.fn() },
       sandbox: null,
       sessionAgentId: "main",
     },

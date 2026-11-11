@@ -231,22 +231,25 @@ export async function prepareEmbeddedAttemptSystemPrompt(params: {
       capabilityToolNames,
       sandboxed,
     };
-    return {
-      preparedMemoryPrompt: await prepareAgentMemoryPrompt({
+    // Independent reads: the memory sections and the watched-session state
+    // (a session-store worker read) are prepared together.
+    const [preparedMemoryPrompt, preparedWatchedSessions] = await Promise.all([
+      prepareAgentMemoryPrompt({
         ...toolContext,
         enabled: effectivePromptMode === "full" && includeMemorySection,
         citationsMode: attempt.config?.memory?.citations,
         agentId: runtimePrompt.runtimeInfo.agentId,
         agentSessionKey: runtimePrompt.runtimeInfo.sessionKey,
       }),
-      preparedWatchedSessions: await prepareWatchedSessionsPromptAsync({
+      prepareWatchedSessionsPromptAsync({
         ...toolContext,
         enabled: effectivePromptMode === "full",
         config: attempt.config,
         sessionKey: attempt.sessionKey,
         assertCurrent: assertPreparationCurrent,
       }),
-    };
+    ]);
+    return { preparedMemoryPrompt, preparedWatchedSessions };
   };
   const { preparedMemoryPrompt, preparedWatchedSessions } = await prepareToolContextSections(
     params.effectiveTools,
