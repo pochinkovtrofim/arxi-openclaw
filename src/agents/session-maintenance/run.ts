@@ -188,7 +188,7 @@ function captureModelSelectionInputs(
   return JSON.stringify([
     cfg.agents?.defaults?.model,
     cfg.agents?.defaults?.models,
-    cfg.agents?.list?.find((agent) => agent.id === agentId)?.model,
+    cfg.agents?.entries?.[agentId]?.model,
     cfg.channels?.modelByChannel,
     entry.providerOverride,
     entry.modelOverride,

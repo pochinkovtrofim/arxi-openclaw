@@ -180,10 +180,15 @@ it("stops following activity after three moves when nobody returns", async () =>
   });
   await withIdleSession(async ({ sessionKey, arm }) => {
     await arm(Promise.resolve(true));
-    for (let hour = 0; hour < 12; hour += 1) {
-      await vi.advanceTimersByTimeAsync(60 * MINUTE);
+    // Fake time stops at each fire: a worker read must not see hours pass mid-flight.
+    for (const delayMs of [AHEAD_MS, 30 * MINUTE, 30 * MINUTE, 30 * MINUTE]) {
+      await vi.advanceTimersByTimeAsync(delayMs);
       await waitForSessionMaintenance(sessionKey);
     }
+    expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledTimes(4);
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(12 * 60 * MINUTE);
+    await waitForSessionMaintenance(sessionKey);
     expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledTimes(4);
   });
 });
