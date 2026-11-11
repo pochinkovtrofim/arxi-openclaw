@@ -65,7 +65,7 @@ OpenTelemetry metrics or change Prometheus metric labels.
 - `openclaw.context.assembled`
   - `openclaw.prompt.size`, `openclaw.history.size`, `openclaw.context.tokens`, `openclaw.errorCategory` (no prompt, history, response, or session-key content)
 - `openclaw.context.stage`
-  - one span per embedded-run preparation stage up to the first model request; `openclaw.context.stage` (fixed stage name) plus the run's provider, model, channel and trigger (no prompt, history, or session-key content)
+  - one span per embedded-run preparation stage up to the attempt's primary model request, sent once per attempt; `openclaw.context.stage` (fixed stage name) only (no prompt, history, or session-key content). Checkpoint stages are contiguous; `bundle-tools` and `tool-catalog` are measured inside `tool-preparation`, so leave them out of a sum
 - `openclaw.tool.loop`
   - `openclaw.toolName`, `openclaw.loop.level`, `openclaw.loop.action`, `openclaw.loop.detector`, `openclaw.loop.count`, optional `openclaw.loop.paired_tool`, optional `openclaw.agent` (no loop messages, params, or tool output)
 - `openclaw.memory.pressure`

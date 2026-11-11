@@ -35,7 +35,6 @@ import {
   createYieldAbortedResponse,
   isSessionsYieldAbortReason,
 } from "./attempt-sessions-yield.js";
-import { createFirstModelRequestStageReporter } from "./attempt-stage-timing.js";
 import { wrapStreamFnHandleSensitiveStopReason } from "./attempt-stop-reason-recovery.js";
 import {
   sanitizeOpenAIResponsesReplayForStream,
@@ -385,13 +384,6 @@ export function installEmbeddedAttemptStreamGuards(
   }
   let diagnosticModelCallSeq = 0;
   let modelResponseTerminal = false;
-  const reportPreparationStages = createFirstModelRequestStageReporter({
-    tracker: input.setup.prepStages,
-    runId: attempt.runId,
-    ...(attempt.sessionKey ? { sessionKey: attempt.sessionKey } : {}),
-    ...(attempt.sessionId ? { sessionId: attempt.sessionId } : {}),
-    runTrace: input.diagnostics.runTrace,
-  });
   installStreamWrapper(wrapStreamFnWithDiagnosticModelCallEvents, {
     config: attempt.config,
     runId: attempt.runId,
@@ -424,7 +416,6 @@ export function installEmbeddedAttemptStreamGuards(
     },
     onStarted: () => {
       modelResponseTerminal = false;
-      reportPreparationStages();
       attempt.onExecutionPhase?.({
         phase: "model_call_started",
         provider: attempt.provider,

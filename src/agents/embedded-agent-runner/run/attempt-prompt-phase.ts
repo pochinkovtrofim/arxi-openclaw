@@ -36,6 +36,7 @@ import {
   submitEmbeddedAttemptPrompt,
 } from "./attempt-prompt-submit.js";
 import { observeEmbeddedAttemptPrompt } from "./attempt-prompt-support.js";
+import { createFirstModelRequestStageReporter } from "./attempt-stage-timing.js";
 import type { PreparedStreamRuntime } from "./attempt-stream-runtime.types.js";
 import { removeTrailingMidTurnPrecheckAssistantError } from "./attempt-transcript-helpers.js";
 import type { MidTurnPrecheckRequest } from "./midturn-precheck.js";
@@ -163,8 +164,16 @@ export async function runEmbeddedAttemptPromptPhase(
   };
 
   const promptStartedAt = Date.now();
-  // Contiguous checkpoints up to the first model request, reported with it.
+  // Contiguous checkpoints up to the attempt's primary model request, reported
+  // with it. A pre-prompt compaction request is not the primary one.
   const markStage = (name: string) => input.setup.prepStages.mark(name);
+  const reportPreparationStages = createFirstModelRequestStageReporter({
+    tracker: input.setup.prepStages,
+    runId: attempt.runId,
+    ...(attempt.sessionKey ? { sessionKey: attempt.sessionKey } : {}),
+    ...(attempt.sessionId ? { sessionId: attempt.sessionId } : {}),
+    runTrace: input.diagnostics.runTrace,
+  });
   markStage("attempt-ready");
 
   let transcriptLeafId: string | null = null;
@@ -468,7 +477,7 @@ export async function runEmbeddedAttemptPromptPhase(
             });
           }),
         onPrimaryModelRequest: (tools) => {
-          markStage("prompt-submit");
+          reportPreparationStages();
           logDecisionToolRequest({
             decision: promptAssembly.decisionPrefilter,
             baseline: promptToolPolicy.readDecisionBaseline(),

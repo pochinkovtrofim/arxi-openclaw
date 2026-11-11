@@ -94,8 +94,11 @@ export function placeStageTimings(
 }
 
 /**
- * Reports the run's preparation stages once, when its first model request
- * starts, so the work trace shows where the time before the model went.
+ * Reports the attempt's preparation stages once, at its primary model request,
+ * so the work trace shows where the time before the model went. Each attempt
+ * of a run (a retry, a fallback) reports its own. Checkpoint stages are
+ * contiguous; a measured stage (bundle-tools, tool-catalog) lies inside the
+ * checkpoint after it (tool-preparation), so a sum must skip measured stages.
  */
 export function createFirstModelRequestStageReporter(options: {
   tracker: Pick<ReturnType<typeof createStageTimingTracker>, "mark" | "snapshot">;

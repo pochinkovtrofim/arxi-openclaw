@@ -123,7 +123,7 @@ describe("embedded run stage timing", () => {
     ]);
   });
 
-  it("reports the stages once, at the first model request, ending with that request", () => {
+  it("reports the stages once, at the primary model request, ending with that request", () => {
     // Later requests of the same run (tool rounds) would only stretch the last stage.
     emitted.events.length = 0;
     let clock = 5_000;
