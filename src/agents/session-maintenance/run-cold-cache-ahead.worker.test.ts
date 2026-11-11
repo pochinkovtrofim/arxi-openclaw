@@ -19,7 +19,10 @@ import { scheduleColdCacheAheadMaintenance } from "./run.js";
 const memory = vi.hoisted(() => ({
   runMemoryFlushIfNeeded: vi.fn(async () => ({ outcome: "skipped" })),
   runSessionCompactionIfNeeded: vi.fn(
-    async (_params: { abortSignal?: AbortSignal; onColdCacheNotDue?: (delayMs: number) => void }) => {},
+    async (_params: {
+      abortSignal?: AbortSignal;
+      onColdCacheNotDue?: (delayMs: number) => void;
+    }) => {},
   ),
 }));
 // mock-isolation: Admission uses real stores and workers; model and persistence effects stay inert.
