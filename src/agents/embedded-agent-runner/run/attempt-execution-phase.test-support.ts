@@ -94,6 +94,7 @@ export async function createFixture(
     mark: vi.fn((name: string) =>
       order.push(name === "stream-setup" ? "stream-ready" : `mark:${name}`),
     ),
+    snapshot: () => ({ totalMs: 0, stages: [] }),
   };
   const emitPrepStageSummary = vi.fn();
   const setToolSearchCatalogExecutor = vi.fn(() => order.push("set-catalog"));
