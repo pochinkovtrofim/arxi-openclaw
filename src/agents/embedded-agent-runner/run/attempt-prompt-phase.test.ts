@@ -3,8 +3,14 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../../test/helpers/promise.js";
+import {
+  type DiagnosticEventPayload,
+  onInternalDiagnosticEvent,
+  waitForDiagnosticEventsDrained,
+} from "../../../infra/diagnostic-events.js";
 import type { Context, Model, SimpleStreamOptions } from "../../../llm/types.js";
 import { createUserTurnTranscriptRecorder } from "../../../sessions/user-turn-transcript.js";
+import { createStageTimingTracker } from "../../../shared/stage-timing.js";
 import { closeOpenClawAgentDatabasesForTest } from "../../../state/openclaw-agent-db.js";
 import {
   prepareSystemAgentRunAdmission,
@@ -575,6 +581,32 @@ describe("runEmbeddedAttemptPromptPhase", () => {
       expect(fixture.readState().promptError).toBeNull();
     },
   );
+
+  it("reports the preparation stages once, at the primary model request", async () => {
+    // A pre-prompt compaction request goes through the same stream first; only
+    // the primary request ends the stretch the stages describe.
+    const fixture = createFixture();
+    (fixture.input.setup as { prepStages: unknown }).prepStages = createStageTimingTracker();
+    const events: Array<Extract<DiagnosticEventPayload, { type: "context.stages" }>> = [];
+    const stop = onInternalDiagnosticEvent((event) => {
+      if (event.type === "context.stages") {
+        events.push(event);
+      }
+    });
+    try {
+      mocks.submitPrompt.mockImplementation(async (call: PromptSubmissionCall) => {
+        call.onPrimaryModelRequest?.([]);
+        call.onPrimaryModelRequest?.([]);
+      });
+      await runEmbeddedAttemptPromptPhase(fixture.input, fixture.promptState);
+      await waitForDiagnosticEventsDrained();
+    } finally {
+      stop();
+    }
+    expect(events).toHaveLength(1);
+    expect(events[0]?.stages.at(-1)?.name).toBe("model-request");
+    expect(events[0]?.stages.map((stage) => stage.name)).toContain("prompt-assembly");
+  });
 
   it("runs prompt work in phase order and publishes prompt outputs", async () => {
     const fixture = createFixture();

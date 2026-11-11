@@ -254,8 +254,8 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
       if (!runtime.tracesEnabled || !metadata.trusted) {
         return;
       }
-      // One span per preparation stage up to the first model request; the
-      // stage name is a fixed code label, never content.
+      // One span per preparation stage up to the attempt's primary model
+      // request; the stage name is a fixed code label, never content.
       const parentContext = runtime.activeTrustedParentContext(evt, metadata);
       for (const stage of evt.stages) {
         if (stage.endedAt < stage.startedAt) {
@@ -264,7 +264,6 @@ export function createHarnessRecorders(runtime: DiagnosticsRecorderRuntime) {
         const spanAttrs: Record<string, string | number | boolean> = {
           "openclaw.context.stage": normalizeDiagnosticValue(stage.name, "other"),
         };
-        runtime.addRunAttrs(spanAttrs, evt);
         const span = runtime.spanWithDuration(
           "openclaw.context.stage",
           spanAttrs,
