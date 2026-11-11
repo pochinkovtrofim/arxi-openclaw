@@ -68,6 +68,7 @@ import type { MainSessionRecoveryPendingTarget } from "./main-session-recovery/m
 import { withAgentPluginRegistry } from "./runtime-plugins.js";
 import { beginForegroundSessionMaintenance } from "./session-maintenance/coordinator.js";
 import {
+  isPersonWaitingTurn,
   scheduleColdCacheAheadMaintenance,
   scheduleSessionMaintenance,
   type SessionMaintenanceRequest,
@@ -141,12 +142,13 @@ async function agentCommandInternal(
   });
   // A person waits on this turn: it takes foreground priority, and its session is kept
   // ready for the next one.
-  const humanTurn =
-    sessionStateActor.actorType === "human" &&
-    !isSubagentLane &&
-    !opts.internalEvents?.length &&
-    opts.bootstrapContextRunKind !== "heartbeat" &&
-    opts.bootstrapContextRunKind !== "cron";
+  const humanTurn = isPersonWaitingTurn({
+    inputProvenance: opts.inputProvenance,
+    internalEvents: opts.internalEvents,
+    sessionEffects: opts.sessionEffects,
+    isSubagentLane,
+    runKind: opts.bootstrapContextRunKind,
+  });
   let sessionReboundDuringRun = false;
   let trackedRestartRecoveryDeliveryClaim = false;
   let currentRunDeliveryContext: DeliveryContext | undefined;

@@ -1,6 +1,7 @@
 import { OPENCLAW_AGENT_RUNTIME_ID } from "../../agents/agent-runtime-id.js";
 import {
   createSessionMaintenanceFollowup,
+  isPersonWaitingTurn,
   scheduleColdCacheAheadMaintenance,
   scheduleSessionMaintenance,
 } from "../../agents/session-maintenance/run.js";
@@ -73,6 +74,9 @@ export function scheduleReplySessionMaintenance(params: {
     () => replyOperation.result?.kind === "completed" && !replyOperation.abortSignal.aborted,
   );
   const afterTurn = scheduleSessionMaintenance(request, completed);
+  if (!isPersonWaitingTurn({ inputProvenance: followupRun.run.inputProvenance })) {
+    return;
+  }
   scheduleColdCacheAheadMaintenance(
     request,
     sessionEntry,

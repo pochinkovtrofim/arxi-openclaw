@@ -351,6 +351,8 @@ export async function runSessionCompactionIfNeeded(params: {
    * until the prompt cache expires; after that the next turn compacts as before.
    */
   coldCacheAhead?: boolean;
+  /** With `coldCacheAhead`: the session had model activity since; due again after `delayMs`. */
+  onColdCacheNotDue?: (delayMs: number) => void;
   onCompactionStart?: () => void;
   onCompactionCommitted?: (accepted: AcceptedCompactionSuccessor) => void;
   onSessionIdChanged?: (sessionId: string) => void;
@@ -585,6 +587,14 @@ export async function runSessionCompactionIfNeeded(params: {
   );
 
   if (params.coldCacheAhead && !shouldCompactColdCache) {
+    if (
+      coldCache?.aheadMs !== undefined &&
+      cacheIdleMs !== undefined &&
+      cacheIdleMs < coldCache.aheadMs &&
+      (tokenCountForCompaction ?? 0) >= coldCache.minTokens
+    ) {
+      params.onColdCacheNotDue?.(coldCache.aheadMs - cacheIdleMs);
+    }
     return entry;
   }
   const shouldCompactByTokens =

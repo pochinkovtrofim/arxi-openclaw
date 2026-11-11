@@ -1,5 +1,5 @@
 import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coercion";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { createTestFollowupRun } from "../../auto-reply/reply/agent-runner.test-fixtures.js";
 import { writeSessionEntry } from "../../config/sessions/session-accessor.sqlite-entry-store.js";
@@ -7,6 +7,7 @@ import { SESSION_TOTAL_TOKENS_VERSION, type SessionEntry } from "../../config/se
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
+import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
 import { withPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
 import { AsyncWorkScope } from "../../shared/async-work-scope.js";
 import { closeOpenClawAgentDatabaseByPathAsync } from "../../state/openclaw-agent-db-lifecycle.js";
@@ -17,7 +18,9 @@ import { scheduleColdCacheAheadMaintenance } from "./run.js";
 
 const memory = vi.hoisted(() => ({
   runMemoryFlushIfNeeded: vi.fn(async () => ({ outcome: "skipped" })),
-  runSessionCompactionIfNeeded: vi.fn(async (_params: { abortSignal?: AbortSignal }) => {}),
+  runSessionCompactionIfNeeded: vi.fn(
+    async (_params: { abortSignal?: AbortSignal; onColdCacheNotDue?: (delayMs: number) => void }) => {},
+  ),
 }));
 // mock-isolation: Admission uses real stores and workers; model and persistence effects stay inert.
 vi.mock("../command/runtime-loaders.js", () => ({
@@ -42,7 +45,13 @@ const largeSession = {
   totalTokensVersion: SESSION_TOTAL_TOKENS_VERSION,
 };
 
+beforeEach(() => {
+  // The timer looks up the Gateway's registry when it fires, not the finished request's.
+  setActivePluginRegistry(createEmptyPluginRegistry());
+});
+
 afterEach(() => {
+  resetPluginRuntimeStateForTest();
   vi.useRealTimers();
   memory.runMemoryFlushIfNeeded.mockClear();
   memory.runSessionCompactionIfNeeded.mockReset();
@@ -146,6 +155,39 @@ it("counts from the end of after-turn maintenance, the session's last model acti
   });
 });
 
+it("follows later activity in the session and still runs before the cache expires", async () => {
+  memory.runSessionCompactionIfNeeded.mockImplementationOnce(async ({ onColdCacheNotDue }) => {
+    // A background run in the owner's chat used the model 10 minutes after the turn.
+    onColdCacheNotDue?.(10 * MINUTE);
+  });
+  await withIdleSession(async ({ sessionKey, arm }) => {
+    await arm(Promise.resolve(true));
+    await vi.advanceTimersByTimeAsync(AHEAD_MS);
+    await waitForSessionMaintenance(sessionKey);
+    expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(10 * MINUTE - 1);
+    await waitForSessionMaintenance(sessionKey);
+    expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1);
+    await waitForSessionMaintenance(sessionKey);
+    expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledTimes(2);
+  });
+});
+
+it("stops following activity after three moves when nobody returns", async () => {
+  memory.runSessionCompactionIfNeeded.mockImplementation(async ({ onColdCacheNotDue }) => {
+    onColdCacheNotDue?.(30 * MINUTE);
+  });
+  await withIdleSession(async ({ sessionKey, arm }) => {
+    await arm(Promise.resolve(true));
+    for (let hour = 0; hour < 12; hour += 1) {
+      await vi.advanceTimersByTimeAsync(60 * MINUTE);
+      await waitForSessionMaintenance(sessionKey);
+    }
+    expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledTimes(4);
+  });
+});
+
 it("still runs when the finished turn's work scope has closed", async () => {
   await withIdleSession(async ({ sessionKey, arm }) => {
     const request = new AsyncWorkScope();
@@ -169,7 +211,7 @@ it.each([
   });
 });
 
-it("skips the early run once the owner chose another model", async () => {
+it("skips the early run once the session's model selection changed", async () => {
   await withIdleSession(
     async ({ sessionKey, arm }) => {
       await arm(Promise.resolve(true));
