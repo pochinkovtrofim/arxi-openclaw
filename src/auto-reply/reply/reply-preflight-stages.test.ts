@@ -14,17 +14,18 @@ afterEach(() => {
   emitTrustedDiagnosticEvent.mockClear();
 });
 
-it("emits consecutive content-free stages inside the reply's trace", () => {
+it("emits consecutive content-free stages inside the reply's trace", async () => {
   vi.useFakeTimers({ now: 10_000 });
   const trace = createDiagnosticTraceContext();
   runWithDiagnosticTraceContext(trace, () => {
-    const stage = createReplyPreflightStages({ startedAt: 7_000, sessionKey: "agent:main:main" });
-    stage("prepare");
+    const stages = createReplyPreflightStages({ startedAt: 7_000, sessionKey: "agent:main:main" });
+    stages.mark("prepare");
     vi.advanceTimersByTime(1_500);
-    stage("token_estimate");
-    vi.advanceTimersByTime(9_000);
-    stage("memory_flush");
+    void stages.memoryFlush(async () => {
+      vi.advanceTimersByTime(9_000);
+    });
   });
+  await Promise.resolve();
   expect(
     emitTrustedDiagnosticEvent.mock.calls.map(([event]) => [event.stage, event.durationMs]),
   ).toEqual([
@@ -43,7 +44,22 @@ it("emits consecutive content-free stages inside the reply's trace", () => {
 
 it("emits nothing outside a traced reply", () => {
   runWithDiagnosticTraceContext(undefined, () => {
-    createReplyPreflightStages({ startedAt: Date.now() })("prepare");
+    createReplyPreflightStages({ startedAt: Date.now() }).mark("prepare");
   });
   expect(emitTrustedDiagnosticEvent).not.toHaveBeenCalled();
+});
+
+it("closes the pre-run compaction step with the part that ran last", () => {
+  vi.useFakeTimers({ now: 10_000 });
+  runWithDiagnosticTraceContext(createDiagnosticTraceContext(), () => {
+    const stages = createReplyPreflightStages({ startedAt: 10_000 });
+    stages.compactionStarted();
+    vi.advanceTimersByTime(30_000);
+    stages.preflightDone();
+  });
+  expect(emitTrustedDiagnosticEvent.mock.calls.map(([event]) => [event.stage, event.durationMs]))
+    .toEqual([
+      ["token_estimate", 0],
+      ["compaction", 30_000],
+    ]);
 });

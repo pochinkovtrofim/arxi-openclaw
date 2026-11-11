@@ -2,7 +2,8 @@ import type { FollowupRun } from "../../auto-reply/reply/queue.js";
 import type { CapturedSessionEntryCurrentRead } from "../../config/sessions/session-entry-current.types.js";
 import { listSqliteTargetCandidatePathsForSessionStorePath } from "../../config/sessions/session-sqlite-target-paths.js";
 import { captureSessionTranscriptTargetBinding } from "../../config/sessions/transcript-target-binding.js";
-import type { SessionEntry } from "../../config/sessions/types.js";
+import { getRuntimeConfig } from "../../config/config.js";
+import { resolveFreshSessionTotalTokens, type SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { fenceScheduledGatewayContextResolver } from "../../gateway/scheduled-run-gateway-context.js";
 import {
@@ -11,7 +12,6 @@ import {
   racePromiseWithAbortSignal,
 } from "../../infra/abort-signal.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
-import { runWithDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { readDatabasePathIdentitySync } from "../../infra/sqlite-worker-identity.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -20,8 +20,13 @@ import {
   getPluginRuntimeGatewayRequestScope,
   withPluginRuntimeGatewayRequestScope,
 } from "../../plugins/runtime/gateway-request-scope.js";
-import { runWithGatewayIndependentRootWorkAdmission } from "../../process/gateway-work-admission.js";
+import {
+  runWithGatewayDetachedWorkAdmission,
+  runWithGatewayIndependentRootWorkAdmission,
+} from "../../process/gateway-work-admission.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
+import { resolveDirectStoredModelOverride } from "../../sessions/stored-model-overrides.js";
+import { runInDetachedAsyncContext } from "../../shared/detached-async-context.js";
 import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
 import { createCommandBudget } from "../command/maintenance-budget.js";
 import {
@@ -29,6 +34,7 @@ import {
   loadSessionStoreRuntime,
 } from "../command/runtime-loaders.js";
 import { resolveColdCacheCompaction } from "../embedded-agent-runner/cold-cache-compaction.js";
+import { resolveDefaultModelForAgent } from "../model-selection-config.js";
 import type { CompactionRequestBudget } from "../sessions/compaction/request-budget.js";
 import { createSessionMaintenanceOwner } from "./coordinator.js";
 
@@ -123,12 +129,15 @@ export function createSessionMaintenanceFollowup(params: {
   };
 }
 
-/** Optional work has a fresh root and writer admission after the foreground owner closes. */
+/**
+ * Optional work has a fresh root and writer admission after the foreground owner closes.
+ * The returned promise settles when that work has ended, whatever its outcome.
+ */
 export function scheduleSessionMaintenance(
   request: SessionMaintenanceRequest,
   afterOwnerSettles?: Promise<boolean>,
-): void {
-  startSessionMaintenance(request, "after_turn", afterOwnerSettles);
+): Promise<void> {
+  return startSessionMaintenance(request, "after_turn", afterOwnerSettles);
 }
 
 const coldCacheAheadTimers = resolveGlobalSingleton(
@@ -143,14 +152,17 @@ const coldCacheAheadTimers = resolveGlobalSingleton(
 );
 
 /**
- * After a completed turn, runs the cold-cache compaction while the prompt cache is still warm,
- * so the next turn does not wait for it. One timer per session: a later turn replaces it.
- * Its maintenance owner is preemptible, so a turn arriving meanwhile cancels it and runs on the
- * still-warm cache. Paused VMs, restarts and failures leave the next turn's own check in place.
+ * After a turn a person waits on, runs the cold-cache compaction shortly before the prompt
+ * cache expires, so the next turn does not wait for it. The clock starts once the turn and
+ * its after-turn maintenance have settled, the session's last model activity. One timer per
+ * session: a later turn replaces it. Its maintenance owner is preemptible, so a turn arriving
+ * meanwhile cancels it and runs on the still-warm cache. Paused VMs, restarts, a changed model
+ * and failures leave the next turn's own check in place.
  */
 export function scheduleColdCacheAheadMaintenance(
   request: SessionMaintenanceRequest,
-  afterOwnerSettles: Promise<boolean>,
+  sessionEntry: SessionEntry,
+  afterTurn: Promise<boolean>,
 ): void {
   const sessionKey = request.prepared.sessionKey;
   const coldCache = resolveColdCacheCompaction({
@@ -159,25 +171,44 @@ export function scheduleColdCacheAheadMaintenance(
     modelId: request.followupRun.run.model,
     agentId: request.followupRun.run.agentId,
   });
-  if (!sessionKey || !coldCache) {
+  const freshTokens = resolveFreshSessionTotalTokens(sessionEntry);
+  // The timer outlives this turn's request: keep only the plugin registry and the live
+  // Gateway resolver, never its work scope, admission or trace.
+  const pluginRegistry = getPluginRegistryForContext();
+  const resolveGatewayContext = getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
+  if (
+    !sessionKey ||
+    coldCache?.aheadMs === undefined ||
+    (freshTokens !== undefined && freshTokens < coldCache.minTokens) ||
+    !pluginRegistry
+  ) {
     return;
   }
-  void afterOwnerSettles.then(
+  const aheadMs = coldCache.aheadMs;
+  // The after-turn run mutates its own followup; this one keeps the turn's facts.
+  const delayed = {
+    ...request,
+    followupRun: { ...request.followupRun, run: { ...request.followupRun.run } },
+  };
+  void afterTurn.then(
     (completed) => {
       if (!completed) {
         return;
       }
       clearTimeout(coldCacheAheadTimers.get(sessionKey));
-      const timer = setTimeout(() => {
-        if (coldCacheAheadTimers.get(sessionKey) !== timer) {
-          return;
-        }
-        coldCacheAheadTimers.delete(sessionKey);
-        // The finished turn's trace closed long ago; this work belongs to no message.
-        runWithDiagnosticTraceContext(undefined, () =>
-          startSessionMaintenance({ ...request, startedAt: Date.now() }, "cold_cache_ahead"),
-        );
-      }, coldCache.aheadMs);
+      const timer = runInDetachedAsyncContext(() =>
+        setTimeout(() => {
+          if (coldCacheAheadTimers.get(sessionKey) !== timer) {
+            return;
+          }
+          coldCacheAheadTimers.delete(sessionKey);
+          void withPluginRuntimeGatewayRequestScope(
+            { pluginRegistry, resolveGatewayContext, isWebchatConnect: () => false },
+            () =>
+              startSessionMaintenance({ ...delayed, startedAt: Date.now() }, "cold_cache_ahead"),
+          );
+        }, aheadMs),
+      );
       timer.unref?.();
       coldCacheAheadTimers.set(sessionKey, timer);
     },
@@ -185,15 +216,27 @@ export function scheduleColdCacheAheadMaintenance(
   );
 }
 
+/** The model a session's next turn starts with: its stored override, else the live default. */
+function resolveNextTurnModel(cfg: OpenClawConfig, agentId: string, entry: SessionEntry) {
+  const configured = resolveDefaultModelForAgent({ cfg, agentId });
+  const stored = resolveDirectStoredModelOverride({
+    sessionEntry: entry,
+    defaultProvider: configured.provider,
+  });
+  return stored
+    ? { provider: stored.provider ?? configured.provider, model: stored.model }
+    : configured;
+}
+
 function startSessionMaintenance(
   request: SessionMaintenanceRequest,
   mode: "after_turn" | "cold_cache_ahead",
   afterOwnerSettles?: Promise<boolean>,
-): void {
+): Promise<void> {
   const { prepared, followupRun } = request;
   const sessionKey = prepared.sessionKey;
   if (!sessionKey) {
-    return;
+    return Promise.resolve();
   }
   const sessionReadScope = {
     ...captureSessionTranscriptTargetBinding({
@@ -206,12 +249,12 @@ function startSessionMaintenance(
   };
   if (request.oneShotCliRun) {
     log.debug("Optional session maintenance skipped: one-shot CLI owns no post-return runtime.");
-    return;
+    return Promise.resolve();
   }
   const pluginRegistry = getPluginRegistryForContext();
   if (!pluginRegistry) {
     log.warn("Optional session maintenance skipped: no active plugin registry.");
-    return;
+    return Promise.resolve();
   }
   const resolveGatewayContext = fenceScheduledGatewayContextResolver(
     getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext,
@@ -223,12 +266,12 @@ function startSessionMaintenance(
     ).map(readDatabasePathIdentitySync);
   } catch (error) {
     log.warn(`Optional session maintenance source unavailable: ${formatErrorMessage(error)}`);
-    return;
+    return Promise.resolve();
   }
   const budget = createCommandBudget(request.startedAt, prepared.timeoutMs);
   if (budget.remainingMs() === 0) {
     budget.dispose();
-    return;
+    return Promise.resolve();
   }
   let readSource: CapturedSessionEntryCurrentRead | undefined;
   const interrupted = new AbortController();
@@ -261,8 +304,13 @@ function startSessionMaintenance(
         );
         return;
       }
+      // A timer-started run must not keep the finished request's root or work scope.
+      const admitRoot =
+        mode === "cold_cache_ahead"
+          ? runWithGatewayDetachedWorkAdmission
+          : runWithGatewayIndependentRootWorkAdmission;
       return owner.run(() =>
-        runWithGatewayIndependentRootWorkAdmission(
+        admitRoot(
           async () => {
             assertCurrent();
             const { captureSessionEntryCurrentRead, withSessionEntryReadOnlyInWorker } =
@@ -359,6 +407,17 @@ function startSessionMaintenance(
                     resolvedVerboseLevel: followupRun.run.verboseLevel ?? "off",
                   });
                 if (mode === "cold_cache_ahead") {
+                  // Only the model the owner chose: the one the next turn would start with.
+                  const next = resolveNextTurnModel(getRuntimeConfig(), followupRun.run.agentId, entry);
+                  if (
+                    next.provider !== followupRun.run.provider ||
+                    next.model !== followupRun.run.model ||
+                    (entry.authProfileOverride !== undefined &&
+                      entry.authProfileOverride !== followupRun.run.authProfileId)
+                  ) {
+                    log.debug("Cold-cache early compaction skipped: the session's model changed.");
+                    return;
+                  }
                   // The reply path's cold-cache step: flush memory only when compaction follows.
                   await memory.runSessionCompactionIfNeeded({
                     ...maintenanceParams(),
@@ -412,8 +471,9 @@ function startSessionMaintenance(
       );
     },
   );
-  void owner
+  return owner
     .track(run)
+    .then(() => {})
     .catch((error: unknown) => {
       if (owner.signal.aborted || isAbortError(error)) {
         log.debug(`Optional session maintenance cancelled: ${formatErrorMessage(error)}`);

@@ -49,7 +49,7 @@ export function scheduleReplySessionMaintenance(params: {
     timeoutMs: followupRun.run.timeoutMs,
     runtimePolicySessionKey: context.runtimePolicySessionKey,
   };
-  const createRequest = () => ({
+  const request = {
     prepared,
     followupRun: createSessionMaintenanceFollowup({
       run: followupRun.run,
@@ -68,11 +68,14 @@ export function scheduleReplySessionMaintenance(params: {
     startedAt: replyOperation.startedAtMs,
     agentHarnessId,
     compactionRequestBudget: context.execution.compactionRequestBudget,
-  });
+  };
   const completed = replyOperation.ownerSettlement.then(
     () => replyOperation.result?.kind === "completed" && !replyOperation.abortSignal.aborted,
   );
-  scheduleSessionMaintenance(createRequest(), completed);
-  // Each run mutates its own maintenance followup, so the delayed one gets a separate copy.
-  scheduleColdCacheAheadMaintenance(createRequest(), completed);
+  const afterTurn = scheduleSessionMaintenance(request, completed);
+  scheduleColdCacheAheadMaintenance(
+    request,
+    sessionEntry,
+    afterTurn.then(() => completed),
+  );
 }

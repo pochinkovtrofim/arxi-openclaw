@@ -557,7 +557,9 @@ export async function runSessionCompactionIfNeeded(params: {
     cacheIdleMs !== undefined &&
     coldCache !== undefined &&
     (params.coldCacheAhead
-      ? cacheIdleMs >= coldCache.aheadMs && cacheIdleMs < coldCache.ttlMs
+      ? coldCache.aheadMs !== undefined &&
+        cacheIdleMs >= coldCache.aheadMs &&
+        cacheIdleMs < coldCache.ttlMs
       : cacheIdleMs >= coldCache.ttlMs);
   const shouldCompactColdCache =
     !params.isHeartbeat &&

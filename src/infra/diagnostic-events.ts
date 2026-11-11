@@ -89,8 +89,9 @@ type DiagnosticMemorySearchCompletedEvent = DiagnosticBaseEvent & {
 type DiagnosticSessionEvent = DiagnosticBaseEvent &
   Pick<DiagnosticRunScopeFields, "sessionKey" | "sessionId">;
 
-/** Stages between a reply's preparation and its agent run, in order; fixed code labels only. */
+/** Stages between taking up a turn and its agent run, in order; fixed code labels only. */
 export const REPLY_PREFLIGHT_STAGES = [
+  "admission",
   "prepare",
   "token_estimate",
   "memory_flush",

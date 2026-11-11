@@ -161,30 +161,27 @@ export async function executePreparedReplyAgentRun(
 
   await typingSignals.signalRunStart();
 
-  // Content-free timing of the stretch before the agent run, for the work trace.
-  const preflightStage = createReplyPreflightStages({
-    startedAt: followupRun.enqueuedAt,
+  // Content-free timing from the admitted turn to its agent run, for the work trace.
+  const preflightStages = createReplyPreflightStages({
+    startedAt: replyOperation.startedAtMs,
     sessionKey,
   });
-  preflightStage("prepare");
-  let memoryFlushed = false;
-  let compactionStarted = false;
+  preflightStages.mark("prepare");
   const preflightAdmission = readPendingUserTurnTranscriptAdmission(
     followupRun.userTurnTranscriptRecorder,
   );
   const checkpointMemory = async (entry: SessionEntry) => {
-    preflightStage("token_estimate");
-    const flushed = await traceAgentPhase("reply.memory_flush", () =>
-      runMemoryFlushIfNeeded({
-        ...context,
-        preflightAdmission,
-        promptForEstimate: followupRun.prompt,
-        sessionEntry: entry,
-        sessionStore: activeSessionStore,
-      }),
+    const flushed = await preflightStages.memoryFlush(() =>
+      traceAgentPhase("reply.memory_flush", () =>
+        runMemoryFlushIfNeeded({
+          ...context,
+          preflightAdmission,
+          promptForEstimate: followupRun.prompt,
+          sessionEntry: entry,
+          sessionStore: activeSessionStore,
+        }),
+      ),
     );
-    preflightStage("memory_flush");
-    memoryFlushed = true;
     setActiveSessionEntry(flushed.sessionEntry);
     replyOperation.abortSignal.throwIfAborted();
     if (flushed.outcome === "exhausted") {
@@ -206,8 +203,7 @@ export async function executePreparedReplyAgentRun(
         abortSignal: replyOperation.abortSignal,
         beforeCompaction: checkpointMemory,
         onCompactionStart: () => {
-          preflightStage(memoryFlushed ? "replan" : "token_estimate");
-          compactionStarted = true;
+          preflightStages.compactionStarted();
           replyOperation.setPhase("preflight_compacting");
         },
         onSessionIdChanged: (sessionId) => replyOperation.updateSessionId(sessionId),
@@ -238,7 +234,7 @@ export async function executePreparedReplyAgentRun(
     }
     throw error;
   }
-  preflightStage(compactionStarted ? "compaction" : memoryFlushed ? "replan" : "token_estimate");
+  preflightStages.preflightDone();
   setActiveSessionEntry(activeSessionEntry);
   const preflightCompactionApplied =
     (activeSessionEntry?.compactionCount ?? 0) > prePreflightCompactionCount;
@@ -333,7 +329,7 @@ export async function executePreparedReplyAgentRun(
       },
     },
     () => {
-      preflightStage("run_admission");
+      preflightStages.mark("run_admission");
       return traceAgentPhase("reply.run_agent_turn", () =>
         executeAgentTurn({
           ...context,

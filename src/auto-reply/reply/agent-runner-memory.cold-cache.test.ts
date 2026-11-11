@@ -154,16 +154,21 @@ it.each([
 });
 
 it.each([
-  [49, false],
-  [51, true],
+  [56, false],
+  [58, true],
   [61, false],
 ])("background maintenance compacts after %i idle minutes: %s", async (idleMinutes, compacts) => {
-  // Before 50 minutes the cache is fresh; from 60 the next turn owns the compaction.
+  // Before 57 minutes the cache is fresh; from 60 the next turn owns the compaction.
   await runAfterIdle({ idleMs: idleMinutes * MINUTE, coldCacheAhead: true });
   expect(compact).toHaveBeenCalledTimes(compacts ? 1 : 0);
 });
 
 it("background maintenance leaves a session below the cold-cache threshold", async () => {
   await runAfterIdle({ idleMs: 55 * MINUTE, promptTokens: 120_000, coldCacheAhead: true });
+  expect(compact).not.toHaveBeenCalled();
+});
+
+it("background maintenance leaves the five-minute cache to the next turn", async () => {
+  await runAfterIdle({ idleMs: 4.5 * MINUTE, cacheRetention: "short", coldCacheAhead: true });
   expect(compact).not.toHaveBeenCalled();
 });
