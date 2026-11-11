@@ -593,7 +593,15 @@ export async function runSessionCompactionIfNeeded(params: {
       cacheIdleMs < coldCache.aheadMs &&
       (tokenCountForCompaction ?? 0) >= coldCache.minTokens
     ) {
-      params.onColdCacheNotDue?.(coldCache.aheadMs - cacheIdleMs);
+      // A guest clock stepped back can make the idle time negative; stay within one lead.
+      params.onColdCacheNotDue?.(
+        Math.min(coldCache.aheadMs, Math.max(1, coldCache.aheadMs - cacheIdleMs)),
+      );
+    } else if (coldCache && cacheIdleMs !== undefined && cacheIdleMs >= coldCache.ttlMs) {
+      // A paused VM wakes after the cache expired; the next turn compacts as before.
+      preflightCompactionLog.info(
+        "cold-cache early compaction skipped: fired after the cache expired",
+      );
     }
     return entry;
   }

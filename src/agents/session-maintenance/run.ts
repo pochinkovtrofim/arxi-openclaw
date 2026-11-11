@@ -542,8 +542,12 @@ function startSessionMaintenance(
     .track(run)
     .then(() => {})
     .catch((error: unknown) => {
-      if (owner.signal.aborted || isAbortError(error)) {
+      if (owner.signal.aborted) {
+        // Yielded to a turn, a deadline or a Gateway restart.
         log.debug(`Optional session maintenance cancelled: ${formatErrorMessage(error)}`);
+      } else if (isAbortError(error)) {
+        // Its own admission refused it: the session changed or a final delivery is pending.
+        log.info(`Optional session maintenance skipped: ${formatErrorMessage(error)}`);
       } else {
         log.warn(`Optional session maintenance failed: ${formatErrorMessage(error)}`);
       }
