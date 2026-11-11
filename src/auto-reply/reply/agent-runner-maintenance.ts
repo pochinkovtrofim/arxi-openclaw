@@ -1,6 +1,8 @@
 import { OPENCLAW_AGENT_RUNTIME_ID } from "../../agents/agent-runtime-id.js";
 import {
   createSessionMaintenanceFollowup,
+  isPersonWaitingTurn,
+  scheduleColdCacheAheadMaintenance,
   scheduleSessionMaintenance,
 } from "../../agents/session-maintenance/run.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
@@ -17,13 +19,14 @@ export function scheduleReplySessionMaintenance(params: {
   const { replyOperation, followupRun, cfg, sessionKey, storePath } = context;
   const meta = accounting.runResult.meta;
   const auth = context.execution.maintenanceAuthProfile;
+  const lifecycleGeneration = replyOperation.lifecycleGeneration;
   if (
     !sessionEntry ||
     !sessionKey ||
     !storePath ||
     !accounting.providerUsed ||
     !replyOperation.ownerSettlement ||
-    !replyOperation.lifecycleGeneration ||
+    !lifecycleGeneration ||
     context.isHeartbeat ||
     accounting.preserveUserFacingSessionState ||
     context.execution.status !== "ok" ||
@@ -38,6 +41,8 @@ export function scheduleReplySessionMaintenance(params: {
   ) {
     return;
   }
+  const provider = accounting.providerUsed;
+  const agentHarnessId = meta.agentMeta.agentHarnessId;
   const prepared = {
     cfg,
     sessionKey,
@@ -45,29 +50,36 @@ export function scheduleReplySessionMaintenance(params: {
     timeoutMs: followupRun.run.timeoutMs,
     runtimePolicySessionKey: context.runtimePolicySessionKey,
   };
-  scheduleSessionMaintenance(
-    {
-      prepared,
-      followupRun: createSessionMaintenanceFollowup({
-        run: followupRun.run,
-        sessionEntry,
-        cfg,
-        sessionKey,
-        runtimePolicySessionKey:
-          context.runtimePolicySessionKey ?? followupRun.run.runtimePolicySessionKey,
-        provider: accounting.providerUsed,
-        model: accounting.modelUsed,
-        auth,
-      }),
-      sessionId: sessionEntry.sessionId,
-      lifecycleRevision: sessionEntry.lifecycleRevision,
-      lifecycleGeneration: replyOperation.lifecycleGeneration,
-      startedAt: replyOperation.startedAtMs,
-      agentHarnessId: meta.agentMeta.agentHarnessId,
-      compactionRequestBudget: context.execution.compactionRequestBudget,
-    },
-    replyOperation.ownerSettlement.then(
-      () => replyOperation.result?.kind === "completed" && !replyOperation.abortSignal.aborted,
-    ),
+  const request = {
+    prepared,
+    followupRun: createSessionMaintenanceFollowup({
+      run: followupRun.run,
+      sessionEntry,
+      cfg,
+      sessionKey,
+      runtimePolicySessionKey:
+        context.runtimePolicySessionKey ?? followupRun.run.runtimePolicySessionKey,
+      provider,
+      model: accounting.modelUsed,
+      auth,
+    }),
+    sessionId: sessionEntry.sessionId,
+    lifecycleRevision: sessionEntry.lifecycleRevision,
+    lifecycleGeneration,
+    startedAt: replyOperation.startedAtMs,
+    agentHarnessId,
+    compactionRequestBudget: context.execution.compactionRequestBudget,
+  };
+  const completed = replyOperation.ownerSettlement.then(
+    () => replyOperation.result?.kind === "completed" && !replyOperation.abortSignal.aborted,
+  );
+  const afterTurn = scheduleSessionMaintenance(request, completed);
+  if (!isPersonWaitingTurn({ inputProvenance: followupRun.run.inputProvenance })) {
+    return;
+  }
+  scheduleColdCacheAheadMaintenance(
+    request,
+    sessionEntry,
+    afterTurn.then(() => completed),
   );
 }

@@ -1,8 +1,9 @@
 import type { FollowupRun } from "../../auto-reply/reply/queue.js";
+import { getRuntimeConfig } from "../../config/config.js";
 import type { CapturedSessionEntryCurrentRead } from "../../config/sessions/session-entry-current.types.js";
 import { listSqliteTargetCandidatePathsForSessionStorePath } from "../../config/sessions/session-sqlite-target-paths.js";
 import { captureSessionTranscriptTargetBinding } from "../../config/sessions/transcript-target-binding.js";
-import type { SessionEntry } from "../../config/sessions/types.js";
+import { resolveFreshSessionTotalTokens, type SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { fenceScheduledGatewayContextResolver } from "../../gateway/scheduled-run-gateway-context.js";
 import {
@@ -19,13 +20,20 @@ import {
   getPluginRuntimeGatewayRequestScope,
   withPluginRuntimeGatewayRequestScope,
 } from "../../plugins/runtime/gateway-request-scope.js";
-import { runWithGatewayIndependentRootWorkAdmission } from "../../process/gateway-work-admission.js";
+import {
+  runWithGatewayDetachedWorkAdmission,
+  runWithGatewayIndependentRootWorkAdmission,
+} from "../../process/gateway-work-admission.js";
 import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admission.js";
+import { classifySessionStateActor } from "../../sessions/session-state-events.js";
+import { runInDetachedAsyncContext } from "../../shared/detached-async-context.js";
+import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
 import { createCommandBudget } from "../command/maintenance-budget.js";
 import {
   loadAgentRunnerMemoryRuntime,
   loadSessionStoreRuntime,
 } from "../command/runtime-loaders.js";
+import { resolveColdCacheCompaction } from "../embedded-agent-runner/cold-cache-compaction.js";
 import type { CompactionRequestBudget } from "../sessions/compaction/request-budget.js";
 import { createSessionMaintenanceOwner } from "./coordinator.js";
 
@@ -120,15 +128,181 @@ export function createSessionMaintenanceFollowup(params: {
   };
 }
 
-/** Optional work has a fresh root and writer admission after the foreground owner closes. */
+/**
+ * Optional work has a fresh root and writer admission after the foreground owner closes.
+ * The returned promise settles when that work has ended, whatever its outcome.
+ */
 export function scheduleSessionMaintenance(
   request: SessionMaintenanceRequest,
   afterOwnerSettles?: Promise<boolean>,
+): Promise<void> {
+  return startSessionMaintenance(request, { kind: "after_turn" }, afterOwnerSettles);
+}
+
+const coldCacheAheadTimers = resolveGlobalSingleton(
+  Symbol.for("openclaw.coldCacheAheadMaintenance"),
+  () => new Map<string, ReturnType<typeof setTimeout>>(),
+  (timers) => {
+    for (const timer of timers.values()) {
+      clearTimeout(timer);
+    }
+    timers.clear();
+  },
+);
+
+// Later model activity (a background run in the same session, a failed turn) moves the early
+// run back; it follows such activity at most this many times per person's turn, then leaves the
+// session to the next turn's own check.
+const MAX_COLD_CACHE_AHEAD_REARMS = 3;
+
+type ColdCacheAheadMode = {
+  kind: "cold_cache_ahead";
+  /** The turn's model selection inputs; the early run skips if they changed since. */
+  modelInputs: string;
+  /** The session had model activity after the timer was set; due again after `delayMs`. */
+  notDue: (delayMs: number) => void;
+};
+
+/** A person waits on this turn: no heartbeat, cron, subagent, internal event or other session. */
+export function isPersonWaitingTurn(params: {
+  inputProvenance?: Parameters<typeof classifySessionStateActor>[0]["inputProvenance"];
+  internalEvents?: readonly unknown[];
+  sessionEffects?: "visible" | "internal";
+  isSubagentLane?: boolean;
+  runKind?: string;
+}): boolean {
+  return (
+    classifySessionStateActor(params).actorType === "human" &&
+    params.isSubagentLane !== true &&
+    params.runKind !== "heartbeat" &&
+    params.runKind !== "cron"
+  );
+}
+
+/** What decides the model and credential a session's next turn starts with. Content-free. */
+function captureModelSelectionInputs(
+  cfg: OpenClawConfig,
+  agentId: string,
+  entry: SessionEntry,
+): string {
+  return JSON.stringify([
+    cfg.agents?.defaults?.model,
+    cfg.agents?.defaults?.models,
+    cfg.agents?.entries?.[agentId]?.model,
+    cfg.channels?.modelByChannel,
+    entry.providerOverride,
+    entry.modelOverride,
+    entry.modelOverrideSource,
+    entry.modelOverrideRouteResolution,
+    entry.modelOverrideFallbackOriginProvider,
+    entry.modelOverrideFallbackOriginModel,
+    entry.modelFallback,
+    entry.agentRuntimeOverride,
+    entry.authProfileOverride,
+    entry.authProfileOverrideSource,
+    entry.liveModelSwitchPending,
+    entry.modelSelectionLocked,
+    entry.agentHarnessId,
+  ]);
+}
+
+/**
+ * After a turn a person waits on, runs the cold-cache compaction shortly before the prompt
+ * cache expires, so the next turn does not wait for it. The clock starts once the turn and
+ * its after-turn maintenance have settled. One timer per session: a later person's turn
+ * replaces it. Its maintenance owner is preemptible, so a turn arriving meanwhile cancels it
+ * and runs on the still-warm cache. Paused VMs, restarts, a changed model selection and
+ * failures leave the next turn's own check in place.
+ */
+export function scheduleColdCacheAheadMaintenance(
+  request: SessionMaintenanceRequest,
+  sessionEntry: SessionEntry,
+  afterTurn: Promise<boolean>,
 ): void {
+  const sessionKey = request.prepared.sessionKey;
+  const coldCache = resolveColdCacheCompaction({
+    cfg: request.prepared.cfg,
+    provider: request.followupRun.run.provider,
+    modelId: request.followupRun.run.model,
+    agentId: request.followupRun.run.agentId,
+  });
+  const freshTokens = resolveFreshSessionTotalTokens(sessionEntry);
+  if (
+    !sessionKey ||
+    coldCache?.aheadMs === undefined ||
+    (freshTokens !== undefined && freshTokens < coldCache.minTokens)
+  ) {
+    return;
+  }
+  // The timer outlives this turn's request: keep only the live Gateway resolver, never the
+  // request's work scope, admission, trace or plugin registry.
+  const resolveGatewayContext = getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext;
+  const modelInputs = captureModelSelectionInputs(
+    getRuntimeConfig(),
+    request.followupRun.run.agentId,
+    sessionEntry,
+  );
+  // The after-turn run mutates its own followup; this one keeps the turn's facts.
+  const delayed = {
+    ...request,
+    followupRun: { ...request.followupRun, run: { ...request.followupRun.run } },
+  };
+  const arm = (delayMs: number, rearmsLeft: number) => {
+    clearTimeout(coldCacheAheadTimers.get(sessionKey));
+    const timer = runInDetachedAsyncContext(() =>
+      setTimeout(() => {
+        if (coldCacheAheadTimers.get(sessionKey) !== timer) {
+          return;
+        }
+        coldCacheAheadTimers.delete(sessionKey);
+        const pluginRegistry = getPluginRegistryForContext();
+        if (!pluginRegistry) {
+          log.info("Cold-cache early compaction skipped: no active plugin registry.");
+          return;
+        }
+        void withPluginRuntimeGatewayRequestScope(
+          { pluginRegistry, resolveGatewayContext, isWebchatConnect: () => false },
+          () =>
+            startSessionMaintenance(
+              { ...delayed, startedAt: Date.now() },
+              {
+                kind: "cold_cache_ahead",
+                modelInputs,
+                notDue: (nextDelayMs) => {
+                  if (rearmsLeft === 0) {
+                    log.info("Cold-cache early compaction dropped: later activity kept moving it.");
+                    return;
+                  }
+                  log.info("Cold-cache early compaction moved after later activity.");
+                  arm(nextDelayMs, rearmsLeft - 1);
+                },
+              },
+            ),
+        );
+      }, delayMs),
+    );
+    timer.unref?.();
+    coldCacheAheadTimers.set(sessionKey, timer);
+  };
+  void afterTurn.then(
+    (completed) => {
+      if (completed) {
+        arm(coldCache.aheadMs ?? 0, MAX_COLD_CACHE_AHEAD_REARMS);
+      }
+    },
+    () => {},
+  );
+}
+
+function startSessionMaintenance(
+  request: SessionMaintenanceRequest,
+  mode: { kind: "after_turn" } | ColdCacheAheadMode,
+  afterOwnerSettles?: Promise<boolean>,
+): Promise<void> {
   const { prepared, followupRun } = request;
   const sessionKey = prepared.sessionKey;
   if (!sessionKey) {
-    return;
+    return Promise.resolve();
   }
   const sessionReadScope = {
     ...captureSessionTranscriptTargetBinding({
@@ -141,12 +315,12 @@ export function scheduleSessionMaintenance(
   };
   if (request.oneShotCliRun) {
     log.debug("Optional session maintenance skipped: one-shot CLI owns no post-return runtime.");
-    return;
+    return Promise.resolve();
   }
   const pluginRegistry = getPluginRegistryForContext();
   if (!pluginRegistry) {
     log.warn("Optional session maintenance skipped: no active plugin registry.");
-    return;
+    return Promise.resolve();
   }
   const resolveGatewayContext = fenceScheduledGatewayContextResolver(
     getPluginRuntimeGatewayRequestScope()?.resolveGatewayContext,
@@ -158,12 +332,12 @@ export function scheduleSessionMaintenance(
     ).map(readDatabasePathIdentitySync);
   } catch (error) {
     log.warn(`Optional session maintenance source unavailable: ${formatErrorMessage(error)}`);
-    return;
+    return Promise.resolve();
   }
   const budget = createCommandBudget(request.startedAt, prepared.timeoutMs);
   if (budget.remainingMs() === 0) {
     budget.dispose();
-    return;
+    return Promise.resolve();
   }
   let readSource: CapturedSessionEntryCurrentRead | undefined;
   const interrupted = new AbortController();
@@ -196,8 +370,13 @@ export function scheduleSessionMaintenance(
         );
         return;
       }
+      // A timer-started run must not keep the finished request's root or work scope.
+      const admitRoot =
+        mode.kind === "cold_cache_ahead"
+          ? runWithGatewayDetachedWorkAdmission
+          : runWithGatewayIndependentRootWorkAdmission;
       return owner.run(() =>
-        runWithGatewayIndependentRootWorkAdmission(
+        admitRoot(
           async () => {
             assertCurrent();
             const { captureSessionEntryCurrentRead, withSessionEntryReadOnlyInWorker } =
@@ -287,10 +466,49 @@ export function scheduleSessionMaintenance(
                 assertCurrent();
                 followupRun.run.timeoutMs = budget.remainingMs();
                 assertCurrent();
-                const flushed = await memory.runMemoryFlushIfNeeded({
-                  ...maintenanceParams(),
-                  resolvedVerboseLevel: followupRun.run.verboseLevel ?? "off",
-                });
+                const flushMemory = (sessionEntry: SessionEntry) =>
+                  memory.runMemoryFlushIfNeeded({
+                    ...maintenanceParams(),
+                    sessionEntry,
+                    resolvedVerboseLevel: followupRun.run.verboseLevel ?? "off",
+                  });
+                if (mode.kind === "cold_cache_ahead") {
+                  // Only the model the owner chose: the same selection inputs as the turn's.
+                  if (
+                    captureModelSelectionInputs(
+                      getRuntimeConfig(),
+                      followupRun.run.agentId,
+                      entry,
+                    ) !== mode.modelInputs
+                  ) {
+                    log.info("Cold-cache early compaction skipped: the model selection changed.");
+                    return;
+                  }
+                  // The reply path's cold-cache step: flush memory only when compaction follows.
+                  await memory.runSessionCompactionIfNeeded({
+                    ...maintenanceParams(),
+                    coldCacheAhead: true,
+                    onColdCacheNotDue: mode.notDue,
+                    compactionRequestBudget: request.compactionRequestBudget
+                      ? { ...request.compactionRequestBudget, pendingTokens: 0 }
+                      : undefined,
+                    agentHarnessId: request.agentHarnessId,
+                    authorize: () => {
+                      assertCurrent();
+                      return true;
+                    },
+                    beforeCompaction: async (current) => {
+                      const flushed = await flushMemory(current);
+                      assertCurrent();
+                      entry = flushed.sessionEntry ?? current;
+                      followupRun.run.sessionId = entry.sessionId;
+                      followupRun.run.timeoutMs = budget.remainingMs();
+                      return flushed.sessionEntry;
+                    },
+                  });
+                  return;
+                }
+                const flushed = await flushMemory(entry);
                 // Flush reports aborted attempts as failed outcomes; cancellation still forbids compaction.
                 assertCurrent();
                 entry = flushed.sessionEntry ?? entry;
@@ -320,11 +538,16 @@ export function scheduleSessionMaintenance(
       );
     },
   );
-  void owner
+  return owner
     .track(run)
+    .then(() => {})
     .catch((error: unknown) => {
-      if (owner.signal.aborted || isAbortError(error)) {
+      if (owner.signal.aborted) {
+        // Yielded to a turn, a deadline or a Gateway restart.
         log.debug(`Optional session maintenance cancelled: ${formatErrorMessage(error)}`);
+      } else if (isAbortError(error)) {
+        // Its own admission refused it: the session changed or a final delivery is pending.
+        log.info(`Optional session maintenance skipped: ${formatErrorMessage(error)}`);
       } else {
         log.warn(`Optional session maintenance failed: ${formatErrorMessage(error)}`);
       }

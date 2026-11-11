@@ -37,6 +37,7 @@ import {
 import { claimNextQueuedFollowupRequestFrom, enqueueFollowupRun } from "./queue.js";
 import { isReplyOperationSuperseded } from "./reply-operation-abort.js";
 import { recordReplyOperationAgentTurn } from "./reply-operation-run-state.js";
+import { createReplyPreflightStages } from "./reply-preflight-stages.js";
 import type { ReplyOperation } from "./reply-run-registry.js";
 import { replyRunRegistry } from "./reply-run-registry.js";
 import { createReplyRestartRecoveryClaimController } from "./restart-recovery-claim.js";
@@ -160,18 +161,26 @@ export async function executePreparedReplyAgentRun(
 
   await typingSignals.signalRunStart();
 
+  // Content-free timing from the admitted turn to its agent run, for the work trace.
+  const preflightStages = createReplyPreflightStages({
+    startedAt: replyOperation.startedAtMs,
+    sessionKey,
+  });
+  preflightStages.mark("prepare");
   const preflightAdmission = readPendingUserTurnTranscriptAdmission(
     followupRun.userTurnTranscriptRecorder,
   );
   const checkpointMemory = async (entry: SessionEntry) => {
-    const flushed = await traceAgentPhase("reply.memory_flush", () =>
-      runMemoryFlushIfNeeded({
-        ...context,
-        preflightAdmission,
-        promptForEstimate: followupRun.prompt,
-        sessionEntry: entry,
-        sessionStore: activeSessionStore,
-      }),
+    const flushed = await preflightStages.memoryFlush(() =>
+      traceAgentPhase("reply.memory_flush", () =>
+        runMemoryFlushIfNeeded({
+          ...context,
+          preflightAdmission,
+          promptForEstimate: followupRun.prompt,
+          sessionEntry: entry,
+          sessionStore: activeSessionStore,
+        }),
+      ),
     );
     setActiveSessionEntry(flushed.sessionEntry);
     replyOperation.abortSignal.throwIfAborted();
@@ -193,7 +202,10 @@ export async function executePreparedReplyAgentRun(
         sessionStore: activeSessionStore,
         abortSignal: replyOperation.abortSignal,
         beforeCompaction: checkpointMemory,
-        onCompactionStart: () => replyOperation.setPhase("preflight_compacting"),
+        onCompactionStart: () => {
+          preflightStages.compactionStarted();
+          replyOperation.setPhase("preflight_compacting");
+        },
         onSessionIdChanged: (sessionId) => replyOperation.updateSessionId(sessionId),
         onCompactionNotice: sendDirectCompactionNotice,
       }),
@@ -222,6 +234,7 @@ export async function executePreparedReplyAgentRun(
     }
     throw error;
   }
+  preflightStages.preflightDone();
   setActiveSessionEntry(activeSessionEntry);
   const preflightCompactionApplied =
     (activeSessionEntry?.compactionCount ?? 0) > prePreflightCompactionCount;
@@ -315,14 +328,16 @@ export async function executePreparedReplyAgentRun(
         return { ...hookResult, reply: hookReply };
       },
     },
-    () =>
-      traceAgentPhase("reply.run_agent_turn", () =>
+    () => {
+      preflightStages.mark("run_admission");
+      return traceAgentPhase("reply.run_agent_turn", () =>
         executeAgentTurn({
           ...context,
           resolveVisibleReplyDelivery: input.resolveVisibleReplyDelivery,
           replyThreading: replyThreadingOverride ?? sessionCtx.ReplyThreading,
         }),
-      ),
+      );
+    },
   );
   const operationSuperseded = isReplyOperationSuperseded(replyOperation);
   recordReplyOperationAgentTurn(

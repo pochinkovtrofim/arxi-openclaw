@@ -338,7 +338,9 @@ it.each(["completed", "interrupted"] as const)(
           }
           expect(peekSessionMcpRuntime({ sessionId })).toBeDefined();
         }
+        let interruptedAt: number | undefined;
         if (outcome === "interrupted") {
+          interruptedAt = performance.now();
           interrupted.abort(new Error("next human turn"));
         } else {
           if (!completeFirstPrivateResponse) {
@@ -348,6 +350,10 @@ it.each(["completed", "interrupted"] as const)(
           completeFirstPrivateResponse = undefined;
         }
         expect((await flush).outcome).toBe(outcome === "interrupted" ? "failed" : "completed");
+        if (interruptedAt !== undefined) {
+          // The stalled flush request stops at once: the person's turn does not wait for it.
+          expect(performance.now() - interruptedAt).toBeLessThan(2_000);
+        }
         admission.release();
         admission = undefined;
         expect(requests).toHaveLength(1);

@@ -14,6 +14,10 @@ import {
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
 import { closePreparedModelRuntimeSnapshots } from "../prepared-model-runtime.lifecycle.js";
+import {
+  beginForegroundSessionMaintenance,
+  createSessionMaintenanceOwner,
+} from "../session-maintenance/coordinator.js";
 import { SessionManager } from "../sessions/session-manager.js";
 import { compactEmbeddedAgentSessionDirect } from "./compact.js";
 import { compactEmbeddedAgentSession } from "./compact.queued.js";
@@ -448,6 +452,41 @@ describe("automatic compaction summary failure", () => {
           .getBranch()
           .some((entry) => entry.type === "compaction"),
       ).toBe(false);
+    });
+  });
+});
+
+describe("background compaction yielding to a turn", () => {
+  it("stops the in-flight summary request so the turn is admitted at once", async () => {
+    await withSession(async (fixture) => {
+      appendToolTurns(fixture, 0, 8);
+      summaryMode = "stall";
+      // A fresh connection, so the stalled summary request owns the observed socket.
+      server.closeAllConnections();
+      const requestClosed = createDeferred();
+      server.once("connection", (socket) => socket.once("close", () => requestClosed.resolve()));
+      const sessionKey = fixture.target.sessionKey;
+      const owner = createSessionMaintenanceOwner({ sessionKey, preemptible: true });
+      const background = owner.track(
+        owner.run(() => compactSession(fixture, { abortSignal: owner.signal })),
+      );
+      await summaryArrived.promise;
+
+      const startedAt = performance.now();
+      const release = await beginForegroundSessionMaintenance(sessionKey);
+      const waitedMs = performance.now() - startedAt;
+      release();
+
+      expect(waitedMs).toBeLessThan(2_000);
+      // Cancellation either reports a failed compaction or rejects as aborted.
+      const outcome = await background.catch((error: unknown) => error);
+      expect(
+        String(
+          outcome instanceof Error ? outcome.name : (outcome as { compacted?: boolean }).compacted,
+        ),
+      ).toMatch(/^(AbortError|false)$/);
+      // The abort reached the provider request, not only the awaiting promise.
+      await requestClosed.promise;
     });
   });
 });

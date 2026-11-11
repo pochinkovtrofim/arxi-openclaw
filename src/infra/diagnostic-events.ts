@@ -89,6 +89,24 @@ type DiagnosticMemorySearchCompletedEvent = DiagnosticBaseEvent & {
 type DiagnosticSessionEvent = DiagnosticBaseEvent &
   Pick<DiagnosticRunScopeFields, "sessionKey" | "sessionId">;
 
+/** Stages between taking up a turn and its agent run, in order; fixed code labels only. */
+export const REPLY_PREFLIGHT_STAGES = [
+  "admission",
+  "prepare",
+  "token_estimate",
+  "memory_flush",
+  "replan",
+  "compaction",
+  "run_admission",
+] as const;
+
+/** One finished stage of a reply before its agent run starts. No content. */
+type DiagnosticReplyPreflightStageEvent = DiagnosticSessionEvent & {
+  type: "reply.preflight.stage";
+  stage: (typeof REPLY_PREFLIGHT_STAGES)[number];
+  durationMs: number;
+};
+
 type DiagnosticGatewayRpcEvent = DiagnosticBaseEvent & DiagnosticGatewayRpcFields;
 
 type DiagnosticUsageEvent = DiagnosticSessionEvent & {
@@ -849,6 +867,7 @@ type DiagnosticTelemetryExporterEvent = DiagnosticBaseEvent & {
 };
 
 export type DiagnosticEventPayload =
+  | DiagnosticReplyPreflightStageEvent
   | DiagnosticGatewayRpcEvent
   | DiagnosticMemorySearchCompletedEvent
   | (DiagnosticBaseEvent & DiagnosticRuntimeMeasurementFields)
@@ -1031,6 +1050,7 @@ const MAX_ASYNC_DIAGNOSTIC_EVENTS = 10_000;
 const MAX_ASYNC_DIAGNOSTIC_EVENTS_PER_TURN = 100;
 const DIAGNOSTIC_EVENTS_STATE_KEY = Symbol.for("openclaw.diagnosticEvents.state.v1");
 const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
+  "reply.preflight.stage",
   "worker.request",
   "diagnostic.gc",
   "gateway.event_loop.sample",

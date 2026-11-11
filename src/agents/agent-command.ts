@@ -1,3 +1,4 @@
+import { createReplyPreflightStages } from "../auto-reply/reply/reply-preflight-stages.js";
 import type { VerboseLevel } from "../auto-reply/thinking.js";
 import type { CliDeps } from "../cli/deps.types.js";
 import {
@@ -67,6 +68,8 @@ import type { MainSessionRecoveryPendingTarget } from "./main-session-recovery/m
 import { withAgentPluginRegistry } from "./runtime-plugins.js";
 import { beginForegroundSessionMaintenance } from "./session-maintenance/coordinator.js";
 import {
+  isPersonWaitingTurn,
+  scheduleColdCacheAheadMaintenance,
   scheduleSessionMaintenance,
   type SessionMaintenanceRequest,
 } from "./session-maintenance/run.js";
@@ -81,6 +84,11 @@ async function agentCommandInternal(
   deps?: CliDeps,
   watchSkills = false,
 ) {
+  // Content-free timing from taking up the turn to its agent run, for the work trace.
+  const preflightStages = createReplyPreflightStages({
+    startedAt: Date.now(),
+    sessionKey: prepared.sessionKey,
+  });
   const resolvedDeps = await resolveAgentCommandDeps(deps);
   const isRawModelRun = prepared.opts.modelRun === true || prepared.opts.promptMode === "none";
   const suppressVisibleSessionEffects = prepared.opts.sessionEffects === "internal";
@@ -132,6 +140,15 @@ async function agentCommandInternal(
     internalEvents: opts.internalEvents,
     sessionEffects: opts.sessionEffects,
   });
+  // A person waits on this turn: it takes foreground priority, and its session is kept
+  // ready for the next one.
+  const humanTurn = isPersonWaitingTurn({
+    inputProvenance: opts.inputProvenance,
+    internalEvents: opts.internalEvents,
+    sessionEffects: opts.sessionEffects,
+    isSubagentLane,
+    runKind: opts.bootstrapContextRunKind,
+  });
   let sessionReboundDuringRun = false;
   let trackedRestartRecoveryDeliveryClaim = false;
   let currentRunDeliveryContext: DeliveryContext | undefined;
@@ -167,13 +184,7 @@ async function agentCommandInternal(
             currentSource: () => opts,
           })
         : undefined;
-    if (
-      sessionStateActor.actorType === "human" &&
-      !isSubagentLane &&
-      !opts.internalEvents?.length &&
-      opts.bootstrapContextRunKind !== "heartbeat" &&
-      opts.bootstrapContextRunKind !== "cron"
-    ) {
+    if (humanTurn) {
       releaseForeground = await beginForegroundSessionMaintenance(sessionKey ?? sessionId);
     }
     assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
@@ -224,6 +235,7 @@ async function agentCommandInternal(
       },
     });
     return await sessionWorkAdmission.run(async () => {
+      preflightStages.mark("admission");
       if (sessionStore && sessionKey && !suppressVisibleSessionEffects) {
         try {
           await repairPendingAssistantTranscriptTurns({
@@ -441,7 +453,9 @@ async function agentCommandInternal(
         { config: cfg },
       );
       sessionEntry = modelSelection.sessionEntry;
+      preflightStages.mark("prepare");
       const { prepared: attemptPrepared, admission } = await prepareCommandForegroundRun({
+        preflightStages,
         prepared,
         opts,
         sessionEntry,
@@ -455,6 +469,7 @@ async function agentCommandInternal(
           compactionSessionIdReporter.onCompactionCommitted(committedSessionId);
         },
       });
+      preflightStages.preflightDone();
       preparedRunAdmission = admission;
       sessionEntry = attemptPrepared.sessionEntry;
       if (attemptPrepared.sessionId !== runOwnedSessionId) {
@@ -542,7 +557,14 @@ async function agentCommandInternal(
       completionSource,
     });
     if (maintenanceRequest) {
-      scheduleSessionMaintenance(maintenanceRequest);
+      const afterTurn = scheduleSessionMaintenance(maintenanceRequest);
+      if (humanTurn && sessionEntry) {
+        scheduleColdCacheAheadMaintenance(
+          maintenanceRequest,
+          sessionEntry,
+          afterTurn.then(() => true),
+        );
+      }
     }
   }
 }

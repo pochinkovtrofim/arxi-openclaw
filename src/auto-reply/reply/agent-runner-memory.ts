@@ -346,6 +346,13 @@ export async function runSessionCompactionIfNeeded(params: {
   beforeCompaction?: (entry: SessionEntry) => Promise<SessionEntry | undefined>;
   /** Set on the replan after a memory checkpoint whose own model call re-dated the session. */
   coldCacheDue?: boolean;
+  /**
+   * Background maintenance runs only the cold-cache compaction, from the policy's ahead time
+   * until the prompt cache expires; after that the next turn compacts as before.
+   */
+  coldCacheAhead?: boolean;
+  /** With `coldCacheAhead`: the session had model activity since; due again after `delayMs`. */
+  onColdCacheNotDue?: (delayMs: number) => void;
   onCompactionStart?: () => void;
   onCompactionCommitted?: (accepted: AcceptedCompactionSuccessor) => void;
   onSessionIdChanged?: (sessionId: string) => void;
@@ -548,11 +555,18 @@ export async function runSessionCompactionIfNeeded(params: {
   const tokenCountForCompaction = asPositiveFiniteNumber(projectedTokenCount);
   const lastModelCallAt = transcriptUsageTokens?.lastModelCallAt;
   const cacheIdleMs = lastModelCallAt === undefined ? undefined : Date.now() - lastModelCallAt;
+  const cacheIdleDue =
+    cacheIdleMs !== undefined &&
+    coldCache !== undefined &&
+    (params.coldCacheAhead
+      ? coldCache.aheadMs !== undefined &&
+        cacheIdleMs >= coldCache.aheadMs &&
+        cacheIdleMs < coldCache.ttlMs
+      : cacheIdleMs >= coldCache.ttlMs);
   const shouldCompactColdCache =
     !params.isHeartbeat &&
     coldCache !== undefined &&
-    (params.coldCacheDue === true ||
-      (cacheIdleMs !== undefined && cacheIdleMs >= coldCache.ttlMs)) &&
+    (params.coldCacheDue === true || cacheIdleDue) &&
     (tokenCountForCompaction ?? 0) >= coldCache.minTokens;
 
   logVerbose(
@@ -572,6 +586,25 @@ export async function runSessionCompactionIfNeeded(params: {
       `cacheIdleMs=${cacheIdleMs ?? "undefined"} coldCacheTrigger=${shouldCompactColdCache}`,
   );
 
+  if (params.coldCacheAhead && !shouldCompactColdCache) {
+    if (
+      coldCache?.aheadMs !== undefined &&
+      cacheIdleMs !== undefined &&
+      cacheIdleMs < coldCache.aheadMs &&
+      (tokenCountForCompaction ?? 0) >= coldCache.minTokens
+    ) {
+      // A guest clock stepped back can make the idle time negative; stay within one lead.
+      params.onColdCacheNotDue?.(
+        Math.min(coldCache.aheadMs, Math.max(1, coldCache.aheadMs - cacheIdleMs)),
+      );
+    } else if (coldCache && cacheIdleMs !== undefined && cacheIdleMs >= coldCache.ttlMs) {
+      // A paused VM wakes after the cache expired; the next turn compacts as before.
+      preflightCompactionLog.info(
+        "cold-cache early compaction skipped: fired after the cache expired",
+      );
+    }
+    return entry;
+  }
   const shouldCompactByTokens =
     !params.isHeartbeat &&
     shouldRunPreflightCompaction({

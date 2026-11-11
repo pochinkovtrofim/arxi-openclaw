@@ -1,4 +1,5 @@
 import type { FollowupRun } from "../../auto-reply/reply/queue.js";
+import type { ReplyPreflightStages } from "../../auto-reply/reply/reply-preflight-stages.js";
 import { resolveCollapsedSessionAuthPinSource } from "../../config/sessions/auth-profile-override-provenance.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
@@ -59,6 +60,8 @@ export function createCommandMaintenanceFollowup(params: {
 }
 
 type CommandPreflight = {
+  /** Content-free stage timing of the turn before its agent run. */
+  preflightStages?: ReplyPreflightStages;
   prepared: PreparedAgentCommandExecution;
   opts: AgentCommandOpts;
   sessionEntry?: SessionEntry;
@@ -189,13 +192,16 @@ async function runCommandPreflightMaintenance(
     },
     onSessionIdChanged: opts.onSessionIdChanged,
     onCompactionCommitted: (accepted) => params.onCommittedSessionId(accepted.sessionId),
+    onCompactionStart: params.preflightStages?.compactionStarted,
     beforeCompaction: async (entry) => {
-      const flushed = await memory.runMemoryFlushIfNeeded({
-        ...maintenanceParams,
-        preflightAdmission,
-        resolvedVerboseLevel: params.embeddedSessionState.resolvedVerboseLevel ?? "off",
-        sessionEntry: entry,
-      });
+      const flush = () =>
+        memory.runMemoryFlushIfNeeded({
+          ...maintenanceParams,
+          preflightAdmission,
+          resolvedVerboseLevel: params.embeddedSessionState.resolvedVerboseLevel ?? "off",
+          sessionEntry: entry,
+        });
+      const flushed = await (params.preflightStages?.memoryFlush(flush) ?? flush());
       assertActive();
       return flushed.sessionEntry;
     },

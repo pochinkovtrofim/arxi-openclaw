@@ -76,7 +76,7 @@ describe("embedded attempt system prompt preparation", () => {
       sessionKey: "agent:main:prompt-overlap",
       workspaceDir: "/tmp/openclaw",
       config: {},
-      admittedRunContext: admission.admit("embedded"),
+      admittedRunContext: await admission.admit("embedded"),
     } as EmbeddedRunAttemptParams;
 
     const pending = prepareEmbeddedAttemptSystemPrompt({
