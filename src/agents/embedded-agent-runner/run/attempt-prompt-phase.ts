@@ -36,6 +36,7 @@ import {
   submitEmbeddedAttemptPrompt,
 } from "./attempt-prompt-submit.js";
 import { observeEmbeddedAttemptPrompt } from "./attempt-prompt-support.js";
+import { createFirstModelRequestStageReporter } from "./attempt-stage-timing.js";
 import type { PreparedStreamRuntime } from "./attempt-stream-runtime.types.js";
 import { removeTrailingMidTurnPrecheckAssistantError } from "./attempt-transcript-helpers.js";
 import type { MidTurnPrecheckRequest } from "./midturn-precheck.js";
@@ -163,6 +164,17 @@ export async function runEmbeddedAttemptPromptPhase(
   };
 
   const promptStartedAt = Date.now();
+  // Contiguous checkpoints up to the attempt's primary model request, reported
+  // with it. A pre-prompt compaction request is not the primary one.
+  const markStage = (name: string) => input.setup.prepStages.mark(name);
+  const reportPreparationStages = createFirstModelRequestStageReporter({
+    tracker: input.setup.prepStages,
+    runId: attempt.runId,
+    ...(attempt.sessionKey ? { sessionKey: attempt.sessionKey } : {}),
+    ...(attempt.sessionId ? { sessionId: attempt.sessionId } : {}),
+    runTrace: input.diagnostics.runTrace,
+  });
+  markStage("attempt-ready");
 
   let transcriptLeafId: string | null = null;
   try {
@@ -194,6 +206,7 @@ export async function runEmbeddedAttemptPromptPhase(
         leasedSteering = lease;
       },
     });
+    markStage("prompt-assembly");
     systemPromptText = sessionRuntimeState.systemPromptText;
     if (prepared.toolCatalog.emptyExplicitToolAllowlistError) {
       setFailure(prepared.toolCatalog.emptyExplicitToolAllowlistError, "precheck");
@@ -224,6 +237,7 @@ export async function runEmbeddedAttemptPromptPhase(
       systemPromptText,
       toolResultPromptProjectionState,
     });
+    markStage("prompt-context");
     if (runAbortController.signal.aborted) {
       throw createAbortableError(runAbortController.signal);
     }
@@ -245,6 +259,7 @@ export async function runEmbeddedAttemptPromptPhase(
             systemPrompt: systemPromptForHook,
             withOwnedTranscriptWrite,
           });
+    markStage("agent-run-hooks");
     if (beforeAgentRunOutcome) {
       input.state.beforeAgentRunBlockedBy = beforeAgentRunOutcome.blockedBy;
       setFailure(beforeAgentRunOutcome.promptError, "hook:before_agent_run");
@@ -283,6 +298,7 @@ export async function runEmbeddedAttemptPromptPhase(
         // Observe canonical inputs before managed caches consume system/tools.
         observeForegroundRequests(onModelRequest);
       }
+      markStage("provider-auth");
     }
 
     const imageResult = await prepareEmbeddedAttemptPromptExecution({
@@ -294,6 +310,7 @@ export async function runEmbeddedAttemptPromptPhase(
       prompt: promptContext.promptSubmission.prompt,
       skipPromptSubmission,
     });
+    markStage("prompt-media");
     const reserveTokens = settingsManager.getCompactionReserveTokens();
     const terminal = projectAgentRunAttemptTerminal(input.state.terminal);
     let state: PromptPreflightState = {
@@ -325,6 +342,7 @@ export async function runEmbeddedAttemptPromptPhase(
         transcriptLeafId,
       }).skipPromptSubmission,
     };
+    markStage("context-observed");
     // Publish each admission transition before the next fallible phase so outer cleanup sees it.
     publishDispatchState(state);
 
@@ -402,6 +420,7 @@ export async function runEmbeddedAttemptPromptPhase(
       // request budget) so client tools appended by attempt-client-tools are counted.
       toolSchemaTokens: estimateToolSchemaTokenPressure(activeSession.agent.state.tools),
     });
+    markStage("prompt-preflight");
     publishDispatchState(state);
 
     if (!state.skipPromptSubmission) {
@@ -458,6 +477,7 @@ export async function runEmbeddedAttemptPromptPhase(
             });
           }),
         onPrimaryModelRequest: (tools) => {
+          reportPreparationStages();
           logDecisionToolRequest({
             decision: promptAssembly.decisionPrefilter,
             baseline: promptToolPolicy.readDecisionBaseline(),

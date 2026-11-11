@@ -76,6 +76,7 @@ export function createDiagnosticsEventHandler(params: {
     "harness.run.completed": recorders.recordHarnessRunFinished.bind(recorders),
     "harness.run.error": recorders.recordHarnessRunFinished.bind(recorders),
     "context.assembled": recorders.recordContextAssembled.bind(recorders),
+    "context.stages": recorders.recordContextStages.bind(recorders),
     "model.call.started": recorders.recordModelCallStarted.bind(recorders),
     "model.call.completed": (evt, metadata, privateData) =>
       recorders.recordModelCallFinished(evt, metadata, privateData.modelContent),

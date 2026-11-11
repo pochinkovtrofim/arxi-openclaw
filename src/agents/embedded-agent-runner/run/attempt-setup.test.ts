@@ -283,13 +283,13 @@ describe("prepareEmbeddedAttemptSetup", () => {
           call("current", 5),
           result("current", "current inbox", 6),
         ]);
-        expect((projected?.[1] as { content?: unknown }).content).toEqual([
+        expect((projected?.[1] as { content?: unknown } | undefined)?.content).toEqual([
           {
             type: "text",
             text: replaced ? EARLIER_RUN_TOOL_RESULT_PLACEHOLDER : "earlier inbox",
           },
         ]);
-        expect((projected?.[5] as { content?: unknown }).content).toEqual([
+        expect((projected?.[5] as { content?: unknown } | undefined)?.content).toEqual([
           { type: "text", text: "current inbox" },
         ]);
       } finally {

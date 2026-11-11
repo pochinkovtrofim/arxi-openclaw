@@ -4288,5 +4288,44 @@ describe("diagnostics-otel service", () => {
     const endTime = span?.end.mock.calls[0]?.[0] as number;
     expect(endTime - (contextOptions?.startTime as number)).toBe(15_400);
   });
+
+  test("spans each preparation stage before the first model request under the run", async () => {
+    await startServiceFixture(["traces", "metrics"]);
+
+    emitTrustedEvent("run.started", {
+      trace: createTestTrace(SPAN_ID),
+    });
+    await emitTrustedEventAndFlush("context.stages", {
+      runId: "run-1",
+      sessionKey: "session-key",
+      stages: [
+        { name: "tool-preparation", startedAt: 1_000, endedAt: 1_350 },
+        { name: "prompt-assembly", startedAt: 1_350, endedAt: 2_150 },
+        { name: "model-request", startedAt: 2_150, endedAt: 2_400 },
+      ],
+      trace: createTestTrace(GRANDCHILD_SPAN_ID, SPAN_ID),
+    });
+
+    const runSpan = telemetryState.spans.find((span) => span.name === "openclaw.run");
+    const runSpanId = runSpan?.spanContext.mock.results[0]?.value?.spanId;
+    const stages = telemetryState.spans.filter((span) => span.name === "openclaw.context.stage");
+    expect(stages).toHaveLength(3);
+    expect(
+      [0, 1, 2].map((index) => {
+        const call = startedSpanCall("openclaw.context.stage", index);
+        return [call?.[1]?.attributes?.["openclaw.context.stage"], call?.[1]?.startTime];
+      }),
+    ).toEqual([
+      ["tool-preparation", 1_000],
+      ["prompt-assembly", 1_350],
+      ["model-request", 2_150],
+    ]);
+    expect(stages.map((span) => span.end.mock.calls[0]?.[0])).toEqual([1_350, 2_150, 2_400]);
+    const parent = startedSpanCall("openclaw.context.stage")?.[2] as
+      | { spanContext?: { spanId?: string } }
+      | undefined;
+    expect(parent?.spanContext?.spanId).toBe(runSpanId);
+    expect(JSON.stringify(startedSpanCall("openclaw.context.stage"))).not.toContain("session-key");
+  });
 });
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

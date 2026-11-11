@@ -1,12 +1,20 @@
 // Coverage for embedded attempt startup stage timing diagnostics.
 import { isMainThread, threadId } from "node:worker_threads";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { createDiagnosticTraceContext } from "../../../infra/diagnostic-trace-context.js";
 import { createStageTimingTracker } from "../../../shared/stage-timing.js";
 import {
+  createFirstModelRequestStageReporter,
   EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE,
   formatEmbeddedRunStageSummary,
+  placeStageTimings,
   shouldWarnEmbeddedRunStageSummary,
 } from "./attempt-stage-timing.js";
+
+const emitted = vi.hoisted(() => ({ events: [] as unknown[] }));
+vi.mock("../../../infra/diagnostic-events.js", () => ({
+  emitTrustedDiagnosticEvent: (event: unknown) => emitted.events.push(event),
+}));
 
 describe("embedded run stage timing", () => {
   it("captures stage duration and elapsed time", () => {
@@ -95,5 +103,57 @@ describe("embedded run stage timing", () => {
     expect(formatEmbeddedRunStageSummary("startup", tracker.snapshot())).toBe(
       `startup pid=${process.pid} threadId=${threadId} isMainThread=${isMainThread} totalMs=91 stages=attempt-workspace:10ms@10ms,attempt-prompt:30ms@40ms,attempt-runtime-plan:50ms@90ms,attempt-dispatch:1ms@91ms`,
     );
+  });
+
+  it("places checkpoints and nested spans on the wall clock", () => {
+    let clock = 1_000;
+    const tracker = createStageTimingTracker(() => clock);
+    clock = 1_040;
+    tracker.mark("skills");
+    void tracker.measureSync("bundle-tools", () => {
+      clock = 1_100;
+    });
+    clock = 1_130;
+    tracker.mark("tool-preparation");
+
+    expect(placeStageTimings(tracker.snapshot(), clock)).toEqual([
+      { name: "skills", startedAt: 1_000, endedAt: 1_040 },
+      { name: "bundle-tools", startedAt: 1_040, endedAt: 1_100 },
+      { name: "tool-preparation", startedAt: 1_040, endedAt: 1_130 },
+    ]);
+  });
+
+  it("reports the stages once, at the primary model request, ending with that request", () => {
+    // Later requests of the same run (tool rounds) would only stretch the last stage.
+    emitted.events.length = 0;
+    let clock = 5_000;
+    const tracker = createStageTimingTracker(() => clock);
+    clock = 5_200;
+    tracker.mark("prompt-assembly");
+    clock = 5_900;
+    const runTrace = createDiagnosticTraceContext();
+    const report = createFirstModelRequestStageReporter({
+      tracker,
+      runId: "run-1",
+      sessionKey: "agent:main:main",
+      runTrace,
+      now: () => clock,
+    });
+
+    report();
+    clock = 9_000;
+    report();
+
+    expect(emitted.events).toHaveLength(1);
+    expect(emitted.events[0]).toMatchObject({
+      type: "context.stages",
+      runId: "run-1",
+      sessionKey: "agent:main:main",
+      stages: [
+        { name: "prompt-assembly", startedAt: 5_000, endedAt: 5_200 },
+        { name: "model-request", startedAt: 5_200, endedAt: 5_900 },
+      ],
+      trace: { traceId: runTrace.traceId, parentSpanId: runTrace.spanId },
+    });
   });
 });

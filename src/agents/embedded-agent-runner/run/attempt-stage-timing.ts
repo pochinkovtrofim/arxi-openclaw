@@ -1,5 +1,14 @@
 import { isMainThread, threadId } from "node:worker_threads";
 import {
+  type DiagnosticContextStage,
+  emitTrustedDiagnosticEvent,
+} from "../../../infra/diagnostic-events.js";
+import {
+  createChildDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+  freezeDiagnosticTraceContext,
+} from "../../../infra/diagnostic-trace-context.js";
+import {
   type createStageTimingTracker,
   formatStageTimings,
   type StageTimingSummary,
@@ -66,4 +75,55 @@ export function logEmbeddedRunStageSummary(
 export function formatEmbeddedRunStageSummary(prefix: string, summary: StageTimingSummary): string {
   const stages = formatStageTimings(summary.stages);
   return `${prefix} pid=${process.pid} threadId=${threadId} isMainThread=${isMainThread} totalMs=${summary.totalMs} stages=${stages}`;
+}
+
+/**
+ * Places each recorded stage on the wall clock. A summary measures from its
+ * tracker's start, so that start is the summary's end minus its total.
+ */
+export function placeStageTimings(
+  summary: StageTimingSummary,
+  endedAt: number,
+): DiagnosticContextStage[] {
+  const trackerStartedAt = endedAt - summary.totalMs;
+  return summary.stages.map((stage) => ({
+    name: stage.name,
+    startedAt: trackerStartedAt + stage.elapsedMs - stage.durationMs,
+    endedAt: trackerStartedAt + stage.elapsedMs,
+  }));
+}
+
+/**
+ * Reports the attempt's preparation stages once, at its primary model request,
+ * so the work trace shows where the time before the model went. Each attempt
+ * of a run (a retry, a fallback) reports its own. Checkpoint stages are
+ * contiguous; a measured stage (bundle-tools, tool-catalog) lies inside the
+ * checkpoint after it (tool-preparation), so a sum must skip measured stages.
+ */
+export function createFirstModelRequestStageReporter(options: {
+  tracker: Pick<ReturnType<typeof createStageTimingTracker>, "mark" | "snapshot">;
+  runId: string;
+  sessionKey?: string;
+  sessionId?: string;
+  runTrace: DiagnosticTraceContext;
+  now?: () => number;
+}): () => void {
+  let reported = false;
+  const now = options.now ?? Date.now;
+  return () => {
+    if (reported) {
+      return;
+    }
+    reported = true;
+    options.tracker.mark("model-request");
+    const stages = placeStageTimings(options.tracker.snapshot(), now());
+    emitTrustedDiagnosticEvent({
+      type: "context.stages",
+      runId: options.runId,
+      ...(options.sessionKey ? { sessionKey: options.sessionKey } : {}),
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      stages,
+      trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(options.runTrace)),
+    });
+  };
 }

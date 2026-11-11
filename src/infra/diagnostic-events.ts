@@ -774,6 +774,22 @@ type DiagnosticContextAssembledEvent = DiagnosticSessionEvent & {
   agentRunHooks?: DiagnosticHookPhaseTiming;
 };
 
+/**
+ * One run's preparation stages, from attempt setup to its first model request.
+ * Names are fixed code labels; times are wall-clock milliseconds. No content.
+ */
+type DiagnosticContextStagesEvent = DiagnosticSessionEvent & {
+  type: "context.stages";
+  runId: string;
+  stages: readonly DiagnosticContextStage[];
+};
+
+export type DiagnosticContextStage = Readonly<{
+  name: string;
+  startedAt: number;
+  endedAt: number;
+}>;
+
 /** Sequential plugin hook phase timing; labels are plugin/registration code ids. */
 export type DiagnosticHookPhaseTiming = Readonly<{
   durationMs: number;
@@ -885,6 +901,7 @@ export type DiagnosticEventPayload =
   | DiagnosticModelCallCompletedEvent
   | DiagnosticModelCallErrorEvent
   | DiagnosticContextAssembledEvent
+  | DiagnosticContextStagesEvent
   | DiagnosticMemorySampleEvent
   | DiagnosticMemoryPressureEvent
   | (DiagnosticBaseEvent & DiagnosticChildProcessSpawnFields)
@@ -1041,6 +1058,7 @@ const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
   "harness.run.completed",
   "harness.run.error",
   "context.assembled",
+  "context.stages",
   "log.record",
 ]);
 const PRIORITY_ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
