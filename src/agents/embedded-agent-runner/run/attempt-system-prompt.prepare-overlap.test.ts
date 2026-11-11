@@ -47,7 +47,8 @@ afterEach(() => {
 
 describe("embedded attempt system prompt preparation", () => {
   it("starts the memory and watched-session reads together", async () => {
-    const { prepareEmbeddedAttemptSystemPrompt } = await import("./attempt-system-prompt-prepare.js");
+    const { prepareEmbeddedAttemptSystemPrompt } =
+      await import("./attempt-system-prompt-prepare.js");
     const memory = createDeferred<undefined>();
     const watched = createDeferred<undefined>();
     reads.memory = memory.promise;
@@ -111,6 +112,8 @@ describe("embedded attempt system prompt preparation", () => {
     await vi.waitFor(() => expect(reads.started).toEqual(["memory", "watched"]));
     memory.resolve(undefined);
     watched.resolve(undefined);
-    await expect(pending).resolves.toEqual(expect.objectContaining({ prepareToolPrompt: expect.any(Function) }));
+    await expect(pending).resolves.toEqual(
+      expect.objectContaining({ prepareToolPrompt: expect.any(Function) }),
+    );
   });
 });

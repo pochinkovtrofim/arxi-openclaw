@@ -91,7 +91,9 @@ export async function createFixture(
     setCompactionState: vi.fn(() => order.push("set-compaction-state")),
   };
   const prepStages = {
-    mark: vi.fn((name: string) => order.push(name === "stream-setup" ? "stream-ready" : `mark:${name}`)),
+    mark: vi.fn((name: string) =>
+      order.push(name === "stream-setup" ? "stream-ready" : `mark:${name}`),
+    ),
   };
   const emitPrepStageSummary = vi.fn();
   const setToolSearchCatalogExecutor = vi.fn(() => order.push("set-catalog"));
