@@ -57,9 +57,10 @@ it("closes the pre-run compaction step with the part that ran last", () => {
     vi.advanceTimersByTime(30_000);
     stages.preflightDone();
   });
-  expect(emitTrustedDiagnosticEvent.mock.calls.map(([event]) => [event.stage, event.durationMs]))
-    .toEqual([
-      ["token_estimate", 0],
-      ["compaction", 30_000],
-    ]);
+  expect(
+    emitTrustedDiagnosticEvent.mock.calls.map(([event]) => [event.stage, event.durationMs]),
+  ).toEqual([
+    ["token_estimate", 0],
+    ["compaction", 30_000],
+  ]);
 });

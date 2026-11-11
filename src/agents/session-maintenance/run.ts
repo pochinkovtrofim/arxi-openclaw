@@ -1,8 +1,8 @@
 import type { FollowupRun } from "../../auto-reply/reply/queue.js";
+import { getRuntimeConfig } from "../../config/config.js";
 import type { CapturedSessionEntryCurrentRead } from "../../config/sessions/session-entry-current.types.js";
 import { listSqliteTargetCandidatePathsForSessionStorePath } from "../../config/sessions/session-sqlite-target-paths.js";
 import { captureSessionTranscriptTargetBinding } from "../../config/sessions/transcript-target-binding.js";
-import { getRuntimeConfig } from "../../config/config.js";
 import { resolveFreshSessionTotalTokens, type SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { fenceScheduledGatewayContextResolver } from "../../gateway/scheduled-run-gateway-context.js";
@@ -408,7 +408,11 @@ function startSessionMaintenance(
                   });
                 if (mode === "cold_cache_ahead") {
                   // Only the model the owner chose: the one the next turn would start with.
-                  const next = resolveNextTurnModel(getRuntimeConfig(), followupRun.run.agentId, entry);
+                  const next = resolveNextTurnModel(
+                    getRuntimeConfig(),
+                    followupRun.run.agentId,
+                    entry,
+                  );
                   if (
                     next.provider !== followupRun.run.provider ||
                     next.model !== followupRun.run.model ||

@@ -52,7 +52,8 @@ export function createReplyPreflightStages(params: { startedAt: number; sessionK
       compacting = true;
     },
     /** Closes the required pre-run compaction step, whichever of its parts ran. */
-    preflightDone: () => mark(compacting ? "compaction" : memoryFlushed ? "replan" : "token_estimate"),
+    preflightDone: () =>
+      mark(compacting ? "compaction" : memoryFlushed ? "replan" : "token_estimate"),
   };
 }
 
