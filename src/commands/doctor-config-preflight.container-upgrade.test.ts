@@ -344,6 +344,26 @@ describe("container image replacement Doctor repair and startup readiness", () =
       const [manifestPath] = listSessionSqliteMigrationManifestPaths(env);
       const manifest = readSessionSqliteMigrationManifest(manifestPath!)!;
       delete manifest.completedAt;
+      // A host's credential database outside the state root joined the same group.
+      const outsideDatabase = path.join(
+        path.dirname(stateDir),
+        "auth-agent",
+        "openclaw-agent.sqlite",
+      );
+      const outside = structuredClone(
+        manifest.targets.find((target) => target.sqlitePath === databasePath)!,
+      );
+      outside.sqlitePath = outsideDatabase;
+      outside.storePath = outsideDatabase;
+      for (const move of [...outside.plannedMoves, ...outside.completedMoves]) {
+        move.sourcePath = outsideDatabase;
+        move.archivePath = `${outsideDatabase}${move.archivePath.slice(databasePath.length)}`;
+      }
+      const outsideBackup = outside.completedMoves[0]!.archivePath;
+      fs.mkdirSync(path.dirname(outsideDatabase), { recursive: true });
+      fs.writeFileSync(outsideDatabase, "credential database");
+      fs.writeFileSync(outsideBackup, "credential backup");
+      manifest.targets.push(outside);
       writeSessionSqliteMigrationManifest({ manifest, manifestPath: manifestPath! });
       const startedAt = Date.parse(manifest.startedAt);
       const inspect = (expiredBefore?: number) =>
@@ -351,8 +371,10 @@ describe("container image replacement Doctor repair and startup readiness", () =
       expect(inspect().artifacts.map((item) => item.reason)).toEqual([
         "incomplete-recovery-operation",
         "incomplete-recovery-operation",
+        "unsupported-target-ownership",
       ]);
       expect(inspect(startedAt).artifacts.map((item) => item.outcome)).toEqual([
+        "protected",
         "protected",
         "protected",
       ]);
@@ -363,12 +385,23 @@ describe("container image replacement Doctor repair and startup readiness", () =
       expect(inspect(startedAt + 1).artifacts.map((item) => item.outcome)).toEqual([
         "protected",
         "protected",
+        "protected",
       ]);
       writeSessionSqliteMigrationManifest({ manifest, manifestPath: manifestPath! });
+      // While its backup exists, the outside member keeps the group whole, so Doctor never
+      // finds a group half there.
+      expect(inspect(startedAt + 1).artifacts.map((item) => item.outcome)).toEqual([
+        "protected",
+        "protected",
+        "protected",
+      ]);
+      // Its disk was replaced: the backup is gone and no longer holds the group.
+      fs.rmSync(outsideBackup);
       const preview = inspect(startedAt + 1);
       expect(preview.artifacts.map((item) => [item.outcome, item.reason])).toEqual([
         ["candidate", "expired-recovery-original"],
         ["candidate", "expired-recovery-original"],
+        ["protected", "unsupported-target-ownership"],
       ]);
       const retired = await retireSessionSqliteRecovery({
         env,
@@ -385,8 +418,13 @@ describe("container image replacement Doctor repair and startup readiness", () =
           .filter((name) => name.includes(".pre-startup-migration-")),
       ).toEqual([]);
       expect(fs.existsSync(databasePath)).toBe(true);
+      expect(fs.readFileSync(outsideDatabase, "utf8")).toBe("credential database");
       // The manifest records the disposal, so the missing originals read as retired, not lost.
-      expect(inspect().artifacts.map((item) => item.outcome)).toEqual(["disposed", "disposed"]);
+      expect(inspect().artifacts.map((item) => item.outcome)).toEqual([
+        "disposed",
+        "disposed",
+        "protected",
+      ]);
       await cleanupSessionStateForTest();
       await withAgentDatabaseStartupAdmission(async () => {
         await repairContainerState();
