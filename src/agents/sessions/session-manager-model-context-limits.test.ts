@@ -703,7 +703,9 @@ it("keeps the newest request when an oversized result sits inside the latest tur
       const selected = SessionManager.openModelContext(scope, {
         limits: { ...limits, latestTurn: "required" },
       }).buildSessionContext().messages;
+      // The older request fits too once the large body is omitted (upstream #171239).
       expect(selected.map((message) => message.role)).toEqual([
+        "user",
         "user",
         "assistant",
         "toolResult",
@@ -711,12 +713,12 @@ it("keeps the newest request when an oversized result sits inside the latest tur
         "toolResult",
         "assistant",
       ]);
-      expect(selected[0]).toEqual(full[1]);
-      expect(selected[2]).toMatchObject({
+      expect(selected.slice(0, 3)).toEqual(full.slice(0, 3));
+      expect(selected[3]).toMatchObject({
         toolCallId: "large",
         content: [{ type: "text", text: expect.stringContaining("body omitted") }],
       });
-      expect(selected.slice(3)).toEqual(full.slice(4));
+      expect(selected.slice(4)).toEqual(full.slice(4));
       expect(Buffer.byteLength(JSON.stringify(selected))).toBeLessThanOrEqual(limits.maxBytes);
 
       expect(() =>

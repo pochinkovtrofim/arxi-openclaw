@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { awaitGateBeforeSettlement, createDeferred } from "../../../../test/helpers/promise.js";
 import { getRuntimeConfig } from "../../../config/config.js";
+import { captureRuntimeConfigAsyncReader } from "../../../config/io.js";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
@@ -635,6 +636,8 @@ describe("subagent registry recovery scheduling", () => {
     // fresh Gateways for 70 minutes while their requester waited on them.
     recoverRow.mockResolvedValue({ status: "deferred" });
     await withOpenClawTestState({ scenario: "minimal" }, async () => {
+      // The test state resets the runtime config; publish its own, as the Gateway does.
+      await captureRuntimeConfigAsyncReader()();
       const { entry, completeSubagentRunWithRecovery, sweeper, warn } = createHarness({});
       entry.execution = {
         status: "running",

@@ -324,7 +324,7 @@ describe("createOpenClawCodingTools", () => {
     expect(resolve).toHaveBeenCalledTimes(1);
   });
 
-  it("retains only self-scoped Automations for a senderless cron run", () => {
+  it("retains only self-scoped Automations for a senderless cron run", async () => {
     vi.mocked(createOpenClawTools).mockClear();
 
     const tools = createOpenClawCodingTools({
@@ -333,16 +333,17 @@ describe("createOpenClawCodingTools", () => {
       senderIsOwner: false,
     });
 
-    const names = toolNameList(tools);
-    expect(names).toContain("automations");
-    expect(names).not.toContain("gateway");
-    expect(names).not.toContain("nodes");
-    expect(names).not.toContain("openclaw");
+    // Upstream #175309 keeps owner-only tools offered and gates their calls.
+    expect(toolNameList(tools)).toContain("automations");
+    await expectOwnerGated(tools, "gateway");
+    await expectOwnerGated(tools, "nodes");
+    await expectOwnerGated(tools, "openclaw");
     expect(latestCreateOpenClawToolsOptions().cronSelfRemoveOnlyJobId).toBe("cron-current");
 
-    expect(
-      toolNameList(createOpenClawCodingTools({ trigger: "cron", senderIsOwner: false })),
-    ).not.toContain("automations");
+    await expectOwnerGated(
+      createOpenClawCodingTools({ trigger: "cron", senderIsOwner: false }),
+      "automations",
+    );
   });
 
   it("drops senderless Automations retention when exact authority aborts or errors", async () => {
