@@ -15,6 +15,7 @@ import { sha256Hex } from "../../infra/crypto-digest.js";
 import { resolveTargetPrefixedChannel } from "../../infra/outbound/channel-target-prefix.js";
 import { normalizeTargetForProvider } from "../../infra/outbound/target-normalization.js";
 import { resolveUserMessage } from "../../shared/user-message.js";
+import type { UserMessageEvent } from "../../shared/user-message.types.js";
 import { resolveCronDeliveryPlan, resolveFailureDestination } from "../delivery-plan.js";
 import { cronFailureDetailLines } from "../failure-notification-text.js";
 import { hasCanonicalCronDeliveryMode } from "../store/delivery-codec.js";
@@ -251,17 +252,18 @@ function buildFailureAlertPayload(params: {
   const safeJobName = params.job.name || params.job.id;
   const errorReason = params.status === "error" ? params.errorReason : undefined;
   // A chat route may carry the product's own wording in the owner's language.
-  const productText =
+  const productEvent: UserMessageEvent | undefined =
     params.route.mode === "webhook"
       ? undefined
-      : resolveUserMessage({
+      : {
           code: "automation_failed",
           jobName: safeJobName,
           count: params.consecutiveErrors,
           ...(params.status === "skipped" ? { skipped: true as const } : {}),
           ...(params.repairRequested ? { repairRequested: true as const } : {}),
           ...(errorReason ? { reason: errorReason } : {}),
-        });
+        };
+  const productText = productEvent ? resolveUserMessage(productEvent) : undefined;
   // Keep alert bodies compact because they may route through chat channels
   // with notification previews and provider-specific message limits.
   const statusVerb = params.status === "skipped" ? "skipped" : "failed";
@@ -302,7 +304,11 @@ function buildFailureAlertPayload(params: {
     ...(providerLoginRecovery ? { presentation: providerLoginRecovery.presentation } : {}),
   };
 
-  return { payload, ...(productText ? { productCopy: true as const } : {}) };
+  return {
+    payload,
+    ...(productText ? { productCopy: true as const } : {}),
+    ...(productEvent ? { productEvent } : {}),
+  };
 }
 
 function startFailureNotification(job: CronJob): void {
@@ -669,10 +675,11 @@ export function finalizeCronFailureNotifications(
     }
     const job = cronNotificationJob(params.job);
     const route = params.alertConfig;
-    const productText =
+    const productEvent: UserMessageEvent | undefined =
       route.mode === "webhook"
         ? undefined
-        : resolveUserMessage({ code: "automation_delivery_failed", jobName: job.name || job.id });
+        : { code: "automation_delivery_failed", jobName: job.name || job.id };
+    const productText = productEvent ? resolveUserMessage(productEvent) : undefined;
     const detailLines =
       route.mode === "webhook"
         ? [
@@ -689,6 +696,7 @@ export function finalizeCronFailureNotifications(
       job,
       payload,
       ...(productText ? { productCopy: true as const } : {}),
+      ...(productEvent ? { productEvent } : {}),
       runAtMs: params.result.startedAt,
       route,
     });

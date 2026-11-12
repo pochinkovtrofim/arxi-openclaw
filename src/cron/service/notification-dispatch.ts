@@ -2,6 +2,7 @@
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { DEFAULT_AGENT_TIMEOUT_MS } from "../../agents/timeout.js";
 import { formatErrorMessage } from "../../infra/errors.js";
+import { resolveUserMessage } from "../../shared/user-message.js";
 import { captureOpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.js";
 import { noteCronJobsStoreCommit } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
@@ -206,6 +207,11 @@ async function transportFailureAlert(
   const lifecycleGeneration = state.lifecycleGeneration;
   const notificationId = params.job.state.lastFailureNotificationId;
   const runAtMs = params.job.state.lastRunAtMs;
+  // Store workers build the intent without the product renderer; render on the host.
+  const productText = params.productEvent ? resolveUserMessage(params.productEvent) : undefined;
+  const payload =
+    productText === undefined ? params.payload : { ...params.payload, text: productText };
+  const productCopy = productText !== undefined || params.productCopy === true;
   if (!state.deps.sendCronFailureAlert) {
     // No transport means no send whose outcome could be recorded: the alert
     // goes straight to the in-app fallback queue and the intent stays
@@ -213,7 +219,7 @@ async function transportFailureAlert(
     await enqueueCronNotification(
       state,
       params.job,
-      params.payload.text ?? "",
+      payload.text ?? "",
       "failure-alert",
       routing,
     );
@@ -223,8 +229,8 @@ async function transportFailureAlert(
     .sendCronFailureAlert({
       job: params.job,
       routing,
-      payload: params.payload,
-      ...(params.productCopy ? { productCopy: true as const } : {}),
+      payload,
+      ...(productCopy ? { productCopy: true as const } : {}),
       runAtMs: params.runAtMs,
       channel: params.route.channel,
       to: params.route.to,
@@ -242,7 +248,7 @@ async function transportFailureAlert(
           await enqueueCronNotification(
             state,
             params.job,
-            params.payload.text ?? "",
+            payload.text ?? "",
             "failure-alert",
             routing,
           );

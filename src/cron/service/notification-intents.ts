@@ -1,5 +1,6 @@
 /** Cloneable facts needed to deliver one committed cron notification. */
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
+import type { UserMessageEvent } from "../../shared/user-message.types.js";
 import { normalizeOptionalAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import { resolveCronDeliverySessionKey } from "../session-target.js";
 import type { CronJob, CronMessageChannel } from "../types.js";
@@ -74,6 +75,8 @@ type CronFailureAlertNotification = {
   payload: ReplyPayload;
   /** The product worded the whole alert; transports add no scheduler detail lines. */
   productCopy?: true;
+  /** Product copy event, rendered again on the host: a store worker has no renderer. */
+  productEvent?: UserMessageEvent;
   runAtMs?: number;
   route: CronFailureAlertRoute;
 };
