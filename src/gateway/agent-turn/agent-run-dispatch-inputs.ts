@@ -42,7 +42,8 @@ export function resolveAgentRunAdmissionInputs(params: StartAgentRunExecutionPar
     resolvedSessionId: params.resolvedSessionId,
     runId: params.runId,
     sessionEntry: params.sessionEntry,
-  });  return {
+  });
+  return {
     runtimePluginToolGrant,
     pluginSubagentToolsAllow,
     executionIdentityAdmission,

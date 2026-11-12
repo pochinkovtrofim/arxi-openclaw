@@ -13,22 +13,63 @@ import { normalizeAccountId } from "../../routing/account-id.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
 import { isRecord } from "../../utils.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
-import { bindCronManagementGrant, bindCronRequesterGrant } from "../cron-creator-authority-context.js";
+import {
+  bindCronManagementGrant,
+  bindCronRequesterGrant,
+} from "../cron-creator-authority-context.js";
 import { CRON_TOOL_DISPLAY_SUMMARY } from "../tool-description-presets.js";
 import { setToolTerminalPresentation } from "../tool-terminal-presentation.js";
 import { AUTOMATIONS_TOOL_NAME } from "./automations-tool-name.js";
-import { type AnyAgentTool, jsonResult, readNonNegativeIntegerParam, readPositiveIntegerParam, readToolStringParam } from "./common.js";
-import { canonicalizeCronToolObject, hasCronCreateSignal, isEmptyRecoveredCronPatch, recoverCronObjectFromFlatParams, stripCronCreateNullClears } from "./cron-tool-canonicalize.js";
-import { buildReminderContextLines, REMINDER_CONTEXT_MARKER, stripExistingContext } from "./cron-tool-context.js";
-import { assertInheritedCronToolCaptureReady, capCronJobToolsAllowOnCreate, cronCreateRequiresCreatorAuthority, resolveCronCreatorExecToolTarget, resolveCronCreatorMcpToolBindings, resolveCronCreatorMcpToolBindingsForToolsAllow } from "./cron-tool-creator-cap.js";
-import { CronToolOutputSchema } from "./cron-tool-output-schema.js";
+import {
+  type AnyAgentTool,
+  jsonResult,
+  readNonNegativeIntegerParam,
+  readPositiveIntegerParam,
+  readToolStringParam,
+} from "./common.js";
+import {
+  canonicalizeCronToolObject,
+  hasCronCreateSignal,
+  isEmptyRecoveredCronPatch,
+  recoverCronObjectFromFlatParams,
+  stripCronCreateNullClears,
+} from "./cron-tool-canonicalize.js";
+import {
+  buildReminderContextLines,
+  REMINDER_CONTEXT_MARKER,
+  stripExistingContext,
+} from "./cron-tool-context.js";
+import {
+  assertInheritedCronToolCaptureReady,
+  capCronJobToolsAllowOnCreate,
+  cronCreateRequiresCreatorAuthority,
+  resolveCronCreatorExecToolTarget,
+  resolveCronCreatorMcpToolBindings,
+  resolveCronCreatorMcpToolBindingsForToolsAllow,
+} from "./cron-tool-creator-cap.js";
 import { describeCronTool, formatCronTerminalPresentation } from "./cron-tool-description.js";
+import { CronToolOutputSchema } from "./cron-tool-output-schema.js";
 import { assertCronRepairScope, updateCronJobForRepair } from "./cron-tool-repair.js";
-import { assertCronPacingInput, createCronToolSchema, CRON_TOOL_LIST_MAX_LIMIT } from "./cron-tool-schema.js";
+import {
+  assertCronPacingInput,
+  createCronToolSchema,
+  CRON_TOOL_LIST_MAX_LIMIT,
+} from "./cron-tool-schema.js";
 import { listCronSelfJob } from "./cron-tool-self-list.js";
-import { assertCronCreatorAuthorityResolutionAvailable, assertNoCronShellExecution, updateCronJobFromAgentTool } from "./cron-tool-write.js";
-import type { CronCreatorToolAuthoritySnapshot, CronToolDeps, CronToolOptions } from "./cron-tool.types.js";
-import { getGatewayToolCallerIdentity, withGatewayToolCallerIdentity } from "./gateway-caller-context.js";
+import {
+  assertCronCreatorAuthorityResolutionAvailable,
+  assertNoCronShellExecution,
+  updateCronJobFromAgentTool,
+} from "./cron-tool-write.js";
+import type {
+  CronCreatorToolAuthoritySnapshot,
+  CronToolDeps,
+  CronToolOptions,
+} from "./cron-tool.types.js";
+import {
+  getGatewayToolCallerIdentity,
+  withGatewayToolCallerIdentity,
+} from "./gateway-caller-context.js";
 import { callGatewayTool, readGatewayCallOptions, type GatewayCallOptions } from "./gateway.js";
 import { resolveInternalSessionKey, resolveMainSessionAlias } from "./sessions-helpers.js";
 

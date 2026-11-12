@@ -42,6 +42,7 @@ import { transformMediaArchiveContent } from "./state-migrations.media-persisten
 import { repairDoctorSessionWindowOrphans } from "./state-migrations.session-window-repair.js";
 import { MEDIA_ARCHIVE_VERIFICATION_KEY, migrateCanonicalTranscriptArchives } from "./state-migrations.transcript-directives-archives.js";
 import type { MigrationMessages } from "./state-migrations.types.js";
+import { migrateTranscriptArchive } from "./state-migrations.media-archive.js";
 import { Utf8InputError } from "./utf8-input.js";
 
 

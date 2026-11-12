@@ -3,7 +3,14 @@ import { consumeRunSkillUsage } from "../skills/runtime/run-usage.js";
 import { EMPTY_CODE_MODE_OUTPUT } from "./code-mode-json.js";
 import { bindCodeModeSessionStore } from "./code-mode-session-store.js";
 import { applyCodeModeCatalog, runCodeModeScriptHeadless } from "./code-mode.js";
-import { createCodeModeHarness, resetCodeModeTestState, resultDetails, testing, createHeadlessCodeModeHarness, pluginToolWithExecute } from "./code-mode.test-support.js";
+import {
+  createCodeModeHarness,
+  resetCodeModeTestState,
+  resultDetails,
+  testing,
+  createHeadlessCodeModeHarness,
+  pluginToolWithExecute,
+} from "./code-mode.test-support.js";
 import { SessionManager } from "./sessions/session-manager.js";
 import { clearToolSearchCatalog } from "./tool-search.js";
 import { jsonResult, type AnyAgentTool } from "./tools/common.js";

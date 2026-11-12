@@ -4,16 +4,32 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { withDoctorSqliteMaintenanceLock } from "../commands/doctor-sqlite-maintenance-lock.js";
 import * as pidAlive from "../shared/pid-alive.js";
-import { readOpenClawDatabaseQuarantineFailure, recordOpenClawDatabaseQuarantine } from "../state/openclaw-quarantine-store.js";
+import {
+  readOpenClawDatabaseQuarantineFailure,
+  recordOpenClawDatabaseQuarantine,
+} from "../state/openclaw-quarantine-store.js";
 import { OPENCLAW_STATE_SCHEMA_VERSION } from "../state/openclaw-state-db-contract.js";
-import { closeOpenClawStateDatabaseAsync, openOpenClawStateDatabase, repairOpenClawStateDatabaseSchema, withOpenClawStateStartupMigrationCheckpointDatabase } from "../state/openclaw-state-db.js";
+import {
+  closeOpenClawStateDatabaseAsync,
+  openOpenClawStateDatabase,
+  repairOpenClawStateDatabaseSchema,
+  withOpenClawStateStartupMigrationCheckpointDatabase,
+} from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import * as leaseHeartbeat from "../state/openclaw-state-lease-heartbeat.js";
 import { renewOpenClawStateLeaseInTransaction } from "../state/openclaw-state-lease-store.js";
-import { GATEWAY_OWNER_HEARTBEAT_STALE_MS, readGatewayLockProcessNamespace } from "./gateway-lock-payload.js";
+import {
+  GATEWAY_OWNER_HEARTBEAT_STALE_MS,
+  readGatewayLockProcessNamespace,
+} from "./gateway-lock-payload.js";
 import { acquireGatewayLock } from "./gateway-lock.js";
 import { readGatewayOwnerLease } from "./gateway-owner-lease.js";
 import * as ownerLeaseRead from "./gateway-owner-lease.read.js";
+import {
+  mockLinuxNamespace,
+  seedOwner,
+  useGatewayOwnerLeaseFixture,
+} from "./gateway-owner-lease.test-support.js";
 import * as stateOwners from "./gateway-state-owner.js";
 import { acquireGatewayStateOwner, tryAcquireGatewayStateOwner } from "./gateway-state-owner.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
@@ -22,10 +38,8 @@ import { corruptSqliteIndexKey } from "./sqlite-index-corruption.test-support.js
 import * as snapshotSource from "./sqlite-snapshot-source.js";
 import { runSqliteImmediateTransactionSync } from "./sqlite-transaction.js";
 import * as bootReader from "./update-managed-service-handoff-boot.js";
-import { mockLinuxNamespace, seedOwner, useGatewayOwnerLeaseFixture } from "./gateway-owner-lease.test-support.js";
 
 const { tempDirs, fixture } = useGatewayOwnerLeaseFixture();
-
 
 function readFreshProcessNamespace() {
   const otherPlatform = process.platform === "linux" ? "darwin" : "linux";
@@ -660,5 +674,4 @@ describe("Gateway owner lease", () => {
     });
     expect(() => owner.acquire()).toThrow("Another Gateway owner lease is still active");
   });
-
 });

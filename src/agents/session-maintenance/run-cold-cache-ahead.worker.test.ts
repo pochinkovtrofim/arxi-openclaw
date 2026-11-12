@@ -2,8 +2,8 @@ import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coerci
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { createTestFollowupRun } from "../../auto-reply/reply/agent-runner.test-fixtures.js";
-import { writeSessionEntry } from "../../config/sessions/session-accessor.sqlite-entry-store.js";
 import { captureRuntimeConfigAsyncReader } from "../../config/io.js";
+import { writeSessionEntry } from "../../config/sessions/session-accessor.sqlite-entry-store.js";
 import { SESSION_TOTAL_TOKENS_VERSION, type SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
@@ -247,7 +247,12 @@ it("yields to a turn that arrives during the early compaction", async () => {
   memory.runSessionCompactionIfNeeded.mockImplementationOnce(async ({ abortSignal }) => {
     started.resolve();
     await new Promise((_, reject) => {
-      abortSignal?.addEventListener("abort", () => reject(abortSignal.reason instanceof Error ? abortSignal.reason : new Error("aborted")), { once: true });
+      abortSignal?.addEventListener(
+        "abort",
+        () =>
+          reject(abortSignal.reason instanceof Error ? abortSignal.reason : new Error("aborted")),
+        { once: true },
+      );
     });
   });
   await withIdleSession(async ({ sessionKey, arm }) => {

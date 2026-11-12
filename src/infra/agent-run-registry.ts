@@ -3,11 +3,32 @@ import { randomUUID } from "node:crypto";
 import { composeSessionSourceAssertion } from "../config/sessions/session-source-authority.js";
 import { registerListener } from "../shared/listeners.js";
 import { recordAgentEventRouting } from "./agent-event-execution-context.js";
-import { AgentRunApprovalLeases, isCurrentAgentRunApprovalAuthority, type AgentRunApprovalClosureReason } from "./agent-run-approval-leases.js";
+import {
+  AgentRunApprovalLeases,
+  isCurrentAgentRunApprovalAuthority,
+  type AgentRunApprovalClosureReason,
+} from "./agent-run-approval-leases.js";
 import type { AgentRunDelegatedAuthority } from "./agent-run-authority.types.js";
-import { areAgentRunModelsEqual, buildAgentRunProjectionIndex, projectedAgentRunInputKey, projectedRunIdentity, resolveAgentRunProjectionProgressState } from "./agent-run-projection.js";
-import { getAgentRunRegistryState, bumpAgentRunIndexVersion, getAgentRunContextOwnerStatus } from "./agent-run-registry-state.js";
-import type { AgentRunContext, AgentRunContextOwnership, AgentRunModel, AgentRunRegistryState, ProjectedAgentRunIndex, ProjectedAgentRunState } from "./agent-run-registry.types.js";
+import {
+  areAgentRunModelsEqual,
+  buildAgentRunProjectionIndex,
+  projectedAgentRunInputKey,
+  projectedRunIdentity,
+  resolveAgentRunProjectionProgressState,
+} from "./agent-run-projection.js";
+import {
+  getAgentRunRegistryState,
+  bumpAgentRunIndexVersion,
+  getAgentRunContextOwnerStatus,
+} from "./agent-run-registry-state.js";
+import type {
+  AgentRunContext,
+  AgentRunContextOwnership,
+  AgentRunModel,
+  AgentRunRegistryState,
+  ProjectedAgentRunIndex,
+  ProjectedAgentRunState,
+} from "./agent-run-registry.types.js";
 import { clearAgentRunUsage, resetAgentRunUsageForTest } from "./agent-run-usage.js";
 
 export type { AgentRunDelegatedAuthority } from "./agent-run-authority.types.js";

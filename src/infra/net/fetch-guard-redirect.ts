@@ -1,9 +1,14 @@
 // Request rewriting for guarded-fetch redirects: method, body and authorization carry-over.
-import { normalizeHeadersInitForFetch, normalizeRequestInitHeadersForFetch } from "../fetch-headers.js";
+import {
+  normalizeHeadersInitForFetch,
+  normalizeRequestInitHeadersForFetch,
+} from "../fetch-headers.js";
 import { retainSafeHeadersForCrossOriginRedirect as retainSafeRedirectHeaders } from "./redirect-headers.js";
 import { matchesHostnameAllowlist } from "./ssrf.js";
 
-export function retainSafeHeadersForCrossOriginRedirect(init?: RequestInit): RequestInit | undefined {
+export function retainSafeHeadersForCrossOriginRedirect(
+  init?: RequestInit,
+): RequestInit | undefined {
   if (!init?.headers) {
     return init;
   }

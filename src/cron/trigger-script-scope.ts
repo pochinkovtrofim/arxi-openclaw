@@ -12,7 +12,10 @@ export function resolveTriggerAgentId(config: OpenClawConfig, agentId?: string):
   return agentId?.trim() ? normalizeAgentId(agentId) : resolveDefaultAgentId(config);
 }
 
-export function triggerStateNamespace(state: unknown, streamBatch?: string): CodeModeNamespaceDescriptor {
+export function triggerStateNamespace(
+  state: unknown,
+  streamBatch?: string,
+): CodeModeNamespaceDescriptor {
   const entries: Array<[string, SerializedCodeModeNamespaceValue]> = [
     ["state", { kind: "value", value: state }],
   ];

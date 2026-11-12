@@ -4,8 +4,15 @@ import { Type } from "typebox";
 import { Compile } from "typebox/compile";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { validateToolArguments } from "../../packages/llm-core/src/validation.js";
-import { awaitGateBeforeSettlement, createDeferred, withinTest } from "../../test/helpers/promise.js";
-import { onTrustedInternalDiagnosticEvent, type DiagnosticEventPayload } from "../infra/diagnostic-events.js";
+import {
+  awaitGateBeforeSettlement,
+  createDeferred,
+  withinTest,
+} from "../../test/helpers/promise.js";
+import {
+  onTrustedInternalDiagnosticEvent,
+  type DiagnosticEventPayload,
+} from "../infra/diagnostic-events.js";
 import { readLocalFileSafely } from "../infra/fs-safe.js";
 import { setPluginToolMeta } from "../plugins/tool-metadata.js";
 import { resolveSkillsPrompt } from "../skills/loading/workspace-skill-prompt.js";
@@ -15,8 +22,22 @@ import { withTempDir } from "../test-utils/temp-dir.js";
 import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.js";
 import { createOpenClawReadTool } from "./agent-tools.read.js";
 import { resolveCodeModeSkills } from "./code-mode-skills.js";
-import { applyCodeModeCatalog, buildCodeModeCatalogPrompt, runCodeModeScriptHeadless } from "./code-mode.js";
-import { createCodeModeHarness, fakeTool, mcpTool, pluginTool, resetCodeModeTestState, resultDetails, runUntilCompleted, testing, waitUntilCompleted } from "./code-mode.test-support.js";
+import {
+  applyCodeModeCatalog,
+  buildCodeModeCatalogPrompt,
+  runCodeModeScriptHeadless,
+} from "./code-mode.js";
+import {
+  createCodeModeHarness,
+  fakeTool,
+  mcpTool,
+  pluginTool,
+  resetCodeModeTestState,
+  resultDetails,
+  runUntilCompleted,
+  testing,
+  waitUntilCompleted,
+} from "./code-mode.test-support.js";
 import { createAgentHarnessToolSurfaceRuntimeCore } from "./harness/tool-surface-bridge.js";
 import { prepareInstalledSkillCatalog } from "./installed-skill-runtime.js";
 import { createReadTool, type ToolDefinition } from "./sessions/index.js";
@@ -768,4 +789,3 @@ it("keeps host-forced restart safety when the model clears the exec flag", async
   });
   expect(target.execute).not.toHaveBeenCalled();
 });
-

@@ -3,7 +3,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { validateApprovalResolveResult } from "../../../packages/gateway-protocol/src/index.js";
 import { installTestApprovalClock } from "../exec-approval-manager.test-support.js";
 import * as operatorApprovalStore from "../operator-approval-store.js";
-import { cleanupApprovalHandlerFixtures, createClient, createHandlers, createDatabaseOptions, createManagers, getOperatorApproval, invoke, registerExec, registerPlugin } from "./approval.handlers.test-support.js";
+import {
+  cleanupApprovalHandlerFixtures,
+  createClient,
+  createHandlers,
+  createDatabaseOptions,
+  createManagers,
+  getOperatorApproval,
+  invoke,
+  registerExec,
+  registerPlugin,
+} from "./approval.handlers.test-support.js";
 import { createApprovalHandlers } from "./approval.js";
 import { createContext } from "./approval.test-support.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";

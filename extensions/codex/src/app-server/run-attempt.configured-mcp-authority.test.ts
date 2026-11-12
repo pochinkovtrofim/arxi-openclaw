@@ -4,13 +4,16 @@ import { describe, expect, it } from "vitest";
 import { createCronAuthorityCapabilityFixture } from "./codex-app-server.test-fixtures.js";
 import * as dynamicTools from "./dynamic-tools.js";
 import { flattenCodexDynamicToolFunctions, type CodexDynamicToolSpec } from "./protocol.js";
-import { createTestParams, createStartedThreadHarness, runCodexAppServerAttempt } from "./run-attempt-test-harness.js";
+import {
+  createTestParams,
+  createStartedThreadHarness,
+  runCodexAppServerAttempt,
+} from "./run-attempt-test-harness.js";
 
 const { admitLocalOperatorCronAuthority, configureFakeMcp, mcpMocks, setupConfiguredMcpTestHooks } =
   await import("./run-attempt.configured-mcp.test-support.js");
 
 setupConfiguredMcpTestHooks();
-
 
 describe("runCodexAppServerAttempt configured MCP creator authority", () => {
   function createMcpAuthorityParams(senderIsOwner?: boolean) {

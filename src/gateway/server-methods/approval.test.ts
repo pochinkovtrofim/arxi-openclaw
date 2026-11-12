@@ -4,19 +4,47 @@ import os from "node:os";
 import path from "node:path";
 import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ApprovalHistoryResult, validateApprovalGetResult, validateApprovalHistoryResult, validateApprovalResolveResult } from "../../../packages/gateway-protocol/src/index.js";
+import {
+  type ApprovalHistoryResult,
+  validateApprovalGetResult,
+  validateApprovalHistoryResult,
+  validateApprovalResolveResult,
+} from "../../../packages/gateway-protocol/src/index.js";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import type { ExecApprovalForwarder } from "../../infra/exec-approval-forwarder.js";
 import type { ExecApprovalRequestPayload } from "../../infra/exec-approvals.js";
 import type { SystemAgentApprovalRequestPayload } from "../../infra/system-agent-approvals.js";
-import { closeOpenClawStateDatabaseAsync, closeOpenClawStateDatabaseForTest, type OpenClawStateDatabaseOptions } from "../../state/openclaw-state-db.js";
+import {
+  closeOpenClawStateDatabaseAsync,
+  closeOpenClawStateDatabaseForTest,
+  type OpenClawStateDatabaseOptions,
+} from "../../state/openclaw-state-db.js";
 import { installTestApprovalClock } from "../exec-approval-manager.test-support.js";
 import { insertOperatorApproval } from "../operator-approval-store.js";
 import * as operatorApprovalStore from "../operator-approval-store.js";
-import { cancelAgentRuntimeBoundApprovals, cancelUnboundRunApprovals } from "./approval-run-cancellation.js";
-import { cleanupApprovalHandlerFixtures, createClient, createHandlers, createDatabaseOptions, createManagers, getOperatorApproval, invoke, registerExec, registerPlugin, registerSystemAgent, tempDirs } from "./approval.handlers.test-support.js";
+import {
+  cancelAgentRuntimeBoundApprovals,
+  cancelUnboundRunApprovals,
+} from "./approval-run-cancellation.js";
+import {
+  cleanupApprovalHandlerFixtures,
+  createClient,
+  createHandlers,
+  createDatabaseOptions,
+  createManagers,
+  getOperatorApproval,
+  invoke,
+  registerExec,
+  registerPlugin,
+  registerSystemAgent,
+  tempDirs,
+} from "./approval.handlers.test-support.js";
 import { createApprovalHandlers } from "./approval.js";
-import { corruptDurableApprovalPresentation, createContext, deleteDurableApproval } from "./approval.test-support.js";
+import {
+  corruptDurableApprovalPresentation,
+  createContext,
+  deleteDurableApproval,
+} from "./approval.test-support.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
 const prepareApprovalChannelCustodyMock = vi.hoisted(() => vi.fn());
@@ -767,5 +795,4 @@ describe("unified approval handlers", () => {
     }
     await handlerCompletion;
   });
-
 });

@@ -5,25 +5,48 @@ import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { createOperationalRunInstanceRef } from "../../agents/admitted-run-context.js";
 import { resolveAgentRunContext } from "../../agents/command/run-context.js";
-import { getPreparedModelRuntimeBorrowedSnapshot, getPreparedModelRuntimePluginGeneration } from "../../agents/prepared-model-runtime-generation-scope.js";
-import { retainPreparedPluginGeneration, retainPreparedPluginRegistry } from "../../agents/prepared-model-runtime.plugin-lifetime.js";
+import {
+  getPreparedModelRuntimeBorrowedSnapshot,
+  getPreparedModelRuntimePluginGeneration,
+} from "../../agents/prepared-model-runtime-generation-scope.js";
+import {
+  retainPreparedPluginGeneration,
+  retainPreparedPluginRegistry,
+} from "../../agents/prepared-model-runtime.plugin-lifetime.js";
 import { PreparedModelRuntimeBuildResources } from "../../agents/prepared-model-runtime.resources.js";
 import type { PreparedModelRuntimePluginGeneration } from "../../agents/prepared-model-runtime.types.js";
 import { retainRuntimePluginWork } from "../../agents/runtime-plugin-work.js";
 import * as runtimePlugins from "../../agents/runtime-plugins.js";
-import { createPluginMetadataSnapshot, makeRegistry } from "../../config/plugin-auto-enable.test-helpers.js";
-import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
+import {
+  createPluginMetadataSnapshot,
+  makeRegistry,
+} from "../../config/plugin-auto-enable.test-helpers.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
-import { getActiveDiagnosticTraceContext, runWithDiagnosticTraceContext, type DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
+import {
+  getActiveDiagnosticTraceContext,
+  runWithDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
 import { PluginRegistryInspectionResources } from "../../plugins/registry-inspection-resources.js";
 import { retireInspectionInstances } from "../../plugins/registry-inspection.test-support.js";
-import { beginSessionWorkAdmission, SESSION_WORK_ADMISSION_DRAIN_TIMEOUT_MS } from "../../sessions/session-lifecycle-admission.js";
+import {
+  beginSessionWorkAdmission,
+  SESSION_WORK_ADMISSION_DRAIN_TIMEOUT_MS,
+} from "../../sessions/session-lifecycle-admission.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { isWebchatClient } from "../../utils/message-channel.js";
 import * as abortLifecycle from "../chat-abort-lifecycle-internal.js";
-import { isChatAbortControllerEntryAbortable, registerChatAbortController, type ChatAbortControllerEntry } from "../chat-abort.js";
+import {
+  isChatAbortControllerEntryAbortable,
+  registerChatAbortController,
+  type ChatAbortControllerEntry,
+} from "../chat-abort.js";
 import { readGatewayAccessRevision } from "../gateway-access-revision.js";
 import { createChatAbortContext } from "../server-methods/chat.abort.test-helpers.js";
 import * as sessionChange from "../server-methods/session-change-event.js";
@@ -33,7 +56,10 @@ import { expectSuccessorWorkspaceRead } from "../workspace-readiness.test-suppor
 import { resolveAgentDeliveryPhase } from "./agent-delivery-phase.js";
 import * as agentHandlerHelpers from "./agent-handler-helpers.js";
 import { startAgentRunExecution } from "./agent-run-execution-phase.js";
-import { createExecution, createVisibleExecution } from "./agent-run-execution-phase.owner.test-support.js";
+import {
+  createExecution,
+  createVisibleExecution,
+} from "./agent-run-execution-phase.owner.test-support.js";
 import type { AgentTurnPrincipal } from "./types.js";
 
 const { dispatchAgentRunFromGateway, agentCommand } = vi.hoisted(() => ({
@@ -771,5 +797,4 @@ describe("startAgentRunExecution Gateway ownership", () => {
       testCase.deliveryChatType,
     );
   });
-
 });

@@ -3,13 +3,51 @@ import { formatErrorMessage } from "../infra/errors.js";
 import { stageSqliteTransactionState } from "../infra/sqlite-post-commit.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { OpenClawStateDatabaseReadAdmission } from "../state/openclaw-state-db-async-lifecycle.js";
-import { captureOpenClawStateDatabaseReadAdmission, openClawStateDatabaseCache, registerOpenClawStateDatabaseLifecycleListener } from "../state/openclaw-state-db-cache.js";
+import {
+  captureOpenClawStateDatabaseReadAdmission,
+  openClawStateDatabaseCache,
+  registerOpenClawStateDatabaseLifecycleListener,
+} from "../state/openclaw-state-db-cache.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import type { OpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.types.js";
-import { applyFlowPatch, assertFlowOwnerKey, type FlowRecordCreateFields, assertControllerId, areTaskFlowRecordsEqual, buildFlowRecord, buildTaskMirroredFlowCreateFields, cloneFlowRecord, isTaskMirroredFlowSyncUnchanged, normalizeRestoredFlowRecord, prepareTaskMirroredFlowSyncFromCurrent, selectTaskFlowRecords, type CreateFlowRecordParams, type ManagedTaskFlowCreateFields, type FlowRecordPatch, type PreparedTaskMirroredFlowSync, type TaskFlowSyncInput } from "./task-flow-registry.records.js";
-import { deliverTaskFlowRegistryObserverEvent, getTaskFlowRegistryObservers, getTaskFlowRegistryStore, resetTaskFlowRegistryRuntimeForTests, tryPersistFlowDelete, tryPersistFlowUpsert, type FlowRegistryPublication } from "./task-flow-registry.store.js";
-import type { TaskFlowHistoryRegistration, TaskFlowRegistryStoreSnapshot, TaskFlowRegistryUpdateResult } from "./task-flow-registry.store.types.js";
-import { isTerminalTaskFlow, type TaskFlowRecord, type TaskFlowUpdateResult, type TaskFlowSyncResult } from "./task-flow-registry.types.js";
+import {
+  applyFlowPatch,
+  assertFlowOwnerKey,
+  type FlowRecordCreateFields,
+  assertControllerId,
+  areTaskFlowRecordsEqual,
+  buildFlowRecord,
+  buildTaskMirroredFlowCreateFields,
+  cloneFlowRecord,
+  isTaskMirroredFlowSyncUnchanged,
+  normalizeRestoredFlowRecord,
+  prepareTaskMirroredFlowSyncFromCurrent,
+  selectTaskFlowRecords,
+  type CreateFlowRecordParams,
+  type ManagedTaskFlowCreateFields,
+  type FlowRecordPatch,
+  type PreparedTaskMirroredFlowSync,
+  type TaskFlowSyncInput,
+} from "./task-flow-registry.records.js";
+import {
+  deliverTaskFlowRegistryObserverEvent,
+  getTaskFlowRegistryObservers,
+  getTaskFlowRegistryStore,
+  resetTaskFlowRegistryRuntimeForTests,
+  tryPersistFlowDelete,
+  tryPersistFlowUpsert,
+  type FlowRegistryPublication,
+} from "./task-flow-registry.store.js";
+import type {
+  TaskFlowHistoryRegistration,
+  TaskFlowRegistryStoreSnapshot,
+  TaskFlowRegistryUpdateResult,
+} from "./task-flow-registry.store.types.js";
+import type {
+  TaskFlowRecord,
+  TaskFlowUpdateResult,
+  TaskFlowSyncResult,
+} from "./task-flow-registry.types.js";
 import { createAsyncRegistryRestore, createSyncRegistryReader } from "./task-registry-restore.js";
 
 export type {
@@ -660,25 +698,6 @@ export function getTaskMirroredFlowIds(flowIds: Iterable<string>): ReadonlySet<s
 export function listTaskFlowsForOwnerKey(ownerKey: string): TaskFlowRecord[] {
   ensureTaskFlowRegistryReady();
   return selectTaskFlowRecords(flows, ownerKey);
-}
-
-export function findLatestTaskFlowForOwnerKey(ownerKey: string): TaskFlowRecord | undefined {
-  return listTaskFlowsForOwnerKey(ownerKey)[0];
-}
-
-// Owner-key actions must target live work before retained terminal history;
-// otherwise `show` and `cancel` silently act on a completed flow.
-export function findTaskFlowForOwnerLookup(ownerKey: string): TaskFlowRecord | undefined {
-  const ownerFlows = listTaskFlowsForOwnerKey(ownerKey);
-  return ownerFlows.find((flow) => !isTerminalTaskFlow(flow)) ?? ownerFlows[0];
-}
-
-export function resolveTaskFlowForLookupToken(token: string): TaskFlowRecord | undefined {
-  const lookup = token.trim();
-  if (!lookup) {
-    return undefined;
-  }
-  return getTaskFlowById(lookup) ?? findTaskFlowForOwnerLookup(lookup);
 }
 
 export function listTaskFlowRecords(): TaskFlowRecord[] {

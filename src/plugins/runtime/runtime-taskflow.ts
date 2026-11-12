@@ -2,7 +2,10 @@ import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolvePacedNextRunAtMs } from "../../cron/pacing.js";
 import { tryCronScheduleIdentity } from "../../cron/schedule-identity.js";
 import { loadedCronStoreFromRows, loadCronRows } from "../../cron/store/row-codec.js";
-import { getCurrentPacedCronRunBinding, recordManagedFlowAutomationObligationProposal } from "../../infra/agent-run-cron-proposals.js";
+import {
+  getCurrentPacedCronRunBinding,
+  recordManagedFlowAutomationObligationProposal,
+} from "../../infra/agent-run-cron-proposals.js";
 // Runtime task-flow helpers adapt plugin task descriptors into executable task flows.
 import type { EngineConnection } from "../../infra/sql-connection.js";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";

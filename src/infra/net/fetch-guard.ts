@@ -7,18 +7,50 @@ import { captureEffectAuthority } from "../../shared/effect-authority.js";
 import { buildTimeoutAbortSignal } from "../../utils/fetch-timeout.js";
 import { normalizeRequestInitHeadersForFetch } from "../fetch-headers.js";
 import { cancelUnreadResponseBody } from "../http-body.js";
-import { shouldUseConfiguredLocalOriginManagedProxyBypass, shouldResolveConfiguredLocalOriginManagedProxyBypass, type ConfiguredLocalOriginManagedProxyBypass } from "./configured-local-origin-bypass.js";
-import { resolveRetainedAuthorizationForRedirect, restoreRedirectAuthorization, retainSafeHeadersForCrossOriginRedirect, rewriteRedirectInit } from "./fetch-guard-redirect.js";
+import {
+  shouldUseConfiguredLocalOriginManagedProxyBypass,
+  shouldResolveConfiguredLocalOriginManagedProxyBypass,
+  type ConfiguredLocalOriginManagedProxyBypass,
+} from "./configured-local-origin-bypass.js";
+import {
+  resolveRetainedAuthorizationForRedirect,
+  restoreRedirectAuthorization,
+  retainSafeHeadersForCrossOriginRedirect,
+  rewriteRedirectInit,
+} from "./fetch-guard-redirect.js";
 import { captureGuardedFetchRequestAuthority } from "./fetch-request-authority.js";
 import { responseWithAbortSignal } from "./guarded-body-stream.js";
 import { PinnedDispatcherPool, type PinnedDispatcherLease } from "./pinned-dispatcher-pool.js";
 import { shouldUseEnvHttpProxyForUrl } from "./proxy-env.js";
-import { fetchWithRuntimeDispatcher, isMockedFetch, type DispatcherAwareRequestInit } from "./runtime-fetch.js";
-import { assertHostnameAllowedWithPolicy, closeDispatcher, createPinnedDispatcher, resolveSsrFPolicyForUrl, resolvePinnedHostnameWithPolicy, type LookupFn, type PinnedDispatcherPolicy, SsrFBlockedError, type SsrFPolicy } from "./ssrf.js";
+import {
+  fetchWithRuntimeDispatcher,
+  isMockedFetch,
+  type DispatcherAwareRequestInit,
+} from "./runtime-fetch.js";
+import {
+  assertHostnameAllowedWithPolicy,
+  closeDispatcher,
+  createPinnedDispatcher,
+  resolveSsrFPolicyForUrl,
+  resolvePinnedHostnameWithPolicy,
+  type LookupFn,
+  type PinnedDispatcherPolicy,
+  SsrFBlockedError,
+  type SsrFPolicy,
+} from "./ssrf.js";
 import { globalUndiciStreamTimeoutMs } from "./undici-dispatcher-options.js";
 import { resolveUndiciAutoSelectFamilyConnectOptions } from "./undici-family-policy.js";
-import { createHttp1Agent, createHttp1EnvHttpProxyAgent, createHttp1ProxyAgent, resolveHttp1EnvProxyUris } from "./undici-runtime.js";
-import { createObservedOriginDispatcher, observeUpstreamConnection, type UpstreamConnection } from "./upstream-connection-observation.js";
+import {
+  createHttp1Agent,
+  createHttp1EnvHttpProxyAgent,
+  createHttp1ProxyAgent,
+  resolveHttp1EnvProxyUris,
+} from "./undici-runtime.js";
+import {
+  createObservedOriginDispatcher,
+  observeUpstreamConnection,
+  type UpstreamConnection,
+} from "./upstream-connection-observation.js";
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 

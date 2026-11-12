@@ -3,15 +3,22 @@ import os, { hostname } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import * as pidAlive from "../shared/pid-alive.js";
-import { closeOpenClawStateDatabaseAsync, withOpenClawStateStartupMigrationCheckpointDatabase } from "../state/openclaw-state-db.js";
+import {
+  closeOpenClawStateDatabaseAsync,
+  withOpenClawStateStartupMigrationCheckpointDatabase,
+} from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import { readGatewayLockProcessNamespace } from "./gateway-lock-payload.js";
 import { acquireGatewayLock } from "./gateway-lock.js";
 import { acquireGatewayOwnerLease, readGatewayOwnerLease } from "./gateway-owner-lease.js";
+import {
+  mockLinuxNamespace,
+  seedOwner,
+  useGatewayOwnerLeaseFixture,
+} from "./gateway-owner-lease.test-support.js";
 import { acquireGatewayStateOwner } from "./gateway-state-owner.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
 import * as snapshotSource from "./sqlite-snapshot-source.js";
-import { mockLinuxNamespace, seedOwner, useGatewayOwnerLeaseFixture } from "./gateway-owner-lease.test-support.js";
 
 const { tempDirs, fixture } = useGatewayOwnerLeaseFixture();
 

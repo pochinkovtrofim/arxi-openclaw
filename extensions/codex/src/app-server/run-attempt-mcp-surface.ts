@@ -11,6 +11,7 @@ import {
   type materializeStaticMcpToolsForHarnessRun,
 } from "openclaw/plugin-sdk/codex-mcp-projection";
 import { requestPluginApprovalOutcome } from "./plugin-approval-roundtrip.js";
+import type { CodexAttemptRuntime } from "./run-attempt-runtime.js";
 import { formatScheduledMcpIdentityMismatch } from "./scheduled-mcp-identity.js";
 
 type HarnessMcpInteractiveApproval = NonNullable<
@@ -31,7 +32,7 @@ type ConfiguredMcpTools =
  * allow-once or deny: Allow Always would re-prompt on every subsequent call.
  */
 export function createCodexMcpInteractiveApproval(
-  hostCapabilities: EmbeddedRunAttemptParams["hostCapabilities"],
+  hostCapabilities: Parameters<typeof requestPluginApprovalOutcome>[0]["hostCapabilities"],
   requesterScoped: boolean,
 ): HarnessMcpInteractiveApproval {
   return async (approval) => {
@@ -124,7 +125,7 @@ export function applyScheduledMcpIdentityBindings(params: {
  * live requester; otherwise they get an empty surface that names the blocker.
  */
 export async function materializeCodexScopedMcpTools(input: {
-  params: EmbeddedRunAttemptParams;
+  params: CodexAttemptRuntime["params"];
   authenticatedScheduledMode: boolean;
   hasRequesterScopedMcp: boolean;
   autoApprove: boolean;

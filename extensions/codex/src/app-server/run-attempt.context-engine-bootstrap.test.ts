@@ -1,7 +1,10 @@
 import path from "node:path";
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
 import type { EmbeddedRunAttemptParamsV2 as EmbeddedRunAttemptParams } from "openclaw/plugin-sdk/agent-harness";
-import { embeddedAgentLog, type HarnessContextEngine as ContextEngine } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  embeddedAgentLog,
+  type HarnessContextEngine as ContextEngine,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
 import { openFileBackedSessionManagerForTest } from "openclaw/plugin-sdk/agent-runtime-test-contracts";
 import { initializeGlobalHookRunner } from "openclaw/plugin-sdk/hook-runtime";
 import { createMockPluginRegistry } from "openclaw/plugin-sdk/plugin-test-runtime";
@@ -13,8 +16,23 @@ import { formatSqliteSessionFileMarker } from "openclaw/plugin-sdk/sqlite-runtim
 // Codex tests cover run attempt.context engine plugin behavior.
 import { awaitGateBeforeSettlement } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it, vi } from "vitest";
-import { assistantMessage, setupRunAttemptTestHooks, tempDir, threadStartResult, userMessage } from "./run-attempt-test-harness.js";
-import { createContextEngine, createParams, createStartedThreadHarness, getRequestInputText, makeThreadBootstrapBinding, requireRecord, runCodexAppServerAttempt, writeCodexAppServerBinding } from "./run-attempt.context-engine.test-support.js";
+import {
+  assistantMessage,
+  setupRunAttemptTestHooks,
+  tempDir,
+  threadStartResult,
+  userMessage,
+} from "./run-attempt-test-harness.js";
+import {
+  createContextEngine,
+  createParams,
+  createStartedThreadHarness,
+  getRequestInputText,
+  makeThreadBootstrapBinding,
+  requireRecord,
+  runCodexAppServerAttempt,
+  writeCodexAppServerBinding,
+} from "./run-attempt.context-engine.test-support.js";
 import { withoutCodexTurnContextHandoffs } from "./test-support.js";
 
 function requestMethodsExcludingSkillDiscovery(harness: {
@@ -325,4 +343,5 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
     expect(promptHookMessages).toEqual(preassemblyMessages);
     expect(promptHookMessages.map((message) => message.role)).toEqual(["assistant", "user"]);
     expectRequestInputTextContains(harness, params.prompt);
-  });});
+  });
+});

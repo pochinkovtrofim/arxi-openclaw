@@ -1,9 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
-import { getActiveDiagnosticTraceContext, type DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
+import {
+  getActiveDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { replayAgentTurnIfCached } from "./agent-dedupe.js";
 import { startAgentRunExecution } from "./agent-run-execution-phase.js";
-import { bindFollowupCompletion, createExecution, createVisibleExecution } from "./agent-run-execution-phase.owner.test-support.js";
+import {
+  bindFollowupCompletion,
+  createExecution,
+  createVisibleExecution,
+} from "./agent-run-execution-phase.owner.test-support.js";
 
 const { dispatchAgentRunFromGateway, agentCommand } = vi.hoisted(() => ({
   dispatchAgentRunFromGateway: vi.fn(),

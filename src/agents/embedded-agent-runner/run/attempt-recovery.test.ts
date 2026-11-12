@@ -9,10 +9,20 @@ import { createTempDirTracker } from "../../../../test/helpers/temp-dir.js";
 import { sleepWithAbort } from "../../../infra/backoff.js";
 import { flushDiagnosticsTimeline } from "../../../infra/diagnostics-timeline.js";
 import { withEnvAsync } from "../../../test-utils/env.js";
-import { buildEmbeddedRunnerAssistant, createMockUsage } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
+import {
+  buildEmbeddedRunnerAssistant,
+  createMockUsage,
+} from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
 import { handleEmbeddedAssistantFailure } from "./assistant-failure.js";
 import { recoverEmbeddedRunAttempt } from "./attempt-recovery.js";
-import { emptyLengthScenario, outputLimitDetails, outputLimitScenario, outputLimitScenarios, recoverAfterTransportDrop, type TransportDropScenario } from "./attempt-recovery.test-support.js";
+import {
+  emptyLengthScenario,
+  outputLimitDetails,
+  outputLimitScenario,
+  outputLimitScenarios,
+  recoverAfterTransportDrop,
+  type TransportDropScenario,
+} from "./attempt-recovery.test-support.js";
 import { resolveEmbeddedRunAttemptTerminalState } from "./terminal-outcome.js";
 
 vi.mock("../../../infra/backoff.js", async (importOriginal) => ({
@@ -818,5 +828,4 @@ describe("recoverEmbeddedRunAttempt", () => {
     expect(markOwnedTranscriptRetry).not.toHaveBeenCalled();
     expect(continueFromCurrentTranscript).not.toHaveBeenCalled();
   });
-
 });

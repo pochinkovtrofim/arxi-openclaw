@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import { sleepWithAbort } from "../../../infra/backoff.js";
 import { AgentRunBlockedError } from "../../harness/before-agent-run.js";
-import { buildEmbeddedRunnerAssistant, createMockUsage, makeEmbeddedRunnerAttempt } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
+import {
+  buildEmbeddedRunnerAssistant,
+  createMockUsage,
+  makeEmbeddedRunnerAttempt,
+} from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
 import { normalizeUsage } from "../../usage.js";
 import { createUsageAccumulator } from "../usage-accumulator.js";
 import { recoverEmbeddedRunAttempt } from "./attempt-recovery.js";

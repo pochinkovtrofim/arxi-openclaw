@@ -96,13 +96,13 @@ export function isHostDirectOwnerReply(
 ): boolean {
   return Boolean(
     input.hostAdmission &&
-      input.senderIsOwner &&
-      runContext.senderId &&
-      runContext.chatId &&
-      !params.groupId &&
-      !params.groupChannel &&
-      !params.groupSpace &&
-      params.delivery.deliver &&
-      params.delivery.resolvedChatType === "direct",
+    input.senderIsOwner &&
+    runContext.senderId &&
+    runContext.chatId &&
+    !params.groupId &&
+    !params.groupChannel &&
+    !params.groupSpace &&
+    params.delivery.deliver &&
+    params.delivery.resolvedChatType === "direct",
   );
 }

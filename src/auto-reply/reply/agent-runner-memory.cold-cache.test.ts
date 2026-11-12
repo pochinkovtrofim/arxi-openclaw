@@ -27,7 +27,10 @@ vi.mock("../../agents/embedded-agent.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../agents/embedded-agent.js")>()),
   compactEmbeddedAgentSession: compact,
 }));
-vi.mock("./session-updates.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("./session-updates.js")>()), incrementCompactionCount: increment }));
+vi.mock("./session-updates.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./session-updates.js")>()),
+  incrementCompactionCount: increment,
+}));
 
 const MINUTE = 60_000;
 

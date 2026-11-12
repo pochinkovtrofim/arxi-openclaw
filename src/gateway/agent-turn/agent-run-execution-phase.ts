@@ -53,11 +53,11 @@ import { buildAbortedAgentPayload, setGatewayDedupeEntries } from "./agent-dedup
 import { yieldAfterAgentAcceptedAck } from "./agent-handler-helpers.js";
 import { captureAgentJobSession } from "./agent-job.js";
 import { createAgentRunDiagnostics } from "./agent-run-diagnostics.js";
+import { withAgentRunDispatchExecutionIdentity } from "./agent-run-dispatch-execution-identity.js";
 import {
   resolveAgentRunAdmissionInputs,
   resolveCronContinuationDispatchFields,
 } from "./agent-run-dispatch-inputs.js";
-import { withAgentRunDispatchExecutionIdentity } from "./agent-run-dispatch-execution-identity.js";
 import { projectWithdrawnAgentInput } from "./agent-run-dispatch-outcome.js";
 import type { StartAgentRunExecutionParams } from "./agent-run-execution-types.js";
 import {
@@ -531,7 +531,9 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
                 inputProvenance: params.inputProvenance,
                 privateCompletion: prepared.userTurn.privateCompletion,
                 replyExpectation: prepared.userTurn.replyExpectation,
-                ...(hostAdmission?.replyOptional ? { hostAdmittedReplyOptional: true as const } : {}),
+                ...(hostAdmission?.replyOptional
+                  ? { hostAdmittedReplyOptional: true as const }
+                  : {}),
                 senderIsOwner,
                 ...(directOwnerReply
                   ? { nativeDeliveryPurpose: "direct_owner_reply" as const }

@@ -14,7 +14,6 @@ export {
   prepareTaskMirroredFlowSync,
   publishTaskFlowAfterAtomicStore,
   reloadTaskFlowRegistryFromStoreAsync,
-  resolveTaskFlowForLookupToken,
   runTaskFlowRegistryWorkerMutation,
   syncFlowFromTaskResult,
   updateFlowRecordByIdExpectedRevision,
@@ -28,6 +27,7 @@ export {
   resumeFlow,
   setFlowWaiting,
 } from "./task-flow-registry.mutations.js";
+export { resolveTaskFlowForLookupToken } from "./task-flow-registry.lookup.js";
 
 export type {
   FlowRecordCreateFields,

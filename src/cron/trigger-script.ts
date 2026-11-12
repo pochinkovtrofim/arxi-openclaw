@@ -1,23 +1,58 @@
 import crypto from "node:crypto";
-import { resolveAdmittedRunActiveAssertion, type AdmittedRunContext } from "../agents/admitted-run-context.js";
-import { resolveAgentConfig, resolveAgentDir, resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
+import {
+  resolveAdmittedRunActiveAssertion,
+  type AdmittedRunContext,
+} from "../agents/admitted-run-context.js";
+import {
+  resolveAgentConfig,
+  resolveAgentDir,
+  resolveAgentWorkspaceDir,
+} from "../agents/agent-scope.js";
 import { bindAgentToolSourceExecutionGuard } from "../agents/agent-tool-source-execution-guard.js";
 import { wrapToolWithAbortSignal } from "../agents/agent-tools.abort.js";
-import { rewrapToolWithBeforeToolCallHook, type HookContext } from "../agents/agent-tools.before-tool-call.js";
-import { createOpenClawCodingToolsInternalAsync, resolveToolLoopDetectionConfig } from "../agents/agent-tools.js";
+import {
+  rewrapToolWithBeforeToolCallHook,
+  type HookContext,
+} from "../agents/agent-tools.before-tool-call.js";
+import {
+  createOpenClawCodingToolsInternalAsync,
+  resolveToolLoopDetectionConfig,
+} from "../agents/agent-tools.js";
 import { hasAnyAuthProfileStoreSourceAsync } from "../agents/auth-profiles/source-check.js";
 import { getBeforeToolCallHookContext } from "../agents/before-tool-call-metadata.js";
 import { createHeadlessDeadlineScope } from "../agents/code-mode-headless.js";
-import { CodeModeHeadlessAbortError, CodeModeHeadlessTimeoutError, runCodeModeScriptHeadless, type CodeModeHeadlessResult } from "../agents/code-mode.js";
-import { prepareConversationCapabilityProfile, type ResolvedConversationCapabilityProfile } from "../agents/conversation-capability-profile.js";
-import { applyEmbeddedAttemptToolsAllow, resolveEmbeddedAttemptToolConstructionPlan } from "../agents/embedded-agent-runner/run/attempt-tool-construction-plan.js";
+import {
+  CodeModeHeadlessAbortError,
+  CodeModeHeadlessTimeoutError,
+  runCodeModeScriptHeadless,
+  type CodeModeHeadlessResult,
+} from "../agents/code-mode.js";
+import {
+  prepareConversationCapabilityProfile,
+  type ResolvedConversationCapabilityProfile,
+} from "../agents/conversation-capability-profile.js";
+import {
+  applyEmbeddedAttemptToolsAllow,
+  resolveEmbeddedAttemptToolConstructionPlan,
+} from "../agents/embedded-agent-runner/run/attempt-tool-construction-plan.js";
 import { runAgentCleanupStep } from "../agents/run-cleanup-timeout.js";
 import { loadAgentRuntimePluginRegistryHandle } from "../agents/runtime-plugins.js";
 import { resolveSandboxContext } from "../agents/sandbox.js";
-import { resolveScheduledToolPolicyContext, type ScheduledToolPolicyContext } from "../agents/scheduled-tool-policy.js";
-import { clearToolSearchCatalog, createToolSearchCatalogRef, registerHeadlessToolSearchCatalog, type ToolSearchToolContext } from "../agents/tool-search.js";
+import {
+  resolveScheduledToolPolicyContext,
+  type ScheduledToolPolicyContext,
+} from "../agents/scheduled-tool-policy.js";
+import {
+  clearToolSearchCatalog,
+  createToolSearchCatalogRef,
+  registerHeadlessToolSearchCatalog,
+  type ToolSearchToolContext,
+} from "../agents/tool-search.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
-import { createAdmittedGatewayToolCallerIdentity, withGatewayToolCallerIdentity } from "../agents/tools/gateway-caller-context.js";
+import {
+  createAdmittedGatewayToolCallerIdentity,
+  withGatewayToolCallerIdentity,
+} from "../agents/tools/gateway-caller-context.js";
 import { ensureAgentWorkspace } from "../agents/workspace.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import type { GatewayContextResolver } from "../gateway/server-methods/types.js";
@@ -25,23 +60,47 @@ import { getActiveDiagnosticTraceContext } from "../infra/diagnostic-trace-conte
 import { formatErrorMessageWithCode } from "../infra/errors.js";
 import { logWarn } from "../logger.js";
 import { PluginInstanceUnavailableError } from "../plugins/plugin-instance-error.js";
-import { capturePluginLifecycleAuthority, isPluginRegistryRecordSetAdmitting } from "../plugins/registry-lifecycle.js";
+import {
+  capturePluginLifecycleAuthority,
+  isPluginRegistryRecordSetAdmitting,
+} from "../plugins/registry-lifecycle.js";
 import type { PluginRegistry } from "../plugins/registry-types.js";
 import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-request-scope.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
-import { resolveCronActiveRuntimeConfig, resolveCronAgentConfig } from "./isolated-agent/run-config.js";
+import {
+  resolveCronActiveRuntimeConfig,
+  resolveCronAgentConfig,
+} from "./isolated-agent/run-config.js";
 import { resolveCronAgentSessionKey } from "./isolated-agent/session-key.js";
 import { prepareCronRunAdmission } from "./run-admission.js";
 import { resolveCronScheduledToolPolicy } from "./scheduled-tool-policy.js";
-import { DEFAULT_CRON_SCRIPT_TIMEOUT_SECONDS, DEFAULT_CRON_SCRIPT_TOOL_BUDGET, MAX_CRON_SCRIPT_TIMEOUT_SECONDS, MAX_CRON_SCRIPT_TOOL_BUDGET } from "./script-payload.js";
+import {
+  DEFAULT_CRON_SCRIPT_TIMEOUT_SECONDS,
+  DEFAULT_CRON_SCRIPT_TOOL_BUDGET,
+  MAX_CRON_SCRIPT_TIMEOUT_SECONDS,
+  MAX_CRON_SCRIPT_TOOL_BUDGET,
+} from "./script-payload.js";
 import type { CronServiceDeps } from "./service/state.js";
 import { resolveCronAuthenticatedChannelRequester } from "./tools-allow-provenance.js";
 import { createCronTriggerDiagnosticLifecycle } from "./trigger-script-diagnostics.js";
-import { resolveTriggerAgentId, runInOwnPluginRuntimeRefresh, triggerStateNamespace } from "./trigger-script-scope.js";
 import { acquireCronScriptMcpTools, type CronScriptMcpTools } from "./trigger-script-mcp.js";
-import { parseScriptPayloadResult, parseTriggerResult, scriptFailure, type CronScriptPayloadExecutionResult } from "./trigger-script-result.js";
+import {
+  parseScriptPayloadResult,
+  parseTriggerResult,
+  scriptFailure,
+  type CronScriptPayloadExecutionResult,
+} from "./trigger-script-result.js";
 import { createCronTriggerRuntimeLifetime } from "./trigger-script-runtime-lifetime.js";
-import type { CronToolsAllowExecTarget, CronTriggerEvaluationResult, CronTriggerFailureCode } from "./types.js";
+import {
+  resolveTriggerAgentId,
+  runInOwnPluginRuntimeRefresh,
+  triggerStateNamespace,
+} from "./trigger-script-scope.js";
+import type {
+  CronToolsAllowExecTarget,
+  CronTriggerEvaluationResult,
+  CronTriggerFailureCode,
+} from "./types.js";
 
 const MAX_CONCURRENT_TRIGGER_EVALS = 3;
 const MAX_CACHED_TRIGGER_RUNTIMES = 128;

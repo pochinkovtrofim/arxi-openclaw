@@ -57,7 +57,7 @@ const SMOL_VLM2_REVISION = "1bc3c9f74ceafd4c8d4411cc9cf188bba3798f91";
 // Pinned b10809 supports these GLM4V and Idefics3 projectors; every selected pair
 // still needs real inference verification on the Gateway before activation.
 // A pinned runtime other than this build keeps local media unavailable.
-const MEDIA_VERIFIED_LLAMA_SERVER_BUILD = 10_809;
+const MEDIA_VERIFIED_LLAMA_SERVER_BUILDS: ReadonlySet<number> = new Set([10_809]);
 // Memory includes both GGUFs, KV/compute buffers and bounded image encoding. The
 // router must load one model at a time; these budgets do not permit co-residency.
 export const LLAMA_CPP_MEDIA_RECIPES: readonly [LlamaCppMediaRecipe, LlamaCppMediaRecipe] = [
@@ -150,9 +150,9 @@ export function recommendLlamaCppMedia(
     kind: "unavailable",
     reason,
   });
-  if (LLAMA_SERVER_BUILD !== MEDIA_VERIFIED_LLAMA_SERVER_BUILD) {
+  if (!MEDIA_VERIFIED_LLAMA_SERVER_BUILDS.has(LLAMA_SERVER_BUILD)) {
     return unavailable(
-      `Local media requires verified llama.cpp build ${String(MEDIA_VERIFIED_LLAMA_SERVER_BUILD)}; available build is ${String(LLAMA_SERVER_BUILD)}. Use another image provider until these recipes are verified with the new runtime.`,
+      `Local media requires verified llama.cpp build ${[...MEDIA_VERIFIED_LLAMA_SERVER_BUILDS].join(", ")}; available build is ${String(LLAMA_SERVER_BUILD)}. Use another image provider until these recipes are verified with the new runtime.`,
     );
   }
   const memoryBudgetBytes = resolveLlamaCppMemoryBudget(hardware, "cpu");

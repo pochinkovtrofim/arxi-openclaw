@@ -56,6 +56,7 @@ import {
   resolvePromptCacheTouchTimestamp,
 } from "./attempt-context-engine-helpers.js";
 import type { AttemptNestedToolActivityState } from "./attempt-nested-tool-activity.js";
+import { applyCacheKeepWarm, applyRunPromptCacheRetention } from "./attempt-stream-cache.js";
 import { appendAttemptCacheTtlIfNeeded } from "./attempt-thread-helpers.js";
 import { normalizeCompactionRecoveryTranscriptTail } from "./attempt-transcript-helpers.js";
 import {
@@ -66,7 +67,6 @@ import { selectCompactionTimeoutSnapshot } from "./compaction-timeout.js";
 import { materializeProviderContext } from "./images.js";
 import { wrapStreamFnWithMessageTransform } from "./message-transform-stream-wrapper.js";
 import { wrapStreamFnWithProviderReviewContinuation } from "./provider-review-continuation.js";
-import { applyCacheKeepWarm, applyRunPromptCacheRetention } from "./attempt-stream-cache.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 type EmbeddedAttemptSubscription = ReturnType<typeof subscribeEmbeddedAgentSession>;

@@ -15,8 +15,26 @@ import { withEnvAsync } from "openclaw/plugin-sdk/test-env";
 import { createSolidPngBuffer } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it, vi } from "vitest";
 import { seedRunSessionOwnerForTest } from "./run-attempt-session-owners.test-support.js";
-import { assistantMessage, bindProductionHarnessHostCapabilitiesForTest, setupRunAttemptTestHooks, tempDir, threadStartResult, userMessage } from "./run-attempt-test-harness.js";
-import { createContextEngine, createCurrentInputContinuityHarness, createParams, createStartedThreadHarness, getRequestInputText, makeThreadBootstrapBinding, requireRecord, requireArray, runCodexAppServerAttempt, writeCodexAppServerBinding } from "./run-attempt.context-engine.test-support.js";
+import {
+  assistantMessage,
+  bindProductionHarnessHostCapabilitiesForTest,
+  setupRunAttemptTestHooks,
+  tempDir,
+  threadStartResult,
+  userMessage,
+} from "./run-attempt-test-harness.js";
+import {
+  createContextEngine,
+  createCurrentInputContinuityHarness,
+  createParams,
+  createStartedThreadHarness,
+  getRequestInputText,
+  makeThreadBootstrapBinding,
+  requireRecord,
+  requireArray,
+  runCodexAppServerAttempt,
+  writeCodexAppServerBinding,
+} from "./run-attempt.context-engine.test-support.js";
 import { readCodexAppServerBinding } from "./session-binding.test-helpers.js";
 import { withoutCodexTurnContextHandoffs } from "./test-support.js";
 
@@ -851,5 +869,4 @@ describe("runCodexAppServerAttempt context-engine lifecycle", () => {
       }
     },
   );
-
 });

@@ -15,7 +15,10 @@ vi.mock("../chrome-history.js", async (importOriginal) => {
     readManagedChromeLiveHistory: historyMocks.readLive,
   };
 });
-vi.mock("../chrome.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("../chrome.js")>()), resolveOpenClawUserDataDir: () => "/managed-profile" }));
+vi.mock("../chrome.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../chrome.js")>()),
+  resolveOpenClawUserDataDir: () => "/managed-profile",
+}));
 vi.mock("../profile-capabilities.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../profile-capabilities.js")>()),
   getBrowserProfileCapabilities: () => ({
@@ -23,7 +26,10 @@ vi.mock("../profile-capabilities.js", async (importOriginal) => ({
     browserFilesystemLocal: true,
   }),
 }));
-vi.mock("../pw-ai-module.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("../pw-ai-module.js")>()), getPwAiModule: async () => ({}) }));
+vi.mock("../pw-ai-module.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../pw-ai-module.js")>()),
+  getPwAiModule: async () => ({}),
+}));
 
 const { registerBrowserHistoryRoutes } = await import("./history.js");
 

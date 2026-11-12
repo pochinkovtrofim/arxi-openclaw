@@ -2,10 +2,12 @@ import { vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { SessionFollowupCompletion } from "../../agents/subagents/completion/session-followup-completion.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
-import { runWithDiagnosticTraceContext, type DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
+import {
+  runWithDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import type { ChatAbortControllerEntry } from "../chat-abort.js";
 import type { startAgentRunExecution } from "./agent-run-execution-phase.js";
-
 
 export function createExecution(
   options: {
