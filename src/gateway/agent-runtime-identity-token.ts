@@ -65,7 +65,7 @@ export type AgentRuntimeIdentity = {
   messageActionContext?: AgentRuntimeMessageActionContext;
   cronSelfManagementContext?: AgentRuntimeCronSelfManagementContext;
   cronToolsAllowCapture?: "final-executable-surface";
-  cronMcpToolBindings?: CronScheduledMcpToolBinding[];
+  cronMcpToolBindings?: readonly CronScheduledMcpToolBinding[];
   cronExecToolTarget?: { host: "gateway"; ask?: "always" };
   cronCreatorAuthorityGrant?: CronCreatorAuthorityGrant;
   cronManagementGrant?: CronCreatorAuthorityGrant;
