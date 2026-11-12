@@ -228,7 +228,6 @@ export type SessionMcpRuntimeManager = {
   acquire: (params: {
     sessionId: string;
     sessionKey?: string;
-    agentId?: string;
     workspaceDir: string;
     agentDir?: string;
     cfg?: OpenClawConfig;

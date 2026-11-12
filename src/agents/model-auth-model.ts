@@ -261,14 +261,13 @@ export async function getApiKeyForModelCore(params: {
   agentDir?: string;
   workspaceDir?: string;
   lockedProfile?: boolean;
+  /** Renew an OAuth login even when its recorded expiry still looks usable. */
   forceRefresh?: boolean;
   signal?: AbortSignal;
   credentialPrecedence?: ProviderCredentialPrecedence;
   allowAuthProfileFallback?: boolean;
   skipSetupProviderFallback?: boolean;
   secretSentinels?: boolean;
-  /** Renew an OAuth login even when its recorded expiry still looks usable. */
-  forceRefresh?: boolean;
   includeOAuthExpiry?: boolean;
 }): Promise<ResolvedProviderAuth> {
   const { model, ...authParams } = params;

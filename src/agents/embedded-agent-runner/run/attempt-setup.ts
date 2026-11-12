@@ -48,7 +48,10 @@ import {
 } from "../cache-ttl.js";
 import { log } from "../logger.js";
 import { declarePromptHistoryRewrite } from "../prompt-cache-observability.js";
-import type { ToolResultPromptProjectionState } from "../session-prompt-state.js";
+import {
+  recordEarlierRunToolResultProjection,
+  type ToolResultPromptProjectionState,
+} from "../session-prompt-state.js";
 import {
   installContextEngineLoopHook,
   installToolResultContextGuard,
@@ -266,11 +269,9 @@ export function installEmbeddedAttemptContextGuards(input: {
         ? await previousEarlierRunsTransform.call(activeSession.agent, messages, signal)
         : messages;
       const projected = pruneEarlierRunToolResults(sourceMessages, earlierRunsBoundary);
-      const promptState = getEmbeddedSessionPromptState(attempt.sessionId);
-      if ([...projected.pruned].some((key) => !promptState.earlierRunToolResults?.has(key))) {
+      if (recordEarlierRunToolResultProjection(attempt.sessionId, projected.pruned)) {
         declarePromptHistoryRewrite({ ...attempt, reason: "pruning" });
       }
-      promptState.earlierRunToolResults = projected.pruned;
       return projected.messages;
     };
   }

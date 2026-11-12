@@ -360,7 +360,7 @@ describe("scheduled session execution custody", () => {
       executionStarted: true,
       delivered: false,
       summary: "Report checked.",
-      nextCheckMs: 120_000,
+      nextCheck: { delayMs: 120_000 },
     });
     await expect(run).resolves.toMatchObject({
       status: "ok",

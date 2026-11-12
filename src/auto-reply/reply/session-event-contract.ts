@@ -14,6 +14,7 @@ import type { SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type {
   CronAgentExecutionPhaseUpdate,
+  CronNextCheckProposal,
   CronRunOutcome,
   CronRunTelemetry,
   CronStoredJob,
@@ -43,7 +44,7 @@ export type SessionEventOutcome = {
   executionStarted: boolean;
   delivered: boolean;
   summary?: string;
-  nextCheckMs?: number;
+  nextCheck?: CronNextCheckProposal;
   sourceDeliveryOutcome?: SourceDeliveryOutcome;
   automationResult?: CronRunTelemetry &
     Pick<CronRunOutcome, "diagnostics"> & {

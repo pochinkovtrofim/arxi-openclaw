@@ -472,6 +472,17 @@ export function retainEmbeddedSessionPromptState(sessionId: string) {
   };
 }
 
+/** Returns true when this projection prunes an earlier-run tool result the prompt still held. */
+export function recordEarlierRunToolResultProjection(
+  sessionId: string,
+  pruned: Set<string>,
+): boolean {
+  const state = getEmbeddedSessionPromptState(sessionId);
+  const changed = [...pruned].some((key) => !state.earlierRunToolResults?.has(key));
+  state.earlierRunToolResults = pruned;
+  return changed;
+}
+
 export function recordRuntimeContextProjection(
   sessionId: string,
   removed: readonly AgentMessage[] | undefined,

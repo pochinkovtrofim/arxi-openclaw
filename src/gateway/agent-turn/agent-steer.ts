@@ -13,6 +13,7 @@ import {
   finalizeReplyMessageInjectionAttempt,
   replyRunRegistry,
 } from "../../auto-reply/reply/reply-run-registry.js";
+import { getRuntimeConfig } from "../../config/io.js";
 import { resolveRestartRecoverySteeringBlockReason } from "../../config/sessions/restart-recovery-receipt.js";
 import {
   buildRunUserTurnIdempotencyKey,
@@ -22,7 +23,7 @@ import { hasGatewayAdminScope } from "../operator-scopes.js";
 import { resolveSessionRuntimeCwd } from "../server-methods/agent-session-reset.js";
 import { gatewayClientSenderFields } from "../server-methods/gateway-client-identity.js";
 import type { GatewayClient, GatewayRequestContext } from "../server-methods/shared-types.js";
-import { loadSessionEntry } from "../session-utils.js";
+import { loadGatewaySessionEntryReadOnlyInWorker } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
 import type { AgentTurnIo } from "./types.js";
 
@@ -135,10 +136,13 @@ async function steer(
   context: Pick<GatewayRequestContext, "dedupe" | "logGateway">,
   identity: string,
 ): Promise<AgentSteerResult> {
-  const loaded = loadSessionEntry(
-    request.sessionKey,
-    request.agentId ? { agentId: request.agentId } : {},
-  );
+  const cfg = getRuntimeConfig();
+  const loaded = await loadGatewaySessionEntryReadOnlyInWorker({
+    cfg,
+    key: request.sessionKey,
+    ...(request.agentId ? { agentId: request.agentId } : {}),
+    excludeInternalEffects: true,
+  });
   const sessionKey = loaded.canonicalKey;
   const sessionId = normalizeOptionalString(loaded.entry?.sessionId);
   if (!sessionKey || !sessionId || !loaded.entry) {
@@ -180,8 +184,13 @@ async function steer(
       ...gatewayClientSenderFields(client),
       senderIsOwner,
     },
-    target: () => {
-      const latest = loadSessionEntry(sessionKey, { agentId, clone: false });
+    target: async () => {
+      const latest = await loadGatewaySessionEntryReadOnlyInWorker({
+        cfg,
+        key: sessionKey,
+        agentId,
+        excludeInternalEffects: true,
+      });
       if (!latest.entry || latest.entry.sessionId?.trim() !== sessionId) {
         return undefined;
       }

@@ -72,7 +72,7 @@ export async function settleSessionAutomationTurn(params: {
   prepareCurrent: () => Promise<void>;
   outcome: "completed" | "failed" | "aborted";
 }): Promise<
-  Pick<SessionEventOutcome, "nextCheckMs" | "sourceDeliveryOutcome" | "automationResult">
+  Pick<SessionEventOutcome, "nextCheck" | "sourceDeliveryOutcome" | "automationResult">
 > {
   const { automation, runId, deliveryEvidence } = params;
   let sourceDeliveryOutcome: SessionEventOutcome["sourceDeliveryOutcome"];
@@ -86,7 +86,7 @@ export async function settleSessionAutomationTurn(params: {
     });
   }
   return {
-    nextCheckMs:
+    nextCheck:
       params.outcome === "completed"
         ? consumeCronNextCheckProposal(runId, automation.job.id)
         : undefined,

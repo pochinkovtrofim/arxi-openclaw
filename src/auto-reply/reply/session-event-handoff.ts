@@ -180,7 +180,7 @@ export function enqueueSessionEventForHost(
   let deliverySuppressionReason: NormalizeReplySkipReason | undefined;
   let summary: string | undefined;
   let failure: Error | string | undefined;
-  let nextCheckMs: number | undefined;
+  let nextCheck: SessionEventOutcome["nextCheck"];
   let sourceDeliveryOutcome: SourceDeliveryOutcome | undefined;
   let automationResult: SessionEventOutcome["automationResult"];
   let settlement: "settling" | "finished" | undefined;
@@ -396,7 +396,7 @@ export function enqueueSessionEventForHost(
           operation?.result?.kind === "aborted" &&
           operation.result.code === "aborted_for_supersession",
         summary,
-        nextCheckMs,
+        nextCheck,
         sourceDeliveryOutcome,
         automationResult,
         ...(failure ? { error: String(failure) } : {}),
@@ -598,7 +598,7 @@ export function enqueueSessionEventForHost(
                   prepareCurrent,
                   outcome,
                 });
-                nextCheckMs = automationOutcome.nextCheckMs;
+                nextCheck = automationOutcome.nextCheck;
                 sourceDeliveryOutcome = automationOutcome.sourceDeliveryOutcome;
                 automationResult = automationOutcome.automationResult;
                 delivered ||= sourceDeliveryOutcome?.satisfiesSourceDelivery === true;

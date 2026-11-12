@@ -562,6 +562,7 @@ function buildWebFetchDataPayload(params: {
 async function buildWebFetchDataResult(
   details: Record<string, unknown>,
   maxChars: number,
+  output: PrivateTempFileOptions,
 ): Promise<AgentToolResult<Record<string, unknown>>> {
   const mode = details.extractMode === "json" ? "json" : "raw";
   const display = await buildWebFetchPayload({
@@ -578,6 +579,7 @@ async function buildWebFetchDataResult(
     extractMode: mode,
     maxChars,
     tookMs: typeof details.tookMs === "number" ? details.tookMs : 0,
+    output,
   });
   return textResult(JSON.stringify(display, null, 2), {
     ...details,
@@ -1087,6 +1089,13 @@ export function createWebFetchTool(options?: {
         WEB_FETCH_PROGRESS_THRESHOLD_MS,
         { signal },
       );
+      const output: PrivateTempFileOptions = {
+        ...(options?.sandboxed
+          ? { sandbox: { root: options.sandboxRoot, bridge: options.sandboxFsBridge } }
+          : {}),
+        assertCurrent,
+        signal,
+      };
       try {
         const result = await runWebFetch({
           url,
@@ -1116,16 +1125,10 @@ export function createWebFetchTool(options?: {
           signal,
           resolveProviderFallback,
           cacheScope,
-          output: {
-            ...(options?.sandboxed
-              ? { sandbox: { root: options.sandboxRoot, bridge: options.sandboxFsBridge } }
-              : {}),
-            assertCurrent,
-            signal,
-          },
+          output,
         });
         return isDataExtractMode(extractMode)
-          ? await buildWebFetchDataResult(result, maxChars)
+          ? await buildWebFetchDataResult(result, maxChars, output)
           : jsonResult(result);
       } finally {
         clearProgressTimer();

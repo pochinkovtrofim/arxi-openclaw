@@ -32,6 +32,7 @@ export const createServiceCronHost = (): PluginServiceCronHost => ({
   runEvent: vi.fn<PluginServiceCronHost["runEvent"]>(async () => ({ kind: "invalidated" })),
   getJob: vi.fn<PluginServiceCronHost["getJob"]>(),
   enqueueRun: vi.fn<PluginServiceCronHost["enqueueRun"]>(),
+  run: vi.fn<PluginServiceCronHost["run"]>(),
   status: vi.fn<PluginServiceCronHost["status"]>(async () => ({
     enabled: true,
     triggersEnabled: true,
@@ -44,6 +45,7 @@ export const createServiceCronHost = (): PluginServiceCronHost => ({
   list: vi.fn<PluginServiceCronHost["list"]>(),
   add: vi.fn<PluginServiceCronHost["add"]>(),
   update: vi.fn<PluginServiceCronHost["update"]>(),
+  updateWithPrecondition: vi.fn<PluginServiceCronHost["updateWithPrecondition"]>(),
   remove: vi.fn<PluginServiceCronHost["remove"]>(),
   removeStaleJobFamily: vi.fn<PluginServiceCronHost["removeStaleJobFamily"]>(),
 });
