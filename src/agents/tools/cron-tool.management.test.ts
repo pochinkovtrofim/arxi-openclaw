@@ -367,7 +367,8 @@ describe("cron next_check action", () => {
       in: "30m",
     });
 
-    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toBe(15 * 60_000);
-    expect(consumeCronNextCheckProposal(RUN_ID, "next-job")).toBe(30 * 60_000);
+    // The fork's proposal also carries an optional scheduledAtMs.
+    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toEqual({ delayMs: 15 * 60_000 });
+    expect(consumeCronNextCheckProposal(RUN_ID, "next-job")).toEqual({ delayMs: 30 * 60_000 });
   });
 });

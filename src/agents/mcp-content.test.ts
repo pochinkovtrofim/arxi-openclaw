@@ -18,8 +18,9 @@ describe("projectMcpCallToolResult", () => {
     const structuredContent = { zeta: 2, alpha: "<a>&" };
     const content = [{ type: "text", text }];
     const result = projectMcpCallToolResult({ content, structuredContent });
+    // Upstream projects compact, key-sorted JSON (619bd4a3d4a).
     expect(result.content).toEqual([
-      { type: "text", text: 'structuredContent:\n{\n  "alpha": "<a>&",\n  "zeta": 2\n}' },
+      { type: "text", text: 'structuredContent:\n{"alpha":"<a>&","zeta":2}' },
     ]);
     expect(result.details).toEqual({ structuredContent });
     expect(consumeMcpCodeModeGuestResult(result)).toEqual({ content, structuredContent });

@@ -890,6 +890,7 @@ describe("host-admitted current message actions", () => {
       expiresWithRun: true,
     });
     try {
+      setRuntimeConfigSnapshot(workspaceConfig);
       const tool = createMessageTool({
         config: workspaceConfig,
         agentId: identity.agentId,

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/config.js";
 import { claimAgentRunContext, clearAgentRunContext, releaseAgentRunContext } from "../../infra/agent-run-registry.js";
 import { consumeCronNextCheckProposal } from "../../infra/agent-run-cron-proposals.js";
 import { createCronTool } from "./cron-tool.js";
@@ -7,7 +8,13 @@ const RUN_ID = "paced-run";
 const JOB_ID = "paced-job";
 let runClaimId: string | undefined;
 
+beforeEach(() => {
+  // The Gateway publishes its runtime config before any tool call.
+  setRuntimeConfigSnapshot({});
+});
+
 afterEach(() => {
+  clearRuntimeConfigSnapshot();
   releaseAgentRunContext(RUN_ID, runClaimId);
   clearAgentRunContext(RUN_ID);
   runClaimId = undefined;
