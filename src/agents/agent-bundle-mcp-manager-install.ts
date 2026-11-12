@@ -37,7 +37,7 @@ type RequesterRuntimeParams = RuntimeEntryParams & {
   safeServerNamesByServer: ReadonlyMap<string, string>;
   fullScopedFingerprint: string;
   requesterSenderId?: string;
-  agentId?: string | null;
+  agentId?: string;
   chatType?: string | null;
   conversationId?: string | null;
   runtimeGeneration?: string | null;
