@@ -71,9 +71,7 @@ export async function settleSessionAutomationTurn(params: {
   deliveryEvidence: Parameters<SessionEventExecution["onTerminal"]>[2];
   prepareCurrent: () => Promise<void>;
   outcome: "completed" | "failed" | "aborted";
-}): Promise<
-  Pick<SessionEventOutcome, "nextCheck" | "sourceDeliveryOutcome" | "automationResult">
-> {
+}): Promise<Pick<SessionEventOutcome, "nextCheck" | "sourceDeliveryOutcome" | "automationResult">> {
   const { automation, runId, deliveryEvidence } = params;
   let sourceDeliveryOutcome: SessionEventOutcome["sourceDeliveryOutcome"];
   if (automation.sourceDelivery) {

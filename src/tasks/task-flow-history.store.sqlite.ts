@@ -1,7 +1,7 @@
 // Existing controller history receipts, shared by synchronous and worker flow writes.
 import crypto from "node:crypto";
-import type { EngineConnection } from "../infra/sql-connection.js";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import type { EngineConnection } from "../infra/sql-connection.js";
 import { withExistingOpenClawStateDatabaseReadOnly } from "../state/openclaw-state-db-readonly.js";
 import { ensureTaskFlowHistorySchema } from "../state/openclaw-state-db-schema-additive.js";
 import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";

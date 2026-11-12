@@ -36,8 +36,8 @@ import type {
   SessionTranscriptModelContext,
 } from "./session-history-read.types.js";
 import { projectModelContextEventSql } from "./session-model-context-projection.js";
-import { parseNavigationRows, readSessionContextSuffix } from "./session-model-context-suffix.js";
 import { projectSessionModelContext } from "./session-model-context-read.js";
+import { parseNavigationRows, readSessionContextSuffix } from "./session-model-context-suffix.js";
 import type { ContextEntry, ModelContextRequest } from "./session-model-context-window.js";
 import {
   resolveSqliteSessionTranscriptReadFence,
@@ -322,10 +322,7 @@ function withTranscriptContextSnapshot<T>(
           // Only navigation crosses into JavaScript before the canonical context is selected.
           const navigation = (order: "asc" | "desc", limit?: number) => {
             const rows = base
-              .select([
-                "seq",
-                transcriptEventModelNavigationSql(database.db).as("navigation_json"),
-              ])
+              .select(["seq", transcriptEventModelNavigationSql(database.db).as("navigation_json")])
               .orderBy("seq", order);
             return parseNavigationRows<SessionTreeEntry>(
               iterateSqliteQuerySync(database.db, limit === undefined ? rows : rows.limit(limit)),

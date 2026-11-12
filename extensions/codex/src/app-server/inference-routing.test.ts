@@ -1,6 +1,6 @@
 import { once } from "node:events";
-import { WebSocket } from "openclaw/plugin-sdk/websocket-runtime";
 import { createNativeSessionBindingScope } from "openclaw/plugin-sdk/agent-harness-session-runtime";
+import { WebSocket } from "openclaw/plugin-sdk/websocket-runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeCodexAppServerClient } from "./codex-app-server.test-fixtures.js";
 import {

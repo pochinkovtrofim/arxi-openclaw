@@ -1,7 +1,7 @@
-import type { EngineConnection } from "../infra/sql-connection.js";
 // Coordinates managed task-flow creation, updates, ownership, and snapshots.
 import { formatErrorMessage } from "../infra/errors.js";
 import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
+import type { EngineConnection } from "../infra/sql-connection.js";
 import { normalizeSqliteNumber } from "../infra/sqlite-number.js";
 import { stageSqliteTransactionState } from "../infra/sqlite-post-commit.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";

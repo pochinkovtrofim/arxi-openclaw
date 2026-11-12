@@ -336,7 +336,9 @@ export async function dispatchCronDelivery(
       const skipReason =
         sent.status === "suppressed"
           ? (sent.skipReason ??
-            (sent.reason === "adapter_returned_no_send" ? ("adapter_returned_no_send" as const) : undefined))
+            (sent.reason === "adapter_returned_no_send"
+              ? ("adapter_returned_no_send" as const)
+              : undefined))
           : undefined;
       record(
         sent.status === "sent"

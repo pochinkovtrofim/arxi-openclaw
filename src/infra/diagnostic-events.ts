@@ -747,7 +747,10 @@ type DiagnosticModelCallEndedEvent = DiagnosticModelCallBaseEvent & {
 };
 
 // A completion whose request timing is unknown omits durationMs instead of inventing it.
-export type DiagnosticModelCallCompletedEvent = Omit<DiagnosticModelCallEndedEvent, "durationMs"> & {
+export type DiagnosticModelCallCompletedEvent = Omit<
+  DiagnosticModelCallEndedEvent,
+  "durationMs"
+> & {
   type: "model.call.completed";
   durationMs?: number;
 };

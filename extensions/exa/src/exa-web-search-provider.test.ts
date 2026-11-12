@@ -253,7 +253,6 @@ describe("exa web search provider", () => {
     await expect(tool.execute({ query: "wrong local endpoint" })).rejects.toThrow();
   });
 
-
   it("applies scoped auth, endpoint, contents, freshness, and result normalization at the tool boundary", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
       Response.json({
