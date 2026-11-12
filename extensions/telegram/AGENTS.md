@@ -31,9 +31,8 @@ Proof: `src/channels/message/ingress-drain.test.ts`,
   write; non-200 on write failure is the redelivery contract.
 - `update_id`↔event-id encoding and per-chat/topic lane derivation stay in
   `telegram-ingress-spool.ts` / sequential-key.
-- Polling and webhook both: enqueue then pump
-  `createTelegramTransportIngressDrain(...).drainOnce()` — no private claim
-  loops.
+- Polling and webhook both: enqueue, then wake the monitor from
+  `telegram-ingress-drain-factory.ts`. No private claim loops.
 - Stall timeout: `OPENCLAW_TELEGRAM_SPOOLED_HANDLER_TIMEOUT_MS` →
   `adoptionStallTimeoutMs` (default 5 min) via
   `resolveTelegramAdoptionStallTimeoutMs`.
@@ -59,9 +58,9 @@ Proof: `src/channels/message/ingress-drain.test.ts`,
   400 falls back to a legacy reply. New recoveries go into the shared
   predicates (`send-error-predicates.ts`, `reply-parameters.ts`), never into
   one funnel only.
-- Outbound flood waits honor `retry_after` up to
-  `TELEGRAM_OUTBOUND_RETRY_AFTER_CAP_MS`; do not re-clamp Telegram sends to the
-  generic channel retry ceiling.
+- Outbound flood waits honor `retry_after` within
+  `TELEGRAM_OUTBOUND_FLOOD_BUDGET_MS` (`account-throttler.ts`); do not re-clamp
+  Telegram sends to the generic channel retry ceiling.
 - Webhook security ordering. The secret header is validated first
   (constant-time compare, single-header enforcement, connection close on 401);
   the request rate limit budgets only failed-auth attempts so Telegram's own
