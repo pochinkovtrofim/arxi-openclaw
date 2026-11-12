@@ -396,14 +396,18 @@ describe("Codex app-server model catalog", () => {
     listModelsMock
       .mockResolvedValueOnce({ models: [{ ...model, id: "prior-account-model" }] })
       .mockResolvedValue({ models: [model] });
-    rpc.request.mockImplementationOnce(async () => {
-      rpc.epoch += 1;
-      return { account: { type: "apiKey" }, requiresOpenaiAuth: true };
-    });
+    // The startup drain read passes; login lands while model/list is in flight.
+    rpc.request
+      .mockResolvedValueOnce({ account: { type: "apiKey" }, requiresOpenaiAuth: true })
+      .mockImplementationOnce(async () => {
+        rpc.epoch += 1;
+        return { account: { type: "apiKey" }, requiresOpenaiAuth: true };
+      });
     const catalog = await owner.load(catalogParams, undefined);
     expect(catalog.entries.map((entry) => entry.id)).toEqual(["synthetic-opaque"]);
     expect(listModelsMock).toHaveBeenCalledTimes(2);
-    expect(rpc.request).toHaveBeenCalledTimes(2);
+    // Each snapshot drains startup with one account read and confirms with another.
+    expect(rpc.request).toHaveBeenCalledTimes(4);
     expect(withCodexAppServerJsonClient).toHaveBeenCalledTimes(1);
     expect(read()).toEqual({ accountType: "apiKey", authMode: "api_key" });
     rpc.epoch += 1;
@@ -425,9 +429,9 @@ describe("Codex app-server model catalog", () => {
       rpc.epoch += 1;
       return { account: { type: "apiKey" }, requiresOpenaiAuth: true };
     });
-    expect(await owner.load(catalogParams, undefined)).toEqual([]);
+    expect(await loadCodexAppServerModelCatalog(catalogParams, undefined)).toEqual([]);
     expect(listModelsMock).toHaveBeenCalledTimes(2);
-    expect(rpc.request).toHaveBeenCalledTimes(2);
+    expect(rpc.request).toHaveBeenCalledTimes(4);
     expect(read()).toBeUndefined();
   });
 
