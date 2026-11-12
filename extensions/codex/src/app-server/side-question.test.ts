@@ -1614,7 +1614,7 @@ describe("runCodexAppServerSideQuestion", () => {
     expect(fork).toMatchObject({
       model: scenario.expectedModel,
       approvalsReviewer: scenario.local ? "user" : "auto_review",
-      config: { "features.code_mode": true, "features.code_mode_only": true },
+      config: { "features.code_mode": directCodeModeConfig, "features.code_mode_only": true },
     });
     if (scenario.local) {
       expect(fork).toMatchObject({

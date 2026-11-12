@@ -207,7 +207,8 @@ describe("OpenAI dynamic model capabilities", () => {
         reasoning: true,
         input: ["text", "image"],
         contextWindow: 1_050_000,
-        contextTokens: 272_000,
+        // Upstream #169686: the subscription harness defaults GPT-6.1 Sol to 500k.
+        contextTokens: api === "openai-chatgpt-responses" ? 500_000 : 272_000,
         maxTokens: 128_000,
         cost: { input: 2, output: 10, cacheRead: 0.1, cacheWrite: 2.5 },
         compat: { supportedReasoningEfforts: ["low", "medium", "high", "xhigh", "max"] },
