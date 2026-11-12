@@ -1,5 +1,8 @@
 import { expectDefined } from "@openclaw/normalization-core";
 import { assert, beforeEach, describe, expect, it } from "vitest";
+import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { isFreshContextCronSessionTarget } from "../cron/session-target.js";
+import type { CronJob } from "../cron/types.js";
 import {
   addAgentTurnJob,
   createCronConfig,
@@ -86,6 +89,32 @@ describe("Gateway Cron session target routing", () => {
       });
       expect(runCronSessionTurnMock).not.toHaveBeenCalled();
       expect(runCronIsolatedAgentTurnMock).not.toHaveBeenCalled();
+    } finally {
+      assert(typeof state.cron.stopAndDrain === "function", "Gateway cron drain is unavailable");
+      await state.cron.stopAndDrain();
+    }
+  });
+
+  it("runs a declared job in its named session on detached execution", async () => {
+    const cfg = createCronConfig("server-cron-declared-session");
+    cfg.cron = { ...cfg.cron, freshContextSessions: ["arxi-proactive-steward"] };
+    const state = loadCronService(cfg);
+    try {
+      const job = await addAgentTurnJob(state, "declared-session", "hello", {
+        sessionTarget: "session:arxi-proactive-steward",
+        declarationKey: "arxi:proactive-steward:main",
+      });
+      await state.cron.run(job.id, "force");
+      // The detached run owns fresh context, held runs and conversation-owned failures.
+      expect(runCronSessionTurnMock).not.toHaveBeenCalled();
+      const options = expectDefined(
+        runCronIsolatedAgentTurnMock.mock.calls[0],
+        "declared turn",
+      )[0] as unknown as { cfg: OpenClawConfig; job: CronJob };
+      expect(options).toMatchObject({ sessionKey: "arxi-proactive-steward", job: { id: job.id } });
+      expect(
+        isFreshContextCronSessionTarget(options.cfg.cron?.freshContextSessions, options.job.sessionTarget),
+      ).toBe(true);
     } finally {
       assert(typeof state.cron.stopAndDrain === "function", "Gateway cron drain is unavailable");
       await state.cron.stopAndDrain();

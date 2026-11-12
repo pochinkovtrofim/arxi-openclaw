@@ -226,9 +226,13 @@ export async function executeJobCore(
     );
     return triggerEval ? { ...result, triggerEval } : result;
   }
+  // A declared job owns its named session and runs detached there, as before upstream
+  // moved session turns into the session's queue: fresh-context sessions, held runs and
+  // conversation-owned failure reports live only on the detached path.
   if (
     effectiveJob.sessionTarget.startsWith("session:") &&
-    effectiveJob.payload.kind === "agentTurn"
+    effectiveJob.payload.kind === "agentTurn" &&
+    !effectiveJob.declarationKey
   ) {
     const result = await executeSharedSessionCronJob(
       state,

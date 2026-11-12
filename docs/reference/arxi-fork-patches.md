@@ -108,6 +108,13 @@ or runtime layers merely because they existed in the previous history.
   asks the owner conversation on it. The token now lives in
   `src/cron/isolated-agent/helpers.ts`; `reportedByAgent` classification and
   the withheld delivery are restored inside `src/cron`.
+- Scheduled session turns: upstream runs `session:` agent turns in the
+  session's ordinary turn queue (`runSessionEvent`, #180270). A declared job
+  (`declarationKey`, every Ro background job) still runs detached in its named
+  session, because fresh-context sessions (#168), held runs (#193), the
+  `AUTOMATION_FAILED` report with conversation-owned failures and the paced
+  `next_check` binding live only on that path. Undeclared `session:` jobs,
+  such as a conversation continuation, take upstream's queue without them.
 - Cron failure repair: the fork's immediate repair, one follow-up turn and
   cooldown run under upstream's repair deadline and settlement gate; the
   follow-up gets its own deadline.
