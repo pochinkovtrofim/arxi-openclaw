@@ -216,13 +216,7 @@ async function transportFailureAlert(
     // No transport means no send whose outcome could be recorded: the alert
     // goes straight to the in-app fallback queue and the intent stays
     // "unknown", matching the pre-existing contract for transport-less setups.
-    await enqueueCronNotification(
-      state,
-      params.job,
-      payload.text ?? "",
-      "failure-alert",
-      routing,
-    );
+    await enqueueCronNotification(state, params.job, payload.text ?? "", "failure-alert", routing);
     return;
   }
   void state.deps
