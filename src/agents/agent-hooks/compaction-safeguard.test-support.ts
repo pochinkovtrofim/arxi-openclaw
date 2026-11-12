@@ -9,8 +9,6 @@ import compactionSafeguardExtension from "./compaction-safeguard.js";
 
 type CompactionSafeguardTestApi = {
   setSummarizeCompactionHistoryForTest(next?: typeof summarizeCompactionHistory): void;
-  collectToolFailures: CallableFunction;
-  formatToolFailuresSection: CallableFunction;
   splitPreservedRecentTurns: CallableFunction;
   buildPreservedTurnsSection: CallableFunction;
   buildCompactionStructureInstructions: CallableFunction;
@@ -22,7 +20,6 @@ type CompactionSafeguardTestApi = {
   formatFileOperations: CallableFunction;
   MAX_FILE_OPS_SECTION_CHARS: number;
   budgetCompactionSummary: CallableFunction;
-  readWorkspaceContextForSummary: CallableFunction;
   MAX_COMPACTION_SUMMARY_CHARS: number;
   SUMMARY_TRUNCATED_MARKER: string;
   CONTEXT_TRUNCATED_MARKER: string;
@@ -244,12 +241,7 @@ export async function runCompactionScenario(
     createCompactionContext({ sessionManager, getApiKeyAndHeadersMock }),
   )) as {
     cancel?: boolean;
-    compaction?: {
-      summary: string;
-      firstKeptEntryId: string;
-      tokensBefore: number;
-      details?: unknown;
-    };
+    compaction?: { summary: string; firstKeptEntryId: string; tokensBefore: number };
   };
   return { result, getApiKeyAndHeadersMock };
 }
@@ -260,7 +252,6 @@ export function expectCompactionResult(result: {
     summary: string;
     firstKeptEntryId: string;
     tokensBefore: number;
-    details?: unknown;
   };
 }) {
   expect(result.cancel).not.toBe(true);

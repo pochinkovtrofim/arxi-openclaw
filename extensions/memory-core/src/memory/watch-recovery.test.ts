@@ -1,6 +1,4 @@
-import nativeFs from "node:fs";
 import fs from "node:fs/promises";
-import { syncBuiltinESMExports } from "node:module";
 import path from "node:path";
 import type { OpenClawConfig } from "openclaw/plugin-sdk/memory-core-host-engine-foundation";
 import { createOpenClawTestState } from "openclaw/plugin-sdk/test-state";
@@ -9,7 +7,19 @@ import {
   configureMemoryCoreDreamingStateForTests,
   resetMemoryCoreDreamingStateForTests,
 } from "../test-helpers.js";
+import { runInMemoryTestBackgroundContext } from "./background-context.test-support.js";
 import { MemoryIndexManager } from "./manager.js";
+
+// Upstream's fs-safe observation owns native watching (and falls back to polling on its own);
+// drive its health boundary directly, as manager.watcher-config.test.ts does.
+const observer = await vi.hoisted(async () => {
+  const { createMemoryObservationHarness } = await import("./watcher-test-support.js");
+  return createMemoryObservationHarness();
+});
+vi.mock("openclaw/plugin-sdk/file-access-runtime", async (original) => ({
+  ...(await original<typeof import("openclaw/plugin-sdk/file-access-runtime")>()),
+  watch: observer.watch,
+}));
 
 type WatchInternals = {
   memoryWatchUnavailable: boolean;
@@ -20,21 +30,9 @@ type WatchInternals = {
 
 describe.skipIf(process.platform !== "linux")("memory watcher recovery", () => {
   it("syncs a degraded watcher periodically, never per search, and rebuilds it with backoff", async () => {
+    observer.reset();
     const state = await createOpenClawTestState({ label: "memory-watch-recovery" });
     const memoryDir = path.join(state.workspaceDir, "memory");
-    const originalWatch = nativeFs.watch;
-    let exhausted = true;
-    const nativeWatch = vi.spyOn(nativeFs, "watch").mockImplementation((...args) => {
-      if (exhausted && String(args[0]) === memoryDir) {
-        throw Object.assign(new Error("ENOSPC: native watch capacity exhausted"), {
-          code: "ENOSPC",
-          syscall: "watch",
-          path: memoryDir,
-        });
-      }
-      return originalWatch(...args);
-    });
-    syncBuiltinESMExports();
     vi.useFakeTimers({
       toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"],
       shouldAdvanceTime: true,
@@ -56,13 +54,31 @@ describe.skipIf(process.platform !== "linux")("memory watcher recovery", () => {
           },
         },
       };
-      manager = await MemoryIndexManager.get({ cfg, agentId: "main" });
+      manager = await MemoryIndexManager.get({
+        cfg,
+        agentId: "main",
+        runInBackgroundContext: runInMemoryTestBackgroundContext,
+      });
       if (!manager) {
         throw new Error("memory manager unavailable");
       }
       const activeManager = manager;
       const internals = activeManager as unknown as WatchInternals;
       await activeManager.sync({ reason: "test-initial-index" });
+      await expect.poll(() => observer.observations.length).toBeGreaterThan(0);
+      // Native watch capacity is exhausted (inotify ENOSPC) and fs-safe gives up on the root.
+      observer.observations.at(-1)!.health({
+        state: "unavailable",
+        failure: {
+          operation: "watch",
+          code: "watch-limit",
+          error: Object.assign(new Error("ENOSPC: native watch capacity exhausted"), {
+            code: "ENOSPC",
+            syscall: "watch",
+            path: memoryDir,
+          }),
+        },
+      });
       await expect.poll(() => internals.memoryWatchUnavailable).toBe(true);
       expect(internals.readMemoryWatchDiagnostic()).toBe("enospc");
 
@@ -81,14 +97,17 @@ describe.skipIf(process.platform !== "linux")("memory watcher recovery", () => {
 
       // Once capacity returns, a rebuild (bounded backoff, at most 10 minutes) restores
       // watching, clears the flag and reports "recovered" exactly once.
-      exhausted = false;
+      const degradedObservations = observer.observations.length;
       await vi.advanceTimersByTimeAsync(10 * 60_000);
+      // The rebuild first joins the old watcher's in-flight sync on real I/O.
+      await expect.poll(() => observer.observations.length).toBeGreaterThan(degradedObservations);
       await expect.poll(() => internals.memoryWatchUnavailable).toBe(false);
       expect(internals.readMemoryWatchDiagnostic()).toBe("recovered");
       expect(internals.readMemoryWatchDiagnostic()).toBeUndefined();
 
       // The rebuilt watcher observes edits again.
       await fs.writeFile(path.join(memoryDir, "fresh.md"), "Cobalt heron discovered.");
+      observer.observations.at(-1)!.dirty();
       await expect
         .poll(
           async () => (await activeManager.search("Cobalt heron")).map((result) => result.snippet),
@@ -98,8 +117,6 @@ describe.skipIf(process.platform !== "linux")("memory watcher recovery", () => {
     } finally {
       await manager?.close();
       vi.useRealTimers();
-      nativeWatch.mockRestore();
-      syncBuiltinESMExports();
       resetMemoryCoreDreamingStateForTests();
       await state.cleanup();
     }

@@ -1,4 +1,9 @@
 /** Public cron service interface shared by callers and implementations. */
+import type {
+  CronEventRunOptions,
+  CronEventRunResult,
+  CronEventSourceSnapshot,
+} from "./event-source.js";
 import type { CronListPageOptions, CronListPageResult } from "./service/list-page-types.js";
 import type {
   CronAddInput,
@@ -43,6 +48,8 @@ export type CronServiceRunOptions = {
 
 /** Public cron service facade used by gateway, plugin SDK, and tests. */
 export interface CronServiceContract {
+  readEventSources(source: string): Promise<CronEventSourceSnapshot[]>;
+  runEvent(id: string, opts: CronEventRunOptions): Promise<CronEventRunResult>;
   start(): Promise<void>;
   stop(): void;
   status(): Promise<CronStatusSummary>;
@@ -80,5 +87,6 @@ export interface CronServiceContract {
     text: string;
     sessionKey?: string;
     agentId?: string;
-  }): CronWakeResult;
+    commitGuard?: () => void;
+  }): Promise<CronWakeResult>;
 }

@@ -13,7 +13,8 @@ import { saveSubagentRegistryToSqlite } from "./subagent-registry-state.fixture.
 import { writeSubagentSessionEntry } from "./subagent-registry.persistence.test-support.js";
 import { initSubagentRegistry, testing } from "./subagent-registry.test-helpers.js";
 
-vi.mock("../../../gateway/session-utils.fs.js", () => ({
+vi.mock("../../../gateway/session-utils.fs.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../gateway/session-utils.fs.js")>()),
   readSessionMessagesAsync: vi.fn(async () => []),
 }));
 

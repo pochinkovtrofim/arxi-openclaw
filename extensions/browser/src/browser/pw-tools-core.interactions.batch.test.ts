@@ -236,11 +236,11 @@ describe("executeActViaPlaywright batches", () => {
 
     expect(result).toEqual({ targetId: "tab-1", results: [{ ok: true }] });
     expect(withPageNavigationRequestGuard).toHaveBeenCalledWith({
+      signal: expect.any(AbortSignal),
       action: expect.any(Function),
       onPolicyCheckStarted: expect.any(Function),
       onPolicyDenied: expect.any(Function),
       page,
-      signal: expect.any(AbortSignal),
       ssrfPolicy,
       browserProxyMode: "explicit-browser-proxy",
     });
@@ -272,11 +272,11 @@ describe("executeActViaPlaywright batches", () => {
 
     expect(result).toEqual({ targetId: "tab-1", results: [{ ok: true }] });
     expect(withPageNavigationRequestGuard).toHaveBeenCalledWith({
+      signal: expect.any(AbortSignal),
       action: expect.any(Function),
       onPolicyCheckStarted: expect.any(Function),
       onPolicyDenied: expect.any(Function),
       page,
-      signal: expect.any(AbortSignal),
       ssrfPolicy,
       browserProxyMode: "explicit-browser-proxy",
     });

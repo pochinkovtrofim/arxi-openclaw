@@ -1,5 +1,8 @@
 /** Provider transport implementations and transport-specific compatibility helpers. */
-export type { OpenAIResponsesCompactionRejection } from "./provider-options.js";
+export type {
+  CompactionReplayRejection,
+  OpenAIResponsesCompactionRejection,
+} from "./provider-options.js";
 export {
   readAnthropicCacheKeepWarmTouch,
   type AnthropicCacheKeepWarm,
@@ -46,3 +49,9 @@ export {
   projectGoogleMessages,
   requiresGoogleToolCallId,
 } from "./providers/google-messages.js";
+export {
+  createGoogleVideoPlaceholder,
+  GOOGLE_VIDEO_SLOT_OMISSION,
+  materializeGoogleVideoSlots,
+  type GoogleVideoSlots,
+} from "./providers/google-video-slots.js";

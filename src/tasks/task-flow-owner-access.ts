@@ -1,11 +1,10 @@
 // Checks whether a requester can read or mutate task-flow records.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
+import { getTaskFlowById, listTaskFlowsForOwnerKey } from "./task-flow-registry.js";
 import {
   findLatestTaskFlowForOwnerKey,
   findTaskFlowForOwnerLookup,
-  getTaskFlowById,
-  listTaskFlowsForOwnerKey,
-} from "./task-flow-registry.js";
+} from "./task-flow-registry.lookup.js";
 import type { TaskFlowRecord } from "./task-flow-registry.types.js";
 
 /** Reads a flow only when it belongs to the caller owner key. */

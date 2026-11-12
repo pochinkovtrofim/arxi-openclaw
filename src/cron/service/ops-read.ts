@@ -18,7 +18,6 @@ import {
   isSuspendWakeDeferredJob,
   nextWakeAtMs,
   resolveJobLastRunStatus,
-  summarizeCronJobSchedule,
 } from "./jobs-scheduling.js";
 import { sortCronJobs } from "./list-page-sort.js";
 import type { CronListPageOptions, CronListPageResult } from "./list-page-types.js";
@@ -38,7 +37,7 @@ export function getSuspendWakeSnapshot(state: CronServiceState): CronSuspendWake
     return { complete: true, nextWakeAtMs: null };
   }
   const candidates: number[] = [];
-  const { nextSuspendWakeAtMs } = summarizeCronJobSchedule(state);
+  const nextSuspendWakeAtMs = nextWakeAtMs(state, { suspendWakeOnly: true });
   if (nextSuspendWakeAtMs !== undefined) {
     candidates.push(nextSuspendWakeAtMs);
   }
@@ -198,15 +197,15 @@ export async function writeScratch(
           params.commitGuard?.();
           source.assertCurrent();
         },
-        assertJobCurrent(configRevision) {
-          if (configRevision !== expectedRevision) {
-            // The foreign commit invalidates the resident definition used by the caller guard.
-            noteCronJobsStoreCommit(source.storeKey);
-            throw new CronJobsStoreChangedError(source.storeKey);
-          }
-        },
+        expectedConfigRevision: expectedRevision,
       },
-    );
+    ).catch((error: unknown) => {
+      if (error instanceof Error && error.name === "CronJobsStoreChangedError") {
+        noteCronJobsStoreCommit(source.storeKey);
+        throw new CronJobsStoreChangedError(source.storeKey);
+      }
+      throw error;
+    });
   });
 }
 

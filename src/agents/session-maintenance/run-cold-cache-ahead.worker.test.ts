@@ -2,6 +2,7 @@ import { MAX_TIMER_TIMEOUT_MS } from "@openclaw/normalization-core/number-coerci
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { createTestFollowupRun } from "../../auto-reply/reply/agent-runner.test-fixtures.js";
+import { captureRuntimeConfigAsyncReader } from "../../config/io.js";
 import { writeSessionEntry } from "../../config/sessions/session-accessor.sqlite-entry-store.js";
 import { SESSION_TOTAL_TOKENS_VERSION, type SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -48,6 +49,13 @@ const largeSession = {
   totalTokensVersion: SESSION_TOTAL_TOKENS_VERSION,
 };
 
+function pendingColdCacheAheadTimers(): number | undefined {
+  const timers = (globalThis as Record<PropertyKey, unknown>)[
+    Symbol.for("openclaw.coldCacheAheadMaintenance")
+  ];
+  return timers instanceof Map ? timers.size : undefined;
+}
+
 beforeEach(() => {
   // The timer looks up the Gateway's registry when it fires, not the finished request's.
   setActivePluginRegistry(createEmptyPluginRegistry());
@@ -69,6 +77,8 @@ async function withIdleSession(
 ) {
   await withOpenClawTestState({ label: "cold-cache-ahead" }, async (state) => {
     await state.writeConfig(cfg);
+    // The Gateway publishes its runtime config before any turn; the timer reads it.
+    await captureRuntimeConfigAsyncReader()();
     const database = openOpenClawAgentDatabase({ agentId: "main", env: state.env });
     const sessionKey = "agent:main:cold-cache-ahead";
     const entry = {
@@ -189,7 +199,8 @@ it("stops following activity after three moves when nobody returns", async () =>
       await waitForSessionMaintenance(sessionKey);
     }
     expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledTimes(4);
-    expect(vi.getTimerCount()).toBe(0);
+    // No early-run timer is left; the pooled SQLite readers keep their own idle timers.
+    expect(pendingColdCacheAheadTimers()).toBe(0);
     await vi.advanceTimersByTimeAsync(12 * 60 * MINUTE);
     await waitForSessionMaintenance(sessionKey);
     expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledTimes(4);
@@ -236,7 +247,12 @@ it("yields to a turn that arrives during the early compaction", async () => {
   memory.runSessionCompactionIfNeeded.mockImplementationOnce(async ({ abortSignal }) => {
     started.resolve();
     await new Promise((_, reject) => {
-      abortSignal?.addEventListener("abort", () => reject(abortSignal.reason), { once: true });
+      abortSignal?.addEventListener(
+        "abort",
+        () =>
+          reject(abortSignal.reason instanceof Error ? abortSignal.reason : new Error("aborted")),
+        { once: true },
+      );
     });
   });
   await withIdleSession(async ({ sessionKey, arm }) => {

@@ -21,6 +21,11 @@ import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { closeOpenClawAgentDatabasesAsync } from "../state/openclaw-agent-db.js";
 import { createOutboundTestPlugin, createTestRegistry } from "../test-utils/channel-plugins.js";
+import {
+  createTtsConfig,
+  setTtsMachinePrefsPathResolver,
+  synthesizeMock,
+} from "../tts/tts-runtime.test-support.js";
 import { classifyHeartbeatAgentOutcome } from "./heartbeat-delivery-normalization.js";
 import { getLastHeartbeatEvent, resetHeartbeatEventsForTest } from "./heartbeat-events.js";
 import * as heartbeatOutcomeStore from "./heartbeat-outcome-store.js";
@@ -34,6 +39,15 @@ import {
 } from "./heartbeat-runner.test-utils.js";
 import { isRetryableHeartbeatSkipReason } from "./heartbeat-wake.js";
 import { resetSystemEventsForTest } from "./system-events.js";
+
+// mock-isolation: Keep speech policy and synthesis real while isolating live guards and audio persistence.
+vi.mock("../tts/tts.runtime.js", async () => {
+  const { maybeApplyTtsToPayloadCore } = await import("../tts/tts-payload.js");
+  return {
+    maybeApplyTtsToPayload: (params: Parameters<typeof maybeApplyTtsToPayloadCore>[0]) =>
+      maybeApplyTtsToPayloadCore(params, async () => "https://example.test/heartbeat.ogg"),
+  };
+});
 
 installHeartbeatRunnerTestRuntime();
 const TELEGRAM_GROUP = "-1001234567890";
@@ -96,6 +110,8 @@ function buttons(label: string, value: string) {
 
 describe("runHeartbeatOnce structured heartbeat delivery", () => {
   afterEach(async () => {
+    setTtsMachinePrefsPathResolver();
+    synthesizeMock.mockClear();
     resetGlobalHookRunner();
     await closeOpenClawAgentDatabasesAsync();
     vi.unstubAllEnvs();
@@ -121,6 +137,56 @@ describe("runHeartbeatOnce structured heartbeat delivery", () => {
 
     expect(outcome).toMatchObject({ kind: "delivery", runId: "run-heartbeat-result" });
   });
+
+  it(
+    "synthesizes and delivers a speech-only heartbeat without placeholder text",
+    heartbeatCase(async ({ cfg, seed, replySpy, sendTelegram, run }) => {
+      cfg.tts = { ...createTtsConfig("heartbeat-speech-only").tts, auto: "tagged" };
+      await seed();
+      replySpy.mockResolvedValue([
+        setReplyPayloadMetadata(
+          { text: "" },
+          { tts: { tagged: true, text: "The build is ready." } },
+        ),
+      ]);
+      expect(await run()).toMatchObject({ status: "ran" });
+      expect(synthesizeMock).toHaveBeenCalledOnce();
+      expect(synthesizeMock.mock.calls[0]?.[0].text).toBe("The build is ready.");
+      expect(sendTelegram).toHaveBeenCalledOnce();
+      expect(sendTelegram.mock.calls[0]?.[1]).toBe("");
+      expect(sendTelegram.mock.calls[0]?.[2]).toMatchObject({
+        mediaUrl: "https://example.test/heartbeat.ogg",
+        audioAsVoice: true,
+      });
+    }),
+  );
+
+  it(
+    "persists the first silent heartbeat after boot for the next user run",
+    heartbeatCase(async ({ cfg, storePath, seed, replySpy, sendTelegram, run }) => {
+      cfg.agents!.defaults!.heartbeat!.target = "none";
+      const sessionKey = await seed();
+      await closeOpenClawAgentDatabasesAsync();
+      replySpy.mockResolvedValue(
+        createHeartbeatToolResponsePayload({
+          outcome: "progress",
+          notify: false,
+          summary: "First heartbeat after boot",
+        }),
+      );
+      expect(await run()).toMatchObject({ status: "ran" });
+      expect(sendTelegram).not.toHaveBeenCalled();
+      await closeOpenClawAgentDatabasesAsync();
+      expect(
+        await heartbeatOutcomeStore.claimHeartbeatOutcomeForRun({
+          agentId: "main",
+          sessionKey,
+          storePath,
+          runId: "next-user",
+        }),
+      ).toMatchObject({ summary: "First heartbeat after boot", outcome: "progress" });
+    }),
+  );
 
   it.each([false, true])("awaits outcome persistence failures (notify=%s)", async (notify) =>
     heartbeatCase(async ({ cfg, storePath, seed, replySpy, sendTelegram, run }) => {

@@ -1,6 +1,7 @@
 /** Cloneable facts needed to deliver one committed cron notification. */
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import { normalizeOptionalAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
+import type { UserMessageEvent } from "../../shared/user-message.types.js";
 import { resolveCronDeliverySessionKey } from "../session-target.js";
 import type { CronJob, CronMessageChannel } from "../types.js";
 
@@ -14,24 +15,6 @@ export function captureCronNotificationRouting(
     normalizeOptionalAgentId(rawDefaultAgentId) ??
     normalizeOptionalAgentId(configuredDefaultAgentId);
   return defaultAgentId === undefined ? {} : { defaultAgentId };
-}
-
-/** Capture only a needed default and keep that recipient current through native commit. */
-export function prepareCronNotificationRouting(
-  deps: { defaultAgentId?: string; resolveDefaultAgentId?: () => string | undefined },
-  needed: boolean,
-) {
-  const capture = () =>
-    captureCronNotificationRouting(deps.resolveDefaultAgentId?.(), deps.defaultAgentId);
-  const routing: CronNotificationRouting = needed ? capture() : {};
-  return {
-    routing,
-    assertCurrent() {
-      if (needed && capture().defaultAgentId !== routing.defaultAgentId) {
-        throw new Error("Cron notification default owner changed before commit");
-      }
-    },
-  };
 }
 
 export type CronNotificationJob = Pick<
@@ -92,6 +75,8 @@ type CronFailureAlertNotification = {
   payload: ReplyPayload;
   /** The product worded the whole alert; transports add no scheduler detail lines. */
   productCopy?: true;
+  /** Product copy event, rendered again on the host: a store worker has no renderer. */
+  productEvent?: UserMessageEvent;
   runAtMs?: number;
   route: CronFailureAlertRoute;
 };

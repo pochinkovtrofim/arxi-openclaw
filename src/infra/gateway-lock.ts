@@ -18,6 +18,11 @@ import {
 import { acquireWithWait } from "./acquire-with-wait.js";
 import { resolveIdentityPathViaExistingAncestorSync } from "./boundary-path.js";
 import { sha256HexPrefixCore } from "./crypto-digest.js";
+import {
+  assertDatabasePortRecoveryAllowed,
+  assertDatabasePortStartupAllowed,
+  DatabasePortRecoveryError,
+} from "./database-port-recovery.js";
 import { hasErrnoCode } from "./errno.js";
 import { acquireFileLockSync } from "./file-lock-manager.js";
 import {
@@ -518,17 +523,25 @@ export async function acquireGatewayLock(
             getProjection: () => projection,
           });
           try {
+            if (opts.databasePortRecovery) {
+              if (role !== "agent-embedded") {
+                throw new Error("Database port recovery requires exclusive offline ownership");
+              }
+              assertDatabasePortRecoveryAllowed(paths.stateDir, opts.databasePortRecovery);
+            } else {
+              assertDatabasePortStartupAllowed(paths.stateDir);
+            }
             if (previousOwner) {
               projection = previousOwner.retainProjection();
             }
             await assertHistoricalGatewayOwnerStopped(paths, opts, projection);
-            await owner.run(() =>
-              assertGatewayOwnerLeaseStopped(
-                env,
-                role === "sqlite-maintenance" ? owner : undefined,
-                { reclaimReplayedSelf: role === "gateway" },
-              ),
-            );
+            if (!opts.databasePortRecovery) {
+              await owner.run(() =>
+                assertGatewayOwnerLeaseStopped(env, owner, role === "sqlite-maintenance", {
+                  reclaimReplayedSelf: role === "gateway",
+                }),
+              );
+            }
             if (previousOwner) {
               // Policy reads borrow the newly acquired custody before releasing the old root.
               owner.run(() => opts.assertCurrent?.());
@@ -582,7 +595,9 @@ export async function acquireGatewayLock(
         ? `${message}: ${error.message}. ${captureStalledGatewayStartup(env)?.description ?? "Stop the Gateway or wait for the current OpenClaw operation to finish"}. Run \`openclaw gateway stop\`, then retry.`
         : error instanceof GatewayLockNamespaceError
           ? error.message
-          : message;
+          : error instanceof DatabasePortRecoveryError
+            ? `${message}: ${error.message}`
+            : message;
     throw new GatewayLockError(detail, error);
   }
   if (waited && role === "gateway") {

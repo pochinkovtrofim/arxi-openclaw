@@ -28,15 +28,18 @@ vi.mock("../../infra/delivery-queue-sqlite.js", async (importOriginal) => {
   return { ...actual, inspectPendingDeliveryQueueDeferrals: outbound.inspect };
 });
 
-vi.mock("../../state/openclaw-agent-db-lifecycle.js", () => ({
+vi.mock("../../state/openclaw-agent-db-lifecycle.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/openclaw-agent-db-lifecycle.js")>()),
   closeIdleOpenClawAgentDatabases: agentDatabases.closeIdle,
 }));
 
-vi.mock("../../state/openclaw-agent-execution.js", () => ({
+vi.mock("../../state/openclaw-agent-execution.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/openclaw-agent-execution.js")>()),
   closeIdleOpenClawAgentDatabaseExecutions: agentDatabases.closeIdleExecutions,
 }));
 
-vi.mock("../../plugins/memory-runtime.js", () => ({
+vi.mock("../../plugins/memory-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/memory-runtime.js")>()),
   suspendMemorySearchManagersCore: agentDatabases.suspendMemory,
 }));
 
@@ -228,7 +231,7 @@ describe("gateway suspend handlers", () => {
     );
   });
 
-  it("returns a draining status without exposing its owner's suspension id", async () => {
+  it("immediately reports pending write custody without exposing its owner's suspension id", async () => {
     vi.useFakeTimers();
     const result = {
       status: "draining",
@@ -247,11 +250,9 @@ describe("gateway suspend handlers", () => {
     };
     coordinator.status.mockReturnValue(result);
 
-    const response = invoke("gateway.suspend.status", {
+    const { respond, info } = await invoke("gateway.suspend.status", {
       suspensionId: "suspension-draining",
     });
-    await vi.advanceTimersByTimeAsync(15_000);
-    const { respond, info } = await response;
 
     expect(coordinator.status).toHaveBeenCalledWith("suspension-draining", false);
     expect(respond).toHaveBeenCalledWith(true, result);
@@ -284,7 +285,7 @@ describe("gateway suspend handlers", () => {
       suspensionId: "suspension-ready",
     });
 
-    expect(order).toEqual(["status", "status", "memory", "executions", "handles", "status"]);
+    expect(order).toEqual(["status", "memory", "executions", "handles", "status"]);
     expect(respond).toHaveBeenCalledWith(true, ready);
     expect(info).toHaveBeenCalledWith(
       "idle agent databases closed before suspension: executions closed=1 busy=0; handles closed=1 borrowed=1 transaction=0 failed=0",

@@ -2,10 +2,7 @@ import { loadPluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapsh
 import { preparePublishedModelCatalogOwnerIdentity } from "../prepared-model-catalog-owner.js";
 import { createCatalogFixture } from "../prepared-model-catalog-worker.test-support.js";
 import { startSerializedSnapshotBuildBatch } from "../prepared-model-runtime.build.js";
-import {
-  discardPreparedPluginGeneration,
-  retainPreparedPluginGeneration,
-} from "../prepared-model-runtime.plugin-lifetime.js";
+import { retainPreparedPluginGeneration } from "../prepared-model-runtime.plugin-lifetime.js";
 import { addCredentialOnlyProviderFixture } from "./prepared-model-catalog-credential-only.test-support.js";
 import { markPluginMetadataSnapshotProvided } from "./prepared-model-catalog-worker-fixture.js";
 
@@ -28,6 +25,7 @@ export function createStaticCatalogSnapshotFixture(params: {
       readOnly?: boolean;
       metadataWorkspace?: "none" | "activation";
       provideMetadataToWorker?: boolean;
+      reportCodexClientVersion?: boolean;
     },
   ) {
     const fixture = await createCatalogFixture(makeTempDir, spinMs, envOverride, {
@@ -88,7 +86,6 @@ export function createStaticCatalogSnapshotFixture(params: {
     const build = results[0]!;
     const releaseGeneration = retainPreparedPluginGeneration(build.pluginGeneration);
     retireAfterTest(releaseGeneration);
-    await discardPreparedPluginGeneration(build.pluginGeneration);
     return {
       ...fixture,
       config,

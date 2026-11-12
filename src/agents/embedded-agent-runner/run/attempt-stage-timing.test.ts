@@ -12,7 +12,8 @@ import {
 } from "./attempt-stage-timing.js";
 
 const emitted = vi.hoisted(() => ({ events: [] as unknown[] }));
-vi.mock("../../../infra/diagnostic-events.js", () => ({
+vi.mock("../../../infra/diagnostic-events.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../infra/diagnostic-events.js")>()),
   emitTrustedDiagnosticEvent: (event: unknown) => emitted.events.push(event),
 }));
 
@@ -110,7 +111,7 @@ describe("embedded run stage timing", () => {
     const tracker = createStageTimingTracker(() => clock);
     clock = 1_040;
     tracker.mark("skills");
-    void tracker.measureSync("bundle-tools", () => {
+    tracker.measureSync("bundle-tools", () => {
       clock = 1_100;
     });
     clock = 1_130;

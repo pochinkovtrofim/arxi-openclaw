@@ -189,15 +189,15 @@ export function buildCodexThreadConfiguration(
   };
 }
 
-export function buildThreadStartParams(
+export async function buildThreadStartParams(
   params: AgentHarnessSessionRuntimeParamsV1,
   options: CodexThreadConfigurationOptions & { cwd: string; dynamicTools: CodexDynamicToolSpec[] },
-): CodexThreadStartParams {
-  const resolvedModelProvider = resolveCodexAppServerModelProvider({
+): Promise<CodexThreadStartParams> {
+  const resolvedModelProvider = await resolveCodexAppServerModelProvider({
     ...params,
     homeScope: options.appServer.start.homeScope,
   });
-  const modelSelection = resolveCodexAppServerRequestModelSelection({
+  const modelSelection = await resolveCodexAppServerRequestModelSelection({
     ...params,
     homeScope: options.appServer.start.homeScope,
     model: options.model ?? params.modelId,
@@ -228,27 +228,27 @@ export function buildThreadStartParams(
   };
 }
 
-export function buildThreadResumeParams(
+export async function buildThreadResumeParams(
   params: AgentHarnessSessionRuntimeParamsV1,
   options: CodexThreadConfigurationOptions & {
     threadId: string;
     authProfileId?: string;
     preserveNativeModel?: boolean;
   },
-): CodexThreadResumeParams & { developerInstructions: string } {
+): Promise<CodexThreadResumeParams & { developerInstructions: string }> {
   const modelSelection = options.preserveNativeModel
     ? undefined
-    : resolveCodexAppServerRequestModelSelection({
+    : await resolveCodexAppServerRequestModelSelection({
         ...params,
         homeScope: options.appServer.start.homeScope,
         model: options.model ?? params.modelId,
         modelProvider:
           options.modelProvider ??
-          resolveCodexAppServerModelProvider({
+          (await resolveCodexAppServerModelProvider({
             ...params,
             homeScope: options.appServer.start.homeScope,
             authProfileId: options.authProfileId ?? params.authProfileId,
-          }),
+          })),
         authProfileId: options.authProfileId ?? params.authProfileId,
       });
   return {
@@ -280,6 +280,11 @@ export function buildCodexRuntimeThreadConfig(
   const codeModeOnly = options.nativeCodeModeOnlyEnabled === true;
   const merged = expectDefined(
     mergeCodexThreadConfigs(
+      // Codex owns model eligibility, history replay, and the pinned request effort.
+      // Cleanup review (2026-11-07): Remove once the minimum supported Codex release
+      // defaults this on and native tests still prove opt-out and unsupported-model
+      // compatibility. This is a review date, not a runtime expiry.
+      { "features.reasoning_effort_override": true },
       enabled
         ? { ...CODEX_CODE_MODE_THREAD_CONFIG, "features.code_mode_only": codeModeOnly }
         : undefined,
@@ -290,7 +295,11 @@ export function buildCodexRuntimeThreadConfig(
         "features.goals": false,
         "tools.update_plan.enabled": false,
         ...(!enabled
-          ? { "features.code_mode": false, "features.code_mode_only": false }
+          ? {
+              "features.shell_tool": false,
+              "features.code_mode": false,
+              "features.code_mode_only": false,
+            }
           : codeModeOnly
             ? { "features.code_mode_only": true }
             : {}),
@@ -374,6 +383,7 @@ export function buildCodexRuntimeThreadConfigForRun(
     restrictedToolSurfaceInheritedMcpServerNames?: readonly string[];
     shellEnvironment?: Readonly<Record<string, string>>;
     shellPathPrepend?: readonly string[];
+    shellGitConfigParameters?: string;
     disableLoginShell?: boolean;
   } = {},
 ): JsonObject {
@@ -474,6 +484,7 @@ export function buildCodexRuntimeThreadConfigForRun(
     options.shellEnvironment,
     options.disableLoginShell,
     options.shellPathPrepend,
+    options.shellGitConfigParameters,
   );
 }
 

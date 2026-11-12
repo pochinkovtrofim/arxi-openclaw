@@ -30,7 +30,8 @@ const mocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("./agent-bundle-mcp-manager-api.js", () => ({
+vi.mock("./agent-bundle-mcp-manager-api.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./agent-bundle-mcp-manager-api.js")>()),
   acquireRequesterScopedMcpRuntime: mocks.acquireRequesterScopedMcpRuntime,
   acquireSessionMcpRuntime: vi.fn(),
   releaseSessionMcpRuntime: vi.fn(async ({ releaseLease }: { releaseLease: () => void }) =>

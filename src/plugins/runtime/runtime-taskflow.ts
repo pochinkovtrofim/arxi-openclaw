@@ -1,5 +1,3 @@
-// Runtime task-flow helpers adapt plugin task descriptors into executable task flows.
-import type { DatabaseSync } from "node:sqlite";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { resolvePacedNextRunAtMs } from "../../cron/pacing.js";
 import { tryCronScheduleIdentity } from "../../cron/schedule-identity.js";
@@ -7,7 +5,9 @@ import { loadedCronStoreFromRows, loadCronRows } from "../../cron/store/row-code
 import {
   getCurrentPacedCronRunBinding,
   recordManagedFlowAutomationObligationProposal,
-} from "../../infra/agent-run-registry.js";
+} from "../../infra/agent-run-cron-proposals.js";
+// Runtime task-flow helpers adapt plugin task descriptors into executable task flows.
+import type { EngineConnection } from "../../infra/sql-connection.js";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
 import { invalidateManagedFlowObligationSnapshots } from "../../tasks/task-flow-automation-obligation-invalidation.js";
 import {
@@ -145,7 +145,7 @@ function assertCurrentManagedAutomationRun(params: {
 }
 
 function readBoundAutomationJob(params: {
-  db: DatabaseSync;
+  db: EngineConnection;
   ownerKey: string;
   binding: Pick<
     NonNullable<ReturnType<typeof getCurrentPacedCronRunBinding>>,

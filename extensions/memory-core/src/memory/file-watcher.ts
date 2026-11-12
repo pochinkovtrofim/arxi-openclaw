@@ -1,4 +1,5 @@
 import {
+  getFileWatchCapacityCode,
   watch,
   resolveFsObservationMode,
   resolveFsObservationIntervalMs,
@@ -284,9 +285,11 @@ export class MemoryFileWatcher {
       return;
     }
     this.degraded ||= Boolean(capacityCode);
+    // fs-safe reports every capacity failure as "watch-limit"; its error keeps the errno.
     // ENFILE (system-wide descriptors) shares the descriptor-exhaustion bucket with EMFILE.
+    const errno = getFileWatchCapacityCode(error);
     this.options.onUnavailable(
-      capacityCode === "ENOSPC" ? "enospc" : capacityCode ? "emfile" : "reconcile_failed",
+      errno === "ENOSPC" ? "enospc" : errno || capacityCode ? "emfile" : "reconcile_failed",
     );
     this.markDirty();
     log.warn(

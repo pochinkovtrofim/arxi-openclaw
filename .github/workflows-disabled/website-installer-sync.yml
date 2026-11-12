@@ -9,6 +9,7 @@ on:
       - scripts/build-installers.mjs
       - scripts/lib/standalone-installers.mjs
       - scripts/install.ps1
+      - test/scripts/install-ps1-entrypoint.ps1
       - .github/workflows/website-installer-sync.yml
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - scripts/build-installers.mjs
       - scripts/lib/standalone-installers.mjs
       - scripts/install.ps1
+      - test/scripts/install-ps1-entrypoint.ps1
       - .github/workflows/website-installer-sync.yml
   workflow_dispatch:
     inputs:
@@ -87,7 +89,7 @@ jobs:
         run: |
           timeout --kill-after=30s 20m docker run --rm \
             -v "$PWD/dist/installers/install.sh:/tmp/install.sh:ro" \
-            node:24.22.1-bookworm-slim \
+            node:24-bookworm-slim \
             bash -lc 'bash /tmp/install.sh --version latest && openclaw --version'
 
       - name: install-cli.sh in Docker
@@ -96,7 +98,7 @@ jobs:
             -e OPENCLAW_NO_ONBOARD=1 \
             -e OPENCLAW_NO_PROMPT=1 \
             -v "$PWD/dist/installers/install-cli.sh:/tmp/install-cli.sh:ro" \
-            node:24.22.1-bookworm-slim \
+            node:24-bookworm-slim \
             bash -lc 'apt-get update -y && apt-get install -y curl && bash /tmp/install-cli.sh --prefix /tmp/openclaw --no-onboard --version latest && /tmp/openclaw/bin/openclaw --version'
 
   debian-installer:
@@ -204,7 +206,7 @@ jobs:
         run: |
           timeout --kill-after=30s 20m docker run --rm -i \
             -v "$PWD/dist/installers/install.sh:/tmp/install.sh:ro" \
-            node:24.22.1-bookworm-slim \
+            node:24-bookworm-slim \
             bash -s <<'CONTAINER'
           set -euo pipefail
           apt-get update -qq
@@ -302,6 +304,8 @@ jobs:
           OPENCLAW_NO_PROMPT: "1"
         run: |
           bash dist/installers/install.sh --no-onboard --no-prompt --version latest
+          source "$HOME/.bashrc"
+          hash -r
           openclaw --version
 
   windows-installer:
@@ -356,6 +360,9 @@ jobs:
             } finally {
               Remove-Item Env:OPENCLAW_INSTALL_METHOD -ErrorAction SilentlyContinue
             }
+
+            & $hostCommand -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File test/scripts/install-ps1-entrypoint.ps1 -InstallerPath $scriptPath
+            if ($LASTEXITCODE -ne 0) { throw "$hostCommand failed the piped installer regression." }
 
             $help = Invoke-InstallerProbe -HostCommand $hostCommand -InstallerArgs @("-?")
             if ($help.ExitCode -ne 0 -or $help.Output -match '\[OK\] Windows detected') {
@@ -439,7 +446,7 @@ jobs:
         if: steps.changes.outputs.changed == 'true'
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.22.1"
+          node-version: "24"
 
       - name: Verify website with synced installers
         if: steps.changes.outputs.changed == 'true'

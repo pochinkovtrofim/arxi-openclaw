@@ -1,7 +1,7 @@
 // Existing controller history receipts, shared by synchronous and worker flow writes.
 import crypto from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import type { EngineConnection } from "../infra/sql-connection.js";
 import { withExistingOpenClawStateDatabaseReadOnly } from "../state/openclaw-state-db-readonly.js";
 import { ensureTaskFlowHistorySchema } from "../state/openclaw-state-db-schema-additive.js";
 import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
@@ -106,7 +106,7 @@ function emptyTaskFlowHistoryPage(now = Date.now()): TaskFlowHistoryPage {
 }
 
 function findTaskFlowHistoryStream(
-  db: DatabaseSync,
+  db: EngineConnection,
   flowId: string,
 ): { ownerKey: string; controllerId: string } | undefined {
   // SAFETY: this fixed query selects only these two SQLite columns; values are runtime-validated below.
@@ -120,7 +120,7 @@ function findTaskFlowHistoryStream(
 }
 
 function appendTaskFlowHistoryEvent(
-  db: DatabaseSync,
+  db: EngineConnection,
   flow: TaskFlowRecord,
   history?: TaskFlowHistoryRegistration,
 ): void {
@@ -159,7 +159,7 @@ function appendTaskFlowHistoryEvent(
 }
 
 function ensureTaskFlowHistoryStream(
-  db: DatabaseSync,
+  db: EngineConnection,
   flow: TaskFlowRecord,
   history: TaskFlowHistoryRegistration | undefined,
 ): boolean {
@@ -184,7 +184,7 @@ function ensureTaskFlowHistoryStream(
 }
 
 export function recordTaskFlowHistoryInDatabase(
-  db: DatabaseSync,
+  db: EngineConnection,
   flow: TaskFlowRecord,
   history?: TaskFlowHistoryRegistration,
 ): void {

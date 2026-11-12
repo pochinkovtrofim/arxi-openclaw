@@ -9,11 +9,14 @@ import {
   DEFAULT_WORKER_PENDING_BYTES,
   DEFAULT_WORKER_PENDING_TASKS,
   type WorkerComputeCapacity,
-  type WorkerComputeLane,
   workerComputeLane,
 } from "./worker-task-capacity.js";
 import { captureWorkerTaskContext } from "./worker-task-context.js";
-import { WorkerTaskError, workerTaskTimeoutError } from "./worker-task-error.js";
+import {
+  WorkerTaskError,
+  workerTaskTimeoutError,
+  workerTaskUnavailableError,
+} from "./worker-task-error.js";
 import { serviceNativeWorkerPass, type WorkerTaskHost } from "./worker-task-host.js";
 import { createWorkerNativeSectionState } from "./worker-task-native-sections.js";
 import { createWorkerTaskPoolBootstrap } from "./worker-task-pool-bootstrap.js";
@@ -54,6 +57,11 @@ import type {
 const runInWorkerPoolContext = AsyncLocalStorage.snapshot();
 
 type WorkerReply<Output> = { status: "ok"; value: Output } | { status: "failed"; error: string };
+
+/** A host-waiting exchange that has not sent its input can still checkpoint. */
+const canCheckpoint = <T extends { sent: boolean; pressure: AbortController }>(
+  exchange: T | undefined,
+): exchange is T => exchange !== undefined && !exchange.sent && !exchange.pressure.signal.aborted;
 /** Bounded execution workers; each worker accepts one task at a time. */
 export class WorkerTaskPoolCore<Input, Output> {
   private readonly slots = new Set<Slot<Input, Output>>();
@@ -107,7 +115,7 @@ export class WorkerTaskPoolCore<Input, Output> {
   private workersCreated = 0;
   private activeTasks = 0;
   private readonly computeCapacity: WorkerComputeCapacity | undefined;
-  private readonly compute: WorkerComputeLane;
+  private readonly compute: ReturnType<typeof workerComputeLane>;
   private readonly resumeCompute = () => this.dispatch();
   private closedError?: Error;
   private nextTaskId = 0;
@@ -289,6 +297,7 @@ export class WorkerTaskPoolCore<Input, Output> {
       (slot) => this.ownedSettlement.retire(slot),
       key,
       this.ownerOptions,
+      this.host.observeResourceReply,
     );
   }
 
@@ -357,13 +366,9 @@ export class WorkerTaskPoolCore<Input, Output> {
           // Signal one owner per queued contender, in slot admission order.
           let contenders = this.queue.length;
           for (const occupied of this.slots) {
-            if (
-              occupied.task?.exchange &&
-              !occupied.task.exchange.sent &&
-              !occupied.task.exchange.pressure.signal.aborted &&
-              contenders-- > 0
-            ) {
-              occupied.task.exchange.pressure.abort();
+            const exchange = occupied.task?.exchange;
+            if (canCheckpoint(exchange) && contenders-- > 0) {
+              exchange.pressure.abort();
             }
           }
           return;
@@ -372,15 +377,11 @@ export class WorkerTaskPoolCore<Input, Output> {
       const nextTask = this.queue[0]!;
       if (this.computeCapacity) {
         const checkpoint = () => {
-          if (
-            nextTask.exchange &&
-            !nextTask.exchange.sent &&
-            !nextTask.exchange.pressure.signal.aborted
-          ) {
+          const pressured = canCheckpoint(nextTask.exchange);
+          if (pressured) {
             nextTask.runInContext(() => nextTask.exchange?.pressure.abort());
-            return true;
           }
-          return false;
+          return pressured;
         };
         const permit = this.computeCapacity.acquire(this.resumeCompute, checkpoint, this.compute);
         if (!permit) {
@@ -410,6 +411,7 @@ export class WorkerTaskPoolCore<Input, Output> {
           task,
           (input) =>
             sendWorkerTaskInput({
+              workerUrl: this.options.workerUrl,
               slot,
               task,
               input,
@@ -417,7 +419,11 @@ export class WorkerTaskPoolCore<Input, Output> {
               bootstrapError: this.bootstrap.error,
               createWorker: () => this.createWorker(slot),
               fail: (error, nativeFailure) =>
-                this.fail(slot, new WorkerTaskError(String(error), "unavailable"), nativeFailure),
+                this.fail(
+                  slot,
+                  workerTaskUnavailableError(slot, String(error), error),
+                  nativeFailure,
+                ),
               refuse: (error) => this.finish(task, error, undefined, true),
             }),
           (error) => this.finish(task, toErrorObject(error, "worker task preparation failed")),
@@ -442,7 +448,7 @@ export class WorkerTaskPoolCore<Input, Output> {
       host: this.host,
       bootstrapError: this.bootstrap.error,
       runInContext: runInWorkerPoolContext,
-      unavailableError: (message) => new WorkerTaskError(message, "unavailable"),
+      unavailableError: (message, cause) => workerTaskUnavailableError(slot, message, cause),
       onStarted: (worker) => {
         this.workers++;
         this.workersCreated++;
@@ -454,8 +460,7 @@ export class WorkerTaskPoolCore<Input, Output> {
         if (counted) {
           this.workers--;
         }
-        const error = new WorkerTaskError(`worker exited with code ${code}`, "unavailable");
-        this.fail(slot, error, true);
+        this.fail(slot, workerTaskUnavailableError(slot, `worker exited with code ${code}`), true);
       },
     });
   }

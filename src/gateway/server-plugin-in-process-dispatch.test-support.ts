@@ -28,7 +28,7 @@ export function createContext(
     // A live Gateway always has it; replaying a cached agent turn reads it.
     chatAbortControllers: new Map(),
     getRuntimeConfig,
-    logGateway: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+    logGateway: { error: vi.fn(), warn: vi.fn() },
   } as unknown as GatewayRequestContext;
   if (methods.length) {
     const registry = createGatewayMethodRegistry(

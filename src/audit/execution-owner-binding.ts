@@ -12,15 +12,10 @@ export type ExecutionOwnerBindingResult =
   | "mismatch"
   | "missing";
 
-export type ExecutionOwnerBinding = Readonly<{
-  contextId: string;
-  executionId: string;
-}>;
-
 /** Extracts only an admitted exact identity; operational run correlation cannot bind owner rows. */
 export function executionOwnerBindingFromAdmission(
   admitted: AdmittedRunContext,
-): ExecutionOwnerBinding | undefined {
+): { contextId: string; executionId: string } | undefined {
   if (!admitted.executionIdentityToken) {
     return undefined;
   }
@@ -29,18 +24,6 @@ export function executionOwnerBindingFromAdmission(
     throw new Error("owner execution binding disagrees with the admitted run");
   }
   return { contextId: token.contextId, executionId: token.executionId };
-}
-
-export function classifyExecutionOwnerBinding(
-  current: { contextId: string | null; executionId: string | null },
-  binding: ExecutionOwnerBinding,
-): Exclude<ExecutionOwnerBindingResult, "disabled" | "bound" | "missing"> | "unbound" {
-  if (current.contextId === null && current.executionId === null) {
-    return "unbound";
-  }
-  return current.contextId === binding.contextId && current.executionId === binding.executionId
-    ? "already-bound"
-    : "mismatch";
 }
 
 /** Adds one exact owner write after admission resolves, never inside the admission callback. */
@@ -66,34 +49,4 @@ export function withPostAdmissionExecutionOwnerBinding(
       return admitted;
     },
   });
-}
-
-/** Requires both exact admission and actual execution start, in either runtime order. */
-export function createExecutionStartedOwnerBinding(
-  bind: (context: AdmittedRunContext) => void | Promise<void>,
-): {
-  onPostAdmission: (context: AdmittedRunContext) => Promise<void>;
-  onExecutionStarted: () => Promise<void>;
-} {
-  let admitted: AdmittedRunContext | undefined;
-  let executionStarted = false;
-  let binding: Promise<void> | undefined;
-  const bindIfReady = async () => {
-    if (!admitted || !executionStarted) {
-      return;
-    }
-    const context = admitted;
-    binding ??= Promise.resolve().then(() => bind(context));
-    await binding;
-  };
-  return {
-    onPostAdmission: (context) => {
-      admitted = context;
-      return bindIfReady();
-    },
-    onExecutionStarted: () => {
-      executionStarted = true;
-      return bindIfReady();
-    },
-  };
 }

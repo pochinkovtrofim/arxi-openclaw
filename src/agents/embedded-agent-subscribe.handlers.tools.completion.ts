@@ -70,7 +70,6 @@ import {
   toolStartData,
 } from "./embedded-agent-subscribe.handlers.tools.start.js";
 import type { ToolHandlerContext } from "./embedded-agent-subscribe.handlers.types.js";
-import { captureToolAuthoredSourceReply } from "./embedded-agent-tool-authored-source-reply.js";
 import {
   collectMessagingMediaUrlsFromRecord,
   collectMessagingMediaUrlsFromToolResult,
@@ -391,25 +390,6 @@ export async function handleToolExecutionEnd(
     !isToolError &&
     !messageDelivery?.partialDelivery;
   ctx.state.lastToolTurnOnlySourceProgress = ctx.state.turnToolsOnlySourceProgress;
-  // A tool whose author declared `canDeliverSourceReply` may hand the host a
-  // finished reply. The host delivers it to the current source and records it as
-  // the assistant turn, so no further model turn has to restate it. A call nested
-  // inside a Code Mode program returns to that program, never to the conversation.
-  const toolAuthoredSourceReply =
-    !isToolError &&
-    !startData?.parentToolCallId &&
-    ctx.params.sourceReplyCapableToolNames?.has(toolName) === true
-      ? captureToolAuthoredSourceReply({
-          result,
-          toolCallId,
-          // The persisted assistant turn survives recovery runs; the run id is the fallback.
-          idempotencyScope: evt.assistantTurnId ?? runId,
-        })
-      : undefined;
-  if (toolAuthoredSourceReply) {
-    ctx.state.messagingToolSourceReplyPayloads.push(toolAuthoredSourceReply);
-    ctx.trimMessagingToolSent();
-  }
   // Track committed reminders only when cron.add completed successfully.
   if (
     !isToolError &&
@@ -418,20 +398,18 @@ export async function handleToolExecutionEnd(
   ) {
     ctx.state.successfulCronAdds += 1;
   }
-  if (
-    !isToolError &&
-    toolName === HEARTBEAT_RESPONSE_TOOL_NAME &&
-    ctx.state.heartbeatToolResponse === undefined &&
-    asOptionalObjectRecord(resultRecord?.details)?.status === "accepted"
-  ) {
+  if (!isToolError && toolName === HEARTBEAT_RESPONSE_TOOL_NAME) {
     const response = normalizeHeartbeatToolResponse(resultRecord?.details);
     if (response) {
+      const isFirstHeartbeatResponse = ctx.state.heartbeatToolResponse === undefined;
       ctx.state.heartbeatToolResponse = response;
-      runBestEffortCallback({
-        label: "heartbeat tool response",
-        log: ctx.log,
-        callback: () => ctx.params.onHeartbeatToolResponse?.(response),
-      });
+      if (isFirstHeartbeatResponse) {
+        runBestEffortCallback({
+          label: "heartbeat tool response",
+          log: ctx.log,
+          callback: () => ctx.params.onHeartbeatToolResponse?.(response),
+        });
+      }
     }
   }
 
@@ -498,7 +476,6 @@ export async function handleToolExecutionEnd(
   });
 
   if (isExecToolName(toolName)) {
-    // Use sanitizedResult so `aggregated` is redacted before reaching command_output.
     const commandItemId = buildCommandItemId(toolCallId);
     if (
       execDetails?.status === "approval-pending" ||

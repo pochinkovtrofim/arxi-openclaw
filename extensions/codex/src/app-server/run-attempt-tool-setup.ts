@@ -5,16 +5,13 @@ import {
   resolveAgentDir,
   supportsModelTools,
   type EmbeddedRunAttemptParams,
-  type ExecApprovalDecision,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   captureFinalCodexCronCreatorToolAllowlist,
-  hasExplicitFiniteCodexToolAllowlist,
-  resolveScheduledCodexMcpIdentityBindings,
   shouldWithholdStaticCodexMcp,
-  formatMcpCodexApprovalRemedy,
   materializeStaticMcpToolsForHarnessRun,
 } from "openclaw/plugin-sdk/codex-mcp-projection";
+import { isIncognitoSessionKey } from "openclaw/plugin-sdk/session-key-runtime";
 import { formatStageTimings } from "openclaw/plugin-sdk/time-runtime";
 import type { CodexComputerContextEpoch } from "./computer-context.js";
 import { resolveCodexPluginsPolicy, shouldAutoApproveCodexAppServerApprovals } from "./config.js";
@@ -36,13 +33,19 @@ import {
   selectInactiveCodexHeartbeatResponseTool,
 } from "./heartbeat-tool-fallback.js";
 import { buildCodexHookRequester } from "./hook-requester.js";
-import { hasCodexNativeToolCatalog, loadCodexNativeToolCatalog } from "./native-tool-catalog.js";
+import type { NativePendingChild } from "./native-subagent-monitor-types.js";
+import {
+  hasCodexNativeToolCatalog,
+  loadCodexAttemptNativeToolCatalog,
+} from "./native-tool-catalog.js";
 import { CodexCompactionPlanState } from "./plan-compaction-state.js";
-import { requestPluginApprovalOutcome } from "./plugin-approval-roundtrip.js";
-import { releaseCodexProbeClient } from "./probe-client.js";
-import type { CodexDynamicToolSpec } from "./protocol.js";
 import { isCodexResponsesOAuth } from "./responses-oauth.js";
 import { emitCodexAppServerEvent, runCodexCleanupStep } from "./run-attempt-lifecycle.js";
+import {
+  applyScheduledMcpIdentityBindings,
+  createCodexMcpInteractiveApproval,
+  materializeCodexScopedMcpTools,
+} from "./run-attempt-mcp-surface.js";
 import type { CodexAttemptRuntime } from "./run-attempt-runtime.js";
 import { resolveCodexDynamicToolDirectNames } from "./run-attempt-tools.js";
 import {
@@ -50,7 +53,7 @@ import {
   captureScheduledCodexAppAuthority,
   resolveScheduledCodexAppCreatorCaptureDecision,
 } from "./scheduled-app-authority.js";
-import { formatScheduledMcpIdentityMismatch } from "./scheduled-mcp-identity.js";
+import { releaseCodexProbeClient } from "./shared-client.js";
 
 export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   const {
@@ -203,8 +206,11 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
   >;
   let creatorAuthorityPromise: ReturnType<CreatorAuthorityResolver> | undefined;
   let resolveCreatorAuthorityImpl: CreatorAuthorityResolver | undefined;
-  const runtimeYieldCompletionClaim: { current?: () => boolean } = {};
+  const runtimeYieldCompletionClaim: {
+    current?: () => boolean | { pendingChildren: NativePendingChild[] };
+  } = {};
   const commonToolParams = {
+    nativeExecutionPolicy: runtime.nativeExecutionPolicy,
     // Both catalogs describe one attempt; a later attempt discovers fresh connections.
     nodeExecAvailability: {},
     params: dynamicToolParams,
@@ -265,34 +271,28 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         }
       : {}),
   };
-  let nativeSpecs: CodexDynamicToolSpec[] | undefined;
-  if (hasCodexNativeToolCatalog(mutable.startupBinding)) {
-    runAbortController.signal.throwIfAborted();
-    connection.assertCurrent();
-    const client = await connection.attemptClientFactory({
-      assertCurrent: connection.assertLegacyCurrent,
-      startOptions: connection.appServer.start,
-      authProfileId: connection.startupClientAuthProfileId,
-      agentDir,
-      config: params.config,
-      timeoutMs: connection.appServer.requestTimeoutMs,
-    });
-    try {
-      nativeSpecs = await loadCodexNativeToolCatalog({
-        client,
-        authority: connection.authority,
-        binding: mutable.startupBinding,
-        appServer: connection.appServer,
+  const nativeSpecs = await loadCodexAttemptNativeToolCatalog({
+    binding: mutable.startupBinding,
+    ephemeral: isIncognitoSessionKey(params.sessionKey),
+    authority: connection.authority,
+    appServer: connection.appServer,
+    agentDir,
+    signal: runAbortController.signal,
+    acquireClient: () =>
+      connection.attemptClientFactory({
+        assertCurrent: connection.assertLegacyCurrent,
+        startOptions: connection.appServer.start,
+        authProfileId: connection.startupClientAuthProfileId,
         agentDir,
-        assertCurrent: () => {
-          runAbortController.signal.throwIfAborted();
-          connection.assertCurrent();
-        },
-      });
-    } finally {
-      await releaseCodexProbeClient(client, connection.attemptClientFactory);
-    }
-  }
+        config: params.config,
+        timeoutMs: connection.appServer.requestTimeoutMs,
+      }),
+    releaseClient: (client) => releaseCodexProbeClient(client, connection.attemptClientFactory),
+    assertCurrent: () => {
+      runAbortController.signal.throwIfAborted();
+      connection.assertCurrent();
+    },
+  });
   let requireExplicitMessageTarget: boolean | undefined;
   let configuredMcp: Awaited<ReturnType<typeof materializeStaticMcpToolsForHarnessRun>> | undefined;
   let scopedMcpTools: Awaited<ReturnType<typeof materializeRequesterScopedMcpToolsForHarnessRun>>;
@@ -392,129 +392,29 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
     const turnSourceChannel = params.messageChannel ?? params.messageProvider;
     const turnSourceTo = params.currentMessagingTarget ?? params.currentChannelId;
     const requester = buildCodexHookRequester(params);
-    type HarnessMcpInteractiveApproval = NonNullable<
-      Parameters<
-        typeof materializeRequesterScopedMcpToolsForHarnessRun
-      >[0]["requestInteractiveCodexApproval"]
-    >;
-    // Shared per-call MCP approval callback for dynamic (bridge) tools. Requester-scoped
-    // tools must enter the same approval boundary as the configured path before any
-    // executor dispatch.
-    const requestInteractiveMcpApproval: HarnessMcpInteractiveApproval = async (approval) => {
-      const allowedDecisions: ExecApprovalDecision[] =
-        approval.mode === "prompt"
-          ? ["allow-once", "deny"]
-          : ["allow-once", "allow-always", "deny"];
-      const outcome = await requestPluginApprovalOutcome({
-        hostCapabilities: params.hostCapabilities,
-        signal: approval.signal,
-        title: `Run MCP tool ${approval.serverName}/${approval.toolName}`,
-        description: `Codex approval mode "${approval.mode}" requires an operator decision before this MCP tool runs. ${formatMcpCodexApprovalRemedy(approval.serverName)}`,
-        allowedDecisions,
-        toolName: approval.safeToolName,
-        toolCallId: approval.toolCallId,
-        mcpTool: { server: approval.serverName, tool: approval.toolName },
-        isMcpToolApprovalActive: approval.isActive,
-      });
-      if (outcome !== "approved-once" && outcome !== "approved-session") {
-        throw new Error(
-          `${approval.serverName}/${approval.toolName}: interactive Codex approval (${approval.mode}) was not granted: ${outcome}`,
-        );
-      }
-    };
-    // Requester-scoped tools never consume stored approval grants (requester servers are
-    // excluded from the native grant projection), so offer only effective decisions:
-    // allow-once or deny. Allow Always would re-prompt on every subsequent call.
-    const requestRequesterMcpApproval: HarnessMcpInteractiveApproval = async (approval) => {
-      const outcome = await requestPluginApprovalOutcome({
-        hostCapabilities: params.hostCapabilities,
-        signal: approval.signal,
-        title: `Run MCP tool ${approval.serverName}/${approval.toolName}`,
-        description: `Codex approval mode "${approval.mode}" requires an operator decision before this MCP tool runs. ${formatMcpCodexApprovalRemedy(approval.serverName)}`,
-        allowedDecisions: ["allow-once", "deny"],
-        toolName: approval.safeToolName,
-        toolCallId: approval.toolCallId,
-        mcpTool: { server: approval.serverName, tool: approval.toolName },
-        isMcpToolApprovalActive: approval.isActive,
-      });
-      if (outcome !== "approved-once" && outcome !== "approved-session") {
-        throw new Error(
-          `${approval.serverName}/${approval.toolName}: interactive Codex approval (${approval.mode}) was not granted: ${outcome}`,
-        );
-      }
-    };
+    const requestInteractiveMcpApproval = createCodexMcpInteractiveApproval(
+      params.hostCapabilities,
+      false,
+    );
     const autoApproveScheduledMcp = shouldAutoApproveCodexAppServerApprovals(connection.appServer);
     let rejectedScheduledMcpAuthorityNames = new Set<string>();
-    const scheduledAccountMcp =
-      authenticatedScheduledMode && params.scheduledToolPolicy?.mode === "account";
-    const scheduledTrustedMcp =
-      authenticatedScheduledMode && params.scheduledToolPolicy?.mode === "trusted";
-    const hasRequesterScopedMcp = bundleMcpThreadConfig.requesterScopedServerNames.length > 0;
-    const hasFiniteScheduledAccountCap = hasExplicitFiniteCodexToolAllowlist(params.toolsAllow);
-    const mayResolveBackgroundMcp =
-      hasRequesterScopedMcp &&
-      (scheduledTrustedMcp || (scheduledAccountMcp && hasFiniteScheduledAccountCap));
-    const missingScheduledAccountCap =
-      scheduledAccountMcp && hasRequesterScopedMcp && !hasFiniteScheduledAccountCap;
-    scopedMcpTools =
-      params.requireWorkspaceOnly === true
-        ? undefined
-        : authenticatedScheduledMode && !mayResolveBackgroundMcp
-          ? missingScheduledAccountCap
-            ? {
-                tools: [],
-                advertisedTools: [],
-                allocatedToolNames: [],
-                diagnosticNotice:
-                  "Configured MCP is incomplete for this scheduled run: the account automation has no explicit finite toolsAllow. Do not claim MCP-backed work succeeded; report this blocker to the operator.",
-                dispose: async () => undefined,
-              }
-            : undefined
-          : await materializeRequesterScopedMcpToolsForHarnessRun({
-              sessionId: params.sessionId,
-              sessionKey: params.sessionKey,
-              workspaceDir: effectiveWorkspace,
-              agentDir: policyContext.agentDir,
-              cfg: params.config,
-              manifestRegistry: bundleManifestRegistry,
-              toolOverrides: codexMcpToolOverrides,
-              // Authenticated scheduled runs may resolve only providers that explicitly
-              // accept canonical agent + session identity without a live requester.
-              // Never replay the creator's sender, account, channel, or conversation:
-              // per-requester OAuth and requester-required resolvers must stay closed.
-              ...(mayResolveBackgroundMcp
-                ? {}
-                : {
-                    requesterSenderId: params.senderId,
-                    agentAccountId: params.agentAccountId,
-                    messageChannel: params.messageChannel ?? params.messageProvider,
-                    chatType: params.chatType,
-                    conversationId: params.chatId ?? params.groupId ?? params.messageTo,
-                  }),
-              agentId: sessionAgentId,
-              runtimeGeneration: params.lifecycleGeneration,
-              traceId: params.diagnosticTrace?.traceId,
-              reservedToolNames,
-              toolsAllow: params.toolsAllow,
-              policyContext,
-              ...(mayResolveBackgroundMcp
-                ? { scheduledCodexApproval: { autoApprove: autoApproveScheduledMcp } }
-                : {
-                    autoApproveCodexAppServerApprovals: autoApproveScheduledMcp,
-                    requestInteractiveCodexApproval: requestRequesterMcpApproval,
-                  }),
-              warn: (message) => embeddedAgentLog.warn(message),
-            });
-    if (mayResolveBackgroundMcp && !scopedMcpTools) {
-      scopedMcpTools = {
-        tools: [],
-        advertisedTools: [],
-        allocatedToolNames: [],
-        diagnosticNotice:
-          "Configured MCP is incomplete for this scheduled run: the background connection catalog is unavailable. Do not claim MCP-backed work succeeded; report this blocker to the operator.",
-        dispose: async () => undefined,
-      };
-    }
+    const scoped = await materializeCodexScopedMcpTools({
+      params,
+      authenticatedScheduledMode,
+      hasRequesterScopedMcp: bundleMcpThreadConfig.requesterScopedServerNames.length > 0,
+      autoApprove: autoApproveScheduledMcp,
+      options: {
+        workspaceDir: effectiveWorkspace,
+        agentDir: policyContext.agentDir,
+        manifestRegistry: bundleManifestRegistry,
+        toolOverrides: codexMcpToolOverrides,
+        agentId: sessionAgentId,
+        reservedToolNames,
+        policyContext,
+      },
+    });
+    scopedMcpTools = scoped.scopedMcpTools;
+    const { scheduledAccountMcp, hasRequesterScopedMcp, mayResolveBackgroundMcp } = scoped;
     const resolverAllocationIncomplete = shouldWithholdStaticCodexMcp({
       scheduledAccountMcp,
       hasRequesterScopedMcp,
@@ -554,55 +454,14 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
           })
         : undefined;
     if (scheduledAccountMcp) {
-      const mcpIdentityBindings = resolveScheduledCodexMcpIdentityBindings({
+      const bound = applyScheduledMcpIdentityBindings({
         bindings: params.scheduledToolPolicy?.mcpToolBindings,
-        allocations: [
-          ...(scopedMcpTools?.mcpNameAllocations ?? []),
-          ...(configuredMcp?.mcpNameAllocations ?? []),
-        ],
-        exposedNames: [
-          ...(scopedMcpTools?.tools.map((tool) => tool.name) ?? []),
-          ...(scopedMcpTools?.advertisedTools.map((tool) => tool.name) ?? []),
-          ...(configuredMcp?.tools.map((tool) => tool.name) ?? []),
-        ],
-        persistedCapNames: params.toolsAllow,
+        toolsAllow: params.toolsAllow,
+        scopedMcpTools,
+        configuredMcp,
       });
-      rejectedScheduledMcpAuthorityNames = new Set(mcpIdentityBindings.rejectedNames);
-      if (scopedMcpTools) {
-        scopedMcpTools.tools = scopedMcpTools.tools.filter((tool) =>
-          mcpIdentityBindings.allowedNames.has(tool.name.trim().toLowerCase()),
-        );
-        scopedMcpTools.advertisedTools = scopedMcpTools.advertisedTools.filter((tool) =>
-          mcpIdentityBindings.allowedNames.has(tool.name.trim().toLowerCase()),
-        );
-      }
-      if (configuredMcp) {
-        configuredMcp.tools = configuredMcp.tools.filter((tool) =>
-          mcpIdentityBindings.allowedNames.has(tool.name.trim().toLowerCase()),
-        );
-      }
-      if (mcpIdentityBindings.rejectedNames.length > 0) {
-        const notice =
-          `Configured MCP is incomplete for this scheduled run: persisted tool identity no longer matches (${formatScheduledMcpIdentityMismatch(mcpIdentityBindings.rejectedNames)}). ` +
-          "No mismatched MCP tool was exposed; reauthorize the automation from a current owner turn.";
-        if (scopedMcpTools) {
-          scopedMcpTools.diagnosticNotice = [scopedMcpTools.diagnosticNotice, notice]
-            .filter(Boolean)
-            .join(" ");
-        } else if (configuredMcp) {
-          configuredMcp.diagnosticNotice = [configuredMcp.diagnosticNotice, notice]
-            .filter(Boolean)
-            .join(" ");
-        } else {
-          scopedMcpTools = {
-            tools: [],
-            advertisedTools: [],
-            allocatedToolNames: [],
-            diagnosticNotice: notice,
-            dispose: async () => undefined,
-          };
-        }
-      }
+      scopedMcpTools = bound.scopedMcpTools;
+      rejectedScheduledMcpAuthorityNames = bound.rejectedNames;
     }
     // Restricted dynamic-tool profiles (private QA, exclusion lists) gate scoped
     // MCP tools exactly like every other dynamic tool. Filter both lists with the
@@ -693,10 +552,13 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
             cwd: effectiveCwd ?? effectiveWorkspace,
           });
     const toolBridge = createCodexDynamicToolBridge({
+      assertCurrentAsync: runtime.nativeExecutionPolicy.assertCurrent,
       tools: toolsWithScopedMcp,
       registeredTools: registeredWithScopedMcp,
       registeredFallbackTools,
       registeredSpecs: nativeSpecs,
+      requireExactRegisteredDefinitions:
+        nativeSpecs !== undefined && !hasCodexNativeToolCatalog(mutable.startupBinding),
       signal: runAbortController.signal,
       computerContextEpoch,
       functionToolsOnly: isCodexResponsesOAuth(connection.startupPreparedAuth),

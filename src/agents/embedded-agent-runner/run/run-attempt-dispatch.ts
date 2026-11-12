@@ -20,12 +20,12 @@ import { resolveSessionPermissionExecMode } from "../../session-permission-exec-
 import { resolveSessionSkillResourceSnapshot } from "../../session-placement-skill-resources.js";
 import { createToolTerminalObserver } from "../../tool-terminal-outcome.js";
 import { preparePluginHarnessWorkspace, resolveHarnessWorkspace } from "../../workspace-sandbox.js";
-import { log } from "../logger.js";
 import { remapExplicitSkillSelectionPath, remapSkillReferencePaths } from "../sandbox-skills.js";
 import { prepareEmbeddedSkills } from "../skill-runtime.js";
 import { mapThinkingLevelForProvider } from "../utils.js";
 import { prepareExecApprovalContinuationForAttempt } from "./attempt-exec-approval-continuation.js";
 import { withPreparedEmbeddedGatewayTools } from "./attempt-gateway-tools.js";
+import { logAttemptImageMaterialization } from "./attempt-image-diagnostics.js";
 import { resolveEmbeddedAttemptMemoryAudience } from "./attempt-memory-audience.js";
 import { applyResolvedToolPromptFinalizer } from "./attempt-prompt-support.js";
 import { EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE } from "./attempt-stage-timing.js";
@@ -248,6 +248,10 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
   });
   const assertActiveRun = requireActiveAssertion(attemptAbortController.signal);
   assertActiveRun();
+  if (runtime.pluginHarnessOwnsTransport) {
+    await params.awaitSessionDiffBaseline?.();
+    assertActiveRun();
+  }
   using placement = runtime.pluginHarnessOwnsTransport
     ? await preparePluginHarnessWorkspace({
         ...params,
@@ -272,16 +276,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
         pluginHarness: true,
       })
     : { images: params.images, imageOrder: params.imageOrder, media: params.media };
-  log.info("attempt image materialization", {
-    runId: params.runId,
-    harness: runtime.agentHarness.id,
-    modelInput: runtime.effectiveModel.input,
-    incomingImages: params.images?.length ?? 0,
-    imageSlots: params.imageOrder?.length ?? 0,
-    mediaFacts: params.media?.length ?? 0,
-    recorder: Boolean(params.userTurnTranscriptRecorder),
-    preparedImages: promptMedia.images?.length ?? 0,
-  });
+  logAttemptImageMaterialization(params, runtime, promptMedia.images?.length ?? 0);
   // Plugin harnesses own their tool materialization, so the host cannot attest
   // a message tool. Finalize conservatively instead of leaking phantom guidance.
   const pluginHarnessPrompt =
@@ -395,8 +390,10 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
     sessionKey: string;
     agentHarnessId: string;
   } = {
+    modelCallSequence: (runInput.modelCallSequence ??= { value: 0 }),
     providerReviewAcknowledgment: params.providerReviewAcknowledgment,
     diagnosticTrace: params.diagnosticTrace,
+    awaitSessionDiffBaseline: params.awaitSessionDiffBaseline,
     pluginRuntimeRefreshPending: pluginRefresh.isPending,
     registerPluginRuntimeRefreshConsumer: (isCurrent) => {
       if (attemptControls.isCurrent()) {
@@ -550,7 +547,12 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
     ),
     resolvedApiKey: resolvedAttemptApiKey,
     authProfileId: runtime.lastProfileId,
-    authProfileIdSource: explicitAuthProfile ? "user" : "auto",
+    authProfileIdSource: params.authProfileBinding
+      ? params.authProfileIdSource
+      : explicitAuthProfile
+        ? "user"
+        : "auto",
+    authProfileBinding: params.authProfileBinding,
     initialReplayState: input.replayState,
     authStorage,
     authProfileStore,
@@ -558,6 +560,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
     modelRegistry,
     agentId: workspaceResolution.agentId,
     thinkLevel: runtime.thinkLevel,
+    thinkingExplicit: params.thinkingExplicit,
     onToolOutcome: input.observeToolOutcome,
     isTurnTainted: input.isTurnTainted,
     allocateToolOutcomeOrdinal: input.allocateToolOutcomeOrdinal,
@@ -610,6 +613,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
     onDeferredLifecycleAbort: params.onDeferredLifecycleAbort,
     onExecutionPhase: params.onExecutionPhase,
     extraSystemPrompt,
+    extraSystemPromptTurnContext: params.extraSystemPromptTurnContext,
     gitCoauthorPrompt,
     preparedTtsPreferences: params.preparedTtsPreferences,
     sourceReplyDeliveryMode: params.sourceReplyDeliveryMode,
@@ -678,16 +682,11 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
     },
     prepareAssistantTranscriptMessage: params.prepareAssistantTranscriptMessage,
   };
-  const rawAttempt = await withPreparedEmbeddedGatewayTools(
-    attemptParams,
-    attemptControls.isCurrent,
-    () => {
-      assertActiveRun();
-      placement?.assertCurrent();
-      return runEmbeddedAttemptWithBackend(attemptParams, nativeSessionRuntime, params.media);
-    },
-    resolvedSessionTarget,
-  )
+  const rawAttempt = await withPreparedEmbeddedGatewayTools(attemptParams, () => {
+    assertActiveRun();
+    placement?.assertCurrent();
+    return runEmbeddedAttemptWithBackend(attemptParams, nativeSessionRuntime, params.media);
+  })
     .catch((err: unknown): never => {
       throw input.getPostCompactionAbortError() ?? err;
     })
@@ -700,6 +699,9 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
   const postCompactionAbortError = input.getPostCompactionAbortError();
   if (postCompactionAbortError) {
     throw postCompactionAbortError;
+  }
+  if (pluginWorkspace?.sandboxRuntime) {
+    rawAttempt.sandboxRuntime = pluginWorkspace.sandboxRuntime;
   }
   return {
     dispatchedAttempt: { rawAttempt, preparedAttempt: attemptParams },

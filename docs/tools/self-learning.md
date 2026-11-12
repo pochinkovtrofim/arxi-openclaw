@@ -23,7 +23,8 @@ Learning happens in three places:
   [Unused-skill cleanup](/tools/skill-workshop#unused-skill-cleanup).
 
 Every change applies immediately, is listed with its reason where you manage
-learned skills, and can be undone. See [Undo](/tools/skill-workshop#undo).
+learned skills, and can be undone. Background review changes appear in the
+Control UI chat, not in the conversation. See [Undo](/tools/skill-workshop#undo).
 
 ## When a review runs
 
@@ -32,16 +33,18 @@ reaches 10 since its last review, a review is queued and the count starts over.
 The count also resets when the foreground turn itself changed a learned skill,
 so work the agent already saved is not reviewed again.
 
-A turn that read or viewed a learned skill also queues a review, whatever the
-count, so a skill that just misled or helped the agent gets a fresh look. The
-same eligibility rules apply, and a turn that changed a learned skill itself
-still skips the review.
+Reading or viewing a learned skill does not queue an extra review; those turns
+count toward the same 10-iteration threshold.
 
 A queued review waits until the conversation has been quiet for five minutes
 and no agent or reply run is active; every later turn in the same session
 restarts that wait. A back-and-forth therefore gets one review that sees the
 whole exchange, instead of one review per turn editing the same skill again.
 Reviews run one at a time. The foreground reply never waits for a review.
+Once started, the review keeps its original completed-turn snapshot while later
+turns continue. Resetting the conversation or changing its permissions cancels
+the review. Before changing a skill, the review also verifies that its original
+transcript anchor is still valid.
 
 The review is also told what earlier reviews or the agent already saved from
 the same conversation in the last day, and saves only what later turns add.
@@ -66,7 +69,8 @@ The review forks the conversation through the finished turn and appends one
 instruction, reusing the foreground provider, model, auth profile, and tool
 schemas so the provider's prompt cache applies. Model fallbacks are disabled. It
 runs on the embedded OpenClaw harness under a private session that never
-appears in your transcript.
+appears in your transcript. It is internal system work, not a new user turn;
+user-only reply hooks, including Advisor admission, do not run for it.
 
 The review can look things up with `read`, `ls`, `view_image`, `web_search`,
 `web_fetch`, `sessions_history`, `sessions_search`, `memory_search`, and
@@ -77,44 +81,68 @@ and the review never re-runs your task. The review must `view` a skill
 before it patches, writes, or archives it, and an archive needs `absorbed_into`
 or `reason`.
 
-The reviewer looks for:
+The reviewer keeps your learned skills a small set of repeatable procedures, so
+most reviews change nothing. It changes a skill only for a class of task you
+will ask for again, where the next run would go wrong or redo work without the
+change. The evidence is one of:
 
-- a correction to your approach, output, or style.
-- a non-obvious technique, fix, or command sequence that worked after trial and
-  error.
-- a learned skill that was wrong, missing a step, or outdated.
+- a correction to the agent's method.
+- a non-obvious method that worked after trial and error.
+- a learned skill with a wrong, missing, or outdated step.
 
-It lists learned skills first, then prefers patching a skill that was used or
-already covers the task, then adding a `references/`, `templates/`, or
-`scripts/` file to one, and creates a new skill only when none covers the task.
-Listed skills that cover the same class of task get merged into one umbrella
-skill: the review patches the survivor and archives the rest with
-`absorbed_into`. When the turn was interrupted, it keeps only steps that visibly
-worked before the stop.
+Details true of only one request, such as one product, order, menu, date,
+place, or booking, stay in the conversation.
+
+A review makes at most one change. It lists learned skills first, then either
+sharpens the step the lesson changes in the skill for that class of task, or
+creates one focused skill when none covers it. An unrelated class of task gets
+its own skill instead of a new branch in an existing one. When two listed skills
+cover the same class of task, the review merges them: it patches the survivor
+and archives the other with `absorbed_into`. When the turn was interrupted, it
+keeps only steps that visibly worked before the stop.
 
 It does not capture environment-specific or transient failures, negative claims
 about tools, unresolved failures or guesses, knowledge about one codebase,
 one-off tasks, personal facts, secrets, or generic advice without concrete
-commands, paths, or ids. When nothing durable was learned, it changes nothing.
+commands, paths, or ids.
 
 ## What you see
 
-Changes are quiet. Each one appears in the skill's history (Control UI
-**Plugins → Skill workshop**, `openclaw skills workshop changes`) with the
-review's reason: one plain sentence in your language, such as "Check the
-recruiter's profile before the call". Nothing is posted to the conversation.
+When a review changes a skill, the Control UI chat shows a **Learned** row: one
+chip per changed skill, each opening that skill in the Skill Workshop, and an
+**Undo** button. Nothing appears when nothing changed. Each change also appears
+in the skill's history (Control UI **Plugins → Skill workshop**,
+`openclaw skills workshop changes`) with the review's reason: one plain sentence
+in your language, such as "Check the recruiter's profile before the call".
+
+Channel messages are off by default, so nothing is posted to the conversation.
 
 That holds for a correction you stated yourself too: the agent already answered
 you in that conversation, and a confirmation minutes later would arrive after it
 moved on.
 
+Set `skills.workshop.autonomous.channelNotices: true` to post the notice to the
+conversation that triggered the review instead. That session's Control UI
+chat then shows the channel message as plain text, not the **Learned** row:
+
+```text
+💾 Learned: updated `deploy-staging` (tightened the rollback step). Say "undo" to revert this skill change.
+```
+
+Slack never gets a channel message; its sessions still get the Control UI row.
+
 The next turn of that conversation learns the exact revert call, so
 replying "undo" right after a change restores the previous version, or archives
-a skill the review created.
+a skill the review created. To undo everything the review changed, press
+**Undo** on the Control UI row or channel notice. Channels that do not render
+buttons show a copyable `/learn undo <id>` command; the id comes from the
+channel notice. See [Skill Workshop undo](/tools/skill-workshop#undo).
 
 A review stops without changing anything further if you turn learning off, or
 if the source session is deleted, replaced, or changes permission mode while it
 runs. Changes it already made stay, each with a saved previous version.
+Expected cancellations during Gateway shutdown or a source transcript change
+appear only in debug logs. Provider and storage failures still produce warnings.
 
 ## Turn it on or off
 
@@ -155,7 +183,9 @@ can watch, steer, or stop it. Starting one does not change the learning mode.
 3. The session is an ordinary conversation, not cron, heartbeat, hook,
    subagent, or Incognito.
 4. Tool policy allows `skill_workshop` and the session is not sandboxed. In
-   `auto` mode, `openclaw doctor` reports the setting that hides it.
+   `auto` mode, `openclaw doctor` reports the setting that hides it unless a
+   matching deny intentionally opts the agent out. Denying `skill_workshop`
+   or `group:agents` opts that agent out without a Doctor warning.
 5. The Gateway stayed up and the conversation stayed quiet for five minutes.
 
 A review that ran can still decide nothing is worth saving. That is the

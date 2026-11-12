@@ -44,6 +44,11 @@ export type PluginHookGatewayCronJob = {
   enabled?: boolean;
   schedule?:
     | {
+        kind: "event";
+        source: string;
+        options: Record<string, unknown>;
+      }
+    | {
         kind: "cron";
         expr?: string;
         tz?: string;

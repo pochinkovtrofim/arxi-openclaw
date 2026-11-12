@@ -226,7 +226,8 @@ describe("OAuth login during a long run", () => {
     await expect(controller.maybeRefreshRuntimeAuthForAuthError(expired, false)).resolves.toBe(
       true,
     );
-    expect(mocks.getApiKeyForModelCore.mock.calls[0]?.[0]).not.toHaveProperty("forceRefresh");
+    // Upstream passes the flag explicitly; the first resolution must not force a refresh.
+    expect(mocks.getApiKeyForModelCore.mock.calls[0]?.[0]).toMatchObject({ forceRefresh: false });
     expect(mocks.getApiKeyForModelCore.mock.calls[1]?.[0]).toMatchObject(renewal);
     expect(setRuntimeApiKey).toHaveBeenLastCalledWith("custom-openai", "renewed-access");
 

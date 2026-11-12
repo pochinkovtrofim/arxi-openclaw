@@ -16,10 +16,9 @@ import {
   createManagedTaskFlow as createManagedTaskFlowOrNull,
   deleteTaskFlowRecordById,
   getTaskFlowById,
-  requestFlowCancel,
-  setFlowWaiting,
   updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-registry.js";
+import { requestFlowCancel, setFlowWaiting } from "./task-flow-registry.mutations.js";
 import {
   bindTaskFlowExecution,
   listTaskFlowHistoryForOwnerFromSqlite,

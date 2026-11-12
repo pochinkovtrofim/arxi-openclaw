@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { createGatewayActiveWorkSnapshot } from "./gateway-active-work.js";
 
-const ARXI_LIFECYCLE_REVIEWED_UPSTREAM_COMMIT = "8b18b5578f66eab1501cba4cef2310d88bfb9a41";
+const ARXI_LIFECYCLE_REVIEWED_UPSTREAM_COMMIT = "847611dcaa3bf0e2783335f961dd1fd0580e4d9f";
 
 const GATEWAY_LIFECYCLE_ACTIVE_PRODUCERS = [
   { id: "command-queue", countKey: "queueSize" },

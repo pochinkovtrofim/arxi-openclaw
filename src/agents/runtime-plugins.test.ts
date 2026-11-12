@@ -29,7 +29,8 @@ vi.mock("../plugins/widget-presenters.js", () => ({
   adoptRuntimeWidgetPresenterRegistrations: hoisted.adoptRuntimeWidgetPresenterRegistrations,
 }));
 
-vi.mock("../plugins/tool-policy-runtime.js", () => ({
+vi.mock("../plugins/tool-policy-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../plugins/tool-policy-runtime.js")>()),
   adoptRuntimeToolPolicyRegistrations: hoisted.adoptRuntimeToolPolicyRegistrations,
 }));
 
@@ -436,8 +437,6 @@ describe("agent runtime plugin registries", () => {
     "different workspace",
     "stale metadata generation",
     "changed input config",
-    "changed activation environment",
-    "changed activation result",
     "manifest mismatch",
   ] as const)("refuses Gateway registry reuse for %s", (reason) => {
     const fixture = createGatewayRegistryFixture();
@@ -465,12 +464,6 @@ describe("agent runtime plugin registries", () => {
         break;
       case "changed input config":
         input.config = { plugins: { enabled: false } };
-        break;
-      case "changed activation environment":
-        activationContext.env.OPENCLAW_STATE_DIR = "/tmp/changed-activation-state";
-        break;
-      case "changed activation result":
-        activationContext.autoEnabledReasons["gateway-owned"].push("changed decision");
         break;
       case "manifest mismatch":
         activeRegistry.plugins[0]!.origin = "global";

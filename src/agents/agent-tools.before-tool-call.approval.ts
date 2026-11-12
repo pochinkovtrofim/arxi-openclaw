@@ -12,7 +12,7 @@ import { getEmbeddedPluginApprovalBroker } from "../infra/embedded-plugin-approv
 import { formatErrorMessage } from "../infra/errors.js";
 import {
   describeNativePluginApprovalClientSetup,
-  resolveApprovalInitiatingSurfaceState,
+  resolveApprovalInitiatingSurfaceStateAsync,
 } from "../infra/exec-approval-surface.js";
 import { resolveCanonicalPluginApprovalRequestAllowedDecisions } from "../infra/plugin-approval-canonical-decisions.js";
 import {
@@ -82,11 +82,21 @@ export function mergeParamsWithApprovalOverrides(
   originalParams: unknown,
   approvalParams?: unknown,
 ): unknown {
-  return isPlainObject(approvalParams)
-    ? isPlainObject(originalParams)
-      ? { ...originalParams, ...approvalParams }
-      : approvalParams
-    : originalParams;
+  if (!isPlainObject(approvalParams)) {
+    return originalParams;
+  }
+  if (!isPlainObject(originalParams)) {
+    return approvalParams;
+  }
+  // Hook snapshots omit private properties such as Code Mode launch identity.
+  // Apply overrides before defining originals so even non-configurable keys can be rewritten.
+  return Object.defineProperties(
+    {},
+    {
+      ...Object.getOwnPropertyDescriptors(originalParams),
+      ...Object.getOwnPropertyDescriptors(approvalParams),
+    },
+  );
 }
 
 function notifyPluginApprovalResolution(
@@ -185,16 +195,16 @@ function resolvePermittedPluginApprovalResolution(
   return PluginApprovalResolutions.TIMEOUT;
 }
 
-function buildPluginApprovalFailureReason(params: {
+async function buildPluginApprovalFailureReason(params: {
   fallbackReason: string;
   ctx?: HookContext;
   noRoute?: boolean;
-}): string {
+}): Promise<string> {
   const turnSourceChannel = params.ctx?.turnSourceChannel;
   if (!turnSourceChannel?.trim()) {
     return params.fallbackReason;
   }
-  const nativePluginSurface = resolveApprovalInitiatingSurfaceState({
+  const nativePluginSurface = await resolveApprovalInitiatingSurfaceStateAsync({
     channel: turnSourceChannel,
     accountId: params.ctx?.turnSourceAccountId,
     cfg: params.ctx?.config,
@@ -214,7 +224,7 @@ function buildPluginApprovalFailureReason(params: {
   const nativeDeliverySurface =
     nativePluginSurface.kind === "disabled"
       ? nativePluginSurface
-      : resolveApprovalInitiatingSurfaceState({
+      : await resolveApprovalInitiatingSurfaceStateAsync({
           channel: turnSourceChannel,
           accountId: params.ctx?.turnSourceAccountId,
           cfg: params.ctx?.config,
@@ -226,14 +236,16 @@ function buildPluginApprovalFailureReason(params: {
   return `${params.fallbackReason}\n\n${setupText}`;
 }
 
-function resolveUnavailablePluginApprovalSurfaceReason(ctx?: HookContext): string | undefined {
+async function resolveUnavailablePluginApprovalSurfaceReason(
+  ctx?: HookContext,
+): Promise<string | undefined> {
   const trigger = ctx?.trigger?.trim();
   // Legacy/internal callers without run provenance still rely on the Gateway's
   // live-client check. Embedded agent runs always carry an explicit trigger.
   if (!trigger) {
     return undefined;
   }
-  const initiatingSurface = resolveApprovalInitiatingSurfaceState({
+  const initiatingSurface = await resolveApprovalInitiatingSurfaceStateAsync({
     channel: ctx?.turnSourceChannel,
     accountId: ctx?.turnSourceAccountId,
     cfg: ctx?.config,
@@ -388,7 +400,9 @@ async function requestPluginToolApprovalDecision(
         : pluginApprovalFailure(params.baseParams, "Approval timed out", "timed_out");
     }
 
-    const unavailableSurfaceReason = resolveUnavailablePluginApprovalSurfaceReason(params.ctx);
+    const unavailableSurfaceReason = await resolveUnavailablePluginApprovalSurfaceReason(
+      params.ctx,
+    );
     if (unavailableSurfaceReason) {
       notifyPluginApprovalResolution(approval, PluginApprovalResolutions.CANCELLED);
       return pluginApprovalFailure(
@@ -447,7 +461,7 @@ async function requestPluginToolApprovalDecision(
         notifyPluginApprovalResolution(approval, PluginApprovalResolutions.CANCELLED);
         return pluginApprovalFailure(
           params.baseParams,
-          buildPluginApprovalFailureReason({
+          await buildPluginApprovalFailureReason({
             fallbackReason: "Plugin approval unavailable (no approval route)",
             ctx: params.ctx,
             noRoute: true,
@@ -481,7 +495,7 @@ async function requestPluginToolApprovalDecision(
     const fallbackTimeoutReason = approval.timeoutReason ?? "Approval timed out";
     const timeoutReason =
       requestResult?.deliveryRoute === "turn-source"
-        ? buildPluginApprovalFailureReason({
+        ? await buildPluginApprovalFailureReason({
             fallbackReason: fallbackTimeoutReason,
             ctx: params.ctx,
           })
@@ -580,18 +594,19 @@ export async function resolveBeforeToolCallApprovalOutcome(params: {
     params.result?.params === undefined
       ? undefined
       : cloneHookIsolationValue("before_tool_call", params.result.params);
+  const createDeferredApproval = () => ({
+    approval,
+    toolName: params.toolName,
+    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
+    ...(params.ctx ? { ctx: params.ctx } : {}),
+    baseParams: baseParamsSnapshot,
+    overrideParams: overrideParamsSnapshot,
+  });
   if (params.approvalMode === "defer") {
     return {
       blocked: false,
       params: cloneHookIsolationValue("before_tool_call", baseParamsSnapshot),
-      deferredApproval: {
-        approval,
-        toolName: params.toolName,
-        ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
-        ...(params.ctx ? { ctx: params.ctx } : {}),
-        baseParams: baseParamsSnapshot,
-        overrideParams: overrideParamsSnapshot,
-      },
+      deferredApproval: createDeferredApproval(),
     };
   }
   if (params.approvalMode === "report") {
@@ -613,12 +628,7 @@ export async function resolveBeforeToolCallApprovalOutcome(params: {
     };
   }
   return await requestPluginToolApproval({
-    approval,
-    toolName: params.toolName,
-    ...(params.toolCallId ? { toolCallId: params.toolCallId } : {}),
-    ...(params.ctx ? { ctx: params.ctx } : {}),
+    ...createDeferredApproval(),
     signal: params.signal,
-    baseParams: baseParamsSnapshot,
-    overrideParams: overrideParamsSnapshot,
   });
 }

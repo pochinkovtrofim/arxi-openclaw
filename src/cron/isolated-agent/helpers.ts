@@ -11,7 +11,7 @@ import {
   setReplyPayloadMetadata,
   type ReplyPayload,
 } from "../../auto-reply/reply-payload.js";
-import { AUTOMATION_FAILED_TOKEN, isSilentReplyPayloadText } from "../../auto-reply/tokens.js";
+import { isSilentReplyPayloadText } from "../../auto-reply/tokens.js";
 import { truncateUtf16Safe } from "../../utils.js";
 
 type DeliveryPayload = Pick<
@@ -70,9 +70,13 @@ function formatCronRunLevelError(error: unknown): string | undefined {
   return detail ? `cron isolated run failed: ${detail}` : "cron isolated run failed";
 }
 
+/** Exact first line of an unattended automation reply that records the run as failed. */
+export const AUTOMATION_FAILED_TOKEN = "AUTOMATION_FAILED";
+
 /**
  * Returns the explanation when a reply reports AUTOMATION_FAILED on its exact first line.
- * A reply that only quotes the token elsewhere stays ordinary output.
+ * A reply that only quotes the token elsewhere stays ordinary output. Ro keeps this
+ * protocol: an agent-reported failure asks the owner conversation to repair the job.
  */
 export function readAutomationFailedReport(text: string | undefined): string | undefined {
   const [firstLine, ...detail] = (text ?? "").trim().split("\n");
@@ -92,7 +96,7 @@ export function pickSummaryFromOutput(text: string | undefined) {
 }
 
 /** Picks the last non-empty payload text while ignoring terminal error payloads first. */
-export function pickLastNonEmptyTextFromPayloads(
+function pickLastNonEmptyTextFromPayloads(
   payloads: Array<{ text?: string | undefined; isError?: boolean }>,
 ) {
   const successful = payloads

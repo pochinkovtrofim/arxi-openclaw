@@ -1,14 +1,11 @@
 // Internal task-flow registry facade for runtime modules.
 export {
   createTaskFlowForTask,
-  commitPreparedManagedTaskFlowMutationInStateTransaction,
   createManagedTaskFlow,
   deleteTaskFlowRecordById,
   enableTaskFlowHistoryForFlow,
   ensureTaskFlowRegistryReady,
   ensureTaskFlowRegistryReadyAsync,
-  failFlow,
-  finishFlow,
   getTaskFlowById,
   getTaskMirroredFlowIds,
   listTaskFlowRecords,
@@ -16,16 +13,21 @@ export {
   publishPreparedManagedTaskFlowMutation,
   prepareTaskMirroredFlowSync,
   publishTaskFlowAfterAtomicStore,
-  requestFlowCancel,
-  reconcileTaskFlowWorkerReceipts,
   reloadTaskFlowRegistryFromStoreAsync,
-  resolveTaskFlowForLookupToken,
-  resumeFlow,
   runTaskFlowRegistryWorkerMutation,
-  setFlowWaiting,
   syncFlowFromTaskResult,
   updateFlowRecordByIdExpectedRevision,
 } from "./task-flow-registry.js";
+export {
+  commitPreparedManagedTaskFlowMutationInStateTransaction,
+  failFlow,
+  finishFlow,
+  reconcileTaskFlowWorkerReceipts,
+  requestFlowCancel,
+  resumeFlow,
+  setFlowWaiting,
+} from "./task-flow-registry.mutations.js";
+export { resolveTaskFlowForLookupToken } from "./task-flow-registry.lookup.js";
 
 export type {
   FlowRecordCreateFields,

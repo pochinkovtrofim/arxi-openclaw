@@ -6,7 +6,7 @@ import type { TtsAutoMode } from "../../config/types.tts.js";
 import type { SourceDeliveryOutcome } from "../../infra/outbound/source-delivery-plan.js";
 import type { CronCompletionDeliveryFence } from "../delivery-attempt-fence.js";
 import type { CronDeliveryPlan } from "../delivery-plan.js";
-import type { CronJob, CronResolvedDeliveryState } from "../types.js";
+import type { CronJob, CronResolvedDeliveryState, CronRunDiagnostics } from "../types.js";
 import type { DeliveryTargetResolution } from "./delivery-target.js";
 
 export type SuccessfulCronDeliveryTarget = Extract<DeliveryTargetResolution, { ok: true }>;
@@ -38,12 +38,9 @@ export type DispatchCronDeliveryParams = {
   skipDelivery?: NormalizeReplySkipReason;
   spawnOnlyHandoff: boolean;
   sourceDeliveryOutcome: SourceDeliveryOutcome;
-  /** Queues same-source fallback awareness only after a durable completion commit fails. */
-  queueSourceSessionMessageToolAwareness?: () => Promise<void>;
   deliveryBestEffort: boolean;
   /** A descendant's AUTOMATION_FAILED report goes to the owner conversation, not this route. */
   withholdReportedFailure?: boolean;
-  deliveryPayloadHasStructuredContent: boolean;
   deliveryPayloads: ReplyPayload[];
   synthesizedText?: string;
   ttsAuto?: TtsAutoMode;
@@ -70,6 +67,7 @@ export type DispatchCronDeliveryState = {
   outputText?: string;
   synthesizedText?: string;
   deliveryPayloads: ReplyPayload[];
+  diagnostics?: CronRunDiagnostics;
   /** Explanation from a settled descendant answer that reported AUTOMATION_FAILED. */
   agentReportedFailure?: string;
 };

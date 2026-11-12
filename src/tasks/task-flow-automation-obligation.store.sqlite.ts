@@ -1,11 +1,11 @@
 import crypto from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
 import type { Insertable, Selectable } from "kysely";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
   getNodeSqliteKysely,
 } from "../infra/kysely-sync.js";
+import type { EngineConnection } from "../infra/sql-connection.js";
 import { normalizeSqliteNumber } from "../infra/sqlite-number.js";
 import { ensureTaskFlowAutomationObligationSchema } from "../state/openclaw-state-db-schema-additive.js";
 import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
@@ -84,7 +84,7 @@ function rowToObligation(row: ObligationRow): TaskFlowAutomationObligation {
 function isTerminal(status: string): boolean {
   return TERMINAL_STATUSES.includes(status as (typeof TERMINAL_STATUSES)[number]);
 }
-function loadFlow(db: DatabaseSync, flowId: string): FlowStateRow | undefined {
+function loadFlow(db: EngineConnection, flowId: string): FlowStateRow | undefined {
   return executeSqliteQueryTakeFirstSync(
     db,
     getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
@@ -101,7 +101,7 @@ function loadFlow(db: DatabaseSync, flowId: string): FlowStateRow | undefined {
   );
 }
 function requireLiveManagedFlow(
-  db: DatabaseSync,
+  db: EngineConnection,
   params: Pick<
     UpsertTaskFlowAutomationObligation,
     "flowId" | "expectedFlowRevision" | "controllerId"
@@ -122,7 +122,7 @@ function requireLiveManagedFlow(
 }
 
 export function getTaskFlowAutomationObligationFromSqlite(
-  db: DatabaseSync,
+  db: EngineConnection,
   flowId: string,
 ): TaskFlowAutomationObligation | undefined {
   if (!tableExists(db, "task_flow_automation_obligations")) {
@@ -140,7 +140,7 @@ export function getTaskFlowAutomationObligationFromSqlite(
 
 /** Must run inside the caller's existing state write transaction with its Flow CAS. */
 export function upsertTaskFlowAutomationObligationInStateTransaction(
-  db: DatabaseSync,
+  db: EngineConnection,
   params: UpsertTaskFlowAutomationObligation,
 ): TaskFlowAutomationObligation {
   ensureTaskFlowAutomationObligationSchema(db);
@@ -201,7 +201,7 @@ export function upsertTaskFlowAutomationObligationInStateTransaction(
 
 /** Removes an obligation only after the caller's Flow transition is durably terminal. */
 export function removeTaskFlowAutomationObligationForTerminalFlowInStateTransaction(
-  db: DatabaseSync,
+  db: EngineConnection,
   params: { flowId: string; expectedFlowRevision: number; controllerId: string },
 ): boolean {
   if (!tableExists(db, "task_flow_automation_obligations")) {
@@ -232,7 +232,7 @@ export function removeTaskFlowAutomationObligationForTerminalFlowInStateTransact
 
 /** Advances one receipt only from the expected durable phase and revision. */
 export function transitionTaskFlowAutomationObligationPhaseInStateTransaction(
-  db: DatabaseSync,
+  db: EngineConnection,
   params: {
     flowId: string;
     expectedFlowRevision: number;
@@ -258,7 +258,7 @@ export function transitionTaskFlowAutomationObligationPhaseInStateTransaction(
 
 /** Retains an unserved trigger after its earlier paced slot was consumed. */
 export function rescheduleTaskFlowAutomationObligationInStateTransaction(
-  db: DatabaseSync,
+  db: EngineConnection,
   params: {
     flowId: string;
     expectedFlowRevision: number;
@@ -285,7 +285,7 @@ export function rescheduleTaskFlowAutomationObligationInStateTransaction(
 
 /** Lists only live receipts for the exact scheduler store and existing job. */
 export function listTaskFlowAutomationObligationsForCronJobFromSqlite(
-  db: DatabaseSync,
+  db: EngineConnection,
   params: {
     cronStoreKey: string;
     cronJobId: string;
@@ -326,7 +326,7 @@ export function listTaskFlowAutomationObligationsForCronJobFromSqlite(
   return rows.map(rowToObligation);
 }
 export function findEarliestTaskFlowAutomationObligationForCronJobFromSqlite(
-  db: DatabaseSync,
+  db: EngineConnection,
   params: { cronStoreKey: string; cronJobId: string },
 ): TaskFlowAutomationObligation | undefined {
   return listTaskFlowAutomationObligationsForCronJobFromSqlite(db, {

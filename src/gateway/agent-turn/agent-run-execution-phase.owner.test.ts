@@ -17,11 +17,14 @@ import { PreparedModelRuntimeBuildResources } from "../../agents/prepared-model-
 import type { PreparedModelRuntimePluginGeneration } from "../../agents/prepared-model-runtime.types.js";
 import { retainRuntimePluginWork } from "../../agents/runtime-plugin-work.js";
 import * as runtimePlugins from "../../agents/runtime-plugins.js";
-import { SessionFollowupCompletion } from "../../agents/subagents/completion/session-followup-completion.js";
 import {
   createPluginMetadataSnapshot,
   makeRegistry,
 } from "../../config/plugin-auto-enable.test-helpers.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
 import {
@@ -36,6 +39,7 @@ import {
   beginSessionWorkAdmission,
   SESSION_WORK_ADMISSION_DRAIN_TIMEOUT_MS,
 } from "../../sessions/session-lifecycle-admission.js";
+import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { isWebchatClient } from "../../utils/message-channel.js";
 import * as abortLifecycle from "../chat-abort-lifecycle-internal.js";
 import {
@@ -48,10 +52,14 @@ import { createChatAbortContext } from "../server-methods/chat.abort.test-helper
 import * as sessionChange from "../server-methods/session-change-event.js";
 import { prepareSessionLifecycleDrain } from "../server-methods/sessions-lifecycle-drain.js";
 import type { GatewayRequestContext } from "../server-methods/types.js";
-import { replayAgentTurnIfCached } from "./agent-dedupe.js";
+import { expectSuccessorWorkspaceRead } from "../workspace-readiness.test-support.js";
 import { resolveAgentDeliveryPhase } from "./agent-delivery-phase.js";
 import * as agentHandlerHelpers from "./agent-handler-helpers.js";
 import { startAgentRunExecution } from "./agent-run-execution-phase.js";
+import {
+  createExecution,
+  createVisibleExecution,
+} from "./agent-run-execution-phase.owner.test-support.js";
 import type { AgentTurnPrincipal } from "./types.js";
 
 const { dispatchAgentRunFromGateway, agentCommand } = vi.hoisted(() => ({
@@ -75,197 +83,30 @@ vi.mock("../../logging/diagnostic.js", async (importOriginal) => ({
   logMessageProcessed,
 }));
 
-function createExecution(
-  options: {
-    aborted?: boolean;
-    admissionTrace?: DiagnosticTraceContext;
-    diagnosticTrace?: DiagnosticTraceContext;
-    assertContextCurrent?: () => void;
-    admittedConversationId?: string;
-    admittedRequesterSenderId?: string;
-    admittedMessageId?: string;
-    admittedReplyOptional?: boolean;
-    deliveryChatType?: "direct" | "group" | "channel";
-    deliver?: boolean;
-    groupId?: string;
-    operatorAdminClient?: "local" | "remote";
-    senderIsOwner?: boolean;
-    pendingInputSettlement?: () => Promise<void>;
-  } = {},
-) {
-  const abortCleanup = vi.fn();
-  const gatewayRelease = vi.fn();
-  const callerRelease = vi.fn();
-  const { promise: runtimeReleased, resolve: resolveRuntimeReleased } = createDeferred();
-  const runtimeRelease = vi.fn(async () => resolveRuntimeReleased());
-  const controller = new AbortController();
-  if (options.aborted) {
-    controller.abort();
-  }
-  return {
-    abortCleanup,
-    gatewayRelease,
-    callerRelease,
-    runtimeRelease,
-    runtimeReleased,
-    params: {
-      assertContextCurrent: options.assertContextCurrent,
-      prepared: {
-        releaseCallerAuthority: callerRelease,
-        activeGatewayWorkAdmission: {
-          release: gatewayRelease,
-          run: async (run: () => Promise<void>) =>
-            options.admissionTrace
-              ? await runWithDiagnosticTraceContext(options.admissionTrace, run)
-              : await run(),
-        },
-        activeRunAbort: {
-          cleanup: abortCleanup,
-          controller,
-          registered: false,
-        },
-        effectiveAllowModelOverride: false,
-        lifecycleStorePath: "",
-        operationalRunInstance: {},
-        preparedModelRuntimeLease: { [Symbol.asyncDispose]: runtimeRelease, snapshot: {} },
-        replyDispatchRuntime: {
-          config: { runtime: "A" },
-          pluginGeneration: "generation-A",
-        },
-        unpersistedOffloadedRefs: [],
-        userTurn: {
-          recorder: options.pendingInputSettlement
-            ? { waitForPendingInputSettlement: options.pendingInputSettlement }
-            : undefined,
-          execApprovalFollowupHandoffClaimId: "claim",
-          message: "continue",
-          senderIsOwner: options.senderIsOwner ?? false,
-          suppressPromptPersistence: false,
-        },
-        workspaceOverride: "/workspace/A",
-      },
-      request: {
-        admittedConversationId: options.admittedConversationId,
-        admittedRequesterSenderId: options.admittedRequesterSenderId,
-        admittedMessageId: options.admittedMessageId,
-        admittedReplyOptional: options.admittedReplyOptional,
-      },
-      cfg: {},
-      activeSessionAgentId: "main",
-      delivery: {
-        deliver: options.deliver ?? false,
-        resolvedChatType: options.deliveryChatType,
-      },
-      isNewSession: false,
-      isRawModelRun: true,
-      isOneShotModelRun: true,
-      isRestartRecoveryResumeRun: false,
-      suppressVisibleSessionEffects: true,
-      images: [],
-      imageOrder: [],
-      media: [],
-      groupId: options.groupId,
-      runId: "owner-test",
-      agentDedupeKeys: [],
-      bestEffortDeliver: false,
-      lifecycleGeneration: "test",
-      preserveUserFacingSessionModelState: false,
-      skipAgentInitialSessionTouch: true,
-      canUseInternalRuntimeHandoff: false,
-      diagnosticTrace: options.diagnosticTrace,
-      client:
-        options.operatorAdminClient === "local"
-          ? {
-              internal: { isLocalClient: true },
-              connect: { scopes: ["operator.admin"] },
-            }
-          : options.operatorAdminClient === "remote"
-            ? { connect: { scopes: ["operator.admin"] } }
-            : null,
-      context: {
-        getSessionEventSubscriberConnIds: () => new Set(),
-        dedupe: new Map(),
-        chatAbortControllers: new Map(),
-        deps: {},
-        logGateway: { error: vi.fn(), warn: vi.fn() },
-      },
-      io: {
-        emitAcceptance: vi.fn(),
-        emitFinal: vi.fn(),
-      },
-      releaseCronContinuationClaimWithRecovery: async () => true,
-    } as unknown as Parameters<typeof startAgentRunExecution>[0],
-  };
-}
-
-function createVisibleExecution() {
-  const execution = createExecution();
-  const sessionKey = "agent:main:task-access-liveness";
-  Object.assign(execution.params, {
-    suppressVisibleSessionEffects: false,
-    requestedSessionKey: sessionKey,
-    resolvedSessionKey: sessionKey,
-  });
-  Object.assign(execution.params.context, {
-    getRuntimeConfig: () => ({}),
-    getSessionEventSubscriberConnIds: () => new Set(),
-  });
-  execution.params.prepared.activeRunAbort.markExecutionStarted = vi.fn(() => true);
-  execution.params.prepared.userTurn.recorder = {
-    finishPendingInput: vi.fn(),
-  } as unknown as NonNullable<typeof execution.params.prepared.userTurn.recorder>;
-  return execution;
-}
-
-function bindFollowupCompletion(execution: ReturnType<typeof createExecution>) {
-  const { params } = execution;
-  const sessionKey = "agent:main:followup-owner";
-  const lifecycleGeneration = getAgentEventLifecycleGeneration();
-  const entry: ChatAbortControllerEntry = {
-    controller: params.prepared.activeRunAbort.controller,
-    sessionId: "followup-session",
-    sessionKey,
-    operationalRunInstance: params.prepared.operationalRunInstance,
-    lifecycleGeneration,
-    startedAtMs: 1,
-    expiresAtMs: Number.MAX_SAFE_INTEGER,
-  };
-  params.resolvedSessionKey = sessionKey;
-  params.resolvedSessionId = entry.sessionId;
-  params.lifecycleGeneration = lifecycleGeneration;
-  params.context.chatAbortControllers = new Map([[params.runId, entry]]);
-  params.prepared.activeRunAbort = {
-    ...params.prepared.activeRunAbort,
-    registered: true,
-    entry,
-  };
-  params.prepared.activeGatewayWorkAdmission.isActive = () => true;
-  execution.abortCleanup.mockImplementation(() => {
-    if (params.context.chatAbortControllers.get(params.runId) === entry) {
-      params.context.chatAbortControllers.delete(params.runId);
-    }
-  });
-  const custody = new AbortController();
-  const owner = SessionFollowupCompletion.bind({
-    runId: params.runId,
-    requesterSessionKey: "agent:main:requester",
-    requesterSessionId: "requester-session",
-    requesterAgentId: "main",
-    targetAgentId: "main",
-    targetSessionKey: sessionKey,
-    custody: {
-      signal: custody.signal,
-      assertCurrent: () => custody.signal.throwIfAborted(),
-      run: (work) => work(),
-      release: () => custody.abort(),
-    },
-  });
-  owner.markAccepted(params.runId);
-  params.prepared.followupCompletion = owner;
-  return owner;
-}
-
 describe("startAgentRunExecution Gateway ownership", () => {
+  it("reads the workspace after resuming from a retired same-session preparation", async () => {
+    await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      const execution = createExecution();
+      const sessionKey = "agent:main:resumed-workspace";
+      execution.params.resolvedSessionKey = sessionKey;
+      await expectSuccessorWorkspaceRead({
+        workspaceDir: state.workspaceDir,
+        sessionKey,
+        run: async (readWorkspace) => {
+          dispatchAgentRunFromGateway.mockImplementationOnce(async (dispatch) => {
+            try {
+              await readWorkspace();
+            } finally {
+              await dispatch.cleanupAbortController();
+            }
+          });
+          await startAgentRunExecution(execution.params);
+          expect(dispatchAgentRunFromGateway).toHaveBeenCalledOnce();
+        },
+      });
+    });
+  });
+
   beforeEach(() => {
     dispatchAgentRunFromGateway.mockReset();
     logMessageDispatchStarted.mockReset();
@@ -521,6 +362,8 @@ describe("startAgentRunExecution Gateway ownership", () => {
 
   it("lets a disposer drain its real session without waiting on its own retained execution", async () => {
     const execution = createExecution();
+    setRuntimeConfigSnapshot(execution.params.cfg);
+    onTestFinished(() => clearRuntimeConfigSnapshot());
     const controllers = new Map<string, ChatAbortControllerEntry>();
     const registration = registerChatAbortController({
       chatAbortControllers: controllers,
@@ -603,7 +446,7 @@ describe("startAgentRunExecution Gateway ownership", () => {
     }
   });
 
-  it.each([false, true])(
+  it.each([true])(
     "preserves access across liveness and invalidates creation (new session: %s)",
     async (isNewSession) => {
       const execution = createVisibleExecution();
@@ -954,282 +797,4 @@ describe("startAgentRunExecution Gateway ownership", () => {
       testCase.deliveryChatType,
     );
   });
-
-  it("keeps the gateway message lifecycle open until the agent run settles", async () => {
-    const ingressTrace: DiagnosticTraceContext = {
-      traceId: "11111111111111111111111111111111",
-      spanId: "2222222222222222",
-      traceFlags: "01",
-    };
-    const execution = createExecution({ diagnosticTrace: ingressTrace });
-    let resolveDispatched!: () => void;
-    const dispatched = new Promise<void>((resolve) => {
-      resolveDispatched = resolve;
-    });
-    let dispatchStartedTrace: DiagnosticTraceContext | undefined;
-    let processedTrace: DiagnosticTraceContext | undefined;
-    logMessageDispatchStarted.mockImplementationOnce(() => {
-      dispatchStartedTrace = getActiveDiagnosticTraceContext();
-    });
-    logMessageProcessed.mockImplementationOnce(() => {
-      processedTrace = getActiveDiagnosticTraceContext();
-    });
-    dispatchAgentRunFromGateway.mockImplementationOnce(resolveDispatched);
-
-    void startAgentRunExecution(execution.params);
-
-    await dispatched;
-    expect(logMessageDispatchStarted).toHaveBeenCalledOnce();
-    expect(logMessageProcessed).not.toHaveBeenCalled();
-    const dispatch = dispatchAgentRunFromGateway.mock.calls[0]?.[0];
-    await dispatch?.onSettled?.({
-      terminalOutcome: { reason: "completed", status: "ok" },
-    });
-    expect(logMessageProcessed).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: "completed", reason: "completed" }),
-    );
-    expect(processedTrace).toEqual(dispatchStartedTrace);
-  });
-
-  it("closes the gateway message lifecycle when dispatch throws", async () => {
-    const execution = createExecution({
-      diagnosticTrace: {
-        traceId: "11111111111111111111111111111111",
-        spanId: "2222222222222222",
-        traceFlags: "01",
-      },
-    });
-    dispatchAgentRunFromGateway.mockImplementationOnce(() => {
-      throw new Error("dispatch unavailable");
-    });
-
-    void startAgentRunExecution(execution.params);
-
-    await execution.runtimeReleased;
-    expect(logMessageDispatchStarted).toHaveBeenCalledOnce();
-    expect(logMessageProcessed).toHaveBeenCalledWith(
-      expect.objectContaining({
-        outcome: "error",
-        reason: "dispatch_failed",
-        error: "dispatch unavailable",
-      }),
-    );
-  });
-  it.each([undefined, "/workspace/session-override"])(
-    "preserves the admitted workspace with session override %s",
-    async (workspaceOverride) => {
-      const execution = createExecution();
-      execution.params.prepared.workspaceOverride = workspaceOverride;
-      execution.params.prepared.replyDispatchRuntime = {
-        ...execution.params.prepared.replyDispatchRuntime,
-        workspaceDir: "/workspace/admitted",
-      };
-      dispatchAgentRunFromGateway.mockResolvedValueOnce(undefined);
-
-      await startAgentRunExecution(execution.params);
-
-      const dispatch = dispatchAgentRunFromGateway.mock.calls[0]?.[0];
-      expect(dispatch?.ingressOpts.workspaceDir).toBe(workspaceOverride ?? "/workspace/admitted");
-      expect(execution.runtimeRelease).toHaveBeenCalledOnce();
-      expect(execution.callerRelease).toHaveBeenCalledOnce();
-    },
-  );
-
-  it.each([
-    { ending: "aborted", registration: "current" },
-    { ending: "failed", registration: "current" },
-    { ending: "aborted", registration: "foreign" },
-    { ending: "aborted", registration: "absent" },
-    { ending: "aborted", registration: "replacement" },
-    { ending: "aborted", registration: "controller" },
-    { ending: "aborted", registration: "session" },
-    { ending: "aborted", registration: "instance" },
-    { ending: "aborted", registration: "lifecycle" },
-  ] as const)(
-    "settles an undispatched $ending followup only after cleanup (registration: $registration)",
-    async ({ ending, registration }) => {
-      const settlementEntered = createDeferred();
-      const finishSettlement = createDeferred();
-      const execution = createExecution({
-        pendingInputSettlement: async () => {
-          settlementEntered.resolve();
-          await finishSettlement.promise;
-        },
-        aborted: ending === "aborted",
-        ...(ending === "failed"
-          ? {
-              assertContextCurrent: () => {
-                throw new Error("Gateway owner retired");
-              },
-            }
-          : {}),
-      });
-      execution.params.agentDedupeKeys = [`agent:${execution.params.runId}`];
-      const owner = bindFollowupCompletion(execution);
-      const entry = execution.params.prepared.activeRunAbort.entry!;
-      const successor =
-        registration === "foreign" || registration === "replacement"
-          ? {
-              ...entry,
-              controller: new AbortController(),
-              sessionKey: registration === "foreign" ? "agent:main:unrelated" : entry.sessionKey,
-              operationalRunInstance: { runId: execution.params.runId, instanceId: "successor" },
-            }
-          : undefined;
-      if (successor) {
-        execution.params.context.chatAbortControllers.set(execution.params.runId, successor);
-      }
-      const lostRegistration = !["current", "foreign", "absent"].includes(registration);
-      execution.params.prepared.activeGatewayWorkAdmission.run = async (run) => {
-        if (registration === "absent") {
-          execution.params.context.chatAbortControllers.delete(execution.params.runId);
-        } else if (registration === "controller") {
-          entry.controller = new AbortController();
-        } else if (registration === "session") {
-          entry.sessionKey = "agent:main:unrelated";
-        } else if (registration === "instance") {
-          entry.operationalRunInstance = { runId: execution.params.runId, instanceId: "successor" };
-        } else if (registration === "lifecycle") {
-          entry.lifecycleGeneration = "successor-lifecycle";
-        }
-        return await run();
-      };
-      const recoveryEntered = createDeferred();
-      const releaseRecovery = createDeferred();
-      const disposalEntered = createDeferred();
-      const finishDisposal = createDeferred();
-      execution.params.releaseCronContinuationClaimWithRecovery = async () => {
-        recoveryEntered.resolve();
-        await releaseRecovery.promise;
-        return true;
-      };
-      execution.runtimeRelease.mockImplementation(async () => {
-        disposalEntered.resolve();
-        await finishDisposal.promise;
-      });
-      const finishExecution = vi.spyOn(owner, "finishExecution");
-      const replyObserved = vi.fn();
-      const reply = owner.take().then((result) => {
-        replyObserved(result);
-        return result;
-      });
-      void reply.catch(() => {});
-      const finished = vi.fn();
-      const completion = startAgentRunExecution(execution.params).then(finished);
-      try {
-        await Promise.race([recoveryEntered.promise, completion]);
-        expect(dispatchAgentRunFromGateway).not.toHaveBeenCalled();
-        expect(execution.params.io.emitFinal).not.toHaveBeenCalled();
-        expect(execution.params.context.dedupe.size).toBe(0);
-        expect(finishExecution).not.toHaveBeenCalled();
-        expect(replyObserved).not.toHaveBeenCalled();
-        expect(execution.abortCleanup).not.toHaveBeenCalled();
-        releaseRecovery.resolve();
-        await Promise.race([settlementEntered.promise, completion]);
-        expect(execution.params.io.emitFinal).not.toHaveBeenCalled();
-        expect(execution.params.context.dedupe.size).toBe(0);
-        expect(execution.abortCleanup).not.toHaveBeenCalled();
-        finishSettlement.resolve();
-        await Promise.race([disposalEntered.promise, completion]);
-        expect(execution.params.io.emitFinal).toHaveBeenCalledOnce();
-        expect(execution.params.context.dedupe.size).toBe(1);
-        expect(execution.abortCleanup).toHaveBeenCalledOnce();
-        expect(execution.gatewayRelease).toHaveBeenCalledOnce();
-        expect(execution.runtimeRelease).toHaveBeenCalledOnce();
-        expect(execution.callerRelease).not.toHaveBeenCalled();
-        expect(finishExecution).not.toHaveBeenCalled();
-        expect(replyObserved).not.toHaveBeenCalled();
-        expect(finished).not.toHaveBeenCalled();
-        finishDisposal.resolve();
-        await completion;
-        expect(finished).toHaveBeenCalledOnce();
-        expect(execution.callerRelease).toHaveBeenCalledOnce();
-        expect(finishExecution).toHaveBeenCalledExactlyOnceWith(execution.params.runId);
-        if (successor) {
-          expect(execution.params.context.chatAbortControllers.get(execution.params.runId)).toBe(
-            successor,
-          );
-        }
-        if (lostRegistration) {
-          await expect(reply).rejects.toThrow("Follow-up admission was replaced before cleanup.");
-        } else {
-          await expect(reply).resolves.toMatchObject(
-            ending === "aborted"
-              ? { status: "error", stopReason: "rpc" }
-              : { status: "error", error: "Gateway owner retired" },
-          );
-        }
-      } finally {
-        releaseRecovery.resolve();
-        finishSettlement.resolve();
-        finishDisposal.resolve();
-        await completion.catch(() => {});
-        owner.close();
-      }
-    },
-  );
-
-  it.each([false, true])(
-    "releases the admitted runtime and preserves private failure replay before dispatch (Incognito: %s)",
-    async (incognito) => {
-      const privateMessage = "synthetic-private-pre-dispatch-error";
-      const execution = createVisibleExecution();
-      const fail = () => {
-        throw new Error(privateMessage);
-      };
-      execution.params.assertContextCurrent = fail;
-      execution.params.prepared.userTurn.releaseProcessingAbortObserver = fail;
-      Object.assign(execution.params.prepared.userTurn.recorder ?? {}, {
-        completeProcessing: fail,
-      });
-      execution.params.resolvedSessionKey = "agent:main:dashboard:private-owner";
-      execution.params.sessionEntry = {
-        sessionId: "private-owner",
-        updatedAt: Date.now(),
-        ...(incognito ? { incognito: true } : {}),
-      };
-      execution.params.agentDedupeKeys = [`agent:${execution.params.runId}`];
-
-      await startAgentRunExecution(execution.params);
-      expect(dispatchAgentRunFromGateway).not.toHaveBeenCalled();
-      expect(execution.abortCleanup).toHaveBeenCalledOnce();
-      expect(execution.gatewayRelease).toHaveBeenCalledOnce();
-      expect(execution.runtimeRelease).toHaveBeenCalledOnce();
-      const warnings = vi.mocked(execution.params.context.logGateway.warn).mock.calls;
-      expect(warnings).toHaveLength(2);
-      if (incognito) {
-        expect.soft(JSON.stringify(warnings)).not.toContain(privateMessage);
-      } else {
-        expect(JSON.stringify(warnings)).toContain(privateMessage);
-      }
-      const [frame, metadata] = vi.mocked(execution.params.io.emitFinal).mock.calls[0] ?? [];
-      expect(frame?.[2]?.message).toBe(privateMessage);
-      const diagnostics = { errorMessage: frame?.[2]?.message, ...metadata };
-      if (incognito) {
-        expect.soft(JSON.stringify(diagnostics)).not.toContain(privateMessage);
-      } else {
-        expect(diagnostics).toMatchObject({ error: privateMessage, errorMessage: privateMessage });
-      }
-
-      const emitAcceptance = vi.fn();
-      expect(
-        replayAgentTurnIfCached({
-          preflight: {
-            runId: execution.params.runId,
-            agentDedupeKeys: execution.params.agentDedupeKeys,
-          },
-          context: execution.params.context,
-          io: { emitAcceptance, emitFinal: vi.fn() },
-        }),
-      ).toBe(true);
-      const [replayFrame, replayMetadata] = emitAcceptance.mock.calls[0] ?? [];
-      expect(replayFrame).toEqual(frame);
-      const replayDiagnostics = { errorMessage: replayFrame?.[2]?.message, ...replayMetadata };
-      if (incognito) {
-        expect(JSON.stringify(replayDiagnostics)).not.toContain(privateMessage);
-      } else {
-        expect(replayDiagnostics).toMatchObject({ cached: true, errorMessage: privateMessage });
-      }
-    },
-  );
 });

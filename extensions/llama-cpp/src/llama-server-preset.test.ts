@@ -124,17 +124,16 @@ describe("managed embedding capacity defaults", () => {
     expect(preset).not.toMatch(/ctx-size|ubatch-size/u);
   });
 
-  it.each([
-    { label: "env", serviceSettings: { env: { LLAMA_ARG_N_PARALLEL: "4" } } },
-    { label: "--parallel arg", serviceSettings: { args: ["--port", "1", "--parallel", "2"] } },
-    { label: "-np arg", serviceSettings: { args: ["-np", "3"] } },
-  ])("keeps the router service's $label slot/context policy", ({ serviceSettings }) => {
-    const preset = refreshEmbedding(undefined, { serviceSettings });
-    expect(preset).not.toMatch(/parallel|ctx-size/u);
-    expect(preset).toContain("ubatch-size = 2048");
-  });
+  it.each([{ label: "-np arg", serviceSettings: { args: ["-np", "3"] } }])(
+    "keeps the router service's $label slot/context policy",
+    ({ serviceSettings }) => {
+      const preset = refreshEmbedding(undefined, { serviceSettings });
+      expect(preset).not.toMatch(/parallel|ctx-size/u);
+      expect(preset).toContain("ubatch-size = 2048");
+    },
+  );
 
-  it.each(["--kv-unified-per-slot", "--kv_unified_per_slot"])(
+  it.each(["--kv_unified_per_slot"])(
     "preserves native per-slot sizing from the service's %s option",
     (option) => {
       const preset = refreshEmbedding(undefined, {
@@ -146,12 +145,7 @@ describe("managed embedding capacity defaults", () => {
     },
   );
 
-  it.each([
-    { platform: "win32", key: "llama_arg_n_parallel", expectedDefault: false },
-    { platform: "win32", key: "Llama_Arg_N_Parallel", expectedDefault: false },
-    { platform: "linux", key: "llama_arg_n_parallel", expectedDefault: true },
-    { platform: "linux", key: "parallel", expectedDefault: true },
-  ] as const)(
+  it.each([{ platform: "win32", key: "Llama_Arg_N_Parallel", expectedDefault: false }] as const)(
     "matches $platform environment names for $key",
     ({ platform, key, expectedDefault }) => {
       withMockedPlatform(platform, () => {

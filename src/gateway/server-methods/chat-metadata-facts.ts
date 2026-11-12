@@ -7,8 +7,7 @@ import {
 } from "../../agents/prepared-model-catalog.js";
 import { getPreparedModelFullCatalogAuth } from "../../agents/prepared-model-runtime-auth.js";
 import type { PreparedModelRuntimeSnapshot } from "../../agents/prepared-model-runtime.js";
-import { getPreparedModelRuntimeStartupStatus } from "../../agents/prepared-model-runtime.startup-status.js";
-import { resolveRuntimeConfigCacheKey } from "../../config/runtime-snapshot.js";
+import { resolveRuntimeModelConfigCacheKey } from "../../config/runtime-snapshot.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { readAgentDatabaseAdmissionRefusal } from "../../state/agent-database-admission.js";
@@ -20,6 +19,7 @@ import type { GatewayModelCatalogContext } from "./models-list-context.js";
 
 type PreparedAgentFacts = ChatMetadataProjectionFacts & {
   authStoreRevision: string;
+  authCatalogRevision: string;
   catalogRefreshFailed: boolean;
   skillsVersion: number;
 };
@@ -42,6 +42,7 @@ export type ChatMetadataRuntimeDeps = {
     inheritedAuthDir?: string,
   ) => AuthProfileStore | undefined;
   getAuthStoreRevision: (agentDir?: string) => number;
+  getAuthCatalogRevision: (agentDir?: string) => number;
   getSkillsVersion: (workspaceDir?: string) => number;
   getPluginRegistryVersion: () => number;
   buildCommands: (params: {
@@ -94,12 +95,8 @@ export function captureGenerationFacts(deps: ChatMetadataRuntimeDeps): PreparedG
             allowGatewaySubagentBinding: true,
           });
           if (!owner) {
-            if (getPreparedModelRuntimeStartupStatus()?.degraded) {
-              return [];
-            }
-            throw new ChatMetadataSnapshotUnavailableError(
-              `prepared chat metadata owner is unavailable for agent "${agentId}"`,
-            );
+            // An absent agent must not withdraw metadata for the published, healthy fleet.
+            return [];
           }
           const workspaceDir = owner.workspaceDir ?? resolveAgentWorkspaceDir(config, agentId);
           const fullModelCatalog = owner.readFullModelCatalog?.();
@@ -121,6 +118,10 @@ export function captureGenerationFacts(deps: ChatMetadataRuntimeDeps): PreparedG
                 },
               authModes: fullCatalogAuth?.authModes ?? owner.authModes,
               authStoreRevision: `${deps.getAuthStoreRevision(owner.agentDir)}:${deps.getAuthStoreRevision(owner.inheritedAuthDir)}`,
+              authCatalogRevision:
+                String(deps.getAuthCatalogRevision(owner.agentDir)) +
+                ":" +
+                String(deps.getAuthCatalogRevision(owner.inheritedAuthDir)),
               modelCatalog: catalog,
               // Failure is visible metadata; in-flight discovery does not invalidate usable rows.
               catalogRefreshFailed: catalog.refreshFailed === true,
@@ -132,7 +133,7 @@ export function captureGenerationFacts(deps: ChatMetadataRuntimeDeps): PreparedG
   );
   return {
     config,
-    configKey: resolveRuntimeConfigCacheKey(config),
+    configKey: resolveRuntimeModelConfigCacheKey(config),
     pluginRegistryVersion: deps.getPluginRegistryVersion(),
     agents,
   };
@@ -141,7 +142,7 @@ export function captureGenerationFacts(deps: ChatMetadataRuntimeDeps): PreparedG
 export function generationFactsMatch(
   left: PreparedGenerationFacts,
   right: PreparedGenerationFacts,
-  scope: "metadata" | "catalog" | "auth" | "commands" = "metadata",
+  scope: "metadata" | "catalog" | "catalog-notification" | "auth" | "commands" = "metadata",
 ): boolean {
   if (
     left.configKey !== right.configKey ||
@@ -157,8 +158,11 @@ export function generationFactsMatch(
       (scope === "commands"
         ? candidate.skillsVersion === agent.skillsVersion &&
           candidate.owner.workspaceDir === agent.owner.workspaceDir
-        : candidate.owner === agent.owner &&
-          candidate.authStoreRevision === agent.authStoreRevision &&
+        : // Config stamping replaces the reader object without replacing its generation.
+          candidate.owner.isCurrent === agent.owner.isCurrent &&
+          (scope === "catalog-notification"
+            ? candidate.authCatalogRevision === agent.authCatalogRevision
+            : candidate.authStoreRevision === agent.authStoreRevision) &&
           // Full catalogs carry their own paired auth generation.
           candidate.modelCatalog === agent.modelCatalog &&
           (scope === "auth" || candidate.catalogRefreshFailed === agent.catalogRefreshFailed) &&

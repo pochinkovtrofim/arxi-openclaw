@@ -32,7 +32,7 @@ import { sendDurableMessageBatchCore } from "../channels/message/runtime.js";
 import { patchSessionEntryCore } from "../config/sessions/session-accessor.js";
 import { mergeSessionEntry } from "../config/sessions/types.js";
 import { writeCronJobScratch } from "../cron/scratch-store.js";
-import { resolveCronJobsStorePathFromConfig } from "../cron/store.js";
+import { resolveCronJobsStorePathFromConfigAsync } from "../cron/store.js";
 import {
   isDeliveryRecoveryOwnedRetry,
   resolveDeliveryNotSentRetryability,
@@ -193,7 +193,7 @@ async function prepareHeartbeatDispatchReply(
         const owner = runState.agentTurnOwner;
         const written = await writeCronJobScratch(
           {
-            storePath: resolveCronJobsStorePathFromConfig(cfg),
+            storePath: await resolveCronJobsStorePathFromConfigAsync(cfg),
             jobId: preflight.scratchJobId,
             content: scratch,
             expectedRevision: preflight.scratchRevision ?? 0,
@@ -496,7 +496,10 @@ async function prepareHeartbeatDispatchReply(
   // Receipt identity uses the producer answer, not transport prefix decoration.
   policy.publicationSourceText = outcome.replyPayload?.text;
   const deliveryText =
-    !failed && delivery.implicitDefaultRoute && stateEntry?.lastHeartbeatSentAt === undefined
+    text &&
+    !failed &&
+    delivery.implicitDefaultRoute &&
+    stateEntry?.lastHeartbeatSentAt === undefined
       ? `${FIRST_HEARTBEAT_ALERT_PREAMBLE}\n${text}`
       : text;
   const payload = copyReplyPayloadMetadata(selected ?? {}, {
@@ -567,7 +570,7 @@ export async function deliverHeartbeatDispatch(
   const { delivery, runSessionKey, storePath, outboundPolicySessionKey, internalProjection } =
     policy.prepared;
   const onDeliveredPayload = policy.projectTarget
-    ? prepareHeartbeatTargetAwareness({
+    ? await prepareHeartbeatTargetAwareness({
         agentId,
         storePath,
         runSessionKey,

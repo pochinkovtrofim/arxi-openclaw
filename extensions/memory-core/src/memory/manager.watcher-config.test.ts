@@ -176,7 +176,7 @@ describe("Memory watch configuration", () => {
     }
   });
 
-  it("refreshes every search after watch-limit without further notifications", async () => {
+  it("refreshes a search each minute after watch-limit without further notifications", async () => {
     const file = path.join(state.workspaceDir, "memory", "note.md");
     await fs.writeFile(file, "Amber lantern baseline.");
     await configureMemoryCoreDreamingStateForTests(state.env);
@@ -203,6 +203,8 @@ describe("Memory watch configuration", () => {
     const lifecycle = manager as unknown as { awaitManagerIdle: () => Promise<void> };
     for (const text of ["Cobalt heron discovered.", "Violet badger replaced it."]) {
       await fs.writeFile(file, text);
+      // Fork: a degraded watcher admits one search-started sync per minute.
+      vi.setSystemTime(Date.now() + 60_000);
       // Search schedules maintenance while serving its captured published generation.
       await manager.search(text, { minScore: 0 });
       await lifecycle.awaitManagerIdle();

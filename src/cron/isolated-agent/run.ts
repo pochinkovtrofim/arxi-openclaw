@@ -1,4 +1,5 @@
 import { retireSessionMcpRuntime } from "../../agents/agent-bundle-mcp-tools.js";
+import { resolveDiagnosticModelResponse } from "../../agents/diagnostic-model-response.js";
 import { withPreparedModelRuntimePluginGenerationScope } from "../../agents/prepared-model-runtime-generation-scope.js";
 import {
   createAgentRunRestartAbortError,
@@ -11,12 +12,10 @@ import {
   getAgentEventLifecycleGeneration,
   withAgentRunLifecycleGeneration,
 } from "../../infra/agent-events.js";
-import {
-  claimAgentRunContext,
-  consumeCronNextCheckProposal,
-  releaseAgentRunContext,
-} from "../../infra/agent-run-registry.js";
+import { consumeCronNextCheckProposal } from "../../infra/agent-run-cron-proposals.js";
+import { claimAgentRunContext, releaseAgentRunContext } from "../../infra/agent-run-registry.js";
 import { isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
+import { resolveDiagnosticModelContentCapturePolicy } from "../../infra/diagnostic-llm-content.js";
 import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
@@ -205,6 +204,7 @@ async function runCronIsolatedAgentTurnInTrace(
 
           let outcome: "completed" | "error" = "completed";
           let outcomeError: string | undefined;
+          let finalModelResponse: string | undefined;
           let cronRunSessionCleanupHandled = false;
           let completedPromptRuns: readonly CronCompletedPromptRun[] = [];
           let promptAdmission:
@@ -286,12 +286,11 @@ async function runCronIsolatedAgentTurnInTrace(
               runId,
               cfg: params.cfg,
               job: params.job,
+              trigger: params.trigger,
               deliveryAttemptFence: params.deliveryAttemptFence,
               lane: params.lane,
               agentVerboseDefault: prepared.context.agentCfg?.verboseDefault,
               persistRunContinuationSession: prepared.context.runContinuationSession?.sync,
-              setRunContinuationCliExecutionProvider:
-                prepared.context.runContinuationSession?.setCliExecutionProvider,
               abortSignal,
               lifecycle,
               onPromptAdmission: (admission) => {
@@ -320,6 +319,10 @@ async function runCronIsolatedAgentTurnInTrace(
             // Publish the execution fact captured before bookkeeping; cron persistence
             // and delivery retain their separate workflow outcome.
             lifecycle.emit("end", execution.runResult);
+            finalModelResponse = resolveDiagnosticModelContentCapturePolicy(params.cfg)
+              .outputMessages
+              ? resolveDiagnosticModelResponse(execution.runResult)
+              : undefined;
             await promptAdmission?.finish();
             const finalized = await finalizeCronRun({
               prepared: prepared.context,
@@ -426,6 +429,8 @@ async function runCronIsolatedAgentTurnInTrace(
               messageLifecycle.markProcessed(outcome, {
                 ...finalSessionRef,
                 error: outcomeError,
+                userPrompt: prepared.context.commandBody || undefined,
+                finalResponse: finalModelResponse,
               });
             } finally {
               try {

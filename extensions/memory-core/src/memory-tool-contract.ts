@@ -95,26 +95,26 @@ export const MEMORY_SEARCH_TOOL_CONTRACT = {
   parameters: MemorySearchSchema,
   prepareArguments: (args: unknown) => {
     const params = asToolParamsRecord(args);
-    if (!Object.hasOwn(params, "min_score") && !Object.hasOwn(params, "max_results")) {
+    const aliases = [
+      ["min_score", "minScore"],
+      ["max_results", "maxResults"],
+      ["limit", "maxResults"],
+    ] as const;
+    if (!aliases.some(([alias]) => Object.hasOwn(params, alias))) {
       return args;
     }
     const normalized = { ...params };
-    // Explicit camelCase values win, including invalid values that validation must reject.
-    for (const [alias, key] of [
-      ["min_score", "minScore"],
-      ["max_results", "maxResults"],
-    ] as const) {
-      if (Object.hasOwn(normalized, alias)) {
-        if (!Object.hasOwn(normalized, key)) {
-          normalized[key] = normalized[alias];
-        }
-        delete normalized[alias];
+    // Precedence: maxResults > max_results > limit, even for invalid values validation must reject.
+    for (const [alias, key] of aliases) {
+      if (Object.hasOwn(normalized, alias) && !Object.hasOwn(normalized, key)) {
+        normalized[key] = normalized[alias];
       }
+      delete normalized[alias];
     }
     return normalized;
   },
   describe: ({ search }: MemorySourceContract) =>
-    `Semantically search ${search} before answering questions about prior work, decisions, dates, people, preferences, or todos when the relevant evidence is missing from the current conversation or supplied source context. Omit \`corpus\` to search those configured sources. Top memory-file hits include bounded current sourceReads: use status=ok excerpts directly when sufficient; no separate read is required. Indexed snippets do not override a newer source read or a current correction. Failed or missing source reads are not verified facts. Session results are transcript search references, not readable memory-file paths. Optional \`corpus=wiki\` or \`corpus=all\` also searches registered compiled-wiki supplements; use \`corpus=all\` only when compiled wiki supplements are needed. \`corpus=memory\` restricts hits to indexed memory files (excludes session transcript chunks from ranking). \`corpus=sessions\` searches indexed session transcripts under the same visibility rules as session history tools and returns unavailable when semantic session indexing is disabled. ${SEARCH_CORPUS_OUTCOME_GUIDANCE} If response has disabled=true or stale=true, retain the warning/action guidance for diagnosis and qualify your reasoning.`,
+    `Semantically search ${search} when an answer depends on prior work, decisions, dates, people, preferences, or todos not already present in the current turn. Do not repeat memory retrieval when supplied context fully answers the question. Omit \`corpus\` to search those configured sources. Top memory-file hits include bounded current sourceReads: use status=ok excerpts directly when sufficient; no separate read is required. Indexed snippets do not override a newer source read or a current correction. Failed or missing source reads are not verified facts. Session results are transcript search references, not readable memory-file paths. Optional \`corpus=wiki\` or \`corpus=all\` also searches registered compiled-wiki supplements; use \`corpus=all\` only when compiled wiki supplements are needed. \`corpus=memory\` restricts hits to indexed memory files (excludes session transcript chunks from ranking). \`corpus=sessions\` searches indexed session transcripts under the same visibility rules as session history tools and returns unavailable when semantic session indexing is disabled. ${SEARCH_CORPUS_OUTCOME_GUIDANCE} If response has disabled=true or stale=true, retain the warning/action guidance for diagnosis and qualify your reasoning.`,
 } as const;
 
 export const MEMORY_GET_TOOL_CONTRACT = {
@@ -142,12 +142,12 @@ export function buildMemoryPromptSection({
 
   // Code mode may defer tool descriptions; recall and disclosure policy must stay here.
   const guidance = hasMemorySearch
-    ? `Use relevant evidence already present in the current conversation or current source excerpts directly. For prior work, decisions, dates, people, preferences, or todos missing that evidence, run memory_search without corpus to search the configured sources. Its status=ok sourceReads are current excerpts; answer from them when sufficient${
+    ? `Use relevant evidence already present in the current conversation or current source excerpts directly. When an answer depends on prior work, decisions, dates, people, preferences, or todos not already present in the current turn, run memory_search without corpus to search the configured sources. Its status=ok sourceReads are current excerpts; answer from them when sufficient${
         hasMemoryGet
           ? "; use memory_get only for missing context, truncation, conflicting evidence, or an explicit request for a broader exact source"
           : ""
-      }. Use corpus=all only when compiled wiki supplements are needed. Do not repeat search or read solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If the search finds nothing sure, never invent past facts: say plainly you do not have it or ask one question.`
-    : "Before answering anything about prior work, decisions, dates, people, preferences, or todos that point to a specific memory file: run memory_get to pull only the needed lines. If the read finds nothing sure, never invent past facts: say plainly you do not have it or ask one question.";
+      }. Use corpus=all only when compiled wiki supplements are needed. Do not repeat memory retrieval when supplied context fully answers the question, or solely to follow a ritual. A failed or not_found source read is not verified by its old indexed snippet. If the search finds nothing sure, never invent past facts: say plainly you do not have it or ask one question.`
+    : "When an answer depends on prior work, decisions, dates, people, preferences, or todos not already present in the current turn and points to a specific memory file, run memory_get to pull only the needed lines. Do not repeat memory retrieval when supplied context fully answers the question. If the read finds nothing sure, never invent past facts: say plainly you do not have it or ask one question.";
   const sessionGuidance = !hasMemorySearch
     ? []
     : [

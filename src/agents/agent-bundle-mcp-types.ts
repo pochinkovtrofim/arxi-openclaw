@@ -228,6 +228,7 @@ export type SessionMcpRuntimeManager = {
   acquire: (params: {
     sessionId: string;
     sessionKey?: string;
+    agentId?: string;
     workspaceDir: string;
     agentDir?: string;
     cfg?: OpenClawConfig;
@@ -236,7 +237,6 @@ export type SessionMcpRuntimeManager = {
     requesterSenderId?: string | null;
     agentAccountId?: string | null;
     messageChannel?: string | null;
-    agentId?: string | null;
     chatType?: string | null;
     conversationId?: string | null;
     runtimeGeneration?: string | null;

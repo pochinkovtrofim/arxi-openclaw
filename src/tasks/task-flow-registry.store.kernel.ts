@@ -1,5 +1,3 @@
-// Connection-bound task-flow row codecs and SQLite operations.
-import type { DatabaseSync } from "node:sqlite";
 import type { Insertable, Selectable } from "kysely";
 import type { ExecutionOwnerBindingResult } from "../audit/execution-owner-binding.js";
 import {
@@ -13,6 +11,8 @@ import {
   getNodeSqliteKysely,
   prepareSqliteQuerySync,
 } from "../infra/kysely-sync.js";
+// Connection-bound task-flow row codecs and SQLite operations.
+import type { EngineConnection } from "../infra/sql-connection.js";
 import { normalizeSqliteNumber } from "../infra/sqlite-number.js";
 import { tableExists } from "../state/openclaw-state-db-schema-helpers.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
@@ -141,7 +141,7 @@ export function bindTaskFlowRecord(record: TaskFlowRecord): BoundTaskFlowRecord 
   };
 }
 
-function getFlowRegistryKysely(db: DatabaseSync) {
+function getFlowRegistryKysely(db: EngineConnection) {
   return getNodeSqliteKysely<FlowRegistryStoreDatabase>(db);
 }
 
@@ -173,9 +173,9 @@ type TaskFlowRegistryQueries = {
   viewOwner?: ReturnType<typeof prepareSqliteQuerySync<string, FlowRegistryRow>>;
   viewPoint?: ReturnType<typeof prepareSqliteQuerySync<string, FlowRegistryRow>>;
 };
-const taskFlowRegistryQueries = new WeakMap<DatabaseSync, TaskFlowRegistryQueries>();
+const taskFlowRegistryQueries = new WeakMap<EngineConnection, TaskFlowRegistryQueries>();
 
-function getTaskFlowRegistryQueries(db: DatabaseSync): TaskFlowRegistryQueries {
+function getTaskFlowRegistryQueries(db: EngineConnection): TaskFlowRegistryQueries {
   let queries = taskFlowRegistryQueries.get(db);
   if (!queries) {
     queries = {};
@@ -185,7 +185,7 @@ function getTaskFlowRegistryQueries(db: DatabaseSync): TaskFlowRegistryQueries {
 }
 
 export function listTaskFlowRecordsForOwnerReadInDatabase(
-  db: DatabaseSync,
+  db: EngineConnection,
   ownerKey: string,
 ): TaskFlowRecord[] {
   const queries = getTaskFlowRegistryQueries(db);
@@ -204,7 +204,7 @@ export function listTaskFlowRecordsForOwnerReadInDatabase(
   return read(ownerKey).rows.map(rowToFlowRecord);
 }
 
-export function readTaskFlowRegistrySnapshot(db: DatabaseSync): TaskFlowRegistryStoreSnapshot {
+export function readTaskFlowRegistrySnapshot(db: EngineConnection): TaskFlowRegistryStoreSnapshot {
   const query = getFlowRegistryKysely(db)
     .selectFrom("flow_runs")
     .select(FLOW_RUN_SELECT_COLUMNS)
@@ -222,7 +222,7 @@ const FLOW_VIEW_SELECT_COLUMNS = FLOW_RUN_SELECT_COLUMNS.filter(
   (column) => column !== "state_json" && column !== "wait_json",
 );
 
-function flowViewQuery(db: DatabaseSync) {
+function flowViewQuery(db: EngineConnection) {
   return getFlowRegistryKysely(db)
     .selectFrom("flow_runs")
     .select(FLOW_VIEW_SELECT_COLUMNS)
@@ -233,7 +233,7 @@ function flowViewQuery(db: DatabaseSync) {
 }
 
 export function listTaskFlowViewRecordsForOwnerInDatabase(
-  db: DatabaseSync,
+  db: EngineConnection,
   ownerKey: string,
 ): TaskFlowRecord[] {
   const queries = getTaskFlowRegistryQueries(db);
@@ -253,7 +253,7 @@ export function listTaskFlowViewRecordsForOwnerInDatabase(
 }
 
 export function readTaskFlowViewRecordInDatabase(
-  db: DatabaseSync,
+  db: EngineConnection,
   flowId: string,
 ): TaskFlowRecord | undefined {
   const queries = getTaskFlowRegistryQueries(db);
@@ -271,7 +271,7 @@ export function readTaskFlowViewRecordInDatabase(
 }
 
 export function upsertTaskFlowRowInDatabase(
-  db: DatabaseSync,
+  db: EngineConnection,
   row: BoundTaskFlowRecord,
   history?: TaskFlowHistoryRegistration,
 ): void {
@@ -328,7 +328,10 @@ export function upsertTaskFlowRowInDatabase(
   }
 }
 
-export function readTaskFlowRecord(db: DatabaseSync, flowId: string): TaskFlowRecord | undefined {
+export function readTaskFlowRecord(
+  db: EngineConnection,
+  flowId: string,
+): TaskFlowRecord | undefined {
   const queries = getTaskFlowRegistryQueries(db);
   const read = (queries.point ??= prepareSqliteQuerySync<string, FlowRegistryRow>(db, (parameter) =>
     getFlowRegistryKysely(db)
@@ -346,7 +349,7 @@ export function readTaskFlowRecord(db: DatabaseSync, flowId: string): TaskFlowRe
 
 /** The caller holds the SQLite write transaction across the revision check and update. */
 export function updateTaskFlowRecordInDatabase(
-  db: DatabaseSync,
+  db: EngineConnection,
   params: TaskFlowRegistryUpdate,
 ): TaskFlowRegistryUpdateResult {
   const stored = readTaskFlowRecord(db, params.flowId);
@@ -369,7 +372,7 @@ export function updateTaskFlowRecordInDatabase(
 
 /** Revalidate the native flow lifecycle before recording its exact execution binding. */
 export function bindTaskFlowExecutionInDatabase(
-  db: DatabaseSync,
+  db: EngineConnection,
   flowId: string,
   binding: Parameters<typeof bindExecutionOwnerLifecycleMetadata>[0]["binding"],
 ): Exclude<ExecutionOwnerBindingResult, "disabled"> {
@@ -394,7 +397,7 @@ export function bindTaskFlowExecutionInDatabase(
 }
 
 /** The caller keeps the flow deletion and native metadata cleanup in one transaction. */
-export function deleteTaskFlowRowInDatabase(db: DatabaseSync, flowId: string): void {
+export function deleteTaskFlowRowInDatabase(db: EngineConnection, flowId: string): void {
   if (tableExists(db, "task_flow_automation_obligations")) {
     executeSqliteQuerySync(
       db,

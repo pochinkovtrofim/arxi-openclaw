@@ -141,7 +141,6 @@ async function assertTelegramAdmission(config: OpenClawConfig): Promise<void> {
   const groupAllow = normalizeAllowFrom(groupConfig?.allowFrom);
   expect(
     evaluateTelegramGroupBaseAccess({
-      isGroup: true,
       groupConfig,
       hasGroupAllowOverride: true,
       effectiveGroupAllow: groupAllow,
@@ -161,11 +160,8 @@ async function assertTelegramAdmission(config: OpenClawConfig): Promise<void> {
       senderId: "42",
       resolveGroupPolicy: (chatId, cfg) =>
         resolveChannelGroupPolicy({ cfg, channel: "telegram", groupId: String(chatId) }),
-      enforcePolicy: true,
       enforceAllowlistAuthorization: true,
       allowEmptyAllowlistEntries: false,
-      requireSenderForAllowlistAuthorization: true,
-      checkChatAllowlist: true,
     }),
   ).toMatchObject({ allowed: true });
 }
@@ -175,7 +171,6 @@ async function visibleTools(params: {
   config: OpenClawConfig;
   agentId: string;
   sessionKey: string;
-  chatType: "direct" | "group";
 }) {
   const materialized = await materializeBundleMcpToolsForRun({ runtime: params.runtime });
   return applyFinalEffectiveToolPolicy({
@@ -187,7 +182,6 @@ async function visibleTools(params: {
       sessionKey: params.sessionKey,
       messageProvider: "telegram",
       messageChannel: "telegram",
-      chatType: params.chatType,
       senderId: "42",
     }),
     warn: () => {},
@@ -237,7 +231,6 @@ describe("authenticated Telegram to Ro Google Workspace composition", () => {
         config,
         agentId: identityId,
         sessionKey: privateSessionKey,
-        chatType: "direct",
       });
       expect(privateTools.some((tool) => tool.name === PRIVATE_PROBE)).toBe(true);
       const privateProbe = privateTools.find((tool) => tool.name === PRIVATE_PROBE);
@@ -267,7 +260,6 @@ describe("authenticated Telegram to Ro Google Workspace composition", () => {
         config,
         agentId: groupAgentId,
         sessionKey: groupSessionKey,
-        chatType: "group",
       });
       expect(groupTools.map((tool) => tool.name).toSorted()).toEqual(groupAllow.toSorted());
       expect(groupTools.some((tool) => tool.name.includes("__google_private_"))).toBe(false);

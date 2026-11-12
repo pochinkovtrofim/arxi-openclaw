@@ -19,5 +19,6 @@ export type SystemPromptRuntimeInfo = {
   channel?: string;
   chatType?: string;
   capabilities?: string[];
+  customInlineButtonHint?: boolean;
   repoRoot?: string;
 };

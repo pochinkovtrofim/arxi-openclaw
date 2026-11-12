@@ -39,3 +39,8 @@ export function writeCachedQueryEmbedding(
     entries.delete(entries.keys().next().value as string);
   }
 }
+
+/** Drop a vector the index rejected, so a repaired provider is asked again. */
+export function forgetCachedQueryEmbedding(provider: EmbeddingProvider, text: string): void {
+  queryEmbeddingCache.get(provider)?.delete(text);
+}

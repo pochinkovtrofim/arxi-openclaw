@@ -41,7 +41,8 @@ const runAttempt = vi.hoisted(() =>
 
 // The real harness selects the runtime and prepares its authority before this
 // model-execution boundary. The test never creates a reply operation or hash.
-vi.mock("../agents/embedded-agent-runner/run/attempt.js", () => ({
+vi.mock("../agents/embedded-agent-runner/run/attempt.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/embedded-agent-runner/run/attempt.js")>()),
   runEmbeddedAttempt: runAttempt,
 }));
 
@@ -152,8 +153,8 @@ it("adds the host's follow-up to the run it waits on, exactly once", async ({ si
     typeof import("../agents/agent-model-discovery.js")
   >("../agents/agent-model-discovery.js");
   const discoverySpy = vi
-    .spyOn(discovery, "discoverModels")
-    .mockImplementation(actualDiscovery.discoverModels);
+    .spyOn(discovery, "discoverModelsAsync")
+    .mockImplementation(actualDiscovery.discoverModelsAsync);
   onTestFinished(() => discoverySpy.mockRestore());
   await prepareGatewayReplyRuntimeForTest({ force: true });
   await writeSessionStore({

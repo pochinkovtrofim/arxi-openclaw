@@ -21,7 +21,7 @@ import { createTestGatewayScheduler } from "../../test-utils/gateway-scheduler-c
 import { ExecApprovalManager } from "../exec-approval-manager.js";
 import type { ExecApprovalManagerOptions } from "../exec-approval-manager.types.js";
 import { getOperatorApprovalDetailed } from "../operator-approval-store.js";
-import type { createApprovalHandlers } from "./approval.js";
+import { createApprovalHandlers } from "./approval.js";
 import { createContext } from "./approval.test-support.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
@@ -201,4 +201,50 @@ export async function cleanupApprovalHandlerFixtures(): Promise<void> {
     await closeOpenClawStateDatabaseByPathAsync(path.join(dir, "state.sqlite"));
     fs.rmSync(dir, { force: true, recursive: true });
   }
+}
+
+export function createHandlers(
+  managers: ReturnType<typeof createManagers>,
+  databaseOptions: OpenClawStateDatabaseOptions,
+  options: Omit<
+    Parameters<typeof createApprovalHandlers>[0],
+    "execApprovalManager" | "pluginApprovalManager" | "databaseOptions"
+  > = {},
+) {
+  return createApprovalHandlers({
+    execApprovalManager: managers.exec,
+    pluginApprovalManager: managers.plugin,
+    databaseOptions,
+    ...options,
+  });
+}
+
+export async function registerPlugin(
+  manager: ExecApprovalManager<PluginApprovalRequestPayload>,
+  params: {
+    id: string;
+    request?: Partial<PluginApprovalRequestPayload>;
+    reviewerDeviceIds?: string[];
+  },
+) {
+  const record = manager.create(
+    {
+      title: "Plugin permission",
+      description: "Allow one guarded plugin operation",
+      severity: "warning",
+      pluginId: "example-plugin",
+      toolName: "example-tool",
+      agentId: "main",
+      sessionKey: "agent:main:child",
+      ...params.request,
+    },
+    600_000,
+    params.id,
+  );
+  record.requestedByDeviceId = "requester-device";
+  record.requestedByClientId = "requester-client";
+  record.requestedByDeviceTokenAuth = true;
+  record.approvalReviewerDeviceIds = params.reviewerDeviceIds ?? ["reviewer"];
+  const decision = (await manager.register(record, 600_000)).decision;
+  return { record, decision };
 }

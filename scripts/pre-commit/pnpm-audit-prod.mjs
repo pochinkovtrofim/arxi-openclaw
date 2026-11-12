@@ -7,7 +7,7 @@ import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { isRecord } from "../../packages/normalization-core/src/record-coerce.ts";
-// This zero-install hook runs on Node 24.22.1+, where native TypeScript stripping is enabled.
+// This zero-install hook runs on Node 24.16.0+, where native TypeScript stripping is enabled.
 import { truncateUtf16Safe } from "../../packages/normalization-core/src/utf16-slice.ts";
 import { cancelResponseReaderSoon, readBoundedResponseText } from "../lib/bounded-response.mjs";
 import {
@@ -583,7 +583,7 @@ export async function runPnpmAuditProd({
         reason: `No matching ${normalizedMinSeverity} or higher advisories returned by npm bulk for production dependencies.`,
       };
       stdout.write(
-        `${result.reason} Upstream repository advisories were not checked; this is not comprehensive vulnerability clearance.\n`,
+        `${result.reason} Upstream repository advisories were not checked; this is not a full vulnerability assessment.\n`,
       );
       return 0;
     }

@@ -2,6 +2,7 @@ import type { MemoryEntryProvenance } from "openclaw/plugin-sdk/memory-core-host
 import { applyMMRToHybridResults, iterateMMR, type MMRConfig, DEFAULT_MMR_CONFIG } from "./mmr.js";
 import {
   applyRetrievalRanking,
+  hasValidProjectAnnotation,
   prepareActiveProjectKeys,
   projectScoreMultiplier,
 } from "./project-ranking.js";
@@ -29,6 +30,11 @@ export type HybridSearchResult<TSource extends HybridSource = HybridSource> = {
   provenance?: MemoryEntryProvenance;
 };
 
+export type RankedHybridResult<TSource extends HybridSource = HybridSource> =
+  HybridSearchResult<TSource> & {
+    eligibilityScore: number;
+  };
+
 type HybridCandidate<TSource extends HybridSource = HybridSource> = Omit<
   HybridSearchResult<TSource>,
   "score" | "vectorScore" | "textScore"
@@ -52,13 +58,34 @@ export function scoreExactPathTieForTemporalDecay(contentScore: number): number 
   return (1 + Math.max(0, Math.min(1, contentScore))) / 2;
 }
 
+// BM25 keyword scores saturate as relevance / (1 + relevance), and every chunk
+// outside the keyword window scores 0, so a fixed text weight mostly rewards
+// window membership. Undo the saturation and measure each keyword hit against
+// the query's strongest one, which may earn up to the best vector score; no hit
+// gains credit. A score of 1 has no finite relevance (SQLite's unranked filename
+// substring match, PostgreSQL trigram similarity), so it counts as the strongest.
+function createKeywordScoreScale(keywordScores: number[], bestVectorScore: number) {
+  if (bestVectorScore === 0) {
+    return (score: number) => score;
+  }
+  const relevance = (score: number) => score / (1 - score);
+  const strongest = Math.max(0, ...keywordScores.filter((score) => score < 1).map(relevance));
+  return (score: number) => {
+    if (score <= 0) {
+      return score;
+    }
+    const share = score >= 1 ? 1 : relevance(score) / strongest;
+    return Math.min(score, share * bestVectorScore);
+  };
+}
+
 type MergeHybridParams<TSource extends HybridSource> = Parameters<
   typeof rankHybridResults<TSource>
 >[0];
 
 export async function mergeHybridResults<TSource extends HybridSource>(
   params: MergeHybridParams<TSource>,
-): Promise<HybridSearchResult<TSource>[]> {
+): Promise<RankedHybridResult<TSource>[]> {
   return Array.from(await rankHybridResults(params));
 }
 
@@ -130,15 +157,18 @@ export async function rankHybridResults<TSource extends HybridSource>(params: {
   }
 
   const temporalDecayConfig = { ...DEFAULT_TEMPORAL_DECAY_CONFIG, ...params.temporalDecay };
-  const merged = Array.from(byId.values()).map((entry) => {
-    // Exact specificity already carries path precedence. Keep body scores as
-    // the within-tier signal, and use path BM25 only for partial path-only hits.
-    const keywordScore =
-      entry.textScore > 0
-        ? entry.rankingScore
-        : entry.exactPathSpecificity > 0
-          ? 0
-          : entry.pathScore;
+  // Chunks that never reach results must not set the keyword scale either.
+  const candidates = Array.from(byId.values()).filter(hasValidProjectAnnotation);
+  // Exact specificity already carries path precedence. Keep body scores as
+  // the within-tier signal, and use path BM25 only for partial path-only hits.
+  const keywordScoreOf = (entry: (typeof candidates)[number]) =>
+    entry.textScore > 0 ? entry.rankingScore : entry.exactPathSpecificity > 0 ? 0 : entry.pathScore;
+  const scaleKeywordScore = createKeywordScoreScale(
+    candidates.map(keywordScoreOf),
+    params.vectorWeight > 0 ? Math.max(0, ...candidates.map((entry) => entry.vectorScore)) : 0,
+  );
+  const merged = candidates.map((entry) => {
+    const keywordScore = scaleKeywordScore(keywordScoreOf(entry));
     const dropMediaTextSignal =
       entry.hasVector &&
       !entry.hasKeyword &&
@@ -184,18 +214,27 @@ export async function rankHybridResults<TSource extends HybridSource>(params: {
     );
   });
 
-  // Keep component scores as raw retrieval diagnostics. Temporal decay and MMR
-  // may adjust the combined score, but cannot cross the exact-identifier tier.
+  const activeProjects = prepareActiveProjectKeys(params.activeProjectKeys);
+  // Eligibility keeps importance and project affinity, but never ages out.
+  const weighted = applyRetrievalRanking(merged, activeProjects).map((entry) =>
+    Object.assign(entry, {
+      eligibilityScore:
+        entry.exactPathSpecificity > 0
+          ? projectScoreMultiplier(entry.projectKey, activeProjects)
+          : entry.contentScore === 0
+            ? 0
+            : entry.score,
+    }),
+  );
   const decayed = await applyTemporalDecayToHybridResults({
-    results: merged,
+    results: weighted,
     temporalDecay: temporalDecayConfig,
     workspaceDir: params.workspaceDir,
     sessionSourceMtimes: params.sessionSourceMtimes,
     memorySourceMtimes: params.memorySourceMtimes,
     nowMs: params.nowMs,
   });
-  const activeProjects = prepareActiveProjectKeys(params.activeProjectKeys);
-  const rankable = applyRetrievalRanking(decayed, activeProjects).map((entry) => {
+  const rankable = decayed.map((entry) => {
     // Exact tiers and recall-only LIKE hits keep their public confidence;
     // their private ranking score still includes every weighting pass.
     const rankingScore = entry.score;
@@ -268,8 +307,8 @@ export async function rankHybridResults<TSource extends HybridSource>(params: {
 
 /** Ranked results in final order, with every public score known before ordering. */
 export type RankedHybridResults<TSource extends HybridSource = HybridSource> = Iterable<
-  HybridSearchResult<TSource>
-> & { candidates?: readonly (HybridResultRange<TSource> & { score: number })[] };
+  RankedHybridResult<TSource>
+> & { candidates?: readonly (HybridResultRange<TSource> & { eligibilityScore: number })[] };
 
 type HybridResultRange<TSource extends HybridSource = HybridSource> = Pick<
   HybridSearchResult<TSource>,
@@ -283,13 +322,16 @@ function hybridResultRangeKey(entry: HybridResultRange): string {
 export function selectHybridSearchResults<TSource extends HybridSource>(params: {
   merged: RankedHybridResults<TSource>;
   keyword: HybridResultRange<TSource>[];
+  vectorCandidates: HybridResultRange<TSource>[];
   maxResults: number;
   minScore: number;
 }): HybridSearchResult<TSource>[] {
   const keywordKeys = new Set(params.keyword.map((entry) => hybridResultRangeKey(entry)));
+  const isLexicalCandidate = (entry: HybridResultRange<TSource> & { eligibilityScore: number }) =>
+    entry.eligibilityScore >= 0 && keywordKeys.has(hybridResultRangeKey(entry));
   // Without known scores the strict set is learned by ordering every candidate.
   const strictRanges = (params.merged.candidates ?? Array.from(params.merged))
-    .filter((entry) => entry.score >= params.minScore)
+    .filter((entry) => entry.eligibilityScore >= params.minScore)
     .map((entry) => hybridResultRangeKey(entry));
   const strictTotal = strictRanges.length;
   const strictWanted = Math.min(params.maxResults, strictTotal);
@@ -297,8 +339,11 @@ export function selectHybridSearchResults<TSource extends HybridSource>(params: 
   // spare capacity, but must never displace a qualifying result. When nothing
   // qualifies, keep the established all-lexical fallback.
   const fillWanted = params.keyword.length === 0 ? 0 : params.maxResults - strictWanted;
-  const strict: HybridSearchResult<TSource>[] = [];
-  const fill: HybridSearchResult<TSource>[] = [];
+  const strict: RankedHybridResult<TSource>[] = [];
+  const fill: RankedHybridResult<TSource>[] = [];
+  // Score completion does not turn a keyword-only candidate into a vector
+  // candidate. Preserve its spare-capacity eligibility after enrichment.
+  const vectorKeys = new Set(params.vectorCandidates.map(hybridResultRangeKey));
   // Fill only runs when every strict result fits, so all their ranges are taken.
   const seen = new Set(strictRanges);
   // Consume the ranked order only until both windows are full; MMR then never
@@ -308,7 +353,7 @@ export function selectHybridSearchResults<TSource extends HybridSource>(params: 
       break;
     }
     const key = hybridResultRangeKey(entry);
-    if (entry.score >= params.minScore) {
+    if (entry.eligibilityScore >= params.minScore) {
       if (strict.length < strictWanted) {
         strict.push(entry);
       }
@@ -316,12 +361,14 @@ export function selectHybridSearchResults<TSource extends HybridSource>(params: 
     }
     const eligible =
       strictTotal === 0
-        ? entry.score >= 0 && keywordKeys.has(key)
-        : entry.vectorScore === 0 && keywordKeys.has(key) && !seen.has(key);
+        ? isLexicalCandidate(entry)
+        : (entry.vectorScore === 0 || !vectorKeys.has(key)) &&
+          isLexicalCandidate(entry) &&
+          !seen.has(key);
     if (eligible && fill.length < fillWanted) {
       seen.add(key);
       fill.push(entry);
     }
   }
-  return [...strict, ...fill];
+  return [...strict, ...fill].map(({ eligibilityScore: _eligibilityScore, ...entry }) => entry);
 }

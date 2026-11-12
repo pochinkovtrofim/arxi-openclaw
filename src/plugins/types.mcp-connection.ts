@@ -1,4 +1,5 @@
 /** Plugin-owned MCP server connection resolver contracts. */
+import type { McpConnectionAuthority } from "../agents/mcp-connection-authority.types.js";
 
 /**
  * Trusted runtime identity for per-requester MCP connection resolution.
@@ -24,6 +25,8 @@ export type McpServerConnectionResolveContext = {
   runtimeGeneration?: string;
   /** Diagnostic trace id selected by core for cross-boundary audit correlation. */
   traceId?: string;
+  /** Event consumers need an owner-held authorization observation, not only credentials. */
+  requireLiveAuthority?: true;
 };
 
 /** Transport connection resolved for one requester-scoped MCP server. */
@@ -35,6 +38,8 @@ export type McpServerConnectionResolved = {
   refreshAfterMs?: number;
   /** Core-owned callback; plugin-supplied callbacks are ignored. */
   refreshHeaders?: () => Promise<Record<string, string>>;
+  /** Required when requireLiveAuthority is set. Disposal releases observation, not the account. */
+  authority?: McpConnectionAuthority;
 };
 
 /**

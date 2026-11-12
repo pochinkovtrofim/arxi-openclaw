@@ -2,7 +2,6 @@ import {
   isAnthropicServerToolClearingEnabled,
   resolveCompactionReplayEligibility,
 } from "@openclaw/ai/transports";
-import { resolveAgentMainSessionKey } from "../../../config/sessions/main-session.js";
 import type { ModelCompatConfig } from "../../../config/types.models.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { createOpenAIServiceTierObservationWrapper } from "../../../llm/providers/stream-wrappers/openai-service-tier-observation.js";
@@ -10,16 +9,17 @@ import { createCodexNativeWebSearchWrapper } from "../../../llm/providers/stream
 import { getAgentScopedMediaLocalRoots } from "../../../media/local-roots.js";
 import type { ProviderRuntimePluginHandle } from "../../../plugins/provider-hook-runtime.js";
 import { resolveProviderTextTransforms } from "../../../plugins/provider-runtime.js";
-import { parseSessionDeliveryRoute } from "../../../sessions/session-key-utils.js";
 import { resolveAdmittedRunActiveAssertion } from "../../admitted-run-context.js";
 import type { AgentRunAttemptFailureSource } from "../../agent-run-terminal-outcome.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
 import { resolveSelectedModelCredential } from "../../model-auth-selected-credential.js";
 import { wrapStreamFnTextTransforms } from "../../plugin-text-transforms.js";
 import { registerProviderStreamForModel } from "../../provider-stream.js";
+import { resolveModelCallUrgency } from "../../run-trigger.js";
 import type { SandboxContext } from "../../sandbox/types.js";
 import type { AgentSession, SessionManager, SettingsManager } from "../../sessions/index.js";
-import { withSessionManagerWrite } from "../../sessions/session-manager-write-admission.js";
+import { withSessionManagerAppend } from "../../sessions/session-manager-append-admission.js";
+import { withPreparedSessionCapabilityRead } from "../../subagents/spawn/subagent-session-store.js";
 import { isToolExecutionAllowed } from "../../tool-policy-shared.js";
 import { hasNonzeroUsage, normalizeUsage } from "../../usage.js";
 import { isRunnerAbortError } from "../abort.js";
@@ -33,15 +33,10 @@ import {
 import { log } from "../logger.js";
 import type { PromptCacheRequestObservation } from "../prompt-cache-request-observer.js";
 import {
-  resolveCacheKeepWarm,
-  resolveCacheRetention,
-  resolveRunCacheRetention,
-  resolveRunMessageCacheRetention,
-} from "../prompt-cache-retention.js";
-import {
   type ProviderPromptState,
   wrapStreamFnWithProviderPromptState,
 } from "../provider-prompt-state.js";
+import { wrapStreamFnWithSessionFork } from "../session-fork.js";
 import type { ToolResultPromptProjectionState } from "../session-prompt-state.js";
 import {
   resolveEmbeddedAgentApiKey,
@@ -61,6 +56,7 @@ import {
   resolvePromptCacheTouchTimestamp,
 } from "./attempt-context-engine-helpers.js";
 import type { AttemptNestedToolActivityState } from "./attempt-nested-tool-activity.js";
+import { applyCacheKeepWarm, applyRunPromptCacheRetention } from "./attempt-stream-cache.js";
 import { appendAttemptCacheTtlIfNeeded } from "./attempt-thread-helpers.js";
 import { normalizeCompactionRecoveryTranscriptTail } from "./attempt-transcript-helpers.js";
 import {
@@ -293,7 +289,7 @@ export async function settleEmbeddedAttemptStream(input: {
   let captured: ReturnType<typeof captureStreamSnapshot>;
   try {
     captured = await input.withOwnedTranscriptWrite(() =>
-      withSessionManagerWrite(sessionManager, async () => {
+      withSessionManagerAppend(sessionManager, async () => {
         const { timedOutDuringCompaction } = input.readLifecycleState();
         const compactionOccurredThisAttempt = subscription.getCompactionCount() > 0;
         const cacheTtlCompat: ModelCompatConfig | undefined = attempt.model.compat;
@@ -345,6 +341,9 @@ export async function settleEmbeddedAttemptStream(input: {
               error: formatErrorMessage(state.promptError),
             });
           } catch (entryErr) {
+            // Worker errors lose object identity; use the live owner's cancellation reason.
+            attempt.abortSignal?.throwIfAborted();
+            input.runAbortSignal.throwIfAborted();
             log.warn(`failed to persist prompt error entry: ${String(entryErr)}`);
           }
         }
@@ -457,9 +456,14 @@ export async function prepareEmbeddedAttemptTransport(input: {
     workspaceDir: input.workspaceDir,
     auth,
   });
+  const sessionFork = {
+    runId: attempt.runId,
+    sessionId: attempt.sessionId,
+    agentId: input.sessionAgentId,
+  };
   const directProviderStreamFn = providerStreamFn
     ? wrapStreamFnWithMessageTransform(
-        providerStreamFn,
+        wrapStreamFnWithSessionFork(providerStreamFn, sessionFork),
         (messages) => messages,
         async ({ context, ...provider }) => {
           assertRunCurrent?.();
@@ -504,8 +508,17 @@ export async function prepareEmbeddedAttemptTransport(input: {
     authProfileId: attempt.runtimePlan?.auth.forwardedAuthProfileId,
     authStorage: attempt.authStorage,
     assertCurrent: assertRunCurrent,
+    sessionFork,
   });
-  session.agent.streamFn = streamFn;
+  // A direct provider transport replaces the session SDK stream, so attach
+  // turn-owned thinking provenance to the selected transport as well.
+  session.agent.streamFn = (model, context, options) => {
+    const providerOptions = {
+      ...options,
+      openclawThinkingExplicit: attempt.thinkingExplicit,
+    };
+    return streamFn(model, context, providerOptions);
+  };
   // Install inside provider/config wrappers so their full onPayload chain runs
   // before admission hashes the request body that the built-in transport sends.
   session.agent.streamFn = wrapStreamFnWithProviderPromptState({
@@ -557,23 +570,26 @@ export async function prepareEmbeddedAttemptTransport(input: {
     senderE164: attempt.senderE164,
   };
 
-  const { nativeWebSearchAllowedByToolPolicy } = applyExtraParamsToAgent(
-    session.agent,
-    attempt.config,
-    attempt.provider,
-    attempt.modelId,
-    streamExtraParamsOverride,
-    input.providerThinkingLevel,
-    input.sessionAgentId,
-    input.workspaceDir,
-    attempt.model,
-    input.agentDir,
-    resolvedTransport,
-    {
-      preparedExtraParams: effectiveExtraParams,
-      auth,
-      nativeWebSearchPolicyContext,
-    },
+  const { nativeWebSearchAllowedByToolPolicy } = await withPreparedSessionCapabilityRead(() =>
+    applyExtraParamsToAgent(
+      session.agent,
+      attempt.config,
+      attempt.provider,
+      attempt.modelId,
+      streamExtraParamsOverride,
+      input.providerThinkingLevel,
+      input.sessionAgentId,
+      input.workspaceDir,
+      attempt.model,
+      input.agentDir,
+      resolvedTransport,
+      {
+        preparedExtraParams: effectiveExtraParams,
+        modelCallUrgency: resolveModelCallUrgency(attempt),
+        auth,
+        nativeWebSearchPolicyContext,
+      },
+    ),
   );
   if (input.codeModeControlsEnabled) {
     session.agent.streamFn = createCodexNativeWebSearchWrapper(session.agent.streamFn, {
@@ -585,55 +601,13 @@ export async function prepareEmbeddedAttemptTransport(input: {
       codeModeToolSurfaceEnabled: true,
     });
   }
-  const configuredPromptCacheRetention = resolveCacheRetention(
-    effectiveExtraParams,
-    attempt.provider,
-    attempt.model.api,
-    attempt.modelId,
-  );
-  // A scheduled turn can target a chat session directly (`session:<chat key>`).
-  const mainSessionKey = resolveAgentMainSessionKey({
-    cfg: attempt.config,
-    agentId: input.sessionAgentId,
-  });
-  const conversation =
-    attempt.sessionKey === mainSessionKey || parseSessionDeliveryRoute(attempt.sessionKey) !== null;
-  const effectivePromptCacheRetention = resolveRunCacheRetention({
-    retention: configuredPromptCacheRetention,
-    trigger: attempt.trigger,
-    modelApi: attempt.model.api,
-    conversation,
-    detached: attempt.sessionPersistence === "detached",
+  const effectivePromptCacheRetention = applyRunPromptCacheRetention({
+    session,
+    attempt,
+    extraParams: effectiveExtraParams,
+    sessionAgentId: input.sessionAgentId,
     lastCacheTouchAt: input.lastCacheTouchAt,
-    now: Date.now(),
   });
-  if (effectivePromptCacheRetention !== configuredPromptCacheRetention) {
-    const baseStreamFn = session.agent.streamFn;
-    session.agent.streamFn = (model, context, options) => {
-      const requestOptions = { ...options, cacheRetention: effectivePromptCacheRetention };
-      return baseStreamFn(model, context, requestOptions);
-    };
-  }
-  const runStartedAtMs = attempt.startedAtMs;
-  const messageCacheRetention = resolveRunMessageCacheRetention({
-    retention: effectivePromptCacheRetention,
-    trigger: attempt.trigger,
-    modelApi: attempt.model.api,
-    conversation,
-    earlierMessagesInContext:
-      runStartedAtMs === undefined ||
-      session.messages.some(
-        (message) =>
-          !(typeof message.timestamp === "number" && message.timestamp >= runStartedAtMs),
-      ),
-  });
-  if (messageCacheRetention) {
-    const baseStreamFn = session.agent.streamFn;
-    session.agent.streamFn = (model, context, options) => {
-      const requestOptions = { ...options, messageCacheRetention };
-      return baseStreamFn(model, context, requestOptions);
-    };
-  }
   const agentTransportOverride = resolveAgentTransportOverride({
     settingsManager: input.settingsManager,
     effectiveExtraParams,
@@ -660,20 +634,7 @@ export async function prepareEmbeddedAttemptTransport(input: {
       return baseStreamFn(model, context, requestOptions);
     };
   }
-  const cacheKeepWarm = resolveCacheKeepWarm({
-    keepWarmFor: attempt.config?.agents?.defaults?.promptCacheKeepWarm,
-    trigger: attempt.trigger,
-    modelApi: attempt.model.api,
-    retention: effectivePromptCacheRetention,
-    key: attempt.sessionKey ?? attempt.sessionId,
-  });
-  if (cacheKeepWarm) {
-    const baseStreamFn = session.agent.streamFn;
-    session.agent.streamFn = (model, context, options) => {
-      const requestOptions = { ...options, cacheKeepWarm };
-      return baseStreamFn(model, context, requestOptions);
-    };
-  }
+  applyCacheKeepWarm(session, attempt, effectivePromptCacheRetention);
   // Agent turns carry no credential, and provider wrappers classify auth from
   // options.apiKey (for example Anthropic OAuth identity), so attach it outermost.
   session.agent.streamFn = wrapApiKey(session.agent.streamFn);
@@ -710,6 +671,11 @@ export async function prepareEmbeddedAttemptTransport(input: {
           baseUrl: model.baseUrl,
           ...observation,
         }),
+      {
+        runId: attempt.runId,
+        sessionId: attempt.sessionId,
+        accountRoute: selectedCredential.identityKey,
+      },
     );
   }
   return {

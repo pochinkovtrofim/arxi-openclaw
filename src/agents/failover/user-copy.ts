@@ -3,6 +3,7 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import { truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import { formatCommandErrorForUser } from "../../process/command-error.js";
 import {
+  CONTEXT_OVERFLOW_ERROR_MESSAGE,
   extractErrorHttpStatus,
   extractLeadingHttpStatus,
   formatRawAssistantErrorForUi,
@@ -15,13 +16,13 @@ import {
 } from "../../shared/assistant-error-format.js";
 import { renderUserMessage, resolveUserMessage } from "../../shared/user-message.js";
 import { formatExecDeniedUserMessage } from "../exec-approval-result.js";
-import type { CliTimeoutContext, FallbackAttemptRecord } from "../failover-error.js";
 import {
   ERROR_DETAILS_HINT,
   ERROR_PREFIX_RE,
   renderFormatErrorCopy,
 } from "./assistant-request-failure-copy.js";
 import { classifyFailoverReasonCore } from "./classify-core.js";
+import type { FallbackAttemptRecord } from "./error.js";
 import {
   isPeriodicUsageLimitErrorMessage,
   isProviderCompletedErrorFinishReasonMessage,
@@ -32,6 +33,12 @@ import {
   type ProviderRequestFacet,
 } from "./request-error-facets.js";
 import type { FailoverClassification, FailoverReason } from "./signal.js";
+
+export {
+  renderAuthProfileFailoverCopy,
+  renderCliTimeoutReplyCopy,
+  renderCodexAppServerFailureCopy,
+} from "./user-copy-runtime-failures.js";
 
 type FailoverUserCopyContext = {
   raw?: string;
@@ -80,7 +87,7 @@ const MODEL_CAPACITY_ERROR_RE = /\b(?:selected\s+)?model\s+(?:is\s+)?at capacity
 const RATE_LIMIT_SPECIFIC_HINT_RE =
   /\bmin(ute)?s?\b|\bhours?\b|\bseconds?\b|\btry again in\b|\bresets?\b|\bplan\b|\bquota\b/i;
 const CONTEXT_OVERFLOW_ERROR_HEAD_RE =
-  /^(?:context overflow:|request_too_large\b|request size exceeds\b|request exceeds the maximum size\b|context length exceeded\b|maximum context length\b|prompt is too long\b|exceeds model context window\b)/i;
+  /^(?:context overflow:|request_too_large\b|request size exceeds\b|request exceeds the maximum size\b|context (?:length|window) exceeded\b|maximum context length\b|prompt is too long\b|exceeds model context window\b)/i;
 const PROVIDER_PROMPT_SIZE_LIMIT_RE =
   /\b(?:this\s+)?prompt\s+(?:is\s+)?(?:too long|longer than)\b.{0,120}\b(?:free tier|single request|per[- ]request)\b/i;
 const PROVIDER_PROMPT_SIZE_LIMIT_USER_MESSAGE =
@@ -158,10 +165,7 @@ const FAILOVER_REASON_BASE_COPY = {
       "LLM request failed: TLS certificate validation rejected the provider endpoint. Check the endpoint hostname, proxy, and local certificate trust.",
     ),
   context_overflow: () =>
-    renderUserMessage(
-      { code: "context_overflow" },
-      "Context overflow: prompt too large for the model. Try /reset (or /new) to start a fresh session, or use a larger-context model.",
-    ),
+    renderUserMessage({ code: "context_overflow" }, CONTEXT_OVERFLOW_ERROR_MESSAGE),
   model_not_found: () =>
     renderUserMessage(
       { code: "model_not_found" },
@@ -198,11 +202,33 @@ function renderProviderPromptSizeLimitCopy(raw: string): string | undefined {
     : undefined;
 }
 
+/** Render only controller-recorded exhaustion, never infer it from provider text. */
+export function renderRateLimitRetryExhaustion(
+  retries: number | undefined,
+  finalModel = false,
+): string | undefined {
+  if (retries === undefined) {
+    return undefined;
+  }
+  const scope = finalModel ? " on the final model" : "";
+  return retries === 0
+    ? `Automatic rate-limit recovery is disabled${scope} for this session (retry.provider.maxRetries: 0).`
+    : `Rate-limit recovery stopped${scope} after ${retries} automatic ${retries === 1 ? "retry" : "retries"} without a completed model response. Check completed work before trying again.`;
+}
+
 /** Render rate-limit versus overload copy from the canonical classified reason. */
 export function renderRateLimitOrOverloadedCopy(params: {
   reason: Extract<FailoverReason, "rate_limit" | "overloaded">;
   raw?: string;
+  rateLimitRetriesExhausted?: number;
 }): string {
+  const exhaustion =
+    params.reason === "rate_limit"
+      ? renderRateLimitRetryExhaustion(params.rateLimitRetriesExhausted)
+      : undefined;
+  if (exhaustion) {
+    return exhaustion;
+  }
   const raw = params.raw ?? "";
   if (MODEL_CAPACITY_ERROR_RE.test(raw)) {
     return renderModelCapacityErrorUserMessage();
@@ -539,6 +565,7 @@ export function renderRateLimitReplyCopy(params: {
   reason?: FailoverReason;
   provider?: string;
   attempts?: readonly ReplyFallbackAttempt[];
+  rateLimitRetriesExhausted?: number;
   cooldownExpiry?: number | null;
   nowMs?: number;
   sanitizeText?: (text: string) => string;
@@ -549,6 +576,18 @@ export function renderRateLimitReplyCopy(params: {
     if (promptSizeCopy) {
       return promptSizeCopy;
     }
+  }
+  const exhaustion =
+    params.reason === "rate_limit" && !attempts.some((attempt) => attempt.reason === "billing")
+      ? renderRateLimitRetryExhaustion(
+          attempts.length
+            ? attempts.at(-1)?.rateLimitRetriesExhausted
+            : params.rateLimitRetriesExhausted,
+          attempts.length > 1,
+        )
+      : undefined;
+  if (exhaustion) {
+    return exhaustion;
   }
   const usageLimit = extractCodexUsageLimitErrorMessage(
     attempts,
@@ -654,145 +693,6 @@ export function renderMissingApiKeyReplyCopy(params?: {
   return provider === "openai"
     ? "⚠️ Couldn't connect to OpenAI. Run `openclaw doctor --fix`, then try again. If it still fails, open Models in the Control UI or run `openclaw configure`."
     : "⚠️ This AI service isn't set up yet. Sign in under Models in the Control UI or run `openclaw configure`.";
-}
-
-const CODEX_APP_SERVER_CLIENT_CLOSED_BEFORE_REPLY_RE =
-  /\bcodex app-server client closed before turn completed\b/iu;
-const CODEX_APP_SERVER_TURN_COMPLETION_IDLE_TIMEOUT_RE =
-  /\bcodex app-server turn idle timed out waiting for turn\/completed\b/iu;
-const CODEX_SESSION_GENERATION_NOT_CURRENT_RE =
-  /\bcodex session generation is no longer current\b/iu;
-const CODEX_EXECUTION_NODE_DISCONNECTED_RE =
-  /^Codex execution node disconnected; start a fresh attempt\. \((?:execution node (?:failed|disconnected)|execution socket (?:closed|failed))(?:: [^\r\n]{1,240})?\)(?:\r?\n|$)/u;
-
-export function renderCodexAppServerFailureCopy(message: string): string | null {
-  const normalizedMessage = message.trim();
-  if (CODEX_SESSION_GENERATION_NOT_CURRENT_RE.test(normalizedMessage)) {
-    return renderUserMessage(
-      { code: "session_changed" },
-      "⚠️ This Codex session changed before your message could run. Please send it again.",
-    );
-  }
-  if (CODEX_EXECUTION_NODE_DISCONNECTED_RE.test(normalizedMessage)) {
-    return "⚠️ Codex execution node disconnected. Start a fresh attempt.";
-  }
-  if (CODEX_APP_SERVER_CLIENT_CLOSED_BEFORE_REPLY_RE.test(normalizedMessage)) {
-    return renderUserMessage(
-      { code: "connection_retry_exhausted" },
-      "⚠️ Lost the connection to Codex before it confirmed the task was finished. It may still be running. Check the conversation in the Control UI before trying again.",
-    );
-  }
-  if (CODEX_APP_SERVER_TURN_COMPLETION_IDLE_TIMEOUT_RE.test(normalizedMessage)) {
-    return renderUserMessage(
-      { code: "completion_unconfirmed" },
-      "⚠️ Codex hasn't confirmed whether the task finished. It may still be running. Check the conversation in the Control UI before trying again.",
-    );
-  }
-  return null;
-}
-
-const CLI_BACKEND_NO_OUTPUT_STALL_RE =
-  /\bCLI produced no output for\s+(\d+)\s*s\s+and was terminated\b/iu;
-const CLI_BACKEND_OVERALL_TIMEOUT_RE =
-  /\bCLI exceeded timeout\s*\(\s*(\d+)\s*s\s*\)\s+and was terminated\b/iu;
-
-export function renderCliTimeoutReplyCopy(params: {
-  message: string;
-  cliTimeout?: CliTimeoutContext;
-  provider?: string;
-  replayPrevented?: boolean;
-}): string | null {
-  const stall = params.message.match(CLI_BACKEND_NO_OUTPUT_STALL_RE);
-  const overall = params.message.match(CLI_BACKEND_OVERALL_TIMEOUT_RE);
-  const timeout = params.cliTimeout;
-  const seconds = timeout?.timeoutSeconds ?? Number((stall ?? overall)?.[1]);
-  if (!Number.isFinite(seconds)) {
-    return null;
-  }
-  const mode = timeout?.mode ?? (stall ? "no-output" : "overall");
-  const mayHaveCompletedWork =
-    timeout?.observedActivity ||
-    timeout?.backgroundTaskCount ||
-    timeout?.activeToolCount ||
-    params.replayPrevented;
-  const workStatus = mayHaveCompletedWork
-    ? " Some work may have completed. Check its results before trying again."
-    : "";
-  const summary = mode === "no-output" ? "The task stopped responding." : "The task took too long.";
-  const remedy =
-    mode === "no-output"
-      ? "Check for a sign-in or confirmation prompt in the terminal."
-      : "Try a smaller task, or increase the task time limit in the Control UI settings.";
-  return `⚠️ ${summary}${workStatus} ${remedy}`;
-}
-
-type AuthProfileFailureCopyParams = {
-  reason: FailoverReason;
-  provider: string;
-  allInCooldown: boolean;
-  recoveryHint?: string;
-};
-
-const authProfileUnavailableCopy = (provider: string) =>
-  `Couldn't reach ${provider} with any of your saved logins right now.`;
-
-const AUTH_PROFILE_COOLDOWN_COPY = {
-  auth: (provider: string) =>
-    `Couldn't sign in to ${provider}. Your saved login looks expired or no longer works.`,
-  auth_permanent: (provider: string) => `${provider} isn't accepting your saved login anymore.`,
-  format: authProfileUnavailableCopy,
-  rate_limit: (provider: string) =>
-    `${provider} is asking us to slow down. Please wait a moment before trying again.`,
-  overloaded: (provider: string) =>
-    `${provider} is overloaded right now. Please wait a moment before trying again.`,
-  billing: (provider: string) =>
-    `${provider} rejected the request — looks like a billing issue on the account.`,
-  server_error: (provider: string) =>
-    `${provider} is having issues right now. Please wait a moment before trying again.`,
-  timeout: (provider: string) =>
-    `${provider} hasn't been responding. Please wait a moment before trying again.`,
-  tls_certificate: authProfileUnavailableCopy,
-  context_overflow: authProfileUnavailableCopy,
-  model_not_found: (provider: string) => `${provider} can't find the model you're using right now.`,
-  session_expired: (provider: string) =>
-    `Couldn't sign in to ${provider}. Your saved login looks expired or no longer works.`,
-  empty_response: authProfileUnavailableCopy,
-  no_error_details: authProfileUnavailableCopy,
-  unclassified: authProfileUnavailableCopy,
-  unknown: authProfileUnavailableCopy,
-} satisfies Record<FailoverReason, (provider: string) => string>;
-
-const AUTH_PROFILE_DIRECT_COPY: Partial<Record<FailoverReason, (provider: string) => string>> = {
-  auth: AUTH_PROFILE_COOLDOWN_COPY.auth,
-  auth_permanent: (provider) => `${provider} isn't accepting your saved login.`,
-  billing: AUTH_PROFILE_COOLDOWN_COPY.billing,
-  session_expired: AUTH_PROFILE_COOLDOWN_COPY.session_expired,
-};
-
-const AUTH_PROFILE_RECOVERY_REASONS = new Set<FailoverReason>([
-  "auth",
-  "auth_permanent",
-  "billing",
-  "context_overflow",
-  "session_expired",
-  "empty_response",
-  "no_error_details",
-  "unclassified",
-  "unknown",
-]);
-
-export function renderAuthProfileFailoverCopy(params: AuthProfileFailureCopyParams): string {
-  const copy = resolveUserMessage({ code: "auth_profile_failure", reason: params.reason });
-  if (copy !== undefined) {
-    return copy;
-  }
-  const description = params.allInCooldown
-    ? AUTH_PROFILE_COOLDOWN_COPY[params.reason](params.provider)
-    : AUTH_PROFILE_DIRECT_COPY[params.reason]?.(params.provider);
-  const hint = AUTH_PROFILE_RECOVERY_REASONS.has(params.reason) ? params.recoveryHint : null;
-  return [description ?? authProfileUnavailableCopy(params.provider), hint]
-    .filter(Boolean)
-    .join(" ");
 }
 
 export function renderControlUiAgentFailureCopy(): string {

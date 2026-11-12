@@ -96,7 +96,6 @@ export function makeBaseParams(overrides: {
       unverifiedMessageToolDelivery: false,
     },
     deliveryBestEffort: overrides.deliveryBestEffort ?? false,
-    deliveryPayloadHasStructuredContent: false,
     deliveryPayloads: overrides.synthesizedText ? [{ text: overrides.synthesizedText }] : [],
     synthesizedText: overrides.synthesizedText ?? "on it",
     summary: overrides.synthesizedText ?? "on it",

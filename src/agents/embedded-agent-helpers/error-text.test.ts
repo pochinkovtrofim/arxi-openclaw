@@ -2,6 +2,7 @@
 import type { AssistantMessage } from "openclaw/plugin-sdk/llm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { resolvePreparedSandboxRuntimeStatus } from "../sandbox/runtime-status.js";
 import { makeAssistantMessageFixture } from "../test-helpers/assistant-message-fixtures.js";
 import { formatAssistantErrorText, formatUserFacingAssistantErrorText } from "./error-text.js";
 
@@ -46,7 +47,7 @@ describe("formatAssistantErrorText streaming JSON parse classification", () => {
         errorCode: "openclaw_repeated_tool_error",
       };
       expect(formatUserFacingAssistantErrorText(message)).toBe(
-        "OpenClaw stopped this turn after 3 consecutive failures of the same tool call. Check the tool arguments or switch to a model with native tool calling before retrying.",
+        "OpenClaw stopped this turn after 3 consecutive identical tool failures. Check the tool arguments or switch to a model with native tool calling before retrying.",
       );
     },
   );
@@ -93,11 +94,16 @@ describe("formatAssistantErrorText streaming JSON parse classification", () => {
         },
       };
       const msg = makeAssistantError("unknown tool: browser");
+      const sandboxRuntime = resolvePreparedSandboxRuntimeStatus({
+        cfg,
+        sessionKey,
+        agentId,
+        preparedSessionEntry: null,
+      });
+      const options = { cfg, sessionKey, agentId, sandboxRuntime };
 
-      expect(formatAssistantErrorText(msg, { cfg, sessionKey, agentId })).toContain(
-        `--agent ${agentId}`,
-      );
-      expect(formatAssistantErrorText(msg, { cfg, sessionKey, agentId })).toContain(
+      expect(formatAssistantErrorText(msg, options)).toContain(`--agent ${agentId}`);
+      expect(formatAssistantErrorText(msg, options)).toContain(
         'Tool "browser" blocked by sandbox tool policy',
       );
 

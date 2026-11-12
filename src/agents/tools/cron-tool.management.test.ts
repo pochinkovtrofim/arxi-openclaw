@@ -1,13 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/config.js";
 import type { AgentRuntimeIdentity } from "../../gateway/agent-runtime-identity-token.js";
 import {
   getCronManagementAuthority,
   withCronManagementGrant,
 } from "../../gateway/cron-creator-authority-grant.js";
+import { consumeCronNextCheckProposal } from "../../infra/agent-run-cron-proposals.js";
 import {
   claimAgentRunContext,
   clearAgentRunContext,
-  consumeCronNextCheckProposal,
   claimAgentRunDelegatedAuthority,
   releaseAgentRunDelegatedAuthority,
   releaseAgentRunContext,
@@ -107,6 +108,14 @@ async function withRepairTool(
     releaseAgentRunDelegatedAuthority(authority);
   }
 }
+
+beforeEach(() => {
+  setRuntimeConfigSnapshot({});
+});
+
+afterEach(() => {
+  clearRuntimeConfigSnapshot();
+});
 
 async function withAdminTool(
   origin: "unknown" | "channel-owner",
@@ -364,7 +373,8 @@ describe("cron next_check action", () => {
       in: "30m",
     });
 
-    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toBe(15 * 60_000);
-    expect(consumeCronNextCheckProposal(RUN_ID, "next-job")).toBe(30 * 60_000);
+    // The fork's proposal also carries an optional scheduledAtMs.
+    expect(consumeCronNextCheckProposal(RUN_ID, JOB_ID)).toEqual({ delayMs: 15 * 60_000 });
+    expect(consumeCronNextCheckProposal(RUN_ID, "next-job")).toEqual({ delayMs: 30 * 60_000 });
   });
 });

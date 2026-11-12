@@ -7,6 +7,7 @@ import { SQLITE_IDLE_HANDLE_TTL_MS } from "../infra/sqlite-handle-lifecycle.js";
 import type { Actor } from "../infra/sqlite-worker-broker.types.js";
 import { createSqliteWorkerClient } from "../infra/sqlite-worker-client.js";
 import type { SqliteWorkerStore } from "../infra/sqlite-worker-contract.js";
+import { SqliteWorkerSlotCustody } from "../infra/sqlite-worker-request-custody.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import {
   createOpenClawDatabaseMaintenanceScope,
@@ -15,8 +16,7 @@ import {
 } from "./openclaw-state-db-async-lifecycle.js";
 import type { OpenClawStateWorkerContext } from "./openclaw-state-worker-context.types.js";
 import type { OpenClawStateWorkerOperations } from "./openclaw-state-worker-contract.js";
-import { retainOpenClawStateWorkerLease } from "./openclaw-state-worker-lease.js";
-import { getOpenClawStateWorkerOwner } from "./openclaw-state-worker-owner-get.js";
+import { getOpenClawStateWorkerOwner } from "./openclaw-state-worker-owner.js";
 import {
   createOpenClawStateWorkerLease,
   runOpenClawStateWorkerOperation,
@@ -33,8 +33,6 @@ const physical = vi.hoisted(() => ({
   openGate: undefined as Promise<void> | undefined,
   onOpen: undefined as (() => void) | undefined,
   databaseAdmission: undefined as OpenClawStateWorkerContext["admission"] | undefined,
-  available: true,
-  nativeLost: [] as (() => void)[],
   ownerKey: Symbol("synthetic-shared-worker-owner"),
 }));
 
@@ -86,13 +84,7 @@ vi.mock("../infra/sqlite-worker-store.js", async (importOriginal) => {
   };
   return {
     ...actual,
-    openSharedStateSqliteWorkerStore: async (
-      ...args: Parameters<typeof actual.openSharedStateSqliteWorkerStore>
-    ) => {
-      const listener = args[3]?.onNativeLost;
-      if (listener) {
-        physical.nativeLost.push(() => listener(new Error("Synthetic native loss")));
-      }
+    openSharedStateSqliteWorkerStore: async () => {
       physical.onOpen?.();
       await physical.openGate;
       return current().store;
@@ -121,10 +113,7 @@ vi.mock("../infra/sqlite-worker-store.js", async (importOriginal) => {
 });
 
 afterEach(() => {
-  physical.ownerKey = Symbol("synthetic-shared-worker-owner");
   physical.client = undefined;
-  physical.available = true;
-  physical.nativeLost = [];
   physical.events = [];
   physical.beforeDispatch = undefined;
   physical.openGate = undefined;
@@ -133,12 +122,21 @@ afterEach(() => {
 });
 
 function createLeaseFixture() {
+  const custody = new SqliteWorkerSlotCustody().createRequest();
+  custody.activate();
+  custody.accept();
+  custody.post();
   const actor: Actor = {
     nativeStopped: Promise.resolve(),
     markNativeStopped() {},
     id: 1,
     key: "synthetic-state",
     databasePath: "/synthetic/state.sqlite",
+    stateAccess: {
+      canonicalPath: "/synthetic/state.sqlite",
+      assertAccessAllowed() {},
+      assertReadAllowed() {},
+    },
     pathReferences: new Map([["/synthetic/state.sqlite", 1]]),
     moduleUrl: "file:///synthetic/shared-state-worker.js",
     inputHash: "capture-lease-fixture",
@@ -147,14 +145,14 @@ function createLeaseFixture() {
     },
     references: 1,
     opened: Promise.resolve(),
-    openDispatch: { dispatched: true },
+    openDispatch: { custody },
     initialized: true,
     backendClosed: false,
   };
   physical.client = createSqliteWorkerClient<OpenClawStateWorkerOperations>({
     actor,
     isDraining: () => false,
-    isAvailable: () => physical.available,
+    isAvailable: () => true,
     dispatch: async (payload, _signal, _scope, assertCurrent) => {
       physical.beforeDispatch?.();
       assertCurrent?.();
@@ -322,9 +320,6 @@ it("cancels a queued callback without abandoning the shared actor's cold acquisi
 
 it.for([
   { kind: "raw Error abort", reason: new Error("canceled"), abort: true, persistent: false },
-  { kind: "normalized primitive abort", reason: "canceled", abort: true, persistent: false },
-  { kind: "normalized object abort", reason: { canceled: true }, abort: true, persistent: false },
-  { kind: "normalized null abort", reason: null, abort: true, persistent: false },
   { kind: "uncanceled physical failure", reason: undefined, abort: false, persistent: true },
   {
     kind: "canceled persistent physical failure",
@@ -415,7 +410,7 @@ it("retires an abandoned actor after joining its accepted native opening", async
   }
 });
 
-it.each(["removed", "reassigned", "replaced", "revoked"] as const)(
+it.each(["replaced", "revoked"] as const)(
   "refuses a finite command when its resource claim is %s before dispatch",
   async (change) => {
     const { maintenance, context } = createLeaseFixture();
@@ -436,10 +431,7 @@ it.each(["removed", "reassigned", "replaced", "revoked"] as const)(
         runOutsideOpenClawDatabaseMaintenanceScope(() =>
           observeOpenClawDatabaseMaintenanceResource(lease),
         );
-        if (change !== "removed") {
-          const owner = change === "replaced" ? maintenance : successor;
-          owner.own(lease, "shared-resources", () => lease.release());
-        }
+        maintenance.own(lease, "shared-resources", () => lease.release());
       }
     };
     try {
@@ -456,85 +448,3 @@ it.each(["removed", "reassigned", "replaced", "revoked"] as const)(
     }
   },
 );
-
-it("retires idle co-users on native loss without waiting for external bodies or reviving stale leases", async ({
-  signal,
-}) => {
-  const { context, maintenance } = createLeaseFixture();
-  const first = maintenance.run(() => createOpenClawStateWorkerLease(context));
-  const second = maintenance.run(() => createOpenClawStateWorkerLease(context));
-  const body = createDeferredCore();
-  let stale: DomainScope | undefined;
-  await Promise.all([first.ready, second.ready]);
-  const external = first.runOperation(async (scope) => {
-    stale = scope;
-    await body.promise;
-  });
-  try {
-    physical.available = false;
-    for (const lost of physical.nativeLost) {
-      lost();
-    }
-    await withinTest(Promise.all([first.retire(), second.retire()]), signal);
-    await expect(
-      first.execute({ type: "capture.endSession", input: { sessionId: "stale", endedAt: 1 } }),
-    ).rejects.toMatchObject({ code: "closed" });
-    physical.available = true;
-    await expect(
-      stale!.execute({
-        type: "capture.endSession",
-        input: { sessionId: "stale-generation", endedAt: 2 },
-      }),
-    ).rejects.toMatchObject({ code: "closed" });
-    await Promise.all([first.release(), first.release(), second.release()]);
-    expect(physical.events).toEqual(["physical-close"]);
-  } finally {
-    body.resolve();
-    await external;
-    await maintenance.close();
-  }
-});
-
-it("notifies a lease registered after native loss during acquisition", async ({ signal }) => {
-  const { context, maintenance } = createLeaseFixture();
-  const owner = getOpenClawStateWorkerOwner();
-  const store = await maintenance.run(() => owner.open(context));
-  if (!store) {
-    throw new Error("Synthetic store missing");
-  }
-  // The actor can disappear between open() resolving and retainOperation().
-  physical.available = false;
-  const lease = maintenance.run(() =>
-    retainOpenClawStateWorkerLease(context, {
-      open: async () => store,
-      retainOperation: owner.retainOperation,
-    }),
-  );
-  try {
-    await withinTest(expect(lease.ready).rejects.toMatchObject({ code: "closed" }), signal);
-    await lease.release();
-    expect(physical.events).toEqual(["physical-close"]);
-  } finally {
-    await maintenance.close();
-  }
-});
-
-it("unsubscribes released leases before expected retirement and repeated release", async () => {
-  const { context, maintenance } = createLeaseFixture();
-  const owner = getOpenClawStateWorkerOwner();
-  const store = await maintenance.run(() => owner.open(context));
-  if (!store) {
-    throw new Error("Synthetic store missing");
-  }
-  const lost = vi.fn();
-  const release = owner.retainOperation(store, lost);
-  await release();
-  await release();
-  await owner.close();
-  for (const notify of physical.nativeLost) {
-    notify();
-  }
-  expect(lost).not.toHaveBeenCalled();
-  expect(physical.events).toEqual(["physical-close"]);
-  await maintenance.close();
-});

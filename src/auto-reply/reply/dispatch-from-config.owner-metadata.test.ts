@@ -101,6 +101,7 @@ it.each([
     }
     return await loadRuntimePlugins();
   });
+  using resources = new DisposableStack();
   const dispatcher = createReplyDispatcher({ deliver: async () => undefined });
   try {
     const gathered = await gatherDispatchRequest(
@@ -118,6 +119,9 @@ it.each([
         dispatcher,
       },
       undefined,
+      false,
+      undefined,
+      (dispose) => resources.defer(dispose),
     );
     expect(gathered.status).toBe("ready");
     if (gathered.status !== "ready") {

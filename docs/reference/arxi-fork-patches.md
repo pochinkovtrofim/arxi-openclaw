@@ -11,15 +11,18 @@ title: "Ro fork patch ledger"
 
 ## Selected upstream
 
-The selected stable base is OpenClaw `v2026.10.9`, exact upstream commit
-`8b18b5578f66eab1501cba4cef2310d88bfb9a41`. This integration starts from Ro
-`d0669163e6036befc21bb0a73768fbc4d09c9ded`; its previous stable base was
-`v2026.10.5` (`1b58cb9a1b4f4353e1add63c8506db4d890962e8`). Dispositions recorded
+The selected stable base is OpenClaw `v2026.11.3`, exact upstream commit
+`847611dcaa3bf0e2783335f961dd1fd0580e4d9f`. This integration starts from Ro
+`0e4df60e239da985060630cc79fe0374cf199172`; its previous stable base was
+`v2026.10.9` (`8b18b5578f66eab1501cba4cef2310d88bfb9a41`). Dispositions recorded
 for earlier bases below still hold unless a later section revises them.
 
 The managed Codex app-server remains pinned to `@openai/codex@0.159.3`.
-The release's `0.160.0` pin does not replace the already deployed managed
-runtime. Deployment is established by Ops artifact/golden and activation receipts,
+The release's `0.164.0` pin does not replace the already deployed managed
+runtime; `0.159.3` is also the client-version fallback of
+`resolveOpenAICodexModelsEndpoint`. Upstream's supported floor stays `0.149.0`.
+The managed llama.cpp server stays on `b11146`, ahead of the release's
+`b10809`; its archives carry no `sizeBytes` until `b11146` sizes are recorded. Deployment is established by Ops artifact/golden and activation receipts,
 not by this source ledger.
 
 Each update is reviewed as a tree delta against the selected tag, not as a
@@ -41,6 +44,9 @@ old integration no longer exists.
 | Telegram conversation runtime base (`3d9c7a5b973`)                                                | Remove: `git cherry` identifies this patch as equivalent to the released upstream tree.                |
 | Active-model readiness and catalog-worker metadata implementations (`1feb86782dc`, `46e5363f621`) | Remove implementations: upstream owns the stronger behavior; only Ro shipped-surface coverage remains. |
 | Ro-owned proactive scheduler or heartbeat behavior                                                | Remove/absent: OpenClaw remains the sole owner of Automation and proactive work semantics.             |
+| 30-second startup integrity proof (#173)                                                          | Remove at `v2026.11.3`: upstream's clean-close seal and once-per-file integrity admission own it.      |
+| In-place read of the previous owner lease (#173)                                                  | Remove at `v2026.11.3`: upstream reads the lease row in place through the worker under custody.        |
+| `selectRecentCompletedTurnMediaHistory` SDK export (#40)                                          | Remove at `v2026.11.3`: upstream deleted history image pruning; the export had no caller.              |
 
 These removals keep the fork closer to upstream and avoid preserving obsolete CI
 or runtime layers merely because they existed in the previous history.
@@ -95,6 +101,62 @@ or runtime layers merely because they existed in the previous history.
 - Fork product-copy codes render upstream's revised failure wording; the new
   `media_invalid_reference` code covers upstream's invalid media reference.
 
+## Redesigned for v2026.11.3
+
+- Automation failure report: the `AUTOMATION_FAILED` first-line protocol is
+  kept against upstream's removal (#170267), because failure repair (#156)
+  asks the owner conversation on it. The token now lives in
+  `src/cron/isolated-agent/helpers.ts`; `reportedByAgent` classification and
+  the withheld delivery are restored inside `src/cron`.
+- Scheduled session turns: upstream runs `session:` agent turns in the
+  session's ordinary turn queue (`runSessionEvent`, #180270). A declared job
+  (`declarationKey`, every Ro background job) still runs detached in its named
+  session, because fresh-context sessions (#168), held runs (#193), the
+  `AUTOMATION_FAILED` report with conversation-owned failures and the paced
+  `next_check` binding live only on that path. Undeclared `session:` jobs,
+  such as a conversation continuation, take upstream's queue without them.
+- Cron failure repair: the fork's immediate repair, one follow-up turn and
+  cooldown run under upstream's repair deadline and settlement gate; the
+  follow-up gets its own deadline.
+- Managed Flow repair: upstream deleted `timer-scheduler.ts`. The repair pass
+  runs before each `scheduler-actor` tick and at scheduler start; consumed
+  receipts and resume kick the actor instead of clamping a timer. Run
+  finalization still suspends consumed receipts in the worker transaction.
+- Suspend wake: the host deadline reads
+  `nextWakeAtMs(state, { suspendWakeOnly })`; `scheduledAutomation` admission
+  is set in `run-queue.ts`.
+- `gateway.suspend.status` no longer waits up to 15 s for draining writes
+  (upstream's own wait); it still closes idle agent databases on `ready`.
+  Upstream dropped incognito agent handles and the eviction option.
+- System prompt (#169): upstream moved tool catalogs below the workspace
+  files. The cache boundary stays before `## Workspace Files`, so workspace
+  files open the suffix ahead of upstream's per-run sections.
+- Code Mode (#196): the shell and `web_fetch` guidance moved with upstream into
+  `buildCodeModeCatalogPrompt`.
+- Prompt preparation stages (#206) keep the fork's names; upstream's
+  `prompt-build` and `compaction-preflight` marks are not emitted.
+- OAuth renewal (#198) runs before upstream's runtime-auth and token-sharing
+  paths in `maybeRefreshRuntimeAuthForAuthError`, outside upstream's auth
+  deadline.
+- MCP resolver: header renewal composes with upstream's live authority and
+  releases the resolver observation it replaces.
+- Approval custody: the proof-bound `authorizeApprovalResolution` rides
+  upstream's async `custody.authorizes`; the proof is checked before admission.
+- Transcript projection: tool-result payloads are omitted on upstream's sliced
+  export and in the session-memory worker, on SQLite only.
+- Bounded context (#202): `latestTurn: "required"` sits on upstream's
+  `selectBoundedModelRequests`, which already drops tool bodies before cutting.
+- Skill Workshop: with `channelNotices` off (default) a quiet learned change
+  writes no transcript entry, so upstream's Control UI "Learned" row is not
+  written; the notice path keeps upstream's Undo button. Upstream removed the
+  review after a turn that used a learned skill.
+- Memory sessions: `sessionSync.debounceMs` only lengthens upstream's 30 s
+  quiet period (max deferral 5 min). Cron-target transcript classification is
+  in `packages/memory-host-sdk/src/host/session-transcript-corpus-policy.ts`;
+  the llama query lane is in `embedding-provider.runtime.ts`.
+- Codex: `setParentLocalEgress` is gone upstream; the fork keeps
+  `observeInferenceTransport`.
+
 ## Redesigned for v2026.10.9
 
 - Cron `next_check`: upstream's `nextCheckEnabled` (pacing or a one-shot
@@ -113,8 +175,9 @@ or runtime layers merely because they existed in the previous history.
 
 ## Added on v2026.10.9
 
-Ro patches merged after the update to `v2026.10.9` (#181). The next upstream
-update sorts each into removed, retained or redesigned.
+Ro patches merged after the update to `v2026.10.9` (#181). All are retained on
+`v2026.11.3`; those that moved onto new upstream seams are listed under
+"Redesigned for v2026.11.3".
 
 - Agent sessions: a persistent scheduled (cron) session compacts before its
   prompt once its prompt cache has expired and it has reached
@@ -155,9 +218,16 @@ update sorts each into removed, retained or redesigned.
   boundary, not from the session's first day (#202).
 - Hooks and MCP: a `before_tool_call` hook on an MCP tool sees the requester
   its MCP call carries (#203).
+- Outbound delivery: a held background message reports that it was not sent,
+  not that it is queued (#205).
+- Embedded runner: a run reports each preparation stage before its first model
+  request, and two prompt reads run together (#206).
+- Session maintenance: a long idle chat compacts before its prompt cache
+  expires, so the owner's next turn does not wait (#207).
 - Test-only: parallel test projects keep their lanes busy and one Codex test
   no longer aborts on a busy machine (#187); the in-process dispatch test
-  context carries chat abort controllers like a live Gateway (#191).
+  context carries chat abort controllers like a live Gateway (#191); fork test
+  files type-check and the CI scope script is upstream's (#204).
 
 ## Redesigned for v2026.10.5
 
@@ -214,7 +284,7 @@ keep the accepted candidate selected, and qualify a schema-compatible fallback
 before release closeout. The preceding runtime is not a compatible rollback.
 No source pin or test result by itself establishes production activation.
 
-The lifecycle inventory at `8b18b5578f66eab1501cba4cef2310d88bfb9a41`
+The lifecycle inventory at `847611dcaa3bf0e2783335f961dd1fd0580e4d9f`
 (unchanged from `v2026.10.5`) uses agent-run contexts, ACP turns, media generation, and migration/backup write
 custody in place of the retired task registry. All are included in suspension
 activity; write custody also accompanies the ready response.

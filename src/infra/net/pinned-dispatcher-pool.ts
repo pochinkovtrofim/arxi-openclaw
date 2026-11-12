@@ -14,7 +14,6 @@ export type PinnedDispatcherLease = {
 
 type PinnedDispatcherPoolEntry = {
   key: string;
-  groupKey: string;
   dispatcher: Dispatcher;
   activeLeases: number;
   createdAtMs: number;
@@ -48,7 +47,6 @@ type PinnedDispatcherPoolOptions = {
  */
 export class PinnedDispatcherPool {
   private readonly entries = new Map<string, PinnedDispatcherPoolEntry>();
-  private readonly ownedEntries = new Set<PinnedDispatcherPoolEntry>();
   private readonly maxEntries: number;
   readonly idleTtlMs: number;
   readonly maxActiveLeases: number | undefined;
@@ -66,7 +64,6 @@ export class PinnedDispatcherPool {
 
   acquire(params: {
     key: string;
-    groupKey: string;
     createDispatcher: () => Dispatcher;
   }): PinnedDispatcherLease | undefined {
     if (this.closed) {
@@ -96,14 +93,6 @@ export class PinnedDispatcherPool {
       return this.createLease(existing, true);
     }
 
-    // A changed pin, timeout, or policy for one origin must fence the old
-    // dispatcher before a replacement becomes reusable.
-    for (const entry of this.entries.values()) {
-      if (entry.groupKey === params.groupKey) {
-        this.retireEntry(entry);
-      }
-    }
-
     if (this.entries.size >= this.maxEntries) {
       const idleEntry = [...this.entries.values()].find((entry) => entry.activeLeases === 0);
       if (idleEntry) {
@@ -117,19 +106,17 @@ export class PinnedDispatcherPool {
 
     const entry: PinnedDispatcherPoolEntry = {
       key: params.key,
-      groupKey: params.groupKey,
       dispatcher: params.createDispatcher(),
       activeLeases: 1,
       createdAtMs: Date.now(),
     };
-    this.ownedEntries.add(entry);
     this.entries.set(entry.key, entry);
     return this.createLease(entry, false);
   }
 
   async closeAll(): Promise<void> {
     this.closed = true;
-    const entries = [...this.ownedEntries];
+    const entries = [...this.entries.values()];
     this.entries.clear();
     await Promise.all(
       entries.map((entry) => {
@@ -180,11 +167,7 @@ export class PinnedDispatcherPool {
   }
 
   private startClose(entry: PinnedDispatcherPoolEntry): Promise<void> {
-    entry.closePromise ??= runInDispatcherPoolContext(() =>
-      closeDispatcher(entry.dispatcher).finally(() => {
-        this.ownedEntries.delete(entry);
-      }),
-    );
+    entry.closePromise ??= runInDispatcherPoolContext(() => closeDispatcher(entry.dispatcher));
     return entry.closePromise;
   }
 }

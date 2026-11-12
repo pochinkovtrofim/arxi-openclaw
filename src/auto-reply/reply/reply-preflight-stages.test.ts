@@ -5,7 +5,10 @@ import {
 } from "../../infra/diagnostic-trace-context.js";
 
 const emitTrustedDiagnosticEvent = vi.hoisted(() => vi.fn());
-vi.mock("../../infra/diagnostic-events.js", () => ({ emitTrustedDiagnosticEvent }));
+vi.mock("../../infra/diagnostic-events.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../infra/diagnostic-events.js")>()),
+  emitTrustedDiagnosticEvent,
+}));
 
 import { createReplyPreflightStages } from "./reply-preflight-stages.js";
 

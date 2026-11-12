@@ -1,10 +1,12 @@
+// Shared fixtures for the harness lifecycle tests.
 import type { Model } from "openclaw/plugin-sdk/llm";
 import {
   onTrustedInternalDiagnosticEvent,
-  type DiagnosticEventPrivateData,
   type DiagnosticEventMetadata,
   type DiagnosticEventPayload,
+  type DiagnosticEventPrivateData,
 } from "../../infra/diagnostic-events.js";
+import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import type { EmbeddedRunAttemptResult } from "../embedded-agent-runner/run/types.js";
 import { createZeroUsageFixture } from "../test-helpers/usage-fixtures.js";
 import type {
@@ -38,7 +40,7 @@ export function createFinalizationParams(): AgentHarnessSettledTurnFinalizationA
   return params;
 }
 
-export function createDiagnosticTrace() {
+export function createDiagnosticTrace(): DiagnosticTraceContext {
   return {
     traceId: "11111111111111111111111111111111",
     spanId: "2222222222222222",
@@ -76,6 +78,12 @@ export function createAttemptResult(): EmbeddedRunAttemptResult {
     replayMetadata: { hadPotentialSideEffects: false, replaySafe: true },
     itemLifecycle: { startedCount: 0, completedCount: 0, activeCount: 0 },
   };
+}
+
+export async function flushDiagnosticEvents(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 export function captureDiagnosticEvents(

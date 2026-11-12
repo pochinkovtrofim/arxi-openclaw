@@ -187,6 +187,21 @@ describe("createNodesTool screen_record duration guardrails", () => {
     nodesCameraMocks.writeCameraPayloadToFile.mockClear();
   });
 
+  it.each(["browser.proxy", "browser.proxy.upload.v1"])(
+    "refuses generic %s before gateway invocation",
+    async (invokeCommand) => {
+      await expect(
+        createNodesTool().execute("browser-policy", {
+          action: "invoke",
+          node: "node-1",
+          invokeCommand,
+          invokeParamsJson: "{}",
+        }),
+      ).rejects.toThrow("use the dedicated browser tool");
+      expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+    },
+  );
+
   it("bounds durationMs schema to positive values capped at 300000", () => {
     expect(createNodesTool().parameters).toMatchObject({
       properties: { durationMs: { type: "integer", minimum: 1, maximum: 300_000 } },
@@ -772,29 +787,6 @@ describe("createNodesTool screen_record duration guardrails", () => {
           invokeParamsJson: "{}",
         }),
       ).rejects.toThrow("use the dedicated mobile_ui tool");
-      expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
-    },
-  );
-
-  it.each([
-    [
-      "browser.proxy",
-      '{"method":"POST","path":"/act","body":{"kind":"click","ref":"e3","targetId":"T1"}}',
-    ],
-    ["browser.proxy.upload.v1", "{}"],
-  ])(
-    "blocks raw %s so browser control uses the dedicated policy-filtered tool",
-    async (invokeCommand, invokeParamsJson) => {
-      const tool = createNodesTool();
-
-      await expect(
-        tool.execute("call-1", {
-          action: "invoke",
-          node: "pixel",
-          invokeCommand,
-          invokeParamsJson,
-        }),
-      ).rejects.toThrow("use the dedicated browser tool");
       expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
     },
   );

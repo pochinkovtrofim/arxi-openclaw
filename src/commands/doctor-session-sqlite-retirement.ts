@@ -24,7 +24,7 @@ import { assertOpenClawStateWriteAllowedAtPath } from "../state/openclaw-state-o
 import { collectHistoricalArchiveSources } from "./doctor-session-sqlite-discovery.js";
 import { coalesceSessionSqliteArchiveReferences } from "./doctor-session-sqlite-migration-coalesce.js";
 import {
-  collectRecoveryInventory,
+  collectUpdateCleanupInventory,
   protectRecoveryDependencies,
   resolveRecoveryArtifact,
   summarizeRecoveryCleanup,
@@ -36,6 +36,7 @@ import {
   verifyHistoricalMigrationArtifact,
 } from "./doctor-session-sqlite-verification.js";
 import { withDoctorSqliteMaintenanceLock } from "./doctor-sqlite-maintenance-lock.js";
+import { retireUpdateCaptures } from "./update-capture-cleanup.js";
 
 function assertRecoveryOriginal(
   archivePath: string,
@@ -183,11 +184,12 @@ export async function retireSessionSqliteRecovery(params: {
     env: params.env,
     operation: "update recovery cleanup",
     run: async (authority) => {
-      const { report, references, manifestPaths } = collectRecoveryInventory({
-        cfg: await params.readConfig(),
-        env: params.env,
-        expiredBefore: params.expiredBefore,
-      });
+      const { report, references, manifestPaths, captureIdentities } =
+        collectUpdateCleanupInventory({
+          cfg: await params.readConfig(),
+          env: params.env,
+          expiredBefore: params.expiredBefore,
+        });
       authority.assertCurrent();
       if (
         report.stateDir !== params.preview.stateDir ||
@@ -224,7 +226,7 @@ export async function retireSessionSqliteRecovery(params: {
             item.detail = String(error);
           }
         }
-        if (item.outcome !== "candidate") {
+        if (item.outcome !== "candidate" || item.kind === "update-capture") {
           continue;
         }
         try {
@@ -239,7 +241,7 @@ export async function retireSessionSqliteRecovery(params: {
       }
       // Historical adoption also opens SQLite readers; finish those before fencing sidecar state.
       for (const item of report.artifacts) {
-        if (item.outcome !== "candidate") {
+        if (item.outcome !== "candidate" || item.kind === "update-capture") {
           continue;
         }
         try {
@@ -253,13 +255,15 @@ export async function retireSessionSqliteRecovery(params: {
       // Verified historical dependencies affect selection now, but stay provisional until consent.
       protectRecoveryDependencies(report.artifacts, references, adoptions);
       const verified = summarizeRecoveryCleanup(report.stateDir, report.artifacts, "preview");
-      const selected = verified.artifacts.filter((item) => item.outcome === "candidate");
+      const candidates = verified.artifacts.filter((item) => item.outcome === "candidate");
+      const selected = candidates.filter((item) => item.kind !== "update-capture");
+      const captures = candidates.filter((item) => item.kind === "update-capture");
       if (!(await params.confirm(verified))) {
         return { ...verified, status: "refused" };
       }
       authority.assertCurrent();
       const currentConfig = await params.readConfig();
-      const rechecked = collectRecoveryInventory({
+      const rechecked = collectUpdateCleanupInventory({
         cfg: currentConfig,
         env: params.env,
         expiredBefore: params.expiredBefore,
@@ -320,6 +324,11 @@ export async function retireSessionSqliteRecovery(params: {
         selected,
         references,
         assertDestinations,
+        assertCurrent: () => authority.assertCurrent(),
+      });
+      await retireUpdateCaptures({
+        selected: captures,
+        identities: captureIdentities,
         assertCurrent: () => authority.assertCurrent(),
       });
       return summarizeRecoveryCleanup(

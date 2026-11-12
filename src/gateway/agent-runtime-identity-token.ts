@@ -65,7 +65,7 @@ export type AgentRuntimeIdentity = {
   messageActionContext?: AgentRuntimeMessageActionContext;
   cronSelfManagementContext?: AgentRuntimeCronSelfManagementContext;
   cronToolsAllowCapture?: "final-executable-surface";
-  cronMcpToolBindings?: CronScheduledMcpToolBinding[];
+  cronMcpToolBindings?: readonly CronScheduledMcpToolBinding[];
   cronExecToolTarget?: { host: "gateway"; ask?: "always" };
   cronCreatorAuthorityGrant?: CronCreatorAuthorityGrant;
   cronManagementGrant?: CronCreatorAuthorityGrant;
@@ -154,6 +154,15 @@ const sessionSpawnContextSchema = z
       version: z.literal(1),
       allow: stringListSchema,
       deny: stringListSchema,
+      delegatedToolPolicy: z
+        .object({
+          requesterSessionKey: normalizedRequiredStringSchema,
+          targetAgentId: normalizedRequiredStringSchema,
+          deny: stringListSchema,
+          requesterDeny: stringListSchema,
+        })
+        .strict()
+        .optional(),
     }),
     spawnModelAutoSelection: spawnModelAutoSelectionSchema.optional(),
   })

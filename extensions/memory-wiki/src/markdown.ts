@@ -23,6 +23,23 @@ export const WIKI_PAGE_GROUPS = [
 ] as const;
 export const WIKI_RAW_SOURCE_MARKER = "<!-- openclaw:wiki:raw-source -->";
 
+class WikiPageNotUtf8Error extends Error {
+  constructor(displayPath: string) {
+    super(
+      `Wiki page is not valid UTF-8 and cannot be rewritten safely: ${displayPath}. ` +
+        "The file was left unchanged. Keep a byte-for-byte backup, convert a copy to UTF-8 with its original encoding, then retry.",
+    );
+    this.name = "WikiPageNotUtf8Error";
+  }
+}
+
+export function decodeWikiPageUtf8(bytes: Buffer, displayPath: string): string {
+  if (!isUtf8(bytes)) {
+    throw new WikiPageNotUtf8Error(displayPath);
+  }
+  return bytes.toString("utf8");
+}
+
 export type WikiPageKind = (typeof WIKI_PAGE_GROUPS)[number]["kind"];
 type GeneratedSourceBody = "bridge" | "unsafe-local" | "local-file" | "chatgpt-export";
 
@@ -570,27 +587,4 @@ export function toWikiPageSummary(params: {
 }): WikiPageSummary | null {
   const result = scanWikiPageSummary(params);
   return result.status === "valid" ? result.page : null;
-}
-
-class WikiPageNotUtf8Error extends Error {
-  constructor(displayPath: string) {
-    super(
-      `Wiki page is not valid UTF-8 and cannot be rewritten safely: ${displayPath}. ` +
-        "The file was left unchanged. Keep a byte-for-byte backup, convert a copy to UTF-8 with its original encoding, then retry.",
-    );
-    this.name = "WikiPageNotUtf8Error";
-  }
-}
-
-/**
- * Decode vault page bytes for a whole-file rewrite. Compile and lint re-emit
- * the full page from decoded text, so replacement-decodable bytes would be
- * persisted back as U+FFFD over human content the update never touched (same
- * rule as the edit/apply_patch tools, see src/agents/utf8-file.ts).
- */
-export function decodeWikiPageUtf8(bytes: Buffer, displayPath: string): string {
-  if (!isUtf8(bytes)) {
-    throw new WikiPageNotUtf8Error(displayPath);
-  }
-  return bytes.toString("utf8");
 }
