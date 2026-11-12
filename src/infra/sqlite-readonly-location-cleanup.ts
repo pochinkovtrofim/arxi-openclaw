@@ -11,10 +11,7 @@ import { getChildLogger } from "../logging/logger.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { getSqliteRuntimeCapabilities } from "./bun-sqlite-library.js";
 import { hasErrnoCode } from "./errno.js";
-import {
-  getSqliteDatabaseAdmissionIdentityForPath,
-  retireSqliteDatabaseAdmissionForPath,
-} from "./sqlite-database-admission.js";
+import { retireSqliteDatabaseAdmissionForPath } from "./sqlite-database-admission.js";
 import { createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors.js";
 import type {
   PreparedSqliteReadOnlyLocation,
@@ -442,14 +439,18 @@ export function startRemoveTempDirectory(
  * Sealing proved no host reader remains, so no host lock rides on them.
  */
 function retireHostSnapshotAdmissions(directory: string): void {
-  if (!fs.existsSync(directory)) {
-    return;
-  }
-  for (const entry of fs.readdirSync(directory, { recursive: true, withFileTypes: true })) {
-    const file = path.join(entry.parentPath, entry.name);
-    if (entry.isFile() && getSqliteDatabaseAdmissionIdentityForPath(file)) {
-      retireSqliteDatabaseAdmissionForPath(file);
+  try {
+    for (const entry of fs.readdirSync(directory, { recursive: true, withFileTypes: true })) {
+      // A closed host connection drops its record but keeps the descriptor, so ask for every file.
+      if (entry.isFile()) {
+        retireSqliteDatabaseAdmissionForPath(path.join(entry.parentPath, entry.name));
+      }
     }
+  } catch (error) {
+    // The owner's deletion does not depend on this; a vanished entry must not stop it.
+    getChildLogger({ subsystem: "infra/sqlite-snapshot" }).debug(
+      `snapshot admission retirement skipped: ${String(error)}`,
+    );
   }
 }
 
