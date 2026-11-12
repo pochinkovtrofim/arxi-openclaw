@@ -612,4 +612,3 @@ describe("memory_search diagnostics", () => {
     }
   });
 });
-/* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */
