@@ -145,7 +145,7 @@ shell/Git/GitHub problem; it is not required reading before ordinary commands.
 - Commits: conventional-ish, concise, grouped.
 - No manual stash/autostash unless explicit. Branch switches and task-owned worktrees are allowed when useful; preserve user-managed checkouts and unrelated work.
 - `main`: no merge commits; rebase on latest `origin/main` before push. After one green run plus clean rebase sanity, do not chase moving `main` with repeated full gates.
-- User says `commit`: your changes only; `commit all`: all changes in grouped chunks; `push`: may `git pull --rebase` first; `ship it`: commit intended changes, pull --rebase, push.
+- User says `commit`: your changes only; `commit all`: all changes in grouped chunks; `push`: may `git pull --rebase` first.
 - Do not delete/rename unexpected files; ask if blocking, else ignore.
 - Bulk PR close/reopen >50: ask with count/scope.
 
