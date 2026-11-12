@@ -125,7 +125,7 @@ export function applyScheduledMcpIdentityBindings(params: {
  * live requester; otherwise they get an empty surface that names the blocker.
  */
 export async function materializeCodexScopedMcpTools(input: {
-  params: CodexAttemptRuntime["params"];
+  params: CodexAttemptRuntime["connection"]["params"];
   authenticatedScheduledMode: boolean;
   hasRequesterScopedMcp: boolean;
   autoApprove: boolean;
