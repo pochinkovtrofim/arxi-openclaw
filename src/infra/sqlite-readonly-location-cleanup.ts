@@ -11,7 +11,10 @@ import { getChildLogger } from "../logging/logger.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { getSqliteRuntimeCapabilities } from "./bun-sqlite-library.js";
 import { hasErrnoCode } from "./errno.js";
-import { retireSqliteDatabaseAdmissionForPath } from "./sqlite-database-admission.js";
+import {
+  getSqliteDatabaseAdmissionIdentityForPath,
+  retireSqliteDatabaseAdmissionForPath,
+} from "./sqlite-database-admission.js";
 import { createSqliteLifecycleAggregateError } from "./sqlite-lifecycle-errors.js";
 import type {
   PreparedSqliteReadOnlyLocation,
@@ -414,6 +417,7 @@ export function startRemoveTempDirectory(
     if (!owner?.releaseRetained) {
       throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
     }
+    retireHostSnapshotAdmissions(directory);
     owner.retiringRetained = retained.operation;
     release = owner.releaseRetained();
     void release.result.then(
@@ -429,6 +433,24 @@ export function startRemoveTempDirectory(
     retained.resolve(false);
   }
   return retained.operation;
+}
+
+/**
+ * A retained owner deletes these files in its own token process, so this host's
+ * admission registry never sees their retirement. Its identity descriptors would
+ * pin the deleted copies for the process lifetime (and across a suspension).
+ * Sealing proved no host reader remains, so no host lock rides on them.
+ */
+function retireHostSnapshotAdmissions(directory: string): void {
+  if (!fs.existsSync(directory)) {
+    return;
+  }
+  for (const entry of fs.readdirSync(directory, { recursive: true, withFileTypes: true })) {
+    const file = path.join(entry.parentPath, entry.name);
+    if (entry.isFile() && getSqliteDatabaseAdmissionIdentityForPath(file)) {
+      retireSqliteDatabaseAdmissionForPath(file);
+    }
+  }
 }
 
 /** A surviving native owner may retire bytes only after their original host readers leave. */
