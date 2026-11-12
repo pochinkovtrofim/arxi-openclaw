@@ -930,7 +930,7 @@ describe("prepareEmbeddedAttemptAgentSession", () => {
   });
 
   it.each([
-    ["cron", { minTokens: 150_000, ttlMs: 60 * 60_000 }],
+    ["cron", { minTokens: 150_000, ttlMs: 60 * 60_000, aheadMs: 57 * 60_000 }],
     ["user", undefined],
   ] as const)("a %s run hands cold-cache compaction %j to the guard", async (trigger, expected) => {
     const fixture = createInput();

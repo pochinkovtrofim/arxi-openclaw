@@ -179,7 +179,8 @@ describe("embedded session history anchors", () => {
     expect(Value.Check(tools.search.outputSchema!, combined.details)).toBe(true);
   });
 
-  it("redacts and bounds inline context through the canonical history reader", async () => {
+  // Upstream #169063 keeps recalled conversation text unmasked; context follows the history reader.
+  it("bounds inline context through the canonical history reader without masking it", async () => {
     await appendTranscriptMessage(scope, {
       eventId: "private-match",
       message: {
@@ -194,9 +195,9 @@ describe("embedded session history anchors", () => {
     });
 
     expect(result.details).toMatchObject({
-      context: { contentRedacted: true, contentTruncated: true },
+      context: { contentRedacted: false, contentTruncated: true },
     });
-    expect(JSON.stringify(result.details)).not.toContain("sk-or-v1-abcdef0123456789");
+    expect(JSON.stringify(result.details)).toContain("sk-or-v1-abcdef0123456789");
   });
 
   it("includes a nearby correction that does not repeat the search term", async () => {

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
 import { createTestFollowupRun } from "../../auto-reply/reply/agent-runner.test-fixtures.js";
 import { writeSessionEntry } from "../../config/sessions/session-accessor.sqlite-entry-store.js";
+import { captureRuntimeConfigAsyncReader } from "../../config/io.js";
 import { SESSION_TOTAL_TOKENS_VERSION, type SessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
@@ -69,6 +70,8 @@ async function withIdleSession(
 ) {
   await withOpenClawTestState({ label: "cold-cache-ahead" }, async (state) => {
     await state.writeConfig(cfg);
+    // The Gateway publishes its runtime config before any turn; the timer reads it.
+    await captureRuntimeConfigAsyncReader()();
     const database = openOpenClawAgentDatabase({ agentId: "main", env: state.env });
     const sessionKey = "agent:main:cold-cache-ahead";
     const entry = {
