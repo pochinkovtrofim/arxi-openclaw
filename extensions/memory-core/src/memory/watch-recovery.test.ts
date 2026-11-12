@@ -99,7 +99,8 @@ describe.skipIf(process.platform !== "linux")("memory watcher recovery", () => {
       // watching, clears the flag and reports "recovered" exactly once.
       const degradedObservations = observer.observations.length;
       await vi.advanceTimersByTimeAsync(10 * 60_000);
-      expect(observer.observations.length).toBeGreaterThan(degradedObservations);
+      // The rebuild first joins the old watcher's in-flight sync on real I/O.
+      await expect.poll(() => observer.observations.length).toBeGreaterThan(degradedObservations);
       await expect.poll(() => internals.memoryWatchUnavailable).toBe(false);
       expect(internals.readMemoryWatchDiagnostic()).toBe("recovered");
       expect(internals.readMemoryWatchDiagnostic()).toBeUndefined();
