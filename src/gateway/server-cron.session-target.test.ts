@@ -113,7 +113,10 @@ describe("Gateway Cron session target routing", () => {
       )[0] as unknown as { cfg: OpenClawConfig; job: CronJob };
       expect(options).toMatchObject({ sessionKey: "arxi-proactive-steward", job: { id: job.id } });
       expect(
-        isFreshContextCronSessionTarget(options.cfg.cron?.freshContextSessions, options.job.sessionTarget),
+        isFreshContextCronSessionTarget(
+          options.cfg.cron?.freshContextSessions,
+          options.job.sessionTarget,
+        ),
       ).toBe(true);
     } finally {
       assert(typeof state.cron.stopAndDrain === "function", "Gateway cron drain is unavailable");
