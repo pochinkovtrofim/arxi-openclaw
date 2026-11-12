@@ -13,6 +13,7 @@ import {
   resolveMergedModelProviderConfig,
 } from "../../config/model-provider-config.js";
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
+import { resolveCronRunInferenceBinding } from "../../cron/inference-binding.js";
 import { resolveCronFallbacksOverride } from "../../cron/isolated-agent/run-fallback-policy.js";
 import { resolveCronScheduledToolPolicy } from "../../cron/scheduled-tool-policy.js";
 import { resolveCronRunToolsAllow } from "../../cron/tools-allow.js";
@@ -110,6 +111,7 @@ export function buildRunEntrySelection(
   selection: Parameters<typeof runEmbeddedAgentEntry>[0]["selection"],
   run: FollowupRun["run"],
 ) {
+  const scheduledBinding = resolveCronRunInferenceBinding(run.scheduledAutomation?.job);
   return {
     cfg: selection.cfg,
     provider: selection.provider,
@@ -118,8 +120,8 @@ export function buildRunEntrySelection(
     agentDir: selection.agentDir,
     fallbacksOverride: selection.fallbacksOverride,
     userLockedAuthProfileId: run.scheduledAutomation
-      ? run.scheduledAutomation.job.inferenceBinding?.source === "user"
-        ? run.scheduledAutomation.job.inferenceBinding.profileId
+      ? scheduledBinding?.source === "user"
+        ? scheduledBinding.profileId
         : undefined
       : run.authProfileIdSource === "user"
         ? run.authProfileId

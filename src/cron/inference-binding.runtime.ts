@@ -13,7 +13,7 @@ import { prepareAgentRuntimeAuth } from "../agents/runtime-plan/prepare-auth.js"
 import { resolveSimpleCompletionSelectionForAgent } from "../agents/simple-completion-selection.js";
 import type { SessionEntry } from "../config/sessions/types.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { CronInferenceBinding } from "./inference-binding.js";
+import { cronJobsFollowOwnerAccount, type CronInferenceBinding } from "./inference-binding.js";
 
 /** Capture only a selected, current credential owner; never infer a legacy job's history. */
 export async function captureCronInferenceBinding(params: {
@@ -24,6 +24,9 @@ export async function captureCronInferenceBinding(params: {
   authorizeProfile?: (profileId: string, inherited: boolean) => Promise<(() => void) | undefined>;
   retainAuthorization?: (authority: AuthProfileAuthorization) => void;
 }): Promise<CronInferenceBinding | undefined> {
+  if (cronJobsFollowOwnerAccount()) {
+    return undefined;
+  }
   const { cfg, agentId } = params;
   const model = resolveSimpleCompletionSelectionForAgent({ cfg, agentId, modelRef: params.model });
   if (!model) {

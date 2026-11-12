@@ -30,7 +30,10 @@ import { resolveMergedModelProviderConfig } from "../../../config/model-provider
 import { resolveSessionAuthProfileOverrideSource } from "../../../config/sessions/auth-profile-override-provenance.js";
 import type { OpenClawConfig } from "../../../config/types.openclaw.js";
 import { tryResolveCronJobEffectiveAgentId } from "../../../cron/agent-id.js";
-import type { CronInferenceBinding } from "../../../cron/inference-binding.js";
+import {
+  cronJobsFollowOwnerAccount,
+  type CronInferenceBinding,
+} from "../../../cron/inference-binding.js";
 import { resolveCronModelSelection } from "../../../cron/isolated-agent/model-selection.js";
 import { resolveCronAgentSessionKey } from "../../../cron/isolated-agent/session-key.js";
 import { prepareCronSession } from "../../../cron/isolated-agent/session.js";
@@ -55,6 +58,9 @@ export async function maybeRepairCronInferenceBindings(params: {
   env?: NodeJS.ProcessEnv;
 }): Promise<{ changes: string[]; warnings: string[] }> {
   const env = params.env ?? process.env;
+  if (cronJobsFollowOwnerAccount(env)) {
+    return { changes: [], warnings: [] };
+  }
   const warnings: string[] = [];
   const retained: AuthProfileAuthorization[] = [];
   const changes: Array<{ job: PluginDoctorCronJob; binding: CronInferenceBinding }> = [];

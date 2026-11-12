@@ -11,6 +11,34 @@ export type CronInferenceBinding = {
   source: "auto" | "user";
 };
 
+/**
+ * Ro's host owns every model login in an Owner's VM (`ARXI_AUTH_AGENT_DIR`) and replaces it
+ * whenever the Owner reconnects or changes their model. One Owner owns every job there, so a
+ * job follows the Owner's current account as their chat does: it records no account, needs
+ * none to run, and a recorded one is not consulted. Without this every job that existed
+ * before the account check stopped at "no recorded inference account" (2026-11-12): Doctor
+ * repairs with the Gateway's logins withheld, so it could adopt none.
+ */
+export function cronJobsFollowOwnerAccount(env: NodeJS.ProcessEnv = process.env): boolean {
+  return Boolean(env.ARXI_AUTH_AGENT_DIR?.trim());
+}
+
+/** The account a run is held to; none where jobs follow the Owner's current account. */
+export function resolveCronRunInferenceBinding(
+  job: { inferenceBinding?: CronInferenceBinding } | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): CronInferenceBinding | undefined {
+  return cronJobsFollowOwnerAccount(env) ? undefined : job?.inferenceBinding;
+}
+
+/** The recorded account as a run's auth selection, when the run is held to one. */
+export function resolveCronRunBoundSelection(
+  job: { inferenceBinding?: CronInferenceBinding } | undefined,
+): Pick<CronInferenceBinding, "profileId" | "source"> | undefined {
+  const binding = resolveCronRunInferenceBinding(job);
+  return binding ? { profileId: binding.profileId, source: binding.source } : undefined;
+}
+
 /** Stored bindings are private scheduler state, never accepted from public job input. */
 export function normalizeCronInferenceBinding(value: unknown): CronInferenceBinding | undefined {
   if (value === undefined) {
