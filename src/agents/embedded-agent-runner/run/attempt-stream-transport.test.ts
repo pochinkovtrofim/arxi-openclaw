@@ -374,7 +374,10 @@ describe("prepareEmbeddedAttemptTransport", () => {
     configureAiTransportHost({
       ...previousHost,
       buildModelFetch: () => async (_input, init) => {
-        payloads.push(String(init?.body));
+        if (typeof init?.body !== "string") {
+          throw new Error("expected a JSON Anthropic request body");
+        }
+        payloads.push(init.body);
         return createAnthropicResponse(anthropicEvents);
       },
     });
@@ -415,7 +418,10 @@ describe("prepareEmbeddedAttemptTransport", () => {
     configureAiTransportHost({
       ...previousHost,
       buildModelFetch: () => async (_input, init) => {
-        payloads.push(String(init?.body));
+        if (typeof init?.body !== "string") {
+          throw new Error("expected a JSON Anthropic request body");
+        }
+        payloads.push(init.body);
         return createAnthropicResponse(anthropicEvents);
       },
     });
@@ -468,7 +474,10 @@ describe("prepareEmbeddedAttemptTransport", () => {
     configureAiTransportHost({
       ...previousHost,
       buildModelFetch: () => async (_input, init) => {
-        payloads.push(String(init?.body));
+        if (typeof init?.body !== "string") {
+          throw new Error("expected a JSON Anthropic request body");
+        }
+        payloads.push(init.body);
         return createAnthropicResponse(anthropicEvents);
       },
     });

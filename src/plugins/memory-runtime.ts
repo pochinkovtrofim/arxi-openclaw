@@ -467,7 +467,7 @@ export async function closeActiveMemorySearchManagersCore(cfg?: OpenClawConfig):
 
 /** Releases memory managers' agent database borrows before host suspension. */
 export async function suspendMemorySearchManagersCore(): Promise<{
-  resume(params: { cfg: OpenClawConfig }): void;
+  resume: (params: { cfg: OpenClawConfig }) => void;
   errors: unknown[];
 }> {
   const results = await Promise.allSettled(

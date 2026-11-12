@@ -19,8 +19,7 @@ import { formatSqliteSessionFileMarker } from "openclaw/plugin-sdk/sqlite-runtim
 import { readStringValue } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { withEnvAsync } from "openclaw/plugin-sdk/test-env";
 // Codex tests cover run attempt.context engine plugin behavior.
-import { createSolidPngBuffer } from "openclaw/plugin-sdk/test-fixtures";
-import { awaitGateBeforeSettlement } from "openclaw/plugin-sdk/test-fixtures";
+import { awaitGateBeforeSettlement, createSolidPngBuffer } from "openclaw/plugin-sdk/test-fixtures";
 import { describe, expect, it, vi } from "vitest";
 import { seedRunSessionOwnerForTest } from "./run-attempt-session-owners.test-support.js";
 import {

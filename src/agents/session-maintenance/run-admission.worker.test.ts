@@ -55,7 +55,7 @@ it("rejects a replacement database while waiting for the foreground owner", asyn
     memory.runMemoryFlushIfNeeded.mockClear();
     memory.runSessionCompactionIfNeeded.mockClear();
     try {
-      schedule(predecessor.promise);
+      void schedule(predecessor.promise);
       renameSync(database.path, path("original.sqlite"));
       renameSync(replacementPath, database.path);
       expect(
@@ -70,7 +70,7 @@ it("rejects a replacement database while waiting for the foreground owner", asyn
       await waitForSessionMaintenance(sessionKey);
       expect(memory.runMemoryFlushIfNeeded).not.toHaveBeenCalled();
       expect(memory.runSessionCompactionIfNeeded).not.toHaveBeenCalled();
-      schedule();
+      void schedule();
       await waitForSessionMaintenance(sessionKey);
       expect(memory.runMemoryFlushIfNeeded).toHaveBeenCalledOnce();
       expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledOnce();

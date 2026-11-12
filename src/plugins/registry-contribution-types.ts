@@ -323,7 +323,7 @@ export type MemoryPluginRuntime = {
   closeMemorySearchManager?(params: { cfg: OpenClawConfig; agentId: string }): Promise<void>;
   closeAllMemorySearchManagers?(): Promise<void>;
   /** Close managers before host suspension; resume restores what a running process would keep. */
-  suspendMemorySearchManagers?(): Promise<{ resume(params: { cfg: OpenClawConfig }): void }>;
+  suspendMemorySearchManagers?: () => Promise<{ resume: (params: { cfg: OpenClawConfig }) => void }>;
 };
 
 /** Additive runtime; lifecycle hooks share the existing memory runtime cleanup owner. */

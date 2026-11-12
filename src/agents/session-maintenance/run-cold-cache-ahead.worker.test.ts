@@ -247,7 +247,7 @@ it("yields to a turn that arrives during the early compaction", async () => {
   memory.runSessionCompactionIfNeeded.mockImplementationOnce(async ({ abortSignal }) => {
     started.resolve();
     await new Promise((_, reject) => {
-      abortSignal?.addEventListener("abort", () => reject(abortSignal.reason), { once: true });
+      abortSignal?.addEventListener("abort", () => reject(abortSignal.reason instanceof Error ? abortSignal.reason : new Error("aborted")), { once: true });
     });
   });
   await withIdleSession(async ({ sessionKey, arm }) => {

@@ -19,11 +19,11 @@ import {
   createSessionEventSubscriberRegistry,
   createSessionMessageSubscriberRegistry,
 } from "../../gateway/server-chat-state.js";
+import { subscribeAgentEvents } from "../../gateway/server-chat.agent-events.test-helpers.js";
 import {
   createAgentEventHandler,
   type AgentEventHandlerOptions,
 } from "../../gateway/server-chat.js";
-import { onAgentRuntimeEvent } from "../../infra/agent-events.js";
 import {
   clearAgentRunContext,
   getAgentRunContextOwnership,
@@ -184,7 +184,7 @@ describe("runCronIsolatedAgentTurn terminal lifecycle", () => {
       persistGatewaySessionLifecycleEventForEvent: persist,
       clearTrackedActiveRun,
     });
-    const unsubscribe = onAgentRuntimeEvent(handler);
+    const unsubscribe = subscribeAgentEvents(handler);
     let attemptIndex = 0;
     runCliAgentMock.mockImplementation(async (runParams: RunCliAgentParams) => {
       attemptIndex++;
@@ -500,8 +500,8 @@ describe("runCronIsolatedAgentTurn terminal lifecycle", () => {
       releaseSecond.resolve();
       releasePostExecutionWrite.resolve();
       await run.catch(() => {});
-      unsubscribe();
-      handler.dispose();
+      await unsubscribe();
+      await handler.dispose();
       vi.useRealTimers();
     }
   });

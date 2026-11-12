@@ -290,7 +290,7 @@ function buildAnthropicForwardCompatModel(
     ...(compat ? { compat } : {}),
     ...(contextWindows?.length
       ? {
-          contextWindows: contextWindows.map((option) => ({ ...option })),
+          contextWindows: contextWindows.map((option) => Object.assign({}, option)),
           ...(manifestModel?.contextWindowDefault
             ? { contextWindowDefault: manifestModel.contextWindowDefault }
             : {}),

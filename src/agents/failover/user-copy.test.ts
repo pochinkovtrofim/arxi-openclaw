@@ -2,8 +2,6 @@ import { describe, expect, it } from "vitest";
 import { renderFormatErrorCopy } from "./assistant-request-failure-copy.js";
 import {
   renderInvalidTokenText,
-  renderHeartbeatFailureText,
-  AUTH_INVALID_TOKEN_USER_TEXT,
   renderBillingReplyCopy,
   renderCliTimeoutReplyCopy,
   renderFailoverCodeUserCopy,

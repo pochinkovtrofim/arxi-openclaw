@@ -14,7 +14,6 @@ import {
   resolveSqliteScope,
   runExclusiveSqliteSessionWrite,
 } from "../config/sessions/session-accessor.sqlite-scope.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { withInstallationTarget } from "../infra/installation-target-context.js";
 import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
 import { createUserTurnTranscriptRecorder } from "../sessions/user-turn-transcript.js";

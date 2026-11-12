@@ -111,7 +111,7 @@ describe("embedded run stage timing", () => {
     const tracker = createStageTimingTracker(() => clock);
     clock = 1_040;
     tracker.mark("skills");
-    void tracker.measureSync("bundle-tools", () => {
+    tracker.measureSync("bundle-tools", () => {
       clock = 1_100;
     });
     clock = 1_130;

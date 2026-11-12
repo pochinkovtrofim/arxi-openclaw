@@ -10,7 +10,6 @@ describe("codex MCP projection", () => {
   });
 
   it("recognizes only exact finite effective scheduled caps", async () => {
-    const projection = await import("./codex-mcp-projection.js");
     expect(projection.hasExplicitFiniteCodexToolAllowlist(undefined)).toBe(false);
     expect(projection.hasExplicitFiniteCodexToolAllowlist(["*"])).toBe(false);
     expect(projection.hasExplicitFiniteCodexToolAllowlist(["read", "*"])).toBe(false);
