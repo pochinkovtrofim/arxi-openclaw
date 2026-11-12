@@ -5,6 +5,7 @@ import {
   mintMessageActionTurnCapability,
   resolveMessageActionTurnCapabilityLifetime,
 } from "../message-action-turn-capability.js";
+import type { StartAgentRunExecutionParams } from "./agent-run-execution-types.js";
 
 /**
  * A trusted local host names the private Owner message a direct turn answers.
@@ -69,4 +70,39 @@ export function admitHostCurrentConversationActions(
   runContext.messageActionTurnCapability = capability;
   runContext.currentChannelId ??= resolvedTo;
   return capability;
+}
+
+/** Only a local operator-admin client may name the conversation, sender and message a turn answers. */
+export function resolveHostAdmittedConversation(params: StartAgentRunExecutionParams) {
+  if (
+    params.client?.internal?.isLocalClient !== true ||
+    !params.client.connect?.scopes?.includes("operator.admin")
+  ) {
+    return undefined;
+  }
+  return {
+    senderId: params.request.admittedRequesterSenderId,
+    chatId: params.request.admittedConversationId,
+    messageId: params.request.admittedMessageId,
+    replyOptional: params.request.admittedReplyOptional === true,
+  };
+}
+
+/** A host-admitted private Owner turn that delivers its reply to that direct conversation. */
+export function isHostDirectOwnerReply(
+  params: StartAgentRunExecutionParams,
+  runContext: { senderId?: string | null; chatId?: string | null },
+  input: { hostAdmission: unknown; senderIsOwner?: boolean },
+): boolean {
+  return Boolean(
+    input.hostAdmission &&
+      input.senderIsOwner &&
+      runContext.senderId &&
+      runContext.chatId &&
+      !params.groupId &&
+      !params.groupChannel &&
+      !params.groupSpace &&
+      params.delivery.deliver &&
+      params.delivery.resolvedChatType === "direct",
+  );
 }

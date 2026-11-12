@@ -1,62 +1,15 @@
 // Coordinates managed task-flow creation, updates, ownership, and snapshots.
 import { formatErrorMessage } from "../infra/errors.js";
-import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
-import type { EngineConnection } from "../infra/sql-connection.js";
-import { normalizeSqliteNumber } from "../infra/sqlite-number.js";
 import { stageSqliteTransactionState } from "../infra/sqlite-post-commit.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { OpenClawStateDatabaseReadAdmission } from "../state/openclaw-state-db-async-lifecycle.js";
-import {
-  captureOpenClawStateDatabaseReadAdmission,
-  openClawStateDatabaseCache,
-  registerOpenClawStateDatabaseLifecycleListener,
-} from "../state/openclaw-state-db-cache.js";
-import type { DB as OpenClawStateKyselyDatabase } from "../state/openclaw-state-db.generated.js";
+import { captureOpenClawStateDatabaseReadAdmission, openClawStateDatabaseCache, registerOpenClawStateDatabaseLifecycleListener } from "../state/openclaw-state-db-cache.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
 import type { OpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.types.js";
-import {
-  applyFlowPatch,
-  assertFlowOwnerKey,
-  type FlowRecordCreateFields,
-  assertControllerId,
-  areTaskFlowRecordsEqual,
-  buildFlowRecord,
-  buildManagedTaskFlowPatch,
-  buildTaskMirroredFlowCreateFields,
-  cloneFlowRecord,
-  isTaskMirroredFlowSyncUnchanged,
-  normalizeRestoredFlowRecord,
-  prepareTaskMirroredFlowSyncFromCurrent,
-  selectTaskFlowRecords,
-  type CreateFlowRecordParams,
-  type ManagedTaskFlowCreateFields,
-  type FlowRecordPatch,
-  type PreparedTaskMirroredFlowSync,
-  type TaskFlowSyncInput,
-} from "./task-flow-registry.records.js";
-import {
-  deliverTaskFlowRegistryObserverEvent,
-  getTaskFlowRegistryObservers,
-  getTaskFlowRegistryStore,
-  resetTaskFlowRegistryRuntimeForTests,
-  tryPersistFlowDelete,
-  tryPersistFlowUpsert,
-  type FlowRegistryPublication,
-} from "./task-flow-registry.store.js";
-import { upsertTaskFlowRegistryRecordWithHistoryInStateTransaction } from "./task-flow-registry.store.sqlite.js";
-import type {
-  TaskFlowHistoryRegistration,
-  TaskFlowRegistryStoreSnapshot,
-  TaskFlowRegistryUpdateResult,
-} from "./task-flow-registry.store.types.js";
-import {
-  isTerminalTaskFlow,
-  type JsonValue,
-  type TaskFlowRecord,
-  type TaskFlowStatus,
-  type TaskFlowUpdateResult,
-  type TaskFlowSyncResult,
-} from "./task-flow-registry.types.js";
+import { applyFlowPatch, assertFlowOwnerKey, type FlowRecordCreateFields, assertControllerId, areTaskFlowRecordsEqual, buildFlowRecord, buildTaskMirroredFlowCreateFields, cloneFlowRecord, isTaskMirroredFlowSyncUnchanged, normalizeRestoredFlowRecord, prepareTaskMirroredFlowSyncFromCurrent, selectTaskFlowRecords, type CreateFlowRecordParams, type ManagedTaskFlowCreateFields, type FlowRecordPatch, type PreparedTaskMirroredFlowSync, type TaskFlowSyncInput } from "./task-flow-registry.records.js";
+import { deliverTaskFlowRegistryObserverEvent, getTaskFlowRegistryObservers, getTaskFlowRegistryStore, resetTaskFlowRegistryRuntimeForTests, tryPersistFlowDelete, tryPersistFlowUpsert, type FlowRegistryPublication } from "./task-flow-registry.store.js";
+import type { TaskFlowHistoryRegistration, TaskFlowRegistryStoreSnapshot, TaskFlowRegistryUpdateResult } from "./task-flow-registry.store.types.js";
+import { isTerminalTaskFlow, type TaskFlowRecord, type TaskFlowUpdateResult, type TaskFlowSyncResult } from "./task-flow-registry.types.js";
 import { createAsyncRegistryRestore, createSyncRegistryReader } from "./task-registry-restore.js";
 
 export type {
@@ -298,38 +251,11 @@ export async function reloadTaskFlowRegistryFromStoreAsync(
   await ensureTaskFlowRegistryReadyAsync(context);
 }
 
-function isCurrentTaskFlowDatabase(admission: OpenClawStateDatabaseReadAdmission): boolean {
+export function isCurrentTaskFlowDatabase(admission: OpenClawStateDatabaseReadAdmission): boolean {
   const current = openClawStateDatabaseCache.getKnownOpenClawStateDatabaseIdentity(
     resolveOpenClawStateSqlitePath(),
   );
   return current?.key === admission.identity.key;
-}
-
-export async function reconcileTaskFlowWorkerReceipts(
-  context: OpenClawStateWorkerContext,
-  flowIds: readonly string[],
-): Promise<void> {
-  if (flowIds.length === 0) {
-    return;
-  }
-  context.admission.assertCurrent();
-  if (!isCurrentTaskFlowDatabase(context.admission)) {
-    return;
-  }
-  const store = getTaskFlowRegistryStore();
-  await ensureTaskFlowRegistryReadyAsync(context);
-  for (const flowId of new Set(flowIds)) {
-    context.admission.assertCurrent();
-    if (!isCurrentTaskFlowDatabase(context.admission) || getTaskFlowRegistryStore() !== store) {
-      return;
-    }
-    // The receipt is already committed; publication still rereads the canonical row.
-    await runTaskFlowRegistryWorkerMutation(
-      { flowId, admission: context.admission },
-      () => Promise.resolve(),
-      () => store.readFlowAsync(context, flowId),
-    );
-  }
 }
 
 /** Worker receipts reconcile durable rows without resetting live task or delivery owners. */
@@ -516,33 +442,6 @@ export function prepareManagedTaskFlowMutation(params: {
   };
 }
 
-/** Writes a prepared Flow in the caller's state transaction and checks its database CAS. */
-export function commitPreparedManagedTaskFlowMutationInStateTransaction(
-  db: EngineConnection,
-  prepared: PreparedManagedTaskFlowMutation,
-): void {
-  const current = executeSqliteQueryTakeFirstSync(
-    db,
-    getNodeSqliteKysely<OpenClawStateKyselyDatabase>(db)
-      .selectFrom("flow_runs")
-      .select(["revision", "owner_key", "controller_id", "sync_mode"])
-      .where("flow_id", "=", prepared.flow.flowId),
-  );
-  if (prepared.previous) {
-    if (
-      normalizeSqliteNumber(current?.revision ?? null) !== prepared.previous.revision ||
-      current?.owner_key !== prepared.previous.ownerKey ||
-      current?.controller_id !== prepared.previous.controllerId ||
-      current?.sync_mode !== "managed"
-    ) {
-      throw new Error("Managed Flow database revision changed.");
-    }
-  } else if (current) {
-    throw new Error("Managed Flow already exists.");
-  }
-  upsertTaskFlowRegistryRecordWithHistoryInStateTransaction(db, prepared.flow, prepared.history);
-}
-
 /** Publishes a previously committed mutation to memory and observers. */
 export function publishPreparedManagedTaskFlowMutation(
   prepared: PreparedManagedTaskFlowMutation,
@@ -682,83 +581,6 @@ export function updateFlowRecordByIdExpectedRevision(params: {
   return result.reason === "revision_conflict"
     ? { ...result, current: cloneFlowRecord(result.current) }
     : result;
-}
-
-export function setFlowWaiting(params: {
-  flowId: string;
-  expectedRevision: number;
-  currentStep?: string | null;
-  stateJson?: JsonValue | null;
-  waitJson?: JsonValue | null;
-  blockedTaskId?: string | null;
-  blockedSummary?: string | null;
-  updatedAt?: number;
-}): TaskFlowUpdateResult {
-  return updateFlowRecordByIdExpectedRevision({
-    flowId: params.flowId,
-    expectedRevision: params.expectedRevision,
-    patch: buildManagedTaskFlowPatch("setWaiting", params),
-  });
-}
-
-export function resumeFlow(params: {
-  flowId: string;
-  expectedRevision: number;
-  status?: Extract<TaskFlowStatus, "queued" | "running">;
-  currentStep?: string | null;
-  stateJson?: JsonValue | null;
-  updatedAt?: number;
-}): TaskFlowUpdateResult {
-  return updateFlowRecordByIdExpectedRevision({
-    flowId: params.flowId,
-    expectedRevision: params.expectedRevision,
-    patch: buildManagedTaskFlowPatch("resume", params),
-  });
-}
-
-export function finishFlow(params: {
-  flowId: string;
-  expectedRevision: number;
-  currentStep?: string | null;
-  stateJson?: JsonValue | null;
-  updatedAt?: number;
-  endedAt?: number;
-}): TaskFlowUpdateResult {
-  return updateFlowRecordByIdExpectedRevision({
-    flowId: params.flowId,
-    expectedRevision: params.expectedRevision,
-    patch: buildManagedTaskFlowPatch("finish", params),
-  });
-}
-
-export function failFlow(params: {
-  flowId: string;
-  expectedRevision: number;
-  currentStep?: string | null;
-  stateJson?: JsonValue | null;
-  blockedTaskId?: string | null;
-  blockedSummary?: string | null;
-  updatedAt?: number;
-  endedAt?: number;
-}): TaskFlowUpdateResult {
-  return updateFlowRecordByIdExpectedRevision({
-    flowId: params.flowId,
-    expectedRevision: params.expectedRevision,
-    patch: buildManagedTaskFlowPatch("fail", params),
-  });
-}
-
-export function requestFlowCancel(params: {
-  flowId: string;
-  expectedRevision: number;
-  cancelRequestedAt?: number;
-  updatedAt?: number;
-}): TaskFlowUpdateResult {
-  return updateFlowRecordByIdExpectedRevision({
-    flowId: params.flowId,
-    expectedRevision: params.expectedRevision,
-    patch: buildManagedTaskFlowPatch("requestCancel", params),
-  });
 }
 
 export function syncFlowFromTaskResult(task: TaskFlowSyncInput): TaskFlowSyncResult {
