@@ -298,8 +298,22 @@ it("lets the next startup admission replace a pending inspection its stopped own
     await withAgentDatabaseStartupAdmission(async (restarted) => {
       expect(restarted).not.toBe(first);
       await fleet.ready();
+      // Upstream defers runtime integrity to the Gateway owner, so the restarted
+      // admission owns a fresh pending decision instead of the abandoned one.
+      expect(readAgentDatabaseAdmissionRefusal("first", { env: fleet.env })).not.toBe(abandoned);
+      expect(hasAbandonedAgentDatabaseInspections(fleet.env)).toBe(false);
+      const { stop: stopRestarted } = restarted.adopt();
+      restarted.activate({
+        isCurrent: () => true,
+        preparationReady: Promise.resolve(),
+        openAgent: async () => {},
+        migrateAgent: async () => {},
+        publishAgent: async () => {},
+      });
+      await restarted.pendingPreparation;
       expect(readAgentDatabaseAdmissionRefusal("first", { env: fleet.env })).toBeUndefined();
       expect(hasAbandonedAgentDatabaseInspections(fleet.env)).toBe(false);
+      await stopRestarted();
     });
   });
 });

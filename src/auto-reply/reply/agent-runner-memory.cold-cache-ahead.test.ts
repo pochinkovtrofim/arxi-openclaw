@@ -1,5 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { SessionManager } from "../../agents/sessions/session-manager.js";
+import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
 import { loadSessionEntry, replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import { SESSION_TOTAL_TOKENS_VERSION } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
@@ -18,6 +19,7 @@ vi.mock("../../agents/embedded-agent.js", async (importOriginal) => ({
 const MINUTE = 60_000;
 
 afterEach(() => {
+  clearRuntimeConfigSnapshot();
   vi.useRealTimers();
   compact.mockReset();
 });
@@ -25,6 +27,8 @@ afterEach(() => {
 it("compacts once early and leaves the owner's later turn uncompacted", async () => {
   const state = await createOpenClawTestState({ prefix: "openclaw-cold-cache-ahead-" });
   try {
+    // Upstream session reads resolve their store through the prepared runtime config.
+    setRuntimeConfigSnapshot({});
     vi.useFakeTimers({ toFake: ["Date"], now: 1_800_000_000_000 });
     const target = {
       agentId: "main",
