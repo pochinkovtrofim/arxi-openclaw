@@ -6,6 +6,10 @@ import { setLoggerOverride } from "../logging/logger.js";
 import { testApi } from "../logging/logger.test-support.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
 import {
+  hasSqliteDatabaseSchemaAdmissionForPath,
+  retainSqliteDatabaseAdmissionLocation,
+} from "./sqlite-database-admission.js";
+import {
   adoptPreparedLocation,
   removeTempDirectory,
   SqliteSnapshotCleanupError,
@@ -82,6 +86,41 @@ it("keeps synchronous and asynchronous token cleanup in separate snapshot flight
     }
   }
 });
+
+it.runIf(process.platform === "linux")(
+  "releases this host's admission descriptors when a worker-owned snapshot is removed",
+  async () => {
+    const source = path.join(root, "admitted-source.sqlite");
+    createDatabase(source, "CREATE TABLE probe(value TEXT); INSERT INTO probe VALUES('kept');");
+    vi.stubEnv("XDG_CACHE_HOME", root);
+    const preparation = startSqliteReadOnlyLocationAsync(source, { preserveSourceArtifacts: true });
+    try {
+      const snapshot = await preparation.result;
+      const cleanupRoot = snapshot.cleanupRoot!;
+      const pinned = () =>
+        fs.readdirSync("/proc/self/fd").flatMap((descriptor) => {
+          try {
+            const target = fs.readlinkSync(`/proc/self/fd/${descriptor}`);
+            return target.startsWith(cleanupRoot) ? [target] : [];
+          } catch {
+            return [];
+          }
+        });
+      // A shared-state read admits the copy and its reader token from the host thread.
+      hasSqliteDatabaseSchemaAdmissionForPath(snapshot.location);
+      retainSqliteDatabaseAdmissionLocation(path.join(cleanupRoot, "owner.sqlite"));
+      expect(pinned()).toHaveLength(2);
+
+      expect(await snapshot.cleanupAsync()).toBe(true);
+
+      expect(fs.existsSync(cleanupRoot)).toBe(false);
+      // A suspended Gateway must not carry deleted placeholder copies into an owner rebind.
+      expect(pinned()).toEqual([]);
+    } finally {
+      await preparation.startClose().result;
+    }
+  },
+);
 
 let root: string;
 

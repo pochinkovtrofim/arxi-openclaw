@@ -414,6 +414,7 @@ export function startRemoveTempDirectory(
     if (!owner?.releaseRetained) {
       throw new SqliteSnapshotCleanupError("SQLite snapshot has no retained cleanup owner");
     }
+    retireHostSnapshotAdmissions(directory);
     owner.retiringRetained = retained.operation;
     release = owner.releaseRetained();
     void release.result.then(
@@ -429,6 +430,28 @@ export function startRemoveTempDirectory(
     retained.resolve(false);
   }
   return retained.operation;
+}
+
+/**
+ * A retained owner deletes these files in its own token process, so this host's
+ * admission registry never sees their retirement. Its identity descriptors would
+ * pin the deleted copies for the process lifetime (and across a suspension).
+ * Sealing proved no host reader remains, so no host lock rides on them.
+ */
+function retireHostSnapshotAdmissions(directory: string): void {
+  try {
+    for (const entry of fs.readdirSync(directory, { recursive: true, withFileTypes: true })) {
+      // A closed host connection drops its record but keeps the descriptor, so ask for every file.
+      if (entry.isFile()) {
+        retireSqliteDatabaseAdmissionForPath(path.join(entry.parentPath, entry.name));
+      }
+    }
+  } catch (error) {
+    // The owner's deletion does not depend on this; a vanished entry must not stop it.
+    getChildLogger({ subsystem: "infra/sqlite-snapshot" }).debug(
+      `snapshot admission retirement skipped: ${String(error)}`,
+    );
+  }
 }
 
 /** A surviving native owner may retire bytes only after their original host readers leave. */

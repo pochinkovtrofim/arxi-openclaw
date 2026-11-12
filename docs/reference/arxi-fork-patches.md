@@ -128,6 +128,17 @@ or runtime layers merely because they existed in the previous history.
 - `gateway.suspend.status` no longer waits up to 15 s for draining writes
   (upstream's own wait); it still closes idle agent databases on `ready`.
   Upstream dropped incognito agent handles and the eviction option.
+- SQLite snapshot cleanup: upstream's admission registry (new in 11.3) keeps
+  an identity descriptor open for every database file the host thread admits,
+  including private read-only snapshot copies and their `owner.sqlite` tokens.
+  A snapshot whose staging worker or native child owns the token is deleted in
+  that process, so the host never retired those descriptors: each snapshot read
+  pinned its deleted copy for the Gateway's lifetime, and a suspended
+  placeholder carried them under the owner root (golden bake
+  `ARXI_GOLDEN_PLACEHOLDER_OWNER_DATABASE`). `startRemoveTempDirectory` now
+  retires the host's admissions for the directory's files once it has sealed
+  out host readers, before the owner deletes them, so a confirmed suspension
+  holds none.
 - System prompt (#169): upstream moved tool catalogs below the workspace
   files. The cache boundary stays before `## Workspace Files`, so workspace
   files open the suffix ahead of upstream's per-run sections.
