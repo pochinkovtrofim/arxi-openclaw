@@ -152,8 +152,8 @@ it("adds the host's follow-up to the run it waits on, exactly once", async ({ si
     typeof import("../agents/agent-model-discovery.js")
   >("../agents/agent-model-discovery.js");
   const discoverySpy = vi
-    .spyOn(discovery, "discoverModels")
-    .mockImplementation(actualDiscovery.discoverModels);
+    .spyOn(discovery, "discoverModelsAsync")
+    .mockImplementation(actualDiscovery.discoverModelsAsync);
   onTestFinished(() => discoverySpy.mockRestore());
   await prepareGatewayReplyRuntimeForTest({ force: true });
   await writeSessionStore({

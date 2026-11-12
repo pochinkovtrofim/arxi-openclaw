@@ -173,7 +173,6 @@ describe("PinnedDispatcherPool", () => {
     const acquire = (dispatcher: Dispatcher) =>
       pool.acquire({
         key: "origin-a/proxy",
-        groupKey: "origin-a",
         createDispatcher: () => dispatcher,
       });
 
@@ -206,7 +205,6 @@ describe("PinnedDispatcherPool", () => {
     const acquire = () =>
       pool.acquire({
         key: "origin-a/proxy",
-        groupKey: "origin-a",
         createDispatcher: () => created.dispatcher,
       });
     const first = acquire();

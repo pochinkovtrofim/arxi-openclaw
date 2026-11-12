@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { replaceSessionEntry } from "./session-accessor.sqlite-entry.js";
 import { readTranscriptExportSnapshotReadOnlySync } from "./session-accessor.sqlite-read.js";
-import { replaceTranscriptEvents } from "./session-accessor.sqlite-transcript-write.js";
+import { replaceTranscriptEvents } from "./session-accessor.sqlite-transcript-write.test-support.js";
 
 it("omits tool payloads from memory exports without changing identity, provenance, or durable bytes", async () => {
   await withOpenClawTestState({ label: "transcript-export-payloads" }, async (state) => {

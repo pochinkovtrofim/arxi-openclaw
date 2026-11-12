@@ -362,6 +362,11 @@ describe("MCP Events callback and subscription lifecycle", () => {
     let cron = {
       ...deps.cron,
       list: async () => [],
+      getJob: () => undefined,
+      run: async () => ({ ok: true }),
+      mutateTriggerState: async () => {
+        throw new Error("mcp-events does not own trigger state");
+      },
       add: async () => {},
       update: async () => {},
       remove: async () => ({}),

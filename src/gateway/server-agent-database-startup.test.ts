@@ -909,7 +909,9 @@ it("re-admits a deferred agent after an in-process restart stops its pending ins
   closeOpenClawAgentDatabasesForTest();
   await closeStateDatabaseForTest();
   for (const pathname of paths) {
-    clearOpenClawAgentIntegrityVerification(pathname, env);
+    // A new process reloads sealed facts; the external mutation needs the integrity gate.
+    retireSqliteDatabaseAdmissionForPath(pathname);
+    revokeSqliteDatabaseAdmissionsForPath(pathname);
     const database = new DatabaseSync(pathname);
     try {
       database.exec("PRAGMA journal_mode=DELETE");

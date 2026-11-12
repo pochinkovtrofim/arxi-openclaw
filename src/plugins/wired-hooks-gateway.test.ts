@@ -67,6 +67,8 @@ function createRawCronHost() {
     },
     remove: async () => ({ ok: true, removed: false }),
     removeStaleJobFamily: async () => 0,
+    readEventSources: async () => [],
+    runEvent: async () => ({ kind: "invalidated" }),
   };
   return { host, readJob: () => job };
 }

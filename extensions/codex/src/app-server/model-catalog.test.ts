@@ -401,7 +401,7 @@ describe("Codex app-server model catalog", () => {
       return { account: { type: "apiKey" }, requiresOpenaiAuth: true };
     });
     const catalog = await owner.load(catalogParams, undefined);
-    expect(catalog.map((entry) => entry.id)).toEqual(["synthetic-opaque"]);
+    expect(catalog.entries.map((entry) => entry.id)).toEqual(["synthetic-opaque"]);
     expect(listModelsMock).toHaveBeenCalledTimes(2);
     expect(rpc.request).toHaveBeenCalledTimes(2);
     expect(withCodexAppServerJsonClient).toHaveBeenCalledTimes(1);

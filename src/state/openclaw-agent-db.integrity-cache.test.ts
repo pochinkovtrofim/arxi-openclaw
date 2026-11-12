@@ -129,12 +129,13 @@ it("certifies idle handles before suspension and keeps borrowed handles open", a
       failed: 0,
     });
     expect(idle.db.isOpen).toBe(false);
-    expect(readOpenClawAgentIntegrityVerification(idle.path, env)?.clean_close).toBe(1);
+    expect(readSqliteDatabaseCleanClose(idle.path)).toBe(true);
     expect(held.db.isOpen).toBe(true);
-    expect(readOpenClawAgentIntegrityVerification(held.path, env)?.clean_close).toBe(0);
+    expect(readSqliteDatabaseCleanClose(held.path)).toBe(false);
     await withOpenClawAgentDatabaseAsync(options, async (reopened) => {
       expect(reopened.db.isOpen).toBe(true);
-      expect(readOpenClawAgentIntegrityVerification(idle.path, env)?.clean_close).toBe(0);
+      reopened.db.exec("INSERT INTO auth_profile_state VALUES ('suspend-reopen', '{}', 1)");
+      expect(readSqliteDatabaseCleanClose(idle.path)).toBe(false);
     });
   } finally {
     release.resolve();

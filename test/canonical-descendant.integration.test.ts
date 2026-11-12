@@ -1535,7 +1535,7 @@ describe("canonical descendant lifecycle through real owners", () => {
   it("keeps requester MCP declarations across fork and restart while reconnecting only the current caller", async () => {
     const sessions = new Set<string>();
     const calls: string[] = [];
-    const resolutions: string[] = [];
+    const resolutions: (string | undefined)[] = [];
     let initializations = 0;
     const handleRequest = async (request: http.IncomingMessage, response: http.ServerResponse) => {
       const sessionId = request.headers["mcp-session-id"];
