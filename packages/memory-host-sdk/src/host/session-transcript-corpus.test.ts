@@ -126,6 +126,7 @@ describe("listSessionTranscriptCorpusEntriesForAgent", () => {
 
   it("classifies persistent cron targets as cron but never the main session", async () => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
+      setRuntimeConfigSnapshot({});
       const storePath = path.join(state.sessionsDir(), "sessions.json");
       const rows = [
         [
