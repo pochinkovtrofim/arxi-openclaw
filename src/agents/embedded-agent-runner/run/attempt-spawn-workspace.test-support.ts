@@ -928,7 +928,7 @@ export function createDefaultEmbeddedSession(params?: {
           prompt: String(prompt),
           options: options as Parameters<MutableSession["prompt"]>[1],
         };
-        await session.agent.streamFn?.(
+        const stream = await session.agent.streamFn?.(
           testModel,
           {
             systemPrompt: session.agent.state.systemPrompt,
@@ -937,6 +937,13 @@ export function createDefaultEmbeddedSession(params?: {
           },
           {},
         );
+        // Drain it like the agent loop, so the idle watchdog sees the reply end.
+        if (typeof stream === "object" && stream !== null && Symbol.asyncIterator in stream) {
+          const events = (stream as AsyncIterable<unknown>)[Symbol.asyncIterator]();
+          while (!(await events.next()).done) {
+            // Fixture streams carry no events worth keeping.
+          }
+        }
       },
       streamFn: async () => {
         if (params?.prompt && pendingPrompt) {
