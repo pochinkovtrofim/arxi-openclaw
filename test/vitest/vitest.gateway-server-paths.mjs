@@ -13,6 +13,7 @@ export const gatewayPluginTestFiles = [
 export const gatewayDatabaseWorkerTestFiles = [
   "src/gateway/agent-runtime-identity-token.test.ts",
   "src/gateway/agent-turn/agent-run-execution-phase.owner.test.ts",
+  "src/gateway/agent-turn/agent-run-execution-phase.owner-lifecycle.test.ts",
   "src/gateway/agent-turn/agent-run-media.test.ts",
   "src/gateway/agent-turn/agent-run-settle-continuation.native.test.ts",
   "src/gateway/agent-turn/agent-session-preparation.worker.test.ts",
