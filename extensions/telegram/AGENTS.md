@@ -27,12 +27,13 @@ Proof: `src/channels/message/ingress-drain.test.ts`,
 - Album and forward buffers hold flushes while the same-lane backlog contains a matching member; quiet windows stay sized for Telegram delivery, not local load.
 - Durable-before-ack on both transports. Polling: ingress worker advances its
   offset only after the parent's committed spool enqueue
-  (`writeTelegramSpooledUpdate`). Webhook: respond 200 only after the spool
+  (`ingressMonitor.admit()`). Webhook: respond 200 only after the spool
   write; non-200 on write failure is the redelivery contract.
 - `update_id`↔event-id encoding and per-chat/topic lane derivation stay in
   `telegram-ingress-spool.ts` / sequential-key.
-- Polling and webhook both: enqueue, then wake the monitor from
-  `telegram-ingress-drain-factory.ts`. No private claim loops.
+- Polling and webhook both: enqueue through `admit()` of the monitor from
+  `telegram-ingress-drain-factory.ts`; it appends, then wakes the drain. No
+  private claim loops.
 - Stall timeout: `OPENCLAW_TELEGRAM_SPOOLED_HANDLER_TIMEOUT_MS` →
   `adoptionStallTimeoutMs` (default 5 min) via
   `resolveTelegramAdoptionStallTimeoutMs`.
