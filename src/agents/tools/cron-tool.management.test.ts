@@ -5,14 +5,8 @@ import {
   getCronManagementAuthority,
   withCronManagementGrant,
 } from "../../gateway/cron-creator-authority-grant.js";
-import {
-  claimAgentRunContext,
-  clearAgentRunContext,
-  consumeCronNextCheckProposal,
-  claimAgentRunDelegatedAuthority,
-  releaseAgentRunDelegatedAuthority,
-  releaseAgentRunContext,
-} from "../../infra/agent-run-registry.js";
+import { claimAgentRunContext, clearAgentRunContext, claimAgentRunDelegatedAuthority, releaseAgentRunDelegatedAuthority, releaseAgentRunContext } from "../../infra/agent-run-registry.js";
+import { consumeCronNextCheckProposal } from "../../infra/agent-run-cron-proposals.js";
 import { createTestAdmittedRunContext } from "../admitted-run-context.test-support.js";
 import {
   createCronCreatorAuthorityCapability,

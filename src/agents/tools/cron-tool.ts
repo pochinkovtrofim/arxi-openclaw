@@ -8,7 +8,7 @@ import type { CronDelivery, CronJob } from "../../cron/types.js";
 import { normalizeHttpWebhookUrl } from "../../cron/webhook-url.js";
 import { GatewayClientRequestError } from "../../gateway/client.js";
 import { CRON_MANAGEMENT_METHODS } from "../../gateway/cron-creator-authority-grant.js";
-import { recordCronNextCheckProposal } from "../../infra/agent-run-registry.js";
+import { recordCronNextCheckProposal } from "../../infra/agent-run-cron-proposals.js";
 import { normalizeAccountId } from "../../routing/account-id.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
 import { isRecord } from "../../utils.js";

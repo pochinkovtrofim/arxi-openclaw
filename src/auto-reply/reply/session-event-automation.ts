@@ -1,6 +1,6 @@
 import { createCronRunDiagnosticsFromAgentResult } from "../../cron/run-diagnostics.js";
 import { projectCronRunUsage } from "../../cron/run-telemetry.js";
-import { consumeCronNextCheckProposal } from "../../infra/agent-run-registry.js";
+import { consumeCronNextCheckProposal } from "../../infra/agent-run-cron-proposals.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { runWithGatewayDetachedWorkContinuation } from "../../process/gateway-work-admission.js";
 import { isCronRunSessionKey } from "../../sessions/session-key-utils.js";

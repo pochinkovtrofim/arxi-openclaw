@@ -5,13 +5,8 @@ import {
   getAgentEventLifecycleGeneration,
   rotateAgentEventLifecycleGeneration,
 } from "../../infra/agent-events.js";
-import {
-  claimAgentRunContext,
-  clearAgentRunContext,
-  getAgentRunContext,
-  recordCronNextCheckProposal,
-  registerAgentRunContext,
-} from "../../infra/agent-run-registry.js";
+import { claimAgentRunContext, clearAgentRunContext, getAgentRunContext, registerAgentRunContext } from "../../infra/agent-run-registry.js";
+import { recordCronNextCheckProposal } from "../../infra/agent-run-cron-proposals.js";
 import { makeIsolatedAgentJobFixture, makeIsolatedAgentParamsFixture } from "./job-fixtures.js";
 import { setupRunCronIsolatedAgentTurnSuite } from "./run.suite-helpers.js";
 import {
