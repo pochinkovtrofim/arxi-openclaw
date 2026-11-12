@@ -49,6 +49,13 @@ const largeSession = {
   totalTokensVersion: SESSION_TOTAL_TOKENS_VERSION,
 };
 
+function pendingColdCacheAheadTimers(): number | undefined {
+  const timers = (globalThis as Record<PropertyKey, unknown>)[
+    Symbol.for("openclaw.coldCacheAheadMaintenance")
+  ];
+  return timers instanceof Map ? timers.size : undefined;
+}
+
 beforeEach(() => {
   // The timer looks up the Gateway's registry when it fires, not the finished request's.
   setActivePluginRegistry(createEmptyPluginRegistry());
@@ -192,7 +199,8 @@ it("stops following activity after three moves when nobody returns", async () =>
       await waitForSessionMaintenance(sessionKey);
     }
     expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledTimes(4);
-    expect(vi.getTimerCount()).toBe(0);
+    // No early-run timer is left; the pooled SQLite readers keep their own idle timers.
+    expect(pendingColdCacheAheadTimers()).toBe(0);
     await vi.advanceTimersByTimeAsync(12 * 60 * MINUTE);
     await waitForSessionMaintenance(sessionKey);
     expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledTimes(4);

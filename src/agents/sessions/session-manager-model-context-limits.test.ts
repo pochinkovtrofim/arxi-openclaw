@@ -696,7 +696,9 @@ it("keeps the newest request when an oversized result sits inside the latest tur
     await verifyRead(() => {
       const limits = { maxBytes: 4096, maxEvents: 16, toolResultOverflow: "omit" as const };
       const suffix = SessionManager.openModelContext(scope, { limits }).buildSessionContext();
-      expect(suffix.messages.some((message) => message.role === "user")).toBe(false);
+      // Upstream #171239 now aligns a byte-limited suffix to whole turns, so the plain
+      // suffix keeps the request too; latestTurn: "required" still guarantees it.
+      expect(suffix.messages.some((message) => message.role === "user")).toBe(true);
 
       const selected = SessionManager.openModelContext(scope, {
         limits: { ...limits, latestTurn: "required" },
