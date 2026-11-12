@@ -10,7 +10,7 @@ import { createTestFollowupRun, withTestModelContextTokens } from "./agent-runne
 // Real decision, store, transcript reader and compaction accounting; only the summarizing
 // compaction is replaced by its transcript effect (a compaction record, tokensAfter unknown).
 const compact = vi.hoisted(() => vi.fn());
-vi.mock("../../agents/embedded-agent.js", () => ({ compactEmbeddedAgentSession: compact }));
+vi.mock("../../agents/embedded-agent.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("../../agents/embedded-agent.js")>()), compactEmbeddedAgentSession: compact }));
 
 const MINUTE = 60_000;
 

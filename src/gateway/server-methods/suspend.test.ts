@@ -28,15 +28,18 @@ vi.mock("../../infra/delivery-queue-sqlite.js", async (importOriginal) => {
   return { ...actual, inspectPendingDeliveryQueueDeferrals: outbound.inspect };
 });
 
-vi.mock("../../state/openclaw-agent-db-lifecycle.js", () => ({
+vi.mock("../../state/openclaw-agent-db-lifecycle.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/openclaw-agent-db-lifecycle.js")>()),
   closeIdleOpenClawAgentDatabases: agentDatabases.closeIdle,
 }));
 
-vi.mock("../../state/openclaw-agent-execution.js", () => ({
+vi.mock("../../state/openclaw-agent-execution.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../state/openclaw-agent-execution.js")>()),
   closeIdleOpenClawAgentDatabaseExecutions: agentDatabases.closeIdleExecutions,
 }));
 
-vi.mock("../../plugins/memory-runtime.js", () => ({
+vi.mock("../../plugins/memory-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/memory-runtime.js")>()),
   suspendMemorySearchManagersCore: agentDatabases.suspendMemory,
 }));
 

@@ -41,7 +41,8 @@ const runAttempt = vi.hoisted(() =>
 
 // The real harness selects the runtime and prepares its authority before this
 // model-execution boundary. The test never creates a reply operation or hash.
-vi.mock("../agents/embedded-agent-runner/run/attempt.js", () => ({
+vi.mock("../agents/embedded-agent-runner/run/attempt.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/embedded-agent-runner/run/attempt.js")>()),
   runEmbeddedAttempt: runAttempt,
 }));
 

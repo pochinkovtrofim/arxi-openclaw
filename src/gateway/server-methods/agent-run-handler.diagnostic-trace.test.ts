@@ -7,20 +7,25 @@ import { agentRunHandler } from "./agent-run-handler.js";
 
 const startTurn = vi.hoisted(() => vi.fn(async () => {}));
 
-vi.mock("../agent-turn/agent-request-preflight.js", () => ({
+vi.mock("../agent-turn/agent-request-preflight.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agent-turn/agent-request-preflight.js")>()),
   prepareAgentRequestPreflight: () => ({ request: {} }),
 }));
-vi.mock("../agent-turn/agent-turn-service.js", () => ({
+vi.mock("../agent-turn/agent-turn-service.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agent-turn/agent-turn-service.js")>()),
   createAgentTurnService: () => ({ startTurn }),
 }));
-vi.mock("../agent-turn/io.js", () => ({
+vi.mock("../agent-turn/io.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agent-turn/io.js")>()),
   createAgentTurnIo: () => ({ emitAcceptance: vi.fn() }),
 }));
-vi.mock("../agent-turn/principal.js", () => ({
+vi.mock("../agent-turn/principal.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agent-turn/principal.js")>()),
   captureAgentTurnPrincipal: () => null,
   resolveAgentTurnRunObserver: () => undefined,
 }));
-vi.mock("./validation.js", () => ({
+vi.mock("./validation.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./validation.js")>()),
   assertValidParams: () => true,
 }));
 

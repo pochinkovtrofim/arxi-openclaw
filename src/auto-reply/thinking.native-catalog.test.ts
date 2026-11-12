@@ -5,7 +5,8 @@ const providerRuntimeMocks = vi.hoisted(() => ({
   resolveProviderThinkingProfile: vi.fn(),
 }));
 
-vi.mock("../plugins/provider-thinking.js", () => ({
+vi.mock("../plugins/provider-thinking.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../plugins/provider-thinking.js")>()),
   resolveEffectiveThinkingProfile: providerRuntimeMocks.resolveProviderThinkingProfile,
 }));
 

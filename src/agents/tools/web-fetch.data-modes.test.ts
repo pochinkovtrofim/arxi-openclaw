@@ -7,10 +7,12 @@ const { fetchWithWebToolsNetworkGuardMock, resolveWebFetchDefinitionMock } = vi.
   resolveWebFetchDefinitionMock: vi.fn(),
 }));
 
-vi.mock("./web-guarded-fetch.js", () => ({
+vi.mock("./web-guarded-fetch.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./web-guarded-fetch.js")>()),
   fetchWithWebToolsNetworkGuard: fetchWithWebToolsNetworkGuardMock,
 }));
-vi.mock("../../web-fetch/runtime.js", () => ({
+vi.mock("../../web-fetch/runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../web-fetch/runtime.js")>()),
   resolveWebFetchDefinition: resolveWebFetchDefinitionMock,
 }));
 

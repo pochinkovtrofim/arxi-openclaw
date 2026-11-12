@@ -12,7 +12,8 @@ import {
 } from "./attempt-stage-timing.js";
 
 const emitted = vi.hoisted(() => ({ events: [] as unknown[] }));
-vi.mock("../../../infra/diagnostic-events.js", () => ({
+vi.mock("../../../infra/diagnostic-events.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../infra/diagnostic-events.js")>()),
   emitTrustedDiagnosticEvent: (event: unknown) => emitted.events.push(event),
 }));
 

@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const applyMediaUnderstandingMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../../media-understanding/apply.js", () => ({
+vi.mock("../../media-understanding/apply.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../media-understanding/apply.js")>()),
   applyMediaUnderstanding: applyMediaUnderstandingMock,
 }));
 

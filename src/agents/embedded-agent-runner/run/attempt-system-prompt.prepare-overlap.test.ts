@@ -15,7 +15,8 @@ const reads = vi.hoisted(() => ({
   watched: undefined as Promise<undefined> | undefined,
 }));
 
-vi.mock("../../../plugins/providers.runtime-core.js", () => ({
+vi.mock("../../../plugins/providers.runtime-core.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../plugins/providers.runtime-core.js")>()),
   createProviderRegistryResolver: () => ({
     isPluginProvidersLoadInFlight: () => false,
     resolvePluginProvidersCore: () => {
@@ -23,7 +24,8 @@ vi.mock("../../../plugins/providers.runtime-core.js", () => ({
     },
   }),
 }));
-vi.mock("../../memory-prompt-prepare.js", () => ({
+vi.mock("../../memory-prompt-prepare.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../memory-prompt-prepare.js")>()),
   prepareAgentMemoryPrompt: () => {
     reads.started.push("memory");
     return reads.memory;

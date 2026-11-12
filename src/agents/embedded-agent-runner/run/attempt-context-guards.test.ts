@@ -33,7 +33,8 @@ vi.mock("../tool-result-context-guard.js", () => ({
 vi.mock("../../tools/computer-tool.js", () => ({
   invalidateComputerFrameIfMissing: hoisted.invalidateComputerFrameIfMissing,
 }));
-vi.mock("../cache-ttl.js", () => ({
+vi.mock("../cache-ttl.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../cache-ttl.js")>()),
   readCacheTtlEntries: () => [],
   isCacheTtlEligibleProvider: hoisted.isCacheTtlEligibleProvider,
   readLastCacheTtlTimestamp: hoisted.readLastCacheTtlTimestamp,

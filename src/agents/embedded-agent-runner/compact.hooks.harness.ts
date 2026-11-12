@@ -667,7 +667,8 @@ export async function loadCompactHooksHarness(options: { durableSession?: boolea
       },
     }));
 
-    vi.doMock("../sessions/index.js", () => ({
+    vi.doMock("../sessions/index.js", async (importOriginal) => ({
+      ...(await importOriginal<typeof import("../sessions/index.js")>()),
       AuthStorage: function AuthStorage() {},
       ModelRegistry: function ModelRegistry() {},
       SessionManager: sessionManagerMock,

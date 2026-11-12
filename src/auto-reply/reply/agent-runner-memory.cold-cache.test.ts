@@ -15,16 +15,19 @@ const { accounting, compact, increment } = vi.hoisted(() => ({
   compact: vi.fn(),
   increment: vi.fn(),
 }));
-vi.mock("../../gateway/session-transcript-readers.js", () => ({
+vi.mock("../../gateway/session-transcript-readers.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../gateway/session-transcript-readers.js")>()),
   readSessionTranscriptAccountingAsync: accounting,
 }));
-vi.mock("../../agents/embedded-agent-runner/run-entry.js", () => ({
+vi.mock("../../agents/embedded-agent-runner/run-entry.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../agents/embedded-agent-runner/run-entry.js")>()),
   runEmbeddedAgentEntry: vi.fn(),
 }));
-vi.mock("../../agents/embedded-agent.js", () => ({
+vi.mock("../../agents/embedded-agent.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../agents/embedded-agent.js")>()),
   compactEmbeddedAgentSession: compact,
 }));
-vi.mock("./session-updates.js", () => ({ incrementCompactionCount: increment }));
+vi.mock("./session-updates.js", async (importOriginal) => ({ ...(await importOriginal<typeof import("./session-updates.js")>()), incrementCompactionCount: increment }));
 
 const MINUTE = 60_000;
 

@@ -29,7 +29,8 @@ vi.mock("../plugins/widget-presenters.js", () => ({
   adoptRuntimeWidgetPresenterRegistrations: hoisted.adoptRuntimeWidgetPresenterRegistrations,
 }));
 
-vi.mock("../plugins/tool-policy-runtime.js", () => ({
+vi.mock("../plugins/tool-policy-runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../plugins/tool-policy-runtime.js")>()),
   adoptRuntimeToolPolicyRegistrations: hoisted.adoptRuntimeToolPolicyRegistrations,
 }));
 

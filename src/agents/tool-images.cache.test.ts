@@ -1,7 +1,8 @@
 import { beforeEach, expect, it, vi } from "vitest";
 
 const { resize } = vi.hoisted(() => ({ resize: vi.fn() }));
-vi.mock("../media/media-services.js", () => ({
+vi.mock("../media/media-services.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../media/media-services.js")>()),
   buildImageResizeSideGrid: () => [1200],
   getImageMetadata: vi.fn(),
   IMAGE_REDUCE_QUALITY_STEPS: [85],
