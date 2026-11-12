@@ -2,7 +2,6 @@ import {
   isAnthropicServerToolClearingEnabled,
   resolveCompactionReplayEligibility,
 } from "@openclaw/ai/transports";
-import { resolveAgentMainSessionKey } from "../../../config/sessions/main-session.js";
 import type { ModelCompatConfig } from "../../../config/types.models.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { createOpenAIServiceTierObservationWrapper } from "../../../llm/providers/stream-wrappers/openai-service-tier-observation.js";
@@ -10,7 +9,6 @@ import { createCodexNativeWebSearchWrapper } from "../../../llm/providers/stream
 import { getAgentScopedMediaLocalRoots } from "../../../media/local-roots.js";
 import type { ProviderRuntimePluginHandle } from "../../../plugins/provider-hook-runtime.js";
 import { resolveProviderTextTransforms } from "../../../plugins/provider-runtime.js";
-import { parseSessionDeliveryRoute } from "../../../sessions/session-key-utils.js";
 import { resolveAdmittedRunActiveAssertion } from "../../admitted-run-context.js";
 import type { AgentRunAttemptFailureSource } from "../../agent-run-terminal-outcome.js";
 import type { subscribeEmbeddedAgentSession } from "../../embedded-agent-subscribe.js";
@@ -34,12 +32,6 @@ import {
 } from "../extra-params.js";
 import { log } from "../logger.js";
 import type { PromptCacheRequestObservation } from "../prompt-cache-request-observer.js";
-import {
-  resolveCacheKeepWarm,
-  resolveCacheRetention,
-  resolveRunCacheRetention,
-  resolveRunMessageCacheRetention,
-} from "../prompt-cache-retention.js";
 import {
   type ProviderPromptState,
   wrapStreamFnWithProviderPromptState,
@@ -74,6 +66,7 @@ import { selectCompactionTimeoutSnapshot } from "./compaction-timeout.js";
 import { materializeProviderContext } from "./images.js";
 import { wrapStreamFnWithMessageTransform } from "./message-transform-stream-wrapper.js";
 import { wrapStreamFnWithProviderReviewContinuation } from "./provider-review-continuation.js";
+import { applyCacheKeepWarm, applyRunPromptCacheRetention } from "./attempt-stream-cache.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 type EmbeddedAttemptSubscription = ReturnType<typeof subscribeEmbeddedAgentSession>;
@@ -608,55 +601,13 @@ export async function prepareEmbeddedAttemptTransport(input: {
       codeModeToolSurfaceEnabled: true,
     });
   }
-  const configuredPromptCacheRetention = resolveCacheRetention(
-    effectiveExtraParams,
-    attempt.provider,
-    attempt.model.api,
-    attempt.modelId,
-  );
-  // A scheduled turn can target a chat session directly (`session:<chat key>`).
-  const mainSessionKey = resolveAgentMainSessionKey({
-    cfg: attempt.config,
-    agentId: input.sessionAgentId,
-  });
-  const conversation =
-    attempt.sessionKey === mainSessionKey || parseSessionDeliveryRoute(attempt.sessionKey) !== null;
-  const effectivePromptCacheRetention = resolveRunCacheRetention({
-    retention: configuredPromptCacheRetention,
-    trigger: attempt.trigger,
-    modelApi: attempt.model.api,
-    conversation,
-    detached: attempt.sessionPersistence === "detached",
+  const effectivePromptCacheRetention = applyRunPromptCacheRetention({
+    session,
+    attempt,
+    extraParams: effectiveExtraParams,
+    sessionAgentId: input.sessionAgentId,
     lastCacheTouchAt: input.lastCacheTouchAt,
-    now: Date.now(),
   });
-  if (effectivePromptCacheRetention !== configuredPromptCacheRetention) {
-    const baseStreamFn = session.agent.streamFn;
-    session.agent.streamFn = (model, context, options) => {
-      const requestOptions = { ...options, cacheRetention: effectivePromptCacheRetention };
-      return baseStreamFn(model, context, requestOptions);
-    };
-  }
-  const runStartedAtMs = attempt.startedAtMs;
-  const messageCacheRetention = resolveRunMessageCacheRetention({
-    retention: effectivePromptCacheRetention,
-    trigger: attempt.trigger,
-    modelApi: attempt.model.api,
-    conversation,
-    earlierMessagesInContext:
-      runStartedAtMs === undefined ||
-      session.messages.some(
-        (message) =>
-          !(typeof message.timestamp === "number" && message.timestamp >= runStartedAtMs),
-      ),
-  });
-  if (messageCacheRetention) {
-    const baseStreamFn = session.agent.streamFn;
-    session.agent.streamFn = (model, context, options) => {
-      const requestOptions = { ...options, messageCacheRetention };
-      return baseStreamFn(model, context, requestOptions);
-    };
-  }
   const agentTransportOverride = resolveAgentTransportOverride({
     settingsManager: input.settingsManager,
     effectiveExtraParams,
@@ -683,20 +634,7 @@ export async function prepareEmbeddedAttemptTransport(input: {
       return baseStreamFn(model, context, requestOptions);
     };
   }
-  const cacheKeepWarm = resolveCacheKeepWarm({
-    keepWarmFor: attempt.config?.agents?.defaults?.promptCacheKeepWarm,
-    trigger: attempt.trigger,
-    modelApi: attempt.model.api,
-    retention: effectivePromptCacheRetention,
-    key: attempt.sessionKey ?? attempt.sessionId,
-  });
-  if (cacheKeepWarm) {
-    const baseStreamFn = session.agent.streamFn;
-    session.agent.streamFn = (model, context, options) => {
-      const requestOptions = { ...options, cacheKeepWarm };
-      return baseStreamFn(model, context, requestOptions);
-    };
-  }
+  applyCacheKeepWarm(session, attempt, effectivePromptCacheRetention);
   // Agent turns carry no credential, and provider wrappers classify auth from
   // options.apiKey (for example Anthropic OAuth identity), so attach it outermost.
   session.agent.streamFn = wrapApiKey(session.agent.streamFn);

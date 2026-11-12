@@ -15,9 +15,9 @@ type ReplyPreflightStage = (typeof REPLY_PREFLIGHT_STAGES)[number];
  * each mark closes the stage that began where the previous one ended. Content-free;
  * outside a traced turn nothing is emitted.
  */
-export function createReplyPreflightStages(params: { startedAt: number; sessionKey?: string }) {
+export function createReplyPreflightStages(params: { startedAt?: number; sessionKey?: string }) {
   const trace = getActiveDiagnosticTraceContext();
-  let stageStartedAt = params.startedAt;
+  let stageStartedAt = params.startedAt ?? Date.now();
   let memoryFlushed = false;
   let compacting = false;
   const mark = (stage: ReplyPreflightStage) => {

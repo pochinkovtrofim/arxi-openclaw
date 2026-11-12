@@ -13,10 +13,7 @@ import type { SessionEntry } from "../../config/sessions/types.js";
 import type { CronScheduledMcpToolBinding } from "../../cron/scheduled-tool-policy.js";
 import type { AgentRuntimeIdentity } from "../../gateway/agent-runtime-identity-token.js";
 import type { CronCreatorAuthorityGrant } from "../../gateway/cron-creator-authority-grant.types.js";
-import type {
-  GatewayContextResolver,
-  GatewayRequestContext,
-} from "../../gateway/server-methods/types.js";
+import type { GatewayContextResolver } from "../../gateway/server-methods/types.js";
 import type { GatewayUiCommandTarget } from "../../gateway/ui-command-target.types.js";
 import type { WorkerSessionTurnClaim } from "../../gateway/worker-environments/placement-record.js";
 import type { WorkerTurnExecutionIdentityCapability } from "../../gateway/worker-environments/placement-turn-claim-events.js";
@@ -24,10 +21,7 @@ import {
   validateAgentRunDelegatedAuthority,
   type AgentRunDelegatedAuthority,
 } from "../../infra/agent-run-registry.js";
-import {
-  bindGatewayContextResolver,
-  getGatewayContextResolver,
-} from "../../plugins/runtime/gateway-request-scope.js";
+import { getGatewayContextResolver } from "../../plugins/runtime/gateway-request-scope.js";
 import {
   captureAdmittedRunActiveAssertion,
   getAdmittedRunDelegatedAuthority,
@@ -46,6 +40,7 @@ import {
   getInternalToolExecutionPreparer,
 } from "../runtime/internal-hooks.js";
 import { readToolStringParam, type AnyAgentTool } from "./common.js";
+import { bindGatewayToolContextResolver } from "./gateway-caller-context-resolver.js";
 import type { GatewayToolCallerReceiptAdmission } from "./gateway-caller-receipt.types.js";
 
 type ReceiptAuthority = (() => boolean | void) &
@@ -148,32 +143,6 @@ export type GatewayToolOperatorSelection = Readonly<{
 
 // Freeze the admitted instance: a later resolver result is a replacement,
 // which retires this caller's routing authority instead of transferring it.
-function bindGatewayToolContextResolver(
-  resolveGatewayContext: GatewayContextResolver | undefined,
-): GatewayContextResolver | undefined {
-  if (!resolveGatewayContext) {
-    return undefined;
-  }
-  let admittedContext: GatewayRequestContext | undefined;
-  try {
-    admittedContext = resolveGatewayContext();
-  } catch {
-    return () => undefined;
-  }
-  if (!admittedContext) {
-    return () => undefined;
-  }
-  const resolveAdmittedContext = () => {
-    try {
-      return resolveGatewayContext() === admittedContext ? admittedContext : undefined;
-    } catch {
-      return undefined;
-    }
-  };
-  bindGatewayContextResolver(resolveAdmittedContext, admittedContext.resolveGatewayContext);
-  return resolveAdmittedContext;
-}
-
 type AdmittedGatewayToolCallerParams = {
   admittedRunContext: AdmittedRunContext;
   receiptAuthority?: ReceiptAuthority;

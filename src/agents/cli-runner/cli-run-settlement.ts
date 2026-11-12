@@ -443,11 +443,7 @@ export function buildBlockedCliRunResult(params: {
       finalAssistantVisibleText: message,
       finalAssistantRawText: message,
       livenessState: "blocked",
-      error: {
-        kind: "hook_block",
-        message,
-        ...(heldReason ? { heldReason } : {}),
-      },
+      error: { kind: "hook_block", message, ...(heldReason ? { heldReason } : {}) },
       systemPromptReport: context.systemPromptReport,
       ...buildCliExecutionMetadata(context, {
         result: "error",

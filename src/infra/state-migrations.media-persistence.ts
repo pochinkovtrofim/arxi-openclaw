@@ -1,46 +1,18 @@
 import path from "node:path";
-import { readRegularFileSync } from "@openclaw/fs-safe/advanced";
-import { replaceFileAtomicSync } from "@openclaw/fs-safe/atomic";
-import { SESSION_ARCHIVE_ZSTD_SUFFIX } from "../config/sessions/archive-compression.js";
 import { resolveSqliteTranscriptArchiveDirectory } from "../config/sessions/session-accessor.sqlite-scope.js";
 import { reconcileSessionTranscriptIndexInTransaction } from "../config/sessions/session-transcript-index.js";
-import {
-  AGENT_MEDIA_SCHEMA_VERSION,
-  AGENT_STORAGE_SCHEMA_VERSION,
-  MEDIA_ROWS_MIGRATION_META_KEY,
-} from "../state/openclaw-agent-db-contract.js";
-import {
-  assertAgentDatabaseMaintenanceAuthority,
-  invalidateOpenClawAgentDatabaseIntegrityBeforeMutation,
-  renewAgentDatabaseMaintenanceAuthorityIfPresent,
-} from "../state/openclaw-agent-db-lease.js";
+import { AGENT_MEDIA_SCHEMA_VERSION, AGENT_STORAGE_SCHEMA_VERSION, MEDIA_ROWS_MIGRATION_META_KEY } from "../state/openclaw-agent-db-contract.js";
+import { assertAgentDatabaseMaintenanceAuthority, invalidateOpenClawAgentDatabaseIntegrityBeforeMutation, renewAgentDatabaseMaintenanceAuthorityIfPresent } from "../state/openclaw-agent-db-lease.js";
 import { agentDatabaseLifecycle } from "../state/openclaw-agent-db-lifecycle.js";
 import { withAgentDatabaseMaintenanceLease } from "../state/openclaw-agent-db-maintenance-lease.js";
-import {
-  assertOpenClawAgentDatabaseForMaintenance,
-  assertOpenClawAgentDatabaseOwner,
-} from "../state/openclaw-agent-db-maintenance.js";
+import { assertOpenClawAgentDatabaseForMaintenance, assertOpenClawAgentDatabaseOwner } from "../state/openclaw-agent-db-maintenance.js";
 import { migrateOpenClawAgentDatabaseToMediaPrerequisiteSchemaSteps } from "../state/openclaw-agent-db-media-migration.js";
-import {
-  registerOpenClawAgentDatabase,
-  unregisterOpenClawAgentDatabase,
-} from "../state/openclaw-agent-db-registry.js";
-import {
-  assertOpenClawAgentSchemaContains,
-  assertSupportedAgentSchemaVersion,
-  getOpenClawAgentMigrationSchema,
-  hasPendingCurrentVersionAgentDatabaseMigration,
-} from "../state/openclaw-agent-db-schema-helpers.js";
-import {
-  ensureOpenClawAgentDatabaseSchemaSteps,
-  ensureOpenClawAgentSchema,
-} from "../state/openclaw-agent-db-schema.js";
+import { registerOpenClawAgentDatabase, unregisterOpenClawAgentDatabase } from "../state/openclaw-agent-db-registry.js";
+import { assertOpenClawAgentSchemaContains, assertSupportedAgentSchemaVersion, getOpenClawAgentMigrationSchema, hasPendingCurrentVersionAgentDatabaseMigration } from "../state/openclaw-agent-db-schema-helpers.js";
+import { ensureOpenClawAgentDatabaseSchemaSteps, ensureOpenClawAgentSchema } from "../state/openclaw-agent-db-schema.js";
 import { assertSupportedAgentMigrationSchemas } from "../state/openclaw-agent-db-session-migrations.js";
 import type { DB as OpenClawAgentKyselyDatabase } from "../state/openclaw-agent-db.generated.js";
-import {
-  OPENCLAW_AGENT_SCHEMA_VERSION,
-  clearOpenClawAgentDatabaseOpenFailure,
-} from "../state/openclaw-agent-db.js";
+import { OPENCLAW_AGENT_SCHEMA_VERSION, clearOpenClawAgentDatabaseOpenFailure } from "../state/openclaw-agent-db.js";
 import { AGENT_FTS_SCHEMAS } from "../state/openclaw-agent-fts-schema.js";
 import { readOpenClawDatabaseQuarantineFailure } from "../state/openclaw-quarantine-store.js";
 import { getOpenClawDatabaseMaintenanceScope } from "../state/openclaw-state-db-async-lifecycle.js";
@@ -50,17 +22,9 @@ import { VERSION } from "../version.js";
 import { migrateArxiCredentialSchema } from "./arxi-credential-schema-migration.js";
 import { isTruthyEnvValue } from "./env.js";
 import { formatErrorMessage } from "./errors.js";
-import {
-  executeSqliteQuerySync,
-  executeSqliteQueryTakeFirstSync,
-  getNodeSqliteKysely,
-  enableNodeSqliteKyselyStatementCache,
-} from "./kysely-sync.js";
+import { executeSqliteQuerySync, executeSqliteQueryTakeFirstSync, getNodeSqliteKysely, enableNodeSqliteKyselyStatementCache } from "./kysely-sync.js";
 import { openNodeSqliteDatabase } from "./node-sqlite.js";
-import {
-  backupDoctorSqliteRepair,
-  repairDoctorSqliteIndexCorruption,
-} from "./sqlite-index-recovery.js";
+import { backupDoctorSqliteRepair, repairDoctorSqliteIndexCorruption } from "./sqlite-index-recovery.js";
 import { repairCanonicalSqliteIndexes } from "./sqlite-index-schema.js";
 import { runSqliteIntegrityOperationInWorker } from "./sqlite-integrity-operation.js";
 import { assertSqliteIntegrity, isTerminalSqliteIntegrityError } from "./sqlite-integrity.js";
@@ -72,31 +36,16 @@ import { readSqliteUserVersion } from "./sqlite-user-version.js";
 import { createMigrationDatabaseHandle } from "./state-migrations.agent-database.js";
 import { formatAgentDatabaseCorruptionRepairHint } from "./state-migrations.agent-owner-guidance.js";
 import { recoverMisplacedAgentDatabaseCopies } from "./state-migrations.agent-owner-recovery.js";
-import {
-  scanTranscriptRows,
-  scanTrajectoryRows,
-} from "./state-migrations.media-persistence-database.js";
-import {
-  listTranscriptArchives,
-  prepareAgentDatabaseMigrationDiscovery,
-  agentDatabaseMigrationAdvisory,
-  resolveAgentDatabaseMigrationTargets,
-  type AgentDatabaseMigrationTarget,
-  type PreparedAgentDatabaseMigrationDiscovery,
-} from "./state-migrations.media-persistence-targets.js";
+import { scanTranscriptRows, scanTrajectoryRows } from "./state-migrations.media-persistence-database.js";
+import { listTranscriptArchives, prepareAgentDatabaseMigrationDiscovery, agentDatabaseMigrationAdvisory, resolveAgentDatabaseMigrationTargets, type AgentDatabaseMigrationTarget, type PreparedAgentDatabaseMigrationDiscovery } from "./state-migrations.media-persistence-targets.js";
 import { transformMediaArchiveContent } from "./state-migrations.media-persistence-transform.js";
 import { repairDoctorSessionWindowOrphans } from "./state-migrations.session-window-repair.js";
-import {
-  encodeArchiveContent,
-  MEDIA_ARCHIVE_VERIFICATION_KEY,
-  migrateCanonicalTranscriptArchives,
-} from "./state-migrations.transcript-directives-archives.js";
+import { MEDIA_ARCHIVE_VERIFICATION_KEY, migrateCanonicalTranscriptArchives } from "./state-migrations.transcript-directives-archives.js";
 import type { MigrationMessages } from "./state-migrations.types.js";
-import { decodeUtf8Input, Utf8InputError } from "./utf8-input.js";
-import { resolveZstdCodec } from "./zstd-codec.js";
+import { Utf8InputError } from "./utf8-input.js";
+
 
 const PREVIOUS_MEDIA_SCHEMA_VERSION = AGENT_MEDIA_SCHEMA_VERSION - 1;
-const ARCHIVE_TEMP_MARKER = ".media-retirement";
 
 type MediaMigrationDatabase = Pick<OpenClawAgentKyselyDatabase, "schema_meta">;
 
@@ -426,65 +375,6 @@ async function migrateAgentDatabase(params: {
   }
 }
 
-function archiveSourceMatches(
-  filePath: string,
-  expected: ReturnType<typeof readRegularFileSync>,
-): boolean {
-  try {
-    const current = readRegularFileSync({ filePath });
-    return (
-      current.exactIdentity.dev === expected.exactIdentity.dev &&
-      current.exactIdentity.ino === expected.exactIdentity.ino &&
-      current.stat.mtimeMs === expected.stat.mtimeMs &&
-      current.stat.size === expected.stat.size &&
-      current.buffer.equals(expected.buffer)
-    );
-  } catch {
-    return false;
-  }
-}
-
-function migrateTranscriptArchive(
-  filePath: string,
-  options: { beforeReplace?: () => void } = {},
-): boolean {
-  const source = readRegularFileSync({ filePath });
-  const compressed = filePath.endsWith(SESSION_ARCHIVE_ZSTD_SUFFIX);
-  const codec = compressed ? resolveZstdCodec() : null;
-  if (compressed && !codec) {
-    throw new Error("Cannot decode compressed transcript archive: this runtime lacks zstd support");
-  }
-  const content = decodeUtf8Input(
-    codec ? codec.decompress(source.buffer) : source.buffer,
-    filePath,
-  );
-  const transformed = transformMediaArchiveContent(content, filePath);
-  if (!transformed.changed) {
-    return false;
-  }
-  const encoded = encodeArchiveContent(
-    transformed.content,
-    compressed ? "zstd" : "identity",
-    filePath,
-  );
-  options.beforeReplace?.();
-  replaceFileAtomicSync({
-    filePath,
-    content: encoded,
-    preserveExistingMode: true,
-    syncParentDir: true,
-    syncTempFile: true,
-    tempPrefix: `${path.basename(filePath)}${ARCHIVE_TEMP_MARKER}`,
-    beforeRename: () => {
-      if (!archiveSourceMatches(filePath, source)) {
-        throw new Error(`${filePath} changed before atomic media migration replacement`);
-      }
-    },
-  });
-  return true;
-}
-
-/** Doctor-only migration from top-level Media* transcript fields to canonical facts. */
 export async function migrateLegacyMediaPersistence(
   params: {
     configuredAgentDatabaseTargets?: readonly { agentId: string; path: string }[];

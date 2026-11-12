@@ -276,9 +276,7 @@ export async function preflightOpenClawDatabaseSchemas(
         options.readStateInPlace === true &&
         !options.preserveSourceArtifacts &&
         purpose !== "runtime";
-      if (inPlace) {
-        stateLocation = statePath;
-      }
+      stateLocation ??= inPlace ? statePath : undefined;
       options.signal?.throwIfAborted();
       const input: StateSchemaInspectionInput = {
         pathname: statePath,
@@ -328,17 +326,14 @@ export async function preflightOpenClawDatabaseSchemas(
           stateDatabase.exec(`PRAGMA busy_timeout = ${OPENCLAW_SQLITE_BUSY_TIMEOUT_MS};`);
           const admittedDatabase = stateDatabase;
           assertStateSource?.();
+          const inspect = () => inspectStateDatabaseSchema(admittedDatabase, input);
           inspection = assertStateSource
-            ? runSqliteDeferredTransactionSync(
-                admittedDatabase,
-                () => inspectStateDatabaseSchema(admittedDatabase, input),
-                { operationLabel: "state.startup-prepared-schema" },
-              )
+            ? runSqliteDeferredTransactionSync(admittedDatabase, inspect, {
+                operationLabel: "state.startup-prepared-schema",
+              })
             : inPlace
-              ? runSqliteDeferredTransactionSync(admittedDatabase, () =>
-                  inspectStateDatabaseSchema(admittedDatabase, input),
-                )
-              : inspectStateDatabaseSchema(stateDatabase, input);
+              ? runSqliteDeferredTransactionSync(admittedDatabase, inspect)
+              : inspect();
           assertStateSource?.();
         }
       }

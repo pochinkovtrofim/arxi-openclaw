@@ -5,51 +5,20 @@ import type { Dispatcher } from "undici";
 import { logWarn } from "../../logger.js";
 import { captureEffectAuthority } from "../../shared/effect-authority.js";
 import { buildTimeoutAbortSignal } from "../../utils/fetch-timeout.js";
-import {
-  normalizeHeadersInitForFetch,
-  normalizeRequestInitHeadersForFetch,
-} from "../fetch-headers.js";
+import { normalizeRequestInitHeadersForFetch } from "../fetch-headers.js";
 import { cancelUnreadResponseBody } from "../http-body.js";
-import {
-  shouldUseConfiguredLocalOriginManagedProxyBypass,
-  shouldResolveConfiguredLocalOriginManagedProxyBypass,
-  type ConfiguredLocalOriginManagedProxyBypass,
-} from "./configured-local-origin-bypass.js";
+import { shouldUseConfiguredLocalOriginManagedProxyBypass, shouldResolveConfiguredLocalOriginManagedProxyBypass, type ConfiguredLocalOriginManagedProxyBypass } from "./configured-local-origin-bypass.js";
+import { resolveRetainedAuthorizationForRedirect, restoreRedirectAuthorization, retainSafeHeadersForCrossOriginRedirect, rewriteRedirectInit } from "./fetch-guard-redirect.js";
 import { captureGuardedFetchRequestAuthority } from "./fetch-request-authority.js";
 import { responseWithAbortSignal } from "./guarded-body-stream.js";
 import { PinnedDispatcherPool, type PinnedDispatcherLease } from "./pinned-dispatcher-pool.js";
 import { shouldUseEnvHttpProxyForUrl } from "./proxy-env.js";
-import { retainSafeHeadersForCrossOriginRedirect as retainSafeRedirectHeaders } from "./redirect-headers.js";
-import {
-  fetchWithRuntimeDispatcher,
-  isMockedFetch,
-  type DispatcherAwareRequestInit,
-} from "./runtime-fetch.js";
-import {
-  assertHostnameAllowedWithPolicy,
-  closeDispatcher,
-  createPinnedDispatcher,
-  matchesHostnameAllowlist,
-  resolveSsrFPolicyForUrl,
-  resolvePinnedHostnameWithPolicy,
-  type LookupFn,
-  type PinnedDispatcherPolicy,
-  SsrFBlockedError,
-  type SsrFPolicy,
-} from "./ssrf.js";
+import { fetchWithRuntimeDispatcher, isMockedFetch, type DispatcherAwareRequestInit } from "./runtime-fetch.js";
+import { assertHostnameAllowedWithPolicy, closeDispatcher, createPinnedDispatcher, resolveSsrFPolicyForUrl, resolvePinnedHostnameWithPolicy, type LookupFn, type PinnedDispatcherPolicy, SsrFBlockedError, type SsrFPolicy } from "./ssrf.js";
 import { globalUndiciStreamTimeoutMs } from "./undici-dispatcher-options.js";
 import { resolveUndiciAutoSelectFamilyConnectOptions } from "./undici-family-policy.js";
-import {
-  createHttp1Agent,
-  createHttp1EnvHttpProxyAgent,
-  createHttp1ProxyAgent,
-  resolveHttp1EnvProxyUris,
-} from "./undici-runtime.js";
-import {
-  createObservedOriginDispatcher,
-  observeUpstreamConnection,
-  type UpstreamConnection,
-} from "./upstream-connection-observation.js";
+import { createHttp1Agent, createHttp1EnvHttpProxyAgent, createHttp1ProxyAgent, resolveHttp1EnvProxyUris } from "./undici-runtime.js";
+import { createObservedOriginDispatcher, observeUpstreamConnection, type UpstreamConnection } from "./upstream-connection-observation.js";
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -310,98 +279,6 @@ async function prepareGuardedFetchCapture(params: GuardedFetchOptions, fetchImpl
   return {
     fetchImpl: resolveDebugProxyFetchTransport(fetchImpl),
     capture: prepareHttpCaptureForTransport(),
-  };
-}
-
-function retainSafeHeadersForCrossOriginRedirect(init?: RequestInit): RequestInit | undefined {
-  if (!init?.headers) {
-    return init;
-  }
-  return { ...init, headers: retainSafeRedirectHeaders(init.headers) };
-}
-
-function resolveRetainedAuthorizationForRedirect(params: {
-  init?: RequestInit;
-  nextUrl: URL;
-  hostnameAllowlist?: string[];
-}): string | undefined {
-  const init = params.init;
-  if (!init?.headers || !params.hostnameAllowlist?.length) {
-    return undefined;
-  }
-  if (params.nextUrl.protocol !== "https:") {
-    return undefined;
-  }
-  if (
-    !params.hostnameAllowlist.includes("*") &&
-    !matchesHostnameAllowlist(params.nextUrl.hostname, params.hostnameAllowlist)
-  ) {
-    return undefined;
-  }
-  const normalizedInit = normalizeRequestInitHeadersForFetch(init);
-  if (!normalizedInit?.headers) {
-    return undefined;
-  }
-  return new Headers(normalizedInit.headers).get("authorization") ?? undefined;
-}
-
-function restoreRedirectAuthorization(params: {
-  init?: RequestInit;
-  authorization?: string;
-}): RequestInit | undefined {
-  if (!params.authorization) {
-    return params.init;
-  }
-  const headers = new Headers(params.init?.headers);
-  headers.set("Authorization", params.authorization);
-  return { ...params.init, headers };
-}
-
-function dropBodyHeaders(headers?: HeadersInit): HeadersInit | undefined {
-  if (!headers) {
-    return headers;
-  }
-  const nextHeaders = new Headers(normalizeHeadersInitForFetch(headers));
-  nextHeaders.delete("content-encoding");
-  nextHeaders.delete("content-language");
-  nextHeaders.delete("content-length");
-  nextHeaders.delete("content-location");
-  nextHeaders.delete("content-type");
-  nextHeaders.delete("transfer-encoding");
-  return nextHeaders;
-}
-
-function rewriteRedirectInit(params: {
-  init?: RequestInit;
-  status: number;
-  crossOrigin: boolean;
-  allowUnsafeReplay: boolean;
-}): RequestInit | undefined {
-  const { init, status } = params;
-  if (!init) {
-    return init;
-  }
-
-  const currentMethod = init.method?.toUpperCase() ?? "GET";
-  const shouldForceGet =
-    status === 303
-      ? currentMethod !== "GET" && currentMethod !== "HEAD"
-      : (status === 301 || status === 302) && currentMethod === "POST";
-
-  const shouldDropUnsafeBody =
-    params.crossOrigin &&
-    !params.allowUnsafeReplay &&
-    currentMethod !== "GET" &&
-    currentMethod !== "HEAD";
-  if (!shouldForceGet && !shouldDropUnsafeBody) {
-    return init;
-  }
-
-  return {
-    ...init,
-    ...(shouldForceGet ? { method: "GET" } : {}),
-    body: undefined,
-    headers: dropBodyHeaders(init.headers),
   };
 }
 

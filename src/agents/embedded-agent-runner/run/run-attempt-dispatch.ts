@@ -20,7 +20,7 @@ import { resolveSessionPermissionExecMode } from "../../session-permission-exec-
 import { resolveSessionSkillResourceSnapshot } from "../../session-placement-skill-resources.js";
 import { createToolTerminalObserver } from "../../tool-terminal-outcome.js";
 import { preparePluginHarnessWorkspace, resolveHarnessWorkspace } from "../../workspace-sandbox.js";
-import { log } from "../logger.js";
+import { logAttemptImageMaterialization } from "./attempt-image-diagnostics.js";
 import { remapExplicitSkillSelectionPath, remapSkillReferencePaths } from "../sandbox-skills.js";
 import { prepareEmbeddedSkills } from "../skill-runtime.js";
 import { mapThinkingLevelForProvider } from "../utils.js";
@@ -276,16 +276,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
         pluginHarness: true,
       })
     : { images: params.images, imageOrder: params.imageOrder, media: params.media };
-  log.info("attempt image materialization", {
-    runId: params.runId,
-    harness: runtime.agentHarness.id,
-    modelInput: runtime.effectiveModel.input,
-    incomingImages: params.images?.length ?? 0,
-    imageSlots: params.imageOrder?.length ?? 0,
-    mediaFacts: params.media?.length ?? 0,
-    recorder: Boolean(params.userTurnTranscriptRecorder),
-    preparedImages: promptMedia.images?.length ?? 0,
-  });
+  logAttemptImageMaterialization(params, runtime, promptMedia.images?.length ?? 0);
   // Plugin harnesses own their tool materialization, so the host cannot attest
   // a message tool. Finalize conservatively instead of leaking phantom guidance.
   const pluginHarnessPrompt =

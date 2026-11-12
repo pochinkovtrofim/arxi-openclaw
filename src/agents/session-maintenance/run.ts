@@ -169,13 +169,13 @@ export function isPersonWaitingTurn(params: {
   internalEvents?: readonly unknown[];
   sessionEffects?: "visible" | "internal";
   isSubagentLane?: boolean;
-  runKind?: string;
+  bootstrapContextRunKind?: string;
 }): boolean {
   return (
     classifySessionStateActor(params).actorType === "human" &&
     params.isSubagentLane !== true &&
-    params.runKind !== "heartbeat" &&
-    params.runKind !== "cron"
+    params.bootstrapContextRunKind !== "heartbeat" &&
+    params.bootstrapContextRunKind !== "cron"
   );
 }
 
@@ -554,4 +554,23 @@ function startSessionMaintenance(
       }
     })
     .finally(() => budget.dispose());
+}
+
+/** After-turn maintenance; a turn a person waited on also arms the cold-cache run ahead. */
+export function scheduleTurnEndMaintenance(
+  request: SessionMaintenanceRequest | undefined,
+  sessionEntry: SessionEntry | undefined,
+  personWaiting: boolean,
+): void {
+  if (!request) {
+    return;
+  }
+  const afterTurn = scheduleSessionMaintenance(request);
+  if (personWaiting && sessionEntry) {
+    scheduleColdCacheAheadMaintenance(
+      request,
+      sessionEntry,
+      afterTurn.then(() => true),
+    );
+  }
 }

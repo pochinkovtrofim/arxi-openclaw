@@ -28,6 +28,7 @@ import {
   respondPendingApprovalLookupError,
   respondUnknownOrExpiredApproval,
 } from "./approval-record-lookup.js";
+import { respondRepeatedApprovalResolution } from "./approval-repeat-resolution.js";
 import type { ApprovalRequestAuthority } from "./approval-request-authority.js";
 import type { GatewayClient, GatewayRequestContext, RespondFn } from "./types.js";
 import { assertValidParams, type Validator } from "./validation.js";
@@ -38,10 +39,6 @@ export {
   resolvePendingApprovalRecord,
   respondPendingApprovalLookupError,
 } from "./approval-record-lookup.js";
-
-const APPROVAL_ALREADY_RESOLVED_DETAILS = {
-  reason: "APPROVAL_ALREADY_RESOLVED",
-} as const;
 
 type ApprovalTurnSourceFields = {
   turnSourceChannel?: string | null;
@@ -467,26 +464,6 @@ export async function handlePendingApprovalRequest<
   await handoff.observation;
 }
 
-function respondRepeatedApprovalResolution<TPayload>(
-  record: ExecApprovalRecord<TPayload>,
-  decision: ExecApprovalDecision,
-  respond: RespondFn,
-): void {
-  // Identical retries are idempotent; a conflicting retry must never replace
-  // or obscure the first durable operator decision.
-  if ((record.decision ?? record.consumedDecision) === decision) {
-    respond(true, { ok: true }, undefined);
-    return;
-  }
-  respond(
-    false,
-    undefined,
-    errorShape(ErrorCodes.INVALID_REQUEST, "approval already resolved", {
-      details: APPROVAL_ALREADY_RESOLVED_DETAILS,
-    }),
-  );
-}
-
 /** Resolves a pending approval and broadcasts the final decision exactly once. */
 export async function handleApprovalResolve<
   TPayload extends ExecApprovalRequestPayload | PluginApprovalRequestPayload,
@@ -630,10 +607,7 @@ export async function handleApprovalResolve<
       !custody ||
       (await custody.authorizes(
         resolved.snapshot,
-        {
-          approvalId: resolved.approvalId,
-          decision: params.decision,
-        },
+        { approvalId: resolved.approvalId, decision: params.decision },
         params.resolutionProof,
       ));
   } catch (error) {

@@ -3,7 +3,6 @@ import { messageToolOwnsVisibleReply } from "../auto-reply/source-reply-delivery
 import { createRuntimeConfigReader } from "../config/runtime-snapshot.js";
 import { resolveEventSessionRoutingPolicy } from "../infra/event-session-routing.js";
 import { mergeGatewayAgentCliPath } from "../infra/openclaw-cli-shim.js";
-import type { PluginHookToolRequesterContext } from "../plugins/hook-types.js";
 import { warnPluginSdkDeprecation } from "../plugins/sdk-deprecation.js";
 import { appendRuntimePluginToolGrant } from "../plugins/tool-grant-allowlist.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
@@ -30,6 +29,7 @@ import type {
   InternalCodingToolsOptions,
   PluginCodingToolsOptions,
 } from "./agent-tools.options.js";
+import { buildCodingToolHookRequester } from "./agent-tools.requester.js";
 import {
   getActiveAgentRingZeroTools,
   mergeAgentRingZeroTools,
@@ -589,16 +589,7 @@ function* assembleOpenClawCodingTools(
   options?.recordToolPrepStage?.("authorization-policy");
   const turnSourceChannel = options?.messageChannel ?? options?.messageProvider;
   const turnSourceTo = options?.currentMessagingTarget ?? options?.currentChannelId;
-  const conversationId = options?.nativeChannelId ?? options?.groupId ?? options?.messageTo;
-  const requester = {
-    ...(conversationId ? { conversationId } : {}),
-    ...(options?.chatType ? { chatType: options.chatType } : {}),
-    ...(turnSourceChannel ? { channel: turnSourceChannel } : {}),
-    ...(options?.agentAccountId ? { accountId: options.agentAccountId } : {}),
-    ...(options?.senderId ? { senderId: options.senderId } : {}),
-    ...(options?.senderIsOwner !== undefined ? { senderIsOwner: options.senderIsOwner } : {}),
-    ...(options?.memberRoleIds?.length ? { roleIds: [...options.memberRoleIds] } : {}),
-  } satisfies PluginHookToolRequesterContext;
+  const requester = buildCodingToolHookRequester(options, turnSourceChannel);
   const hasRequester = Object.keys(requester).length > 0;
   const hookContext = {
     awaitSessionDiffBaseline: options?.awaitSessionDiffBaseline,

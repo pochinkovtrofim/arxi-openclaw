@@ -72,8 +72,7 @@ import { withAgentPluginRegistry } from "./runtime-plugins.js";
 import { beginForegroundSessionMaintenance } from "./session-maintenance/coordinator.js";
 import {
   isPersonWaitingTurn,
-  scheduleColdCacheAheadMaintenance,
-  scheduleSessionMaintenance,
+  scheduleTurnEndMaintenance,
   type SessionMaintenanceRequest,
 } from "./session-maintenance/run.js";
 import { clearRotatedSessionMetadata } from "./session-reset-metadata.js";
@@ -89,10 +88,7 @@ async function agentCommandInternal(
   watchSkills = false,
 ) {
   // Content-free timing from taking up the turn to its agent run, for the work trace.
-  const preflightStages = createReplyPreflightStages({
-    startedAt: Date.now(),
-    sessionKey: prepared.sessionKey,
-  });
+  const preflightStages = createReplyPreflightStages({ sessionKey: prepared.sessionKey });
   const sessionSource = prepared.sessionKey
     ? captureSessionActorStorageOwner(
         {
@@ -171,13 +167,7 @@ async function agentCommandInternal(
   });
   // A person waits on this turn: it takes foreground priority, and its session is kept
   // ready for the next one.
-  const humanTurn = isPersonWaitingTurn({
-    inputProvenance: opts.inputProvenance,
-    internalEvents: opts.internalEvents,
-    sessionEffects: opts.sessionEffects,
-    isSubagentLane,
-    runKind: opts.bootstrapContextRunKind,
-  });
+  const humanTurn = isPersonWaitingTurn({ ...opts, isSubagentLane });
   let sessionReboundDuringRun = false;
   let trackedRestartRecoveryDeliveryClaim = false;
   let currentRunDeliveryContext: DeliveryContext | undefined;
@@ -609,16 +599,7 @@ async function agentCommandInternal(
       cleanupInternalModelRunTargets,
       releaseForeground,
     });
-    if (maintenanceRequest) {
-      const afterTurn = scheduleSessionMaintenance(maintenanceRequest);
-      if (humanTurn && sessionEntry) {
-        scheduleColdCacheAheadMaintenance(
-          maintenanceRequest,
-          sessionEntry,
-          afterTurn.then(() => true),
-        );
-      }
-    }
+    scheduleTurnEndMaintenance(maintenanceRequest, sessionEntry, humanTurn);
   }
 }
 
