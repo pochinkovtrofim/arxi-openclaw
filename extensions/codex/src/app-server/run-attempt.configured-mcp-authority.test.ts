@@ -2,7 +2,6 @@ import "./run-attempt.configured-mcp.test-support.js";
 import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { describe, expect, it } from "vitest";
 import { createCronAuthorityCapabilityFixture } from "./codex-app-server.test-fixtures.js";
-import * as dynamicTools from "./dynamic-tools.js";
 import { flattenCodexDynamicToolFunctions, type CodexDynamicToolSpec } from "./protocol.js";
 import {
   createTestParams,

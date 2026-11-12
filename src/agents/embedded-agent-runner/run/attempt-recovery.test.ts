@@ -14,7 +14,6 @@ import {
   createMockUsage,
 } from "../../test-helpers/embedded-agent-runner-e2e-fixtures.js";
 import { handleEmbeddedAssistantFailure } from "./assistant-failure.js";
-import { recoverEmbeddedRunAttempt } from "./attempt-recovery.js";
 import {
   emptyLengthScenario,
   outputLimitDetails,

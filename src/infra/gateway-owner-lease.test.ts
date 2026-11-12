@@ -1,6 +1,5 @@
 import fs, { existsSync, renameSync } from "node:fs";
 import { hostname } from "node:os";
-import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { withDoctorSqliteMaintenanceLock } from "../commands/doctor-sqlite-maintenance-lock.js";
 import * as pidAlive from "../shared/pid-alive.js";
@@ -31,7 +30,7 @@ import {
   useGatewayOwnerLeaseFixture,
 } from "./gateway-owner-lease.test-support.js";
 import * as stateOwners from "./gateway-state-owner.js";
-import { acquireGatewayStateOwner, tryAcquireGatewayStateOwner } from "./gateway-state-owner.js";
+import { tryAcquireGatewayStateOwner } from "./gateway-state-owner.js";
 import { requireNodeSqlite } from "./node-sqlite.js";
 import { readSqliteDatabaseCleanClose } from "./sqlite-database-admission.js";
 import { corruptSqliteIndexKey } from "./sqlite-index-corruption.test-support.js";

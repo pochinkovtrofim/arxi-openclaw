@@ -61,7 +61,7 @@ type WorkerReply<Output> = { status: "ok"; value: Output } | { status: "failed";
 /** A host-waiting exchange that has not sent its input can still checkpoint. */
 const canCheckpoint = <T extends { sent: boolean; pressure: AbortController }>(
   exchange: T | undefined,
-): exchange is T => !!exchange && !exchange.sent && !exchange.pressure.signal.aborted;
+): exchange is T => exchange !== undefined && !exchange.sent && !exchange.pressure.signal.aborted;
 /** Bounded execution workers; each worker accepts one task at a time. */
 export class WorkerTaskPoolCore<Input, Output> {
   private readonly slots = new Set<Slot<Input, Output>>();

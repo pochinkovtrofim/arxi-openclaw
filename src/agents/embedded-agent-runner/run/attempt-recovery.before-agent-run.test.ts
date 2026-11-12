@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { sleepWithAbort } from "../../../infra/backoff.js";
 import { AgentRunBlockedError } from "../../harness/before-agent-run.js";
 import {
   buildEmbeddedRunnerAssistant,

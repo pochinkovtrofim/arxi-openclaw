@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/config.js";
-import { claimAgentRunContext, clearAgentRunContext, releaseAgentRunContext } from "../../infra/agent-run-registry.js";
 import { consumeCronNextCheckProposal } from "../../infra/agent-run-cron-proposals.js";
+import {
+  claimAgentRunContext,
+  clearAgentRunContext,
+  releaseAgentRunContext,
+} from "../../infra/agent-run-registry.js";
 import { createCronTool } from "./cron-tool.js";
 
 const RUN_ID = "paced-run";

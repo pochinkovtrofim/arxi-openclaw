@@ -25,7 +25,7 @@ import {
 } from "./session-binding.test-helpers.js";
 import { isCodexTurnContextHandoff } from "./test-support.js";
 
-const { admitLocalOperatorCronAuthority, configureFakeMcp, mcpMocks, setupConfiguredMcpTestHooks } =
+const { configureFakeMcp, mcpMocks, setupConfiguredMcpTestHooks } =
   await import("./run-attempt.configured-mcp.test-support.js");
 
 setupConfiguredMcpTestHooks();
