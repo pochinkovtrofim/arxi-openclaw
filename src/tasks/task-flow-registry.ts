@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { EngineConnection } from "../infra/sql-connection.js";
 // Coordinates managed task-flow creation, updates, ownership, and snapshots.
 import { formatErrorMessage } from "../infra/errors.js";
 import { executeSqliteQueryTakeFirstSync, getNodeSqliteKysely } from "../infra/kysely-sync.js";
@@ -518,7 +518,7 @@ export function prepareManagedTaskFlowMutation(params: {
 
 /** Writes a prepared Flow in the caller's state transaction and checks its database CAS. */
 export function commitPreparedManagedTaskFlowMutationInStateTransaction(
-  db: DatabaseSync,
+  db: EngineConnection,
   prepared: PreparedManagedTaskFlowMutation,
 ): void {
   const current = executeSqliteQueryTakeFirstSync(

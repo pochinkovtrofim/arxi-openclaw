@@ -1,5 +1,5 @@
 // Persists task-flow records through the global shared-state database owner.
-import type { DatabaseSync } from "node:sqlite";
+import type { EngineConnection } from "../infra/sql-connection.js";
 import type { AdmittedRunContext } from "../agents/admitted-run-context.js";
 import {
   executionOwnerBindingFromAdmission,
@@ -40,7 +40,7 @@ export {
 } from "./task-flow-history.store.sqlite.js";
 
 type FlowRegistryDatabase = {
-  db: DatabaseSync;
+  db: EngineConnection;
   path: string;
 };
 
@@ -139,7 +139,7 @@ export function closeTaskFlowRegistryDatabase() {
 export const upsertTaskFlowRegistryRecordWithHistoryToSqlite = upsertTaskFlowRegistryRecordToSqlite;
 /** The caller owns the shared-state transaction containing this Flow and its wake receipt. */
 export function upsertTaskFlowRegistryRecordWithHistoryInStateTransaction(
-  db: DatabaseSync,
+  db: EngineConnection,
   flow: TaskFlowRecord,
   history?: TaskFlowHistoryRegistration,
 ): void {
