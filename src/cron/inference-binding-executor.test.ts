@@ -6,6 +6,7 @@ import { isRecordedModelFallbackStop } from "../agents/model-fallback-stop.js";
 import type { Model } from "../llm/types.js";
 import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.test-support.js";
 import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
+import { withEnvAsync } from "../test-utils/env.js";
 import { withOpenClawTestState } from "../test-utils/openclaw-test-state.js";
 
 const harness: AgentHarness = {
@@ -157,6 +158,63 @@ it("refuses legacy adoption from a current stored account at the auth boundary",
       expect(isRecordedModelFallbackStop(refusal)).toBe(true);
       expect(materialize).not.toHaveBeenCalled();
     },
+  );
+});
+
+it("runs a legacy job on the Owner's current account where Ro's host owns the logins", async () => {
+  await withOpenClawTestState(
+    { label: "cron-owner-account", env: { OPENAI_API_KEY: undefined } },
+    async (state) =>
+      await withEnvAsync({ ARXI_AUTH_AGENT_DIR: state.agentDir() }, async () => {
+        await state.writeAuthProfiles({
+          version: 1,
+          profiles: {
+            "openai:current": {
+              type: "api_key",
+              provider: "openai",
+              key: "synthetic-current-key",
+            },
+          },
+        });
+        const stores = modelRuntime.createEmptyAgentDiscoveryStores();
+        vi.spyOn(modelRuntime, "resolveModelAsync").mockResolvedValue({
+          ...stores,
+          model,
+          logicalRef: { provider: model.provider, model: model.id },
+        });
+        const prepared = await withPluginRuntimeGenerationScope(
+          { metadataSnapshot: createPluginMetadataSnapshotFixture() },
+          () =>
+            prepareEmbeddedRunAuthPlan({
+              assertCurrent() {},
+              runParams: {
+                sessionId: "fresh-legacy-fire",
+                runId: "legacy-fire",
+                workspaceDir: state.workspaceDir,
+                prompt: "Synthetic scheduled work",
+                timeoutMs: 1_000,
+                trigger: "cron",
+                config: {},
+              },
+              provider: model.provider,
+              modelId: model.id,
+              model,
+              agentDir: state.agentDir(),
+              workspaceDir: state.workspaceDir,
+              nativeModelOwned: false,
+              ...stores,
+              getAgentHarness: () => harness,
+              setAgentHarness() {},
+              getRuntimeModel: () => model,
+              getEffectiveModel: () => model,
+              applyResolvedRuntimeModel() {},
+              selectHarnessForPreparedAttempts: () => harness,
+            }),
+        );
+        expect(prepared.preparedAuthAttempts).toMatchObject([
+          { kind: "profile", profileId: "openai:current" },
+        ]);
+      }),
   );
 });
 

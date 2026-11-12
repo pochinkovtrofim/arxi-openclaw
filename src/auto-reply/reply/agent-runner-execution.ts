@@ -17,6 +17,7 @@ import { resolveReplyExpectation } from "../../agents/reply-completion.js";
 import { createAgentPatchedSessionModelRunGuard } from "../../agents/session-model-auto-revert.js";
 import { captureAgentWorkspaceReadiness } from "../../agents/workspace-readiness.js";
 import { resolveSessionStorePathCore } from "../../config/sessions/paths.js";
+import { resolveCronRunInferenceBinding } from "../../cron/inference-binding.js";
 import { prepareCronRunInference, type CronRunInference } from "../../cron/run-inference.js";
 import type { CronWorkspaceLease } from "../../cron/run-workspace.js";
 import { logVerbose } from "../../globals.js";
@@ -615,7 +616,7 @@ async function executeAgentTurnOutcome(
             run.workspaceDir = workspace.workspaceDir;
             run.cwd = workspace.cwd;
           }
-          const binding = run.scheduledAutomation?.job.inferenceBinding;
+          const binding = resolveCronRunInferenceBinding(run.scheduledAutomation?.job);
           if (binding) {
             scheduledInference = await prepareCronRunInference({
               binding,

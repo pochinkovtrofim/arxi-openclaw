@@ -23,6 +23,7 @@ import {
 import type { InputProvenance } from "../../sessions/input-provenance.js";
 import { resolveCronSkillsSnapshot } from "../../skills/runtime/cron-snapshot.js";
 import { resolveCronJobEffectiveAgentId } from "../agent-id.js";
+import { resolveCronRunBoundSelection } from "../inference-binding.js";
 import { createCronRunDiagnosticsFromError } from "../run-diagnostics.js";
 import { resolveCronScheduledToolPolicy } from "../scheduled-tool-policy.js";
 import { isDetachedCronSessionTarget, isFreshContextCronSessionTarget } from "../session-target.js";
@@ -598,26 +599,22 @@ export async function prepareCronRunContext(params: {
       });
       const authSelection = input.job.runtimeAuthority
         ? undefined
-        : input.job.inferenceBinding
-          ? {
-              profileId: input.job.inferenceBinding.profileId,
-              source: input.job.inferenceBinding.source,
-            }
-          : await resolveCronAuthSelection({
-              agentId,
-              cfg: admittedConfig,
-              provider,
-              modelId: model,
-              ...(provider === resolvedModelSelection.provider &&
-              resolvedModelSelection.configuredProfileId
-                ? { configuredProfileId: resolvedModelSelection.configuredProfileId }
-                : {}),
-              harnessRuntime: effectiveAgentRuntime,
-              agentDir,
-              cronSession,
-              sessionKey: agentSessionKey,
-              isNewSession: cronSession.isNewSession && input.job.sessionTarget !== "isolated",
-            });
+        : (resolveCronRunBoundSelection(input.job) ??
+          (await resolveCronAuthSelection({
+            agentId,
+            cfg: admittedConfig,
+            provider,
+            modelId: model,
+            ...(provider === resolvedModelSelection.provider &&
+            resolvedModelSelection.configuredProfileId
+              ? { configuredProfileId: resolvedModelSelection.configuredProfileId }
+              : {}),
+            harnessRuntime: effectiveAgentRuntime,
+            agentDir,
+            cronSession,
+            sessionKey: agentSessionKey,
+            isNewSession: cronSession.isNewSession && input.job.sessionTarget !== "isolated",
+          })));
       const authProfileId = authSelection?.profileId;
       const liveSelection: LiveSessionModelSelection = {
         provider,

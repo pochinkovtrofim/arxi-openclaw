@@ -13,6 +13,7 @@ import {
 } from "../../config/sessions/paths.js";
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
+import { resolveCronRunInferenceBinding } from "../../cron/inference-binding.js";
 import { logVerbose } from "../../globals.js";
 import { isFastTestRuntimeEnv } from "../../infra/env.js";
 import { clearCommandLane, getQueueSize } from "../../process/command-queue.js";
@@ -411,7 +412,7 @@ export async function prepareReplyRunAdmission(context: PreparedReplyRunContext)
         sessionKey: context.runtimePolicySessionKey,
       });
   const resolveRuntimeAuthProfile = async () => {
-    const binding = opts?.scheduledAutomation?.job.inferenceBinding;
+    const binding = resolveCronRunInferenceBinding(opts?.scheduledAutomation?.job);
     if (binding) {
       return { authProfileId: binding.profileId, authProfileIdSource: binding.source };
     }

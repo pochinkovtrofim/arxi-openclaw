@@ -19,6 +19,7 @@ import {
 import { findModelInCatalog } from "../../agents/model-catalog-lookup.js";
 import { recordModelFallbackStop } from "../../agents/model-fallback-stop.js";
 import { normalizeChatType } from "../../channels/chat-type.js";
+import { cronJobsFollowOwnerAccount } from "../../cron/inference-binding.js";
 import { shouldPreserveUserFacingSessionStateForInputProvenance } from "../../sessions/input-provenance.js";
 import { createAgentLifecycleTerminalBackstop } from "./agent-lifecycle-terminal.js";
 import { resolveRunAuthProfile } from "./agent-runner-auth-profile.js";
@@ -228,7 +229,11 @@ export async function runCliFallbackCandidate(
             : resolveRunAuthProfile(params.candidateRun, params.cliExecutionProvider, {
                 config: params.runtimeConfig,
               }).authProfileId;
-        if (turn.followupRun.run.scheduledAutomation && !scheduledInference && authProfileId) {
+        const accountRequired =
+          turn.followupRun.run.scheduledAutomation !== undefined &&
+          !scheduledInference &&
+          !cronJobsFollowOwnerAccount();
+        if (accountRequired && authProfileId) {
           const refusal = new Error(
             "Automation has no recorded inference account. Explicitly select its account with a model@profile update before running it.",
           );
@@ -488,8 +493,7 @@ export async function runCliFallbackCandidate(
                   scheduledInference.runParams.authProfileBinding?.assertCurrent();
                 }
               : undefined,
-            nativeAuthOnly:
-              turn.followupRun.run.scheduledAutomation && !scheduledInference ? true : undefined,
+            nativeAuthOnly: accountRequired ? true : undefined,
             mediaImageLayout: params.currentTurnImages.mediaImageLayout,
             messageChannel: turn.followupRun.originatingChannel ?? undefined,
             messageProvider: hookMessageProvider,

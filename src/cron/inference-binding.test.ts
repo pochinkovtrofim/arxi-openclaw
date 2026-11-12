@@ -24,7 +24,7 @@ import { createPluginMetadataSnapshotFixture } from "../plugins/plugin-metadata.
 import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import { closeOpenClawStateDatabaseAsync } from "../state/openclaw-state-db.js";
 import { withEnvAsync } from "../test-utils/env.js";
-import type { CronInferenceBinding } from "./inference-binding.js";
+import { resolveCronRunInferenceBinding, type CronInferenceBinding } from "./inference-binding.js";
 import {
   acquireCronInferenceAuthorization,
   captureCronInferenceBinding,
@@ -454,6 +454,32 @@ describe("durable cron inference authorization", () => {
           modelId: "gpt-4o",
         }),
       ).rejects.toThrow(/route|subscription|compatible/i);
+    });
+  });
+});
+
+it("records and consults no account where Ro's host owns the logins", async () => {
+  const binding: CronInferenceBinding = {
+    version: 1,
+    provider: "openai",
+    profileId: platformId,
+    authorizationId: "a".repeat(64),
+    authRequirement: "api-key",
+    source: "auto",
+  };
+  expect(resolveCronRunInferenceBinding({ inferenceBinding: binding }, {})).toBe(binding);
+  expect(
+    resolveCronRunInferenceBinding(
+      { inferenceBinding: binding },
+      { ARXI_AUTH_AGENT_DIR: "/var/lib/openclaw/auth-agent" },
+    ),
+  ).toBeUndefined();
+  await fixture(async (root, cfg) => {
+    expect((await capture(cfg, platformId)).profileId).toBe(platformId);
+    await withEnvAsync({ ARXI_AUTH_AGENT_DIR: root.agentDir }, async () => {
+      await expect(
+        captureCronInferenceBinding({ cfg, agentId: "main", sessionEntry: creator(platformId) }),
+      ).resolves.toBeUndefined();
     });
   });
 });

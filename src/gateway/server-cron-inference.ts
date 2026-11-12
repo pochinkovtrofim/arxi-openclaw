@@ -13,6 +13,7 @@ import { resolveSimpleCompletionSelectionForAgent } from "../agents/simple-compl
 import { resolveMergedModelProviderConfig } from "../config/model-provider-config.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { tryResolveCronJobEffectiveAgentId } from "../cron/agent-id.js";
+import { cronJobsFollowOwnerAccount } from "../cron/inference-binding.js";
 import type { CronStoredJob } from "../cron/types.js";
 
 /** Startup diagnostics use configured facts only; Doctor remains the sole migration writer. */
@@ -25,7 +26,8 @@ export function describeCronInferenceMigration(
     job.sessionTarget === "main" ||
     job.inferenceBinding ||
     job.runtimeAuthority ||
-    job.runtimeAuthorityRecoveryRequired
+    job.runtimeAuthorityRecoveryRequired ||
+    cronJobsFollowOwnerAccount()
   ) {
     return undefined;
   }

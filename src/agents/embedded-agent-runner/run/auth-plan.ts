@@ -1,3 +1,4 @@
+import { cronJobsFollowOwnerAccount } from "../../../cron/inference-binding.js";
 import type { ProviderModelRouteSource } from "../../../plugin-sdk/provider-model-types.js";
 import {
   providerOwnsDynamicModelPreparation,
@@ -198,6 +199,7 @@ export async function prepareEmbeddedRunAuthPlan(params: {
       runParams.trigger === "cron" &&
       !runParams.authProfileBinding &&
       !runParams.scheduledRuntimeAuthority &&
+      !cronJobsFollowOwnerAccount() &&
       prepared.attempts.some(({ plan }) => {
         const source = plan.credentialSource;
         return (

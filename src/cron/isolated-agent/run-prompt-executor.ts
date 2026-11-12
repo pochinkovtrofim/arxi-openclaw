@@ -43,6 +43,10 @@ import {
 } from "../../sessions/user-turn-transcript.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveCronJobConfigRevision } from "../config-revision.js";
+import {
+  cronJobsFollowOwnerAccount,
+  resolveCronRunInferenceBinding,
+} from "../inference-binding.js";
 import { prepareCronRunAdmission } from "../run-admission.js";
 import { prepareCronRunInference } from "../run-inference.js";
 import { resolveCronScheduledToolPolicy } from "../scheduled-tool-policy.js";
@@ -168,7 +172,8 @@ export function createCronPromptExecutor(
 
   return async (promptText: string, runStartedAt: number): Promise<CronCompletedPromptRun> => {
     using inferenceLease = new DisposableStack();
-    const binding = params.job.inferenceBinding;
+    const binding = resolveCronRunInferenceBinding(params.job);
+    const accountRequired = trigger === "cron" && !binding && !cronJobsFollowOwnerAccount();
     const inference = await prepareCronRunInference({
       binding,
       cfg: params.cfgWithAgentDefaults,
@@ -516,7 +521,7 @@ export function createCronPromptExecutor(
                           }
                         : undefined,
                     );
-                if (trigger === "cron" && !binding && authProfileId) {
+                if (accountRequired && authProfileId) {
                   const refusal = new Error(
                     "Automation has no recorded inference account. Explicitly select its account with a model@profile update before running it.",
                   );
@@ -552,7 +557,7 @@ export function createCronPromptExecutor(
                         inference.runParams.authProfileBinding?.assertCurrent();
                       }
                     : undefined,
-                  nativeAuthOnly: trigger === "cron" && !binding ? true : undefined,
+                  nativeAuthOnly: accountRequired ? true : undefined,
                   cliSessionId: cliSessionBinding?.sessionId,
                   cliSessionBinding: guardedCliSessionBinding,
                   cliSessionBindingFacts: params.cliSessionBindingFacts,

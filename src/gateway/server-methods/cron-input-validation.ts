@@ -16,6 +16,7 @@ import {
 } from "../../cron/delivery-channel-validation.js";
 import { resolveCronDeliveryPlan } from "../../cron/delivery-plan.js";
 import { assertCronDeliveryInputNonBlankFields } from "../../cron/delivery-target-validation.js";
+import { cronJobsFollowOwnerAccount } from "../../cron/inference-binding.js";
 import {
   acquireCronInferenceAuthorization,
   captureCronInferenceBinding,
@@ -359,7 +360,11 @@ export async function captureCronUpdatedInferenceBinding(
   cfg: OpenClawConfig,
   caller: InferenceCaller,
 ) {
-  if (nextJob.runtimeAuthority !== undefined || nextJob.payload.kind !== "agentTurn") {
+  if (
+    nextJob.runtimeAuthority !== undefined ||
+    nextJob.payload.kind !== "agentTurn" ||
+    cronJobsFollowOwnerAccount()
+  ) {
     return undefined;
   }
   const model = patch.payload && "model" in patch.payload ? patch.payload.model : undefined;
