@@ -663,6 +663,8 @@ vi.mock("../cache-ttl.js", () => ({
   isCacheTtlEligibleProvider: (provider?: string) => provider === "anthropic",
   readLastCacheTtlTimestamp: (...args: Parameters<typeof readMockSessionCacheTtlTimestamp>) =>
     readMockSessionCacheTtlTimestamp(...args),
+  // Fork: workspace fixtures record no cached assistant replies.
+  readLastAssistantCacheTouch: () => null,
 }));
 
 vi.mock("../compaction-runtime-context.js", () => ({
