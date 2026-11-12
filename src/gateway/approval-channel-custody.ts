@@ -31,7 +31,11 @@ type PreparedApprovalChannelCustody = {
     target?: ApprovalResolutionTarget,
     resolutionProof?: string,
   ) => Promise<boolean>;
-  isCurrent: (request: ApprovalRequestLike) => boolean;
+  isCurrent: (
+    request: ApprovalRequestLike,
+    target?: ApprovalResolutionTarget,
+    resolutionProof?: string,
+  ) => boolean;
   [Symbol.dispose]: () => void;
 };
 
@@ -224,9 +228,16 @@ export function prepareApprovalChannelCustody(params: {
         throw error;
       }
     },
-    isCurrent(request) {
+    // Re-binds the decision proof at the commit guard, not only before admission.
+    isCurrent(request, target, resolutionProof) {
       const state = prepared.get(request);
-      return active && configCurrent() && state?.authorized === true && state.isCurrent();
+      return (
+        active &&
+        configCurrent() &&
+        state?.authorized === true &&
+        state.isCurrent() &&
+        authorizesResolution(target, resolutionProof)
+      );
     },
     [Symbol.dispose]() {
       active = false;

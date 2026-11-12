@@ -30,9 +30,12 @@ vi.mock("../approval-channel-custody.js", () => ({
         ...custody,
         isCurrent:
           custody.isCurrent ??
-          ((request: unknown) => {
+          ((request: unknown, ...resolution: unknown[]) => {
             const input = args[0] as { cfg: unknown; getCfg?: () => unknown };
-            return (!input.getCfg || input.getCfg() === input.cfg) && custody.authorizes(request);
+            return (
+              (!input.getCfg || input.getCfg() === input.cfg) &&
+              custody.authorizes(request, ...resolution)
+            );
           }),
         [Symbol.dispose]() {},
       }

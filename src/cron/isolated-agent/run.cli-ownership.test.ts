@@ -115,6 +115,14 @@ describe("cron project: runCronIsolatedAgentTurn CLI ownership", () => {
       return committed;
     };
     runCliAgentMock.mockImplementationOnce(async (params) => {
+      // Native cron provenance reaches the executing CLI agent.
+      expect(params.inputProvenance).toMatchObject({
+        kind: "internal_system",
+        sourceTool: "cron",
+        jobId: "cli-diagnostic-job",
+        runId: params.runId,
+        sourceSessionKey: params.sessionKey,
+      });
       expect(params.diagnosticOwner).toEqual(
         expect.objectContaining({ sessionId, generation: expect.anything() }),
       );

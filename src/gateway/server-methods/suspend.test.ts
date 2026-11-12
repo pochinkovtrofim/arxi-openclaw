@@ -285,7 +285,7 @@ describe("gateway suspend handlers", () => {
       suspensionId: "suspension-ready",
     });
 
-    expect(order).toEqual(["status", "status", "memory", "executions", "handles", "status"]);
+    expect(order).toEqual(["status", "memory", "executions", "handles", "status"]);
     expect(respond).toHaveBeenCalledWith(true, ready);
     expect(info).toHaveBeenCalledWith(
       "idle agent databases closed before suspension: executions closed=1 busy=0; handles closed=1 borrowed=1 transaction=0 failed=0",

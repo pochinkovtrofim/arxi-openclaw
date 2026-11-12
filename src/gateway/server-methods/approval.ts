@@ -419,12 +419,16 @@ export function createApprovalHandlers(
             binding: { reviewerDeviceIds: record.reviewerDeviceIds },
           }) ||
           (approvalGuard.family === "native-compatibility" && !readCurrent()) ||
-          // The decision-bound resolution check ran before admission; config changes revoke it.
+          // Re-check the decision-bound proof at the CAS; config changes revoke it.
           (resolveParams?.reviewer &&
             (!liveRecord ||
               !requestedDecision ||
               forceMalformedDeny ||
-              !custody?.isCurrent(liveRecord)))
+              !custody?.isCurrent(
+                liveRecord,
+                { approvalId: liveRecord.id, decision: requestedDecision },
+                resolveParams.resolutionProof,
+              )))
         ) {
           throw new Error("approval resolver authority is no longer active");
         }

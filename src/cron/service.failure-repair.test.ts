@@ -217,7 +217,7 @@ describe("CronService failure repair", () => {
     },
   );
 
-  it("alerts exactly once for failures started after repair settlement and names the repair", async () => {
+  it("follows up once, then alerts exactly once for failures started after settlement", async () => {
     await withRepair(async ({ cron, runCronFailureRepair, sendCronFailureAlert, addJob }) => {
       const repair = Promise.withResolvers<void>();
       runCronFailureRepair.mockReturnValueOnce(repair.promise);
@@ -234,23 +234,38 @@ describe("CronService failure repair", () => {
       });
       vi.setSystemTime(settledAtMs + 1);
       await cron.run(job.id, "force");
+      // The owner conversation gets its one follow-up before the plain alert.
+      expect(sendCronFailureAlert).not.toHaveBeenCalled();
+      expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
+      const followUpSettledAtMs = Date.now();
+      await vi.waitFor(async () =>
+        expect((await cron.readJob(job.id))?.state.failureAlertIncident?.repair).toMatchObject({
+          followedUp: true,
+          settledAtMs: followUpSettledAtMs,
+        }),
+      );
+
+      vi.setSystemTime(followUpSettledAtMs + 1);
+      await cron.run(job.id, "force");
       expect(sendCronFailureAlert).toHaveBeenCalledOnce();
       expectAlertTextContaining(sendCronFailureAlert, "automatic repair was requested");
 
       vi.setSystemTime(Date.now() + 1);
       await cron.run(job.id, "force");
       expect(sendCronFailureAlert).toHaveBeenCalledOnce();
-      expect(runCronFailureRepair).toHaveBeenCalledOnce();
+      expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
       expect(await cron.readJob(job.id)).toMatchObject({
         state: {
-          consecutiveErrors: 4,
-          failureAlertIncident: { repair: { settledAtMs, alerted: true } },
+          consecutiveErrors: 5,
+          failureAlertIncident: {
+            repair: { settledAtMs: followUpSettledAtMs, followedUp: true, alerted: true },
+          },
         },
       });
     });
   });
 
-  it("alerts on the first post-deadline failure when repair never settles", async () => {
+  it("follows up on the first post-deadline failure when repair never settles, then alerts", async () => {
     await withRepair(async ({ cron, runCronFailureRepair, sendCronFailureAlert, addJob }) => {
       const repair = Promise.withResolvers<void>();
       runCronFailureRepair.mockReturnValueOnce(repair.promise);
@@ -270,11 +285,22 @@ describe("CronService failure repair", () => {
       expect(sendCronFailureAlert).not.toHaveBeenCalled();
       vi.setSystemTime(pending.deadlineAtMs + 1);
       await cron.run(job.id, "force");
+      expect(sendCronFailureAlert).not.toHaveBeenCalled();
+      expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
+      const followUp = (await cron.readJob(job.id))?.state.failureAlertIncident?.repair;
+      if (followUp?.deadlineAtMs === undefined) {
+        throw new Error("expected a follow-up repair deadline");
+      }
+      vi.setSystemTime(followUp.deadlineAtMs + 1);
+      await cron.run(job.id, "force");
       expect(sendCronFailureAlert).toHaveBeenCalledOnce();
       expectAlertTextContaining(sendCronFailureAlert, "automatic repair was requested");
-      expect(runCronFailureRepair).toHaveBeenCalledOnce();
+      expect(runCronFailureRepair).toHaveBeenCalledTimes(2);
       expect(await cron.readJob(job.id)).toMatchObject({
-        state: { consecutiveErrors: 4, failureAlertIncident: { repair: { alerted: true } } },
+        state: {
+          consecutiveErrors: 5,
+          failureAlertIncident: { repair: { followedUp: true, alerted: true } },
+        },
       });
     });
   });
@@ -302,7 +328,7 @@ describe("CronService failure repair", () => {
     );
   });
 
-  it("alerts on the next failure for a persisted pre-upgrade repair with only atMs", async () => {
+  it("follows up, then alerts, for a persisted pre-upgrade repair with only atMs", async () => {
     await withRepair(async ({ cron, runCronFailureRepair, sendCronFailureAlert, addJob }) => {
       const atMs = Date.now();
       const job = await addJob("legacy repair", {
@@ -316,13 +342,24 @@ describe("CronService failure repair", () => {
       expect((await cron.readJob(job.id))?.state.failureAlertIncident?.repair).toEqual({ atMs });
 
       await cron.run(job.id, "force");
+      expect(sendCronFailureAlert).not.toHaveBeenCalled();
+      expect(runCronFailureRepair).toHaveBeenCalledOnce();
+      expect(runCronFailureRepair.mock.calls[0]?.[0]?.message).toContain(
+        "still fails after a repair request: 3 consecutive runs",
+      );
+      const followUp = (await cron.readJob(job.id))?.state.failureAlertIncident?.repair;
+      if (followUp?.deadlineAtMs === undefined) {
+        throw new Error("expected a follow-up repair deadline");
+      }
+      vi.setSystemTime(followUp.deadlineAtMs + 1);
+      await cron.run(job.id, "force");
       expect(sendCronFailureAlert).toHaveBeenCalledOnce();
       expectAlertTextContaining(sendCronFailureAlert, "automatic repair was requested");
-      expect(runCronFailureRepair).not.toHaveBeenCalled();
+      expect(runCronFailureRepair).toHaveBeenCalledOnce();
       expect(await cron.readJob(job.id)).toMatchObject({
         state: {
-          consecutiveErrors: 3,
-          failureAlertIncident: { repair: { atMs, alerted: true } },
+          consecutiveErrors: 4,
+          failureAlertIncident: { repair: { followedUp: true, alerted: true } },
         },
       });
     });
@@ -842,6 +879,12 @@ describe("CronService failure repair", () => {
     expect(followUp?.kind === "failure-repair" ? followUp.text : "").toContain(
       "still fails after a repair request: 4 consecutive runs",
     );
+    // The follow-up holds later failures until its own deadline.
+    const followUpDeadline = job.state.failureAlertIncident?.repair?.deadlineAtMs;
+    if (followUpDeadline === undefined) {
+      throw new Error("expected a follow-up repair deadline");
+    }
+    state.deps.nowMs = () => followUpDeadline + 1;
     fail("AUTOMATION_FAILED\nStill no Google Sheets in this run.");
     // The agent's wording changes every run; it is still the same incident.
     fail("AUTOMATION_FAILED\nNo Sheets again today.");
@@ -864,6 +907,12 @@ describe("CronService failure repair", () => {
           .mockRejectedValueOnce(new Error("owner session deleted"));
         const job = await addJob("lost sync", owned);
         for (let run = 0; run < 4; run += 1) {
+          // Each repair step holds later failures until its deadline.
+          const deadline = (await cron.readJob(job.id))?.state.failureAlertIncident?.repair
+            ?.deadlineAtMs;
+          if (deadline !== undefined) {
+            vi.setSystemTime(deadline + 1);
+          }
           await cron.run(job.id, "force");
         }
         await vi.waitFor(() => expect(sendCronFailureAlert).toHaveBeenCalledTimes(2));

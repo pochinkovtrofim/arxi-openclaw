@@ -1162,6 +1162,8 @@ describe("gateway server cron", () => {
         payload: { kind: "agentTurn", message: "Follow scripts/sync.md." },
         delivery: { mode: "announce", channel: "telegram", to: group, threadId: 42 },
         owner: { agentId: "main", sessionKey: ownerSessionKey },
+        // Each escalation step waits out the cooldown; none here so the steps follow at once.
+        failureAlert: { cooldownMs: 0 },
       });
       expect(added.ok, JSON.stringify(added.error ?? null)).toBe(true);
       const jobPayload = added.payload;
@@ -1214,10 +1216,26 @@ describe("gateway server cron", () => {
           ?.repair;
         expect(repair?.settledAtMs).toEqual(expect.any(Number));
       });
+      // After a settled repair the owner topic gets one follow-up turn, not the alert.
+      await runCronJobAndWaitForFinished(ws, jobId);
+      await vi.waitFor(() => expect(agentCommandMock).toHaveBeenCalledTimes(2));
+      expect(agentCommandMock.mock.calls[1]?.[0]).toMatchObject({
+        sessionKey: ownerSessionKey,
+        message: expect.stringContaining("still fails after a repair request"),
+      });
+      expect(sendCronAnnouncePayloadStrictMock).not.toHaveBeenCalled();
+      await vi.waitFor(async () => {
+        const stored = await loadCronStore(path.join(dir, "cron", "jobs.json"));
+        const repair = stored.jobs.find((job) => job.id === jobId)?.state.failureAlertIncident
+          ?.repair;
+        expect(repair).toMatchObject({ followedUp: true, settledAtMs: expect.any(Number) });
+      });
+      // The failure after the follow-up sends the plain alert, once.
       await runCronJobAndWaitForFinished(ws, jobId);
       await vi.waitFor(() => expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce());
       await runCronJobAndWaitForFinished(ws, jobId);
       expect(sendCronAnnouncePayloadStrictMock).toHaveBeenCalledOnce();
+      expect(agentCommandMock).toHaveBeenCalledTimes(2);
     },
   );
 });
