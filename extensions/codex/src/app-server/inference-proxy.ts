@@ -67,9 +67,10 @@ type ResidentTicket = {
   retiring: boolean;
 };
 
-/** Private, fixed-destination relay. No upstream credentials or model content are retained. */
+/** Private, fixed-destination relay. Upstream credentials are never retained. */
 export async function createCodexInferenceProxy(params: {
   upstream: URL;
+  configurationIdentity?: string;
   assertCurrent: () => void;
   oauth?: CodexResponsesOAuth;
   /** `"http"` answers WebSocket upgrades with 426; see `CodexInferenceTransport`. */
@@ -283,7 +284,6 @@ export async function createCodexInferenceProxy(params: {
             preparedUpload.assertCurrent();
             auth?.assertCurrent();
           };
-          assertAuthorized();
           if (auth) {
             for (const key of [
               "authorization",
@@ -733,6 +733,7 @@ export async function createCodexInferenceProxy(params: {
       context,
       upstream: upstream.toString(),
       transportCounts: upstreamTransport.counts,
+      configurationIdentity: params.configurationIdentity ?? upstream.toString(),
       baseUrl: "http://127.0.0.1:" + address.port + pathPrefix,
       assertCurrent,
       close,

@@ -13,6 +13,7 @@ export type LlamaServerArchive = {
   archiveRoot: string;
   name: string;
   sha256: string;
+  sizeBytes?: number;
   url?: string;
   regularFileAliases: RegularFileAliases;
   limits?: ArchiveExtractLimits;
@@ -173,6 +174,7 @@ const LLAMA_SERVER_ASSETS: LlamaServerAsset[] = [
         archiveRoot: ".",
         name: "cudart-llama-bin-win-cuda-12.4-x64.zip",
         sha256: "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
+        sizeBytes: 391_443_627,
         regularFileAliases: [],
         files: ["cublas64_12.dll", "cublasLt64_12.dll", "cudart64_12.dll"],
         limits: { ...CUDA_ARCHIVE_LIMITS, maxEntries: 3 },

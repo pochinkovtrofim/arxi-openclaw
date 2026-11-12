@@ -8,6 +8,7 @@ type SkillWorkshopConfig = {
     mode: SkillsWorkshopAutonomousMode;
     /** Review route per reviewed turn's provider/model ref, kept within one provider. */
     models: ReadonlyMap<string, { provider: string; model: string }>;
+    channelNotices: boolean;
   };
   maxSkillBytes: number;
 };
@@ -29,6 +30,7 @@ export function resolveSkillWorkshopConfig(config?: OpenClawConfig): SkillWorksh
     autonomous: {
       mode: mode === "off" || mode === "auto" ? mode : "auto",
       models,
+      channelNotices: autonomous?.channelNotices === true,
     },
     maxSkillBytes:
       typeof maxSkillBytes === "number" && Number.isFinite(maxSkillBytes)

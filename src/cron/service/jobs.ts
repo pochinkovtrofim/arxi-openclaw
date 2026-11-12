@@ -6,16 +6,16 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import type { CronConfig } from "../../config/types.cron.js";
 import { normalizeOptionalAccountId } from "../../routing/account-id.js";
-import { resolveCronDeliveryPlan } from "../delivery-plan.js";
+import { resolveCronDeliveryMode } from "../delivery-defaults.js";
 import { assertCronJobStateTimestamps } from "../persisted-shape.js";
 import type { CronScheduledToolPolicy } from "../scheduled-tool-policy.js";
 import { normalizeCronScriptPayload } from "../script-payload.js";
+import { createCronSourceIdentity } from "../source-schedule.js";
 import { normalizeCronStaggerMs, resolveDefaultCronStaggerMs } from "../stagger.js";
 import {
   assertCanonicalCronDeliveryMode,
   hasCanonicalCronDeliveryMode,
 } from "../store/delivery-codec.js";
-import { createCronStreamSourceIdentity } from "../stream-schedule.js";
 import { applyDefaultCronToolsAllow, cronJobUsesToolRuntime } from "../tools-allow.js";
 import type {
   CronDelivery,
@@ -46,14 +46,13 @@ import {
   assertMainSessionAgentId,
   assertPacingSupport,
   assertScriptPayloadSupport,
-  assertStreamScheduleSupport,
+  assertExternalSourceScheduleSupport,
   assertSupportedJobSpec,
   assertSuspendWakeSupport,
   assertTriggerSupport,
 } from "./jobs-validation.js";
 import { normalizeOptionalAgentId, normalizeRequiredName } from "./normalize.js";
 import { mergeCronPayload } from "./payload-merge.js";
-import type { CronServiceState } from "./state.js";
 
 type DeliveryValidationOptions = { configuredChannels?: readonly string[] };
 
@@ -151,10 +150,11 @@ function validateFullJob(
       : context.kind === "patch"
         ? context.patch.payload?.kind === "script"
         : context.input.payload.kind === "script";
-  const streamTouched =
+  const sourceTouched =
     context.kind !== "patch" ||
     context.patch.enabled === true ||
-    context.patch.schedule?.kind === "stream";
+    context.patch.schedule?.kind === "stream" ||
+    context.patch.schedule?.kind === "event";
   const validateCapabilities = () => {
     assertTriggerSupport(job, {
       cronConfig,
@@ -165,7 +165,7 @@ function validateFullJob(
       requireEnabled: scriptTouched,
       ...(context.kind === "patch" ? { validateSyntax: context.patch.payload !== undefined } : {}),
     });
-    assertStreamScheduleSupport(job, { cronConfig, requireEnabled: streamTouched });
+    assertExternalSourceScheduleSupport(job, { cronConfig, requireEnabled: sourceTouched });
   };
   if (context.kind === "declarative") {
     validateCapabilities();
@@ -198,7 +198,7 @@ function validateFullJob(
 }
 /** Creates a normalized cron job row from public add input and computes its initial schedule. */
 export function createJob(
-  state: CronServiceState,
+  state: { deps: { nowMs: () => number; cronConfig?: CronConfig; defaultAgentId?: string } },
   input: CronJobCreate,
   opts?: DeliveryValidationOptions & {
     scheduledToolPolicy?: CronScheduledToolPolicy;
@@ -227,6 +227,8 @@ export function createJob(
   delete initialState.scheduleActivatedAtMs;
   delete initialState.runningScheduleChangeId;
   delete initialState.autoDisabled;
+  delete initialState.sourceIdentity;
+  delete initialState.streamSourceIdentity;
   assertCronJobStateTimestamps(initialState);
   const job: CronStoredJob = {
     id,
@@ -264,8 +266,10 @@ export function createJob(
     state: {
       ...initialState,
       ...(schedule.kind === "stream"
-        ? { streamSourceIdentity: createCronStreamSourceIdentity() }
-        : {}),
+        ? { streamSourceIdentity: createCronSourceIdentity() }
+        : schedule.kind === "event"
+          ? { sourceIdentity: createCronSourceIdentity() }
+          : {}),
     },
   };
   // New trusted jobs are explicit by construction. Agent-runtime callers are
@@ -340,7 +344,7 @@ export function applyJobPatch(
     // recurring job's ignored/stale flag defeat the one-shot cleanup default.
     job.deleteAfterRun = true;
   } else if (
-    previousScheduleKind === "at" &&
+    (previousScheduleKind === "at" || previousScheduleKind === "on-exit") &&
     (patch.schedule?.kind === "every" || patch.schedule?.kind === "cron")
   ) {
     delete job.deleteAfterRun;
@@ -392,7 +396,7 @@ export function applyJobPatch(
     toolsAllowExecTarget: opts?.toolsAllowExecTarget,
   });
   if (patch.delivery) {
-    const implicitMode = patch.delivery.mode ?? resolveCronDeliveryPlan(job).mode;
+    const implicitMode = patch.delivery.mode ?? resolveCronDeliveryMode(job);
     job.delivery = mergeCronDelivery(job.delivery, patch.delivery, implicitMode);
   }
   if ("failureAlert" in patch) {
@@ -426,6 +430,8 @@ export function applyJobPatch(
     delete statePatch.scheduleActivatedAtMs;
     delete statePatch.runningScheduleChangeId;
     delete statePatch.autoDisabled;
+    delete statePatch.sourceIdentity;
+    delete statePatch.streamSourceIdentity;
     assertCronJobStateTimestamps(statePatch);
     job.state = { ...job.state, ...statePatch };
   }

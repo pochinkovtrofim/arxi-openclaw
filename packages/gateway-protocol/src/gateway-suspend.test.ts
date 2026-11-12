@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   validateGatewaySuspendStatusParams,
   validateGatewaySuspendResumeParams,
-  GatewaySuspendBlockerSchema,
   validateGatewaySuspendPrepareResult,
   validateGatewaySuspendStatusResult,
   validateGatewaySuspendPrepareParams,
@@ -96,17 +95,7 @@ describe("gateway suspension protocol", () => {
     );
   });
 
-  it("keeps the historical terminal-session blocker wire-compatible", () => {
-    expect(
-      Value.Check(GatewaySuspendBlockerSchema, {
-        kind: "terminal-session",
-        count: 1,
-        message: "1 open terminal session(s)",
-      }),
-    ).toBe(true);
-  });
-
-  it("accepts closed draining prepare results without changing existing result variants", () => {
+  it("accepts legacy terminal blockers in closed draining and busy prepare results", () => {
     const draining = {
       status: "draining",
       suspensionId: "suspension-1",

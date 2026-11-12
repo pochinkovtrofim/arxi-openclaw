@@ -1,6 +1,6 @@
 /** Durable managed-Flow Automation receipts bound to paced cron jobs; worker transaction only. */
-import type { DatabaseSync } from "node:sqlite";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import type { EngineConnection } from "../../infra/sql-connection.js";
 import {
   listTaskFlowAutomationObligationsForCronJobFromSqlite,
   transitionTaskFlowAutomationObligationPhaseInStateTransaction,
@@ -84,7 +84,7 @@ function cadenceOnlyChange(previous: string, current: string): boolean {
  * It never enables a job or changes a paused scheduler.
  */
 export function repairManagedFlowObligationsInDatabase(
-  database: DatabaseSync,
+  database: EngineConnection,
   input: CronManagedFlowRepairInput,
 ): CronManagedFlowRepairOutput {
   const committed = mutateCronRuntimeRowsInDatabase({
@@ -190,7 +190,7 @@ export function repairManagedFlowObligationsInDatabase(
  * and advance its slot until a due run succeeds or replaces it atomically.
  */
 export function suspendConsumedManagedFlowObligationsInDatabase(params: {
-  database: DatabaseSync;
+  database: EngineConnection;
   storeKey: string;
   jobs: ReadonlyMap<string, CronJob>;
   consumed: readonly CronManagedFlowConsumedRun[];

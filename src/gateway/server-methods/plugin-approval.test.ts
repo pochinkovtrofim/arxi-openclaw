@@ -2,6 +2,10 @@ import { expectDefined } from "@openclaw/normalization-core";
 import { createRequireRecord } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeEach, describe, expect, it, vi, type TestContext } from "vitest";
 import { createDeferred } from "../../../test/helpers/promise.js";
+import {
+  clearRuntimeConfigSnapshot,
+  setRuntimeConfigSnapshot,
+} from "../../config/runtime-snapshot.js";
 import { buildApprovalPresentation } from "../../infra/approval-presentation.js";
 import type { PluginApprovalRequestPayload } from "../../infra/plugin-approvals.js";
 import type { ExecApprovalManager } from "../exec-approval-manager.js";
@@ -500,6 +504,7 @@ describe("createPluginApprovalHandlers", () => {
     });
 
     it("keeps plugin approvals pending when the originating chat can handle /approve directly", async () => {
+      setRuntimeConfigSnapshot({});
       vi.useFakeTimers();
       try {
         const handlers = createPluginApprovalHandlers(manager);
@@ -527,6 +532,7 @@ describe("createPluginApprovalHandlers", () => {
         await requestPromise;
       } finally {
         vi.useRealTimers();
+        clearRuntimeConfigSnapshot();
       }
     });
 

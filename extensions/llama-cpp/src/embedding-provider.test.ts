@@ -17,6 +17,9 @@ vi.mock("./managed-server.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./managed-server.js")>()),
   ensureLlamaCppModel: mocks.ensureModel,
   prepareManagedLlamaServer: mocks.prepareServer,
+}));
+
+vi.mock("./managed-server-inspection.js", () => ({
   inspectLlamaServerRuntime: mocks.inspectRuntime,
 }));
 

@@ -10,6 +10,7 @@ import { fullSuiteVitestShards } from "../vitest/vitest.test-shards.mjs";
 afterEach(() => vi.restoreAllMocks());
 
 it.each([
+  { owner: "agentic-agents-support", configs: ["test/vitest/vitest.agents-support.config.ts"] },
   {
     owner: "agentic-gateway-methods",
     configs: [
@@ -56,7 +57,11 @@ it.each([
       expect(unmeasured).toHaveLength(1);
       expect(unmeasured[0]?.predictedSeconds).toBeUndefined();
       expect(unmeasured[0]?.timeoutMinutes).toBe(
-        owner === "agentic-gateway-methods" ? undefined : 90,
+        owner === "agentic-agents-support" ||
+          owner === "agentic-cli-process" ||
+          owner === "core-runtime-config"
+          ? 90
+          : undefined,
       );
       const pullRequest = { compactMode: "pull-request", runnerBackend: "github" } as const;
       const beforePr = createNodeTestShardBundles(pullRequest);
@@ -101,29 +106,6 @@ it.each([
     }
   },
 );
-
-it("gives unfitted agents-support release work 90-minute headroom", async () => {
-  const original = fullSuiteVitestShards.slice();
-  const config = "test/vitest/vitest.agents-support.config.ts";
-  vi.spyOn(testTimings, "readCompactGroupTimings").mockReturnValue({});
-  fullSuiteVitestShards.splice(
-    0,
-    fullSuiteVitestShards.length,
-    ...original
-      .map((shard) => ({ ...shard, projects: shard.projects.filter((entry) => entry === config) }))
-      .filter((shard) => shard.projects.length > 0),
-  );
-  try {
-    const { createNodeTestShardBundles } = await import("../../scripts/lib/ci-node-test-plan.mts");
-    const rows = createNodeTestShardBundles({ runnerBackend: "github" });
-    expect(rows).toHaveLength(1);
-    expect(rows[0]?.shardName).toBe("agentic-agents-support");
-    expect(rows[0]?.predictedSeconds).toBeUndefined();
-    expect(rows[0]?.timeoutMinutes).toBe(90);
-  } finally {
-    fullSuiteVitestShards.splice(0, fullSuiteVitestShards.length, ...original);
-  }
-});
 
 it("splits measured full-release hosted rows without losing their execution contract", async () => {
   const original = fullSuiteVitestShards.slice();

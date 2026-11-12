@@ -32,7 +32,7 @@ function applyAcpResetTailContext(ctx: HandleCommandsParams["ctx"], resetTail: s
   ctx.AcpDispatchTailAfterReset = true;
 }
 
-function isResetAuthorized(params: ResetCommandParams): boolean {
+async function isResetAuthorized(params: ResetCommandParams): Promise<boolean> {
   return isResetAuthorizedForContext({
     ctx: params.ctx,
     cfg: params.cfg,
@@ -48,7 +48,7 @@ export async function maybeHandleResetCommand(
   if (!resetMatch) {
     return null;
   }
-  if (!isResetAuthorized(params)) {
+  if (!(await isResetAuthorized(params))) {
     logVerbose(
       `Ignoring /${resetMatch[1]} from unauthorized sender: ${params.command.senderId || "<unknown>"}`,
     );

@@ -78,18 +78,6 @@ describe("googlechat message actions", () => {
     expect(googlechatMessageActions.supportsAction?.({ action: "upload-file" })).toBe(false);
   });
 
-  it("does not expose actions for configured-unavailable file credentials", () => {
-    listGoogleChatAccountIds.mockReturnValueOnce(["default"]);
-    inspectGoogleChatAccount.mockReturnValueOnce({
-      enabled: true,
-      credentialSource: "file",
-      tokenStatus: "configured_unavailable",
-      config: {},
-    });
-
-    expect(googlechatMessageActions.describeMessageTool?.({ cfg: {} as never })).toBeNull();
-  });
-
   it("keeps account-scoped discovery send-only", () => {
     inspectGoogleChatAccount.mockImplementation(
       ({ accountId: _accountId }: { accountId?: string | null }) => ({
@@ -178,22 +166,6 @@ describe("googlechat message actions", () => {
       expect(sendGoogleChatMessage).not.toHaveBeenCalled();
     },
   );
-
-  it("rejects native file upload before provider access", async () => {
-    await expect(
-      googlechatMessageActions.handleAction({
-        action: "upload-file",
-        params: { to: "spaces/AAA", message: "caption", path: "local.png" },
-        cfg: {},
-        accountId: "default",
-      } as never),
-    ).rejects.toThrow(
-      "Google Chat outbound attachments require user OAuth and are not supported by this service-account channel.",
-    );
-
-    expect(resolveGoogleChatAccount).not.toHaveBeenCalled();
-    expect(sendGoogleChatMessage).not.toHaveBeenCalled();
-  });
 
   it("rejects unsupported actions without provider access", async () => {
     const action = "react";

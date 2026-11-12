@@ -195,7 +195,7 @@ export function readCronCallerScope(
       : undefined;
   const mcpToolBindings = normalizeCronScheduledMcpToolBindings(identity.cronMcpToolBindings);
   const surfaceProvenance: CronToolsAllowProvenance | undefined =
-    !manageAll && identity.cronToolsAllowCapture === "final-executable-surface"
+    identity.cronToolsAllowCapture === "final-executable-surface"
       ? {
           version: 1,
           source: "final-executable-surface",
@@ -239,7 +239,7 @@ export function readCronCallerScope(
           },
         }
       : {}),
-    ...(!manageAll && identity.cronCreatorAuthorityGrant
+    ...(identity.cronCreatorAuthorityGrant
       ? { cronCreatorAuthorityGrant: identity.cronCreatorAuthorityGrant }
       : {}),
   };

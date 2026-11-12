@@ -30,6 +30,7 @@ import type { CliSessionBindingFacts } from "../cli-runner/session-binding.types
 import type { CronCreatorAuthorityCapability } from "../cron-creator-authority-context.js";
 import type { RuntimeContextFragment } from "../internal-runtime-context.js";
 import type { MainSessionRecoveryOwnerLease } from "../main-session-recovery/main-session-recovery-store.js";
+import type { ReplyExpectation } from "../reply-completion.js";
 import type { ScheduledToolPolicyContext } from "../scheduled-tool-policy.js";
 import type { TrustedSubagentCompletionHandoff } from "../subagents/announce/subagent-announce-handoff.js";
 import type {
@@ -167,6 +168,8 @@ export type AgentCommandOpts = {
   /** Startup awaits returned work; incidental synchronous return values are ignored. */
   onExecutionStarted?: () => unknown;
   extraSystemPrompt?: string;
+  /** Internal conversation-producer annotation, not accepted from public ingress. */
+  extraSystemPromptTurnContext?: { start: number; text: string };
   /** Conversation preparation owns silence guidance; required-reply enforcement is separate. */
   silentReplyPromptMode?: SilentReplyPromptMode;
   bootstrapContextMode?: "full" | "lightweight";
@@ -178,10 +181,12 @@ export type AgentCommandOpts = {
   sessionEffects?: "visible" | "internal";
   /** Internal handoffs can write transcript turns without changing user-facing model/usage state. */
   preserveUserFacingSessionModelState?: boolean;
-  /** Admitted private completion owes an internal result regardless of its channel origin. */
+  /** Admitted private completion owns a hidden input and its processing receipt. */
   privateCompletion?: true;
   /** A trusted host admitted an event that needs no visible reply. */
   hostAdmittedReplyOptional?: true;
+  /** Input-owner obligation, captured by trusted ingress; never supplied by model output. */
+  replyExpectation?: ReplyExpectation;
   /** Visible source replies must be sent through the message tool when set. */
   sourceReplyDeliveryMode?: SourceReplyDeliveryMode;
   /** Internal runs can omit the channel message tool entirely. */
@@ -293,6 +298,8 @@ export const AGENT_COMMAND_PUBLIC_INGRESS_DEFAULTS = Object.freeze({
   assertSourceCurrent: undefined,
   operatorAuthority: undefined,
   privateCompletion: undefined,
+  extraSystemPromptTurnContext: undefined,
+  replyExpectation: undefined,
   skillLibraryAuthoring: undefined,
   cronCreatorAuthorityCapability: undefined,
   onAdmittedRunContext: undefined,

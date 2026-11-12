@@ -554,7 +554,6 @@ async function validateReuse(executionPlan, signal) {
     ) {
       throw new Error("reused release evidence no longer matches the requested validation");
     }
-    validateReleaseTelegramWaiverBinding(executionPlan, evidence.manifest.validationInputs);
     if (
       evidenceReuse.sourceArtifact &&
       JSON.stringify(sortJsonValueKeys(evidence.root.artifact)) !==
@@ -569,6 +568,7 @@ async function validateReuse(executionPlan, signal) {
     ) {
       throw new Error("reused release evidence manifest differs from the immutable plan");
     }
+    validateReleaseTelegramWaiverBinding(executionPlan, evidence.manifest.validationInputs);
     validateReleaseCoveragePolicyBinding(executionPlan, evidence.manifest.validationInputs);
     const source = validatePublicationSourceBinding(evidence.manifest, {
       sourceAdmissionContract: executionPlan.sourceAdmissionContract,

@@ -24,6 +24,8 @@ export type PluginServiceCronHost = Pick<
   | "removeStaleJobFamily"
   | "status"
   | "enqueueRun"
+  | "readEventSources"
+  | "runEvent"
 >;
 
 const TRIGGER_STATE_NAMESPACE_KEY = /^[A-Za-z][A-Za-z0-9]{0,127}$/;
@@ -52,9 +54,9 @@ function createBoundPluginCronGetter(params: {
   pluginId: string;
   resolveGatewayContext?: GatewayContextResolver;
   assertActive: () => void;
-}): () => PluginHookGatewayCronService | undefined {
+}): () => PluginServiceCron | undefined {
   const runScheduled = createScheduledGatewayRunner(params.resolveGatewayContext);
-  let cached: { cron: PluginServiceCronHost; service: PluginHookGatewayCronService } | undefined;
+  let cached: { cron: PluginServiceCronHost; service: PluginServiceCron } | undefined;
   return () => {
     params.assertActive();
     const cron = params.getCron();
@@ -73,6 +75,39 @@ function createBoundPluginCronGetter(params: {
     // A retained handle owns one scheduler. Recheck at the store lock, not only
     // before awaiting it, so replacement cannot admit an old queued write.
     const service: PluginServiceCron = {
+      readEventSources: async () => {
+        commitGuard();
+        const sources = await cron.readEventSources(params.pluginId);
+        commitGuard();
+        return sources;
+      },
+      runEvent: async (id, input) => {
+        commitGuard();
+        const initialJob = cron.getJob(id);
+        if (
+          !initialJob ||
+          initialJob.schedule.kind !== "event" ||
+          initialJob.schedule.source !== params.pluginId ||
+          initialJob.state.sourceIdentity !== input.sourceIdentity
+        ) {
+          return { kind: "invalidated" };
+        }
+        const { assertCurrent, ...event } = input;
+        const assertSource = () => {
+          commitGuard();
+          const job = cron.getJob(id);
+          if (
+            !job ||
+            job.schedule.kind !== "event" ||
+            job.schedule.source !== params.pluginId ||
+            job.state.sourceIdentity !== input.sourceIdentity
+          ) {
+            throw new Error("Plugin automation event source is no longer current");
+          }
+          assertCurrent();
+        };
+        return await runScheduled(() => cron.runEvent(id, { ...event, commitGuard: assertSource }));
+      },
       enqueueRun: async (id, mode) => {
         commitGuard();
         return await runScheduled(() => cron.enqueueRun(id, mode, { commitGuard }));
@@ -199,7 +234,7 @@ export function createPluginServiceCronGetter(params: {
   pluginId: string;
   isStopping: () => boolean;
   resolveGatewayContext?: GatewayContextResolver;
-}): () => PluginHookGatewayCronService | undefined {
+}): () => PluginServiceCron | undefined {
   return createBoundPluginCronGetter({
     getCron: params.getCron,
     pluginId: params.pluginId,

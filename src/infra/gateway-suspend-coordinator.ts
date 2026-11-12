@@ -24,7 +24,8 @@ import {
 } from "./gateway-active-work.js";
 
 const GATEWAY_SUSPEND_TTL_MS = 2 * 60_000;
-const GATEWAY_SUSPEND_RETRY_AFTER_MS = 20_000;
+const GATEWAY_SUSPEND_BUSY_RETRY_AFTER_MS = 20_000;
+const GATEWAY_SUSPEND_DRAIN_POLL_MS = 5_000;
 const GATEWAY_SCHEDULER_RECOVERY_RETRY_MS = 1_000;
 
 type GatewaySuspendTerminalPolicy = NonNullable<GatewaySuspendPrepareParams["terminalPolicy"]>;
@@ -295,7 +296,7 @@ function heldPrepareResult(
   };
   return snapshot.idle && held.wakeRequirement
     ? { status: "ready", ...result, wakeRequirement: held.wakeRequirement }
-    : { status: "draining", ...result, retryAfterMs: GATEWAY_SUSPEND_RETRY_AFTER_MS };
+    : { status: "draining", ...result, retryAfterMs: GATEWAY_SUSPEND_DRAIN_POLL_MS };
 }
 
 /** Acquire an idle lease, or optionally preserve existing work behind a drain fence. */
@@ -369,7 +370,7 @@ export function prepareGatewaySuspend(params: {
     return {
       status: "busy",
       reason: "gateway-draining",
-      retryAfterMs: GATEWAY_SUSPEND_RETRY_AFTER_MS,
+      retryAfterMs: GATEWAY_SUSPEND_BUSY_RETRY_AFTER_MS,
       activeCount: snapshot.counts.totalActive,
       blockers: snapshot.blockers,
       writeCustody: snapshot.writeCustody,
@@ -405,7 +406,7 @@ export function prepareGatewaySuspend(params: {
       return {
         status: "busy",
         reason: "active-work",
-        retryAfterMs: GATEWAY_SUSPEND_RETRY_AFTER_MS,
+        retryAfterMs: GATEWAY_SUSPEND_BUSY_RETRY_AFTER_MS,
         activeCount: snapshot.counts.totalActive,
         blockers: snapshot.blockers,
         writeCustody: snapshot.writeCustody,
@@ -429,7 +430,7 @@ export function prepareGatewaySuspend(params: {
       return {
         status: "busy",
         reason: "lifecycle-incomplete",
-        retryAfterMs: GATEWAY_SUSPEND_RETRY_AFTER_MS,
+        retryAfterMs: GATEWAY_SUSPEND_BUSY_RETRY_AFTER_MS,
         activeCount: 0,
         blockers: [],
       };
@@ -644,7 +645,7 @@ export function getGatewaySuspendStatus(
       activeCount: snapshot.counts.totalActive,
       blockers: snapshot.blockers,
       writeCustody: snapshot.writeCustody,
-      retryAfterMs: GATEWAY_SUSPEND_RETRY_AFTER_MS,
+      retryAfterMs: GATEWAY_SUSPEND_DRAIN_POLL_MS,
     };
   }
   return {

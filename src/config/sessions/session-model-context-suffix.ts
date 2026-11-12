@@ -186,7 +186,7 @@ function readActivePathStateBefore<T extends SuffixEntry>(
     )
     .select([
       "transcript_events.seq as seq",
-      transcriptEventModelNavigationSql().as("navigation_json"),
+      transcriptEventModelNavigationSql(database.db).as("navigation_json"),
     ]);
   const at = (stateSeq: number | undefined) =>
     stateSeq === undefined

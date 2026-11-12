@@ -1,10 +1,14 @@
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { LegacyConfigRule } from "../../config/legacy.shared.js";
+import type { SessionEntry } from "../../config/sessions/types.js";
 import type { AgentBinding } from "../../config/types.agents.js";
 import type { DmScope } from "../../config/types.base.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { GroupToolPolicyConfig } from "../../config/types.tools.js";
-import type { ChannelApprovalNativeRuntimeAdapter } from "../../infra/approval-handler-runtime-types.js";
+import type {
+  ChannelApprovalNativeRuntimeAdapter,
+  ChannelApprovalNativeRuntimeAdapterAsync,
+} from "../../infra/approval-handler-runtime-types.js";
 import type { ChannelApprovalKind } from "../../infra/approval-types.js";
 import type {
   ExecApprovalDecision,
@@ -22,7 +26,10 @@ import type { RuntimeEnv } from "../../runtime.js";
 import type { ResolverContext, SecretDefaults } from "../../secrets/runtime-shared.js";
 import type { SecretTargetRegistryEntry } from "../../secrets/target-registry-types.js";
 import type { SecurityAuditFinding } from "../../security/audit.types.js";
-import type { ChannelApprovalNativeAdapter } from "./approval-native.types.js";
+import type {
+  ChannelApprovalNativeAdapter,
+  ChannelApprovalNativeAdapterAsync,
+} from "./approval-native.types.js";
 import type { ChannelRuntimeSurface } from "./channel-runtime-surface.types.js";
 import type { ConfigWriteTarget } from "./config-writes.js";
 import type {
@@ -99,10 +106,18 @@ export type ChannelConfigAdapter<ResolvedAccount> = {
   unconfiguredReason?: (account: ResolvedAccount, cfg: OpenClawConfig) => string;
   unlinkedReason?: (account: ResolvedAccount, cfg: OpenClawConfig) => string;
   describeAccount?: (account: ResolvedAccount, cfg: OpenClawConfig) => ChannelAccountSnapshot;
+  describeAccountAsync?: (
+    account: ResolvedAccount,
+    cfg: OpenClawConfig,
+  ) => Promise<ChannelAccountSnapshot>;
   resolveAllowFrom?: (params: {
     cfg: OpenClawConfig;
     accountId?: string | null;
   }) => Array<string | number> | undefined;
+  resolveAllowFromAsync?: (params: {
+    cfg: OpenClawConfig;
+    accountId?: string | null;
+  }) => Promise<Array<string | number> | undefined>;
   formatAllowFrom?: (params: {
     cfg: OpenClawConfig;
     accountId?: string | null;
@@ -121,6 +136,7 @@ export type ChannelConfigAdapter<ResolvedAccount> = {
 };
 
 export type ChannelSecretsAdapter = {
+  /** Channel credentials may also live in this plugin's plugins.entries.<id>.config schema. */
   secretTargetRegistryEntries?: readonly SecretTargetRegistryEntry[];
   unsupportedSecretRefSurfacePatterns?: readonly string[];
   collectUnsupportedSecretRefConfigCandidates?: (raw: unknown) => Array<{
@@ -487,7 +503,10 @@ type ChannelApprovalForwardingFallbackParams = {
   request: ExecApprovalRequest | PluginApprovalRequest | SystemAgentApprovalRequest;
 };
 
-export type { ChannelApprovalNativeAdapter } from "./approval-native.types.js";
+export type {
+  ChannelApprovalNativeAdapter,
+  ChannelApprovalNativeAdapterAsync,
+} from "./approval-native.types.js";
 
 type ChannelApprovalRenderHandlers<Request, Resolved> = {
   buildPendingPayload?: (params: {
@@ -506,16 +525,22 @@ type ChannelApprovalRenderHandlers<Request, Resolved> = {
 export type ChannelApprovalAdapter = {
   delivery?: {
     hasConfiguredDmRoute?: (params: { cfg: OpenClawConfig }) => boolean;
+    hasConfiguredDmRouteAsync?: (params: { cfg: OpenClawConfig }) => Promise<boolean>;
     /** Deny a fallback that cannot satisfy this request's reviewer policy, even without a native handler. */
     shouldBlockForwardingFallback?: (params: ChannelApprovalForwardingFallbackParams) => boolean;
     shouldSuppressForwardingFallback?: (params: ChannelApprovalForwardingFallbackParams) => boolean;
+    shouldSuppressForwardingFallbackAsync?: (
+      params: ChannelApprovalForwardingFallbackParams,
+    ) => Promise<boolean>;
   };
   nativeRuntime?: ChannelApprovalNativeRuntimeAdapter;
+  nativeRuntimeAsync?: ChannelApprovalNativeRuntimeAdapterAsync;
   render?: {
     exec?: ChannelApprovalRenderHandlers<ExecApprovalRequest, ExecApprovalResolved>;
     plugin?: ChannelApprovalRenderHandlers<PluginApprovalRequest, PluginApprovalResolved>;
   };
   native?: ChannelApprovalNativeAdapter;
+  nativeAsync?: ChannelApprovalNativeAdapterAsync;
   describeExecApprovalSetup?: (params: {
     channel: string;
     channelLabel: string;
@@ -527,6 +552,7 @@ export type ChannelApprovalAdapter = {
 export type ChannelApprovalCapability = ChannelApprovalAdapter & {
   /** Confirms that this channel enforces configured plugin reviewer lists for routing and decisions. */
   supportsScopedPluginApprovalApprovers?: true;
+  /** @deprecated Prefer authorizeActorActionAsync for worker-owned approval routing. */
   authorizeActorAction?: (params: {
     cfg: OpenClawConfig;
     accountId?: string | null;
@@ -555,6 +581,12 @@ export type ChannelApprovalCapability = ChannelApprovalAdapter & {
     authorized: boolean;
     reason?: string;
   };
+  /** Prepare actor authorization without reading durable session state on the Gateway thread. */
+  authorizeActorActionAsync?: (
+    params: Parameters<NonNullable<ChannelApprovalCapability["authorizeActorAction"]>>[0] & {
+      sessionDelivery?: Pick<SessionEntry, "sessionId" | "updatedAt" | "delivery"> | null;
+    },
+  ) => Promise<ReturnType<NonNullable<ChannelApprovalCapability["authorizeActorAction"]>>>;
   resolveReviewerSenderId?: (params: {
     cfg: OpenClawConfig;
     accountId?: string | null;
@@ -569,12 +601,24 @@ export type ChannelApprovalCapability = ChannelApprovalAdapter & {
     /** Exact pending plugin request when route availability depends on its selected tool. */
     request?: PluginApprovalRequest;
   }) => ChannelActionAvailabilityState;
+  /** Prepare availability from worker-owned state before rendering an approval surface. */
+  getActionAvailabilityStateAsync?: (
+    params: Parameters<NonNullable<ChannelApprovalCapability["getActionAvailabilityState"]>>[0] & {
+      sessionDelivery?: Pick<SessionEntry, "sessionId" | "updatedAt" | "delivery"> | null;
+    },
+  ) => Promise<ChannelActionAvailabilityState>;
   /** Exec-native client availability for the initiating surface; distinct from same-chat auth. */
   getExecInitiatingSurfaceState?: (params: {
     cfg: OpenClawConfig;
     accountId?: string | null;
     action: "approve";
   }) => ChannelActionAvailabilityState;
+  /** Await worker-owned state before deciding initiating-surface availability. */
+  getExecInitiatingSurfaceStateAsync?: (params: {
+    cfg: OpenClawConfig;
+    accountId?: string | null;
+    action: "approve";
+  }) => Promise<ChannelActionAvailabilityState>;
   resolveApproveCommandBehavior?: (params: {
     cfg: OpenClawConfig;
     accountId?: string | null;
@@ -674,6 +718,9 @@ export type ChannelSecurityAdapter<ResolvedAccount = unknown> = {
   resolveDmPolicy?: (
     ctx: ChannelSecurityContext<ResolvedAccount>,
   ) => ChannelSecurityDmPolicy | null;
+  resolveDmPolicyAsync?: (
+    ctx: ChannelSecurityContext<ResolvedAccount>,
+  ) => Promise<ChannelSecurityDmPolicy | null>;
   dmRouting?: {
     resolveDmScope?: (ctx: ChannelSecurityDmRouteContext<ResolvedAccount>) => DmScope | undefined;
     resolveDmRoute?: (

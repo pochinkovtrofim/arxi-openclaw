@@ -26,6 +26,20 @@ type ObservedReceipts = {
 const earliestReceiptsByState = new WeakMap<CronServiceState, ObservedReceipts>();
 // Finalized runs consumed receipts that no repair pass has re-read yet.
 const repairDueStates = new WeakSet<CronServiceState>();
+// The scheduler registers how to run a prompt repair pass once one is due.
+const repairKicks = new WeakMap<CronServiceState, () => void>();
+
+export function registerManagedFlowRepairKick(
+  state: CronServiceState,
+  kick: () => void,
+): () => void {
+  repairKicks.set(state, kick);
+  return () => {
+    if (repairKicks.get(state) === kick) {
+      repairKicks.delete(state);
+    }
+  };
+}
 
 function pacedScheduleIdentity(job: CronJob): string | undefined {
   return job.enabled && job.pacing !== undefined ? tryCronScheduleIdentity(job) : undefined;
@@ -182,6 +196,7 @@ export function managedFlowConsumedRuns(
 ): CronManagedFlowConsumedRun[] {
   earliestReceiptsByState.delete(state);
   repairDueStates.add(state);
+  repairKicks.get(state)?.();
   return outcomes.map((outcome) => ({
     jobId: outcome.jobId,
     startedAt: outcome.startedAt,

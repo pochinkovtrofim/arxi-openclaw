@@ -231,13 +231,13 @@ async function resolveMessageConfig(cfg?: OpenClawConfig): Promise<OpenClawConfi
   return getRuntimeConfig();
 }
 
-function resolveDirectMessageTarget(
+async function resolveDirectMessageTarget(
   params: Pick<MessageSendParams, "to" | "accountId">,
   cfg: OpenClawConfig,
   channel: ChannelPlugin["id"],
   plugin: ChannelPlugin,
 ) {
-  const target = resolveOutboundTarget({
+  const target = await resolveOutboundTarget({
     channel,
     plugin,
     to: params.to,
@@ -296,7 +296,7 @@ export async function sendMessage(params: MessageSendParams): Promise<MessageSen
   }
 
   if (deliveryMode !== "gateway" || params.gatewayOwnedDelivery === true) {
-    const resolvedTarget = resolveDirectMessageTarget(params, cfg, channel, plugin);
+    const resolvedTarget = await resolveDirectMessageTarget(params, cfg, channel, plugin);
 
     const outboundSession = buildOutboundSessionContext({
       cfg,
@@ -506,7 +506,7 @@ export async function sendPoll(params: MessagePollParams): Promise<MessagePollRe
   }
 
   if (deliveryMode !== "gateway" || params.gatewayOwnedDelivery === true) {
-    const resolvedTarget = resolveDirectMessageTarget(params, cfg, channel, plugin);
+    const resolvedTarget = await resolveDirectMessageTarget(params, cfg, channel, plugin);
 
     params.assertDirectAdapterHandoff?.();
     const result = await outbound.sendPoll({

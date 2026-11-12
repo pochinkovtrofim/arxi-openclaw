@@ -73,6 +73,15 @@ jobs:
               "scripts/ios-write-swift-filelist.mts",
               "scripts/ios-write-version-xcconfig.sh",
               "test/scripts/periphery-intersection.test.ts",
+              ":(exclude)apps/ios/README.md",
+              ":(exclude)apps/ios/AGENTS.md",
+              ":(exclude)apps/ios/DESIGN.md",
+              ":(exclude)apps/ios/CHANGELOG.md",
+              ":(exclude)apps/ios/VERSIONING.md",
+              ":(exclude)apps/ios/fastlane/SETUP.md",
+              ":(exclude)apps/ios/fastlane/metadata/README.md",
+              ":(exclude)apps/macos/README.md",
+              ":(exclude)apps/macos/AGENTS.md",
             ], { ignoreReturnCode: true, silent: true });
             if (result.exitCode !== 0 && result.exitCode !== 1) {
               throw new Error(`git diff failed with exit code ${result.exitCode}`);
@@ -325,7 +334,7 @@ jobs:
       - name: Setup supported Node runtime
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24.22.1"
+          node-version: "24.21.0"
           package-manager-cache: false
 
       - name: Intersect exact Swift identities

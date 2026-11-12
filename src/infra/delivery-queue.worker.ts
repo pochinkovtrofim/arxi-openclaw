@@ -71,6 +71,7 @@ import type {
   OutboundDeliverySnapshot,
 } from "./outbound/delivery-queue-storage.types.js";
 import {
+  FINAL_TEXT_RECOVERY_MAX_ATTEMPTS,
   hasActiveDeliveryOwner,
   type QueuedDelivery,
   type DeliveryFailureSettlement,
@@ -80,7 +81,11 @@ type OutboundDeliveryMutation = {
   id: string;
   expectedPlatformSendAttemptId?: string | null;
 } & (
-  | { kind: "fail" | "fail-before-send" | "fail-after-send"; error: string }
+  | {
+      kind: "fail" | "fail-before-send" | "fail-after-send";
+      error: string;
+      ambiguousTransportError?: true;
+    }
   | { kind: "start" | "dispatch"; route?: { replyToId?: string | null } }
   | { kind: "unknown" }
 );
@@ -166,6 +171,11 @@ function mutateOutbound(database: OpenClawStateDatabase, input: OutboundDelivery
           retryCount: entry.retryCount + 1,
           lastAttemptAt: now,
           lastError: input.error,
+          ambiguousTransportError: input.ambiguousTransportError,
+          maxRetries:
+            entry.retryAmbiguousFinalText === true && input.ambiguousTransportError === true
+              ? FINAL_TEXT_RECOVERY_MAX_ATTEMPTS
+              : entry.maxRetries,
           availableAt: undefined,
           producerClaimId: undefined,
           ...(input.kind === "fail-before-send"

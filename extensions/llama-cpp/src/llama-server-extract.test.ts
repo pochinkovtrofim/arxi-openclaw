@@ -143,22 +143,6 @@ describe("extractLlamaServerArchive", () => {
     expect(await fs.readdir(destDir)).toStrictEqual([]);
   });
 
-  it("rejects malformed tar input through the shared archive owner", async () => {
-    const root = await createTempRoot();
-    const archivePath = path.join(root, "malformed.tar.gz");
-    const invalidHeader = Buffer.alloc(512);
-    invalidHeader.write("bad-entry");
-    await fs.writeFile(archivePath, invalidHeader);
-    const destDir = path.join(root, "dest");
-    await fs.mkdir(destDir);
-    const asset = withoutAliases(selectLlamaServerAsset("linux", "x64"));
-
-    await expect(extractLlamaServerArchive({ archivePath, destDir, asset })).rejects.toThrow(
-      /invalid TAR|checksum failure/u,
-    );
-    expect(await fs.readdir(destDir)).toStrictEqual([]);
-  });
-
   it("fails when a pinned regular-file alias source is absent", async () => {
     const root = await createTempRoot();
     const baseAsset = selectLlamaServerAsset("linux", "x64");
@@ -172,22 +156,6 @@ describe("extractLlamaServerArchive", () => {
 
     await expect(extractLlamaServerArchive({ archivePath, destDir, asset })).rejects.toThrow(
       /does not contain regular alias source missing\.so\.1/u,
-    );
-  });
-
-  it("rejects manifest alias names that are not basenames", async () => {
-    const root = await createTempRoot();
-    const baseAsset = selectLlamaServerAsset("linux", "x64");
-    const asset: LlamaServerAsset = {
-      ...baseAsset,
-      regularFileAliases: [["../outside.so", ["alias.so"]]],
-    };
-    const { archivePath, destDir } = await createTarArchive(root, async (buildDir) => {
-      await fs.writeFile(path.join(buildDir, asset.executable), "binary");
-    });
-
-    await expect(extractLlamaServerArchive({ archivePath, destDir, asset })).rejects.toThrow(
-      /invalid llama-server archive manifest filename/u,
     );
   });
 

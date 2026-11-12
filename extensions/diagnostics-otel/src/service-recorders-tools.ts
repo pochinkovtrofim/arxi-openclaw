@@ -35,7 +35,7 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
     "openclaw.tool.source": normalizeDiagnosticValue(evt.toolSource, "core"),
     "gen_ai.tool.name": evt.toolName,
     ...(evt.toolOwner ? { "openclaw.tool.owner": normalizeDiagnosticValue(evt.toolOwner) } : {}),
-    ...runtime.paramsSummaryAttrs(evt.paramsSummary),
+    ...(evt.paramsSummary ? { "openclaw.tool.params.kind": evt.paramsSummary.kind } : {}),
   });
   // Span-only: the content-free exec command class (an allowlisted binary name
   // or "other") stays off metric dimensions.
@@ -56,7 +56,15 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
       if (!metadata.trusted && !isInternalDiagnosticEventMetadata(metadata)) {
         return;
       }
-      runtime.gcDurationHistogram.record(evt.durationMs, undefined, ROOT_CONTEXT);
+      runtime.gcDurationHistogram.record(
+        evt.durationMs,
+        {
+          "openclaw.gc.kind": evt.kind ?? "unknown",
+          "openclaw.gc.thread": evt.thread ?? "main",
+          ...(evt.workerSlot === undefined ? {} : { "openclaw.gc.worker_slot": evt.workerSlot }),
+        },
+        ROOT_CONTEXT,
+      );
     },
     recordGatewayEventLoopSample(
       evt: Extract<DiagnosticEventPayload, { type: "gateway.event_loop.sample" }>,
@@ -109,7 +117,11 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
       if (trackedSpan) {
         return trackedSpan.spanContext();
       }
-      const spanAttrs = { ...toolExecutionBaseAttrs(evt), ...execClassAttrs(evt) };
+      const spanAttrs = {
+        ...toolExecutionBaseAttrs(evt),
+        ...runtime.paramsSummaryAttrs(evt.paramsSummary),
+        ...execClassAttrs(evt),
+      };
       assignOtelToolIdentityAttributes(spanAttrs, evt);
       return runtime
         .trackTrustedSpan(
@@ -145,6 +157,7 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
       }
       const spanAttrs: Record<string, string | number | boolean> = {
         ...attrs,
+        ...runtime.paramsSummaryAttrs(evt.paramsSummary),
         ...execClassAttrs(evt),
       };
       runtime.addRunAttrs(spanAttrs, evt);
@@ -185,6 +198,7 @@ export function createToolAndSystemRecorders(runtime: DiagnosticsRecorderRuntime
       }
       const spanAttrs: Record<string, string | number | boolean> = {
         ...toolExecutionBaseAttrs(evt),
+        ...runtime.paramsSummaryAttrs(evt.paramsSummary),
         ...execClassAttrs(evt),
         "openclaw.outcome": "blocked",
         "openclaw.deniedReason": normalizeDiagnosticValue(evt.deniedReason, "other"),

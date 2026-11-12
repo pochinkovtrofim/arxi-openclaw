@@ -102,18 +102,29 @@ export function createChannelSecretContract(
       this: void,
       collectorParams: ChannelSecretCollectorParams,
     ): void {
-      const channel = getChannelRecord(collectorParams.config, params.channelKey);
-      if (!channel) {
+      const resolved = getChannelSurface(collectorParams.config, params.channelKey);
+      if (!resolved) {
         return;
+      }
+      // Opt-in only: other channels retain their explicit-account semantics.
+      // A configured default (including disabled) always wins over a synthetic one.
+      if (
+        resolved.surface.hasExplicitAccounts &&
+        !resolved.surface.accounts.some(
+          ({ accountId }) => normalizeAccountId(accountId) === "default",
+        ) &&
+        params.hasImplicitDefaultAccount?.({ ...collectorParams, channel: resolved.channel })
+      ) {
+        resolved.surface.accounts.push({
+          accountId: "default",
+          account: {},
+          enabled: resolved.surface.channelEnabled,
+        });
       }
       params.collect({
         ...collectorParams,
         channelKey: params.channelKey,
-        channel,
-        surface: resolveChannelAccountSurface(
-          channel,
-          params.hasImplicitDefaultAccount?.({ ...collectorParams, channel }),
-        ),
+        ...resolved,
         defaults: collectorParams.defaults,
       });
     },
@@ -149,16 +160,13 @@ export function createSimpleChannelSecretContract(params: {
       ? params.mode.collectionFields
       : [...new Set([...params.accountFields, ...params.channelFields])];
 
-  const collectRuntimeConfigAssignments = (collectorParams: {
-    config: { channels?: Record<string, unknown> };
-    defaults?: SecretDefaults;
-    context: ResolverContext;
-  }): void => {
-    if (params.mode === "channel-only") {
-      const channel = getChannelRecord(collectorParams.config, params.channelKey);
-      if (!channel) {
-        return;
-      }
+  const collectRuntimeConfigAssignments = (collectorParams: ChannelSecretCollectorParams): void => {
+    const channelOnly = params.mode === "channel-only";
+    const channel = getChannelRecord(collectorParams.config, params.channelKey);
+    if (!channel) {
+      return;
+    }
+    if (channelOnly) {
       for (const field of collectionFields) {
         collectSecretInputAssignment({
           value: channel[field],
@@ -184,11 +192,7 @@ export function createSimpleChannelSecretContract(params: {
       return;
     }
 
-    const resolved = getChannelSurface(collectorParams.config, params.channelKey);
-    if (!resolved) {
-      return;
-    }
-    const { channel, surface } = resolved;
+    const surface = resolveChannelAccountSurface(channel);
     for (const field of collectionFields) {
       const topInactiveReason =
         params.mode === "channel-surface"
@@ -280,7 +284,6 @@ export function getChannelSurface(
 /** Resolves explicit channel accounts or creates a default account backed by the channel root. */
 export function resolveChannelAccountSurface(
   channel: Record<string, unknown>,
-  hasImplicitDefaultAccount = false,
 ): ChannelAccountSurface {
   const channelEnabled = isEnabledFlag(channel);
   const accounts = channel.accounts;
@@ -301,12 +304,6 @@ export function resolveChannelAccountSurface(
       account,
       enabled: isChannelAccountEffectivelyEnabled(channel, account),
     });
-  }
-  if (
-    hasImplicitDefaultAccount &&
-    !Object.keys(accounts).some((accountId) => normalizeAccountId(accountId) === "default")
-  ) {
-    accountEntries.push({ accountId: "default", account: {}, enabled: channelEnabled });
   }
   return {
     hasExplicitAccounts: true,

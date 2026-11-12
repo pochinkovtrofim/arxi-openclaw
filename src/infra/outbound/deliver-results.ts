@@ -1,6 +1,7 @@
 // Reconciles adapter progress results with hook-bearing final delivery results.
 import { resolveReceiptSourceId } from "../../channels/message/receipt.js";
 import { OutboundDeliveryDeferredError, type OutboundDeliveryResult } from "./deliver-types.js";
+import { createDeliveryPlacementEvidenceRecorder } from "./delivery-placement-evidence.js";
 
 function normalizePlatformIds(values: Array<string | undefined>): string[] {
   return values
@@ -14,11 +15,13 @@ export function createDeliveryResultRecorder(params: {
 }) {
   const results = params.results;
   const reportedResults = new Map<number, string>();
+  let placement = createDeliveryPlacementEvidenceRecorder();
   let suppressionReason: "adapter_returned_no_send" | "adapter_returned_no_identity" | undefined;
   const observeDeliveryResult = (delivery: OutboundDeliveryResult): boolean => {
     if (delivery.outcome === "deferred") {
       throw new OutboundDeliveryDeferredError(delivery.retryAtMs ?? Number.NaN);
     }
+    placement.observe(delivery);
     if (resolveReceiptSourceId(delivery) !== undefined) {
       return true;
     }
@@ -151,9 +154,11 @@ export function createDeliveryResultRecorder(params: {
       await params.onDeliveryResult?.(delivery);
     },
     getSuppressionReason: () => suppressionReason,
+    getReportedPlacement: () => placement.snapshot(),
     resetPayloadResults: () => {
       reportedResults.clear();
       suppressionReason = undefined;
+      placement = createDeliveryPlacementEvidenceRecorder();
     },
   };
 }

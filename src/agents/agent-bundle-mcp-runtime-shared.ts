@@ -43,6 +43,7 @@ export function shouldLoadRequesterScopedMcpHarnessRuntime(params: {
 export type CreateSessionMcpRuntime = (params: {
   sessionId: string;
   sessionKey?: string;
+  agentId?: string;
   workspaceDir: string;
   agentDir?: string;
   cfg?: OpenClawConfig;

@@ -4,7 +4,7 @@ import type {
   OpenClawAgentDatabaseClaim,
   readOpenClawAgentDatabaseIdentity,
 } from "../../state/openclaw-agent-db-identity.js";
-import type { OpenClawAgentDatabaseWorkerLeaseReceipt } from "../../state/openclaw-agent-db-lease.types.js";
+import type { OpenClawAgentDatabaseWorkerLeaseReceipt } from "../../state/openclaw-agent-db-lease.js";
 import type { OpenClawAgentDatabaseValidation } from "../../state/openclaw-agent-db-validation-cache.js";
 import type {
   SqliteArchiveReclamationPlan,
@@ -23,7 +23,7 @@ export type SqliteReclamationExistingSource = Pick<
 > & {
   birthtime?: string;
 };
-export type SqliteReclamationPreparedSource = Omit<
+type SqliteReclamationPreparedSource = Omit<
   ReturnType<typeof readOpenClawAgentDatabaseIdentity>,
   "identity"
 > & { identity: string };
@@ -42,7 +42,6 @@ export type SqliteReclamationPrepareRequest = {
 export type SqliteReclamationWorkerRequest = {
   type: "reclaim";
   operationId: number;
-  commitGate: SharedArrayBuffer;
   plan: SqliteArchiveReclamationPlan;
   coordination: SqliteMutationWorkerCoordination;
 };
@@ -54,7 +53,6 @@ export type SqliteReclamationWorkerCloseRequest = {
 export type SqliteCanonicalValidationWorkerRequest = {
   type: "canonical-validation";
   operationId: number;
-  commitGate: SharedArrayBuffer;
   databaseOptions: SqliteSessionReclamationPlan["databaseOptions"];
   maxRows: number;
   maxBytes: number;

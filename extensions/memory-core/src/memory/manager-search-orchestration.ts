@@ -19,7 +19,10 @@ import { redactSensitiveText } from "openclaw/plugin-sdk/security-runtime";
 import { uniqueValues } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { rankHybridResults, selectHybridSearchResults } from "./hybrid.js";
 import { runMemoryVectorFallback } from "./manager-cpu-worker-runtime.js";
-import { isMemoryEmbeddingOperationError } from "./manager-embedding-errors.js";
+import {
+  createMemoryEmbeddingOperationError,
+  isMemoryEmbeddingOperationError,
+} from "./manager-embedding-errors.js";
 import { acquireMemoryIndexReadGeneration } from "./manager-index-generation-lease.js";
 import {
   MemoryKeywordRetrieval,
@@ -32,14 +35,15 @@ import { runVectorKnnInSubprocess } from "./manager-search-knn-subprocess.js";
 import { searchVector } from "./manager-search-vector.js";
 import { prepareExactPathMatcher } from "./manager-search.js";
 import type { MemoryKeywordWorkerResult } from "./manager-search.worker.js";
-import { assertMemoryShadowIdentity, readMemoryShadowIdentity } from "./manager-shadow-task.js";
 import { applyRetrievalRanking, prepareActiveProjectKeys } from "./project-ranking.js";
+import { forgetCachedQueryEmbedding } from "./query-embedding-cache.js";
 import { applyTemporalDecayToHybridResults } from "./temporal-decay.js";
 
 const SNIPPET_MAX_CHARS = 700;
 const SEARCH_CANDIDATE_UNIVERSE = 200;
 const log = createSubsystemLogger("memory");
 type MemoryIndexSearchOptions = NonNullable<Parameters<MemorySearchManager["search"]>[1]>;
+type VectorSearchHit = MemoryRetrievalResult & { id: string };
 
 export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
   private readonly sessionWarm = new Set<string>();
@@ -131,15 +135,10 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       sourceFilterList[0] === "sessions";
     const keywordOptions = { boostFallbackRanking: true, signal: opts?.signal, fuseRecallMetadata };
     const database = this.publishedDatabase;
-    const databasePath = resolveUserPath(this.settings.store.databasePath);
-    const fileIdentity = fuseRecallMetadata ? readMemoryShadowIdentity(databasePath) : undefined;
     const assertReadOwner = () => {
       opts?.signal?.throwIfAborted();
-      if (database.closed || !database.db.isOpen || this.publishedDatabase !== database) {
+      if (!database.isOpen || this.publishedDatabase !== database) {
         throw new Error("Memory retrieval changed its captured database owner");
-      }
-      if (fileIdentity) {
-        assertMemoryShadowIdentity(databasePath, fileIdentity);
       }
     };
     // Phase clock read by the caller, possibly at its own deadline while a phase is
@@ -181,11 +180,7 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
     };
     const readIndexState = async () => {
       releaseGeneration ??= await timed("indexReadMs", () =>
-        acquireMemoryIndexReadGeneration(
-          this.settings.store.databasePath,
-          opts?.signal,
-          fuseRecallMetadata,
-        ),
+        acquireMemoryIndexReadGeneration(this.settings.store.databasePath, opts?.signal),
       );
       assertReadOwner();
       preparedKeyword = undefined;
@@ -385,9 +380,7 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         searchSyncEnabled &&
         !capacitySyncInFlight &&
         !formatUpgradePendingKeywordOnly(repairedIndexIdentity) &&
-        (watchDegraded
-          ? degradedWatchSyncDue || this.sessionsDirty
-          : this.dirty || this.sessionsDirty)
+        (watchDegraded ? degradedWatchSyncDue : this.dirty)
       ) {
         const trackedSearchSync = this.syncPublishedIndexInBackground({ reason: "search" })
           .catch((err: unknown) => {
@@ -440,26 +433,20 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       if (formatUpgradePendingKeywordOnly(effectiveIdentity)) {
         opts?.onDebug?.({ backend: "builtin", effectiveMode: "keyword-only" });
       }
-      const handleRetrievalError = (kind: "FTS keyword" | "vector", error: unknown): [] => {
-        opts?.signal?.throwIfAborted();
-        if (error instanceof WorkerTaskError && error.code === "overloaded") {
-          throw error;
-        }
-        log.warn(`memory search: ${kind} query failed: ${formatErrorMessage(error)}`);
-        return [];
-      };
       const loadKeywordResults = async () => {
         const initialResult = preparedKeyword;
         preparedKeyword = undefined;
         const results =
           (keywordOnly || hybrid.enabled) && this.fts.enabled && this.fts.available
-            ? await this.searchKeywordWithFallback(
+            ? await this.searchKeyword(
                 normalizedQuery,
                 candidates,
                 keywordOptions,
                 sourceFilterList,
                 initialResult,
-              ).catch((error: unknown) => handleRetrievalError("FTS keyword", error))
+              ).catch((error: unknown) =>
+                this.handleRetrievalError("FTS keyword", error, opts?.signal),
+              )
             : [];
         if (!keywordOnly && opts?.onPartialResults) {
           const memoryResults = results.filter((entry) => entry.source === "memory");
@@ -508,6 +495,17 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
                 opts?.[MEMORY_SEARCH_DEADLINE_CONTROL],
               ),
             );
+            const dimensions = indexState.meta?.vectorDims;
+            if (dimensions !== undefined && queryVec.length !== dimensions) {
+              forgetCachedQueryEmbedding(semanticProvider, normalizedQuery);
+              throw createMemoryEmbeddingOperationError({
+                operation: "query",
+                providerId: semanticProvider.id,
+                cause: new Error(
+                  `query embedding has ${queryVec.length} dimensions, but the memory index expects ${dimensions}; rebuild with openclaw memory index --force --agent ${this.agentId}`,
+                ),
+              });
+            }
             pendingKeywordResults = keywordPending;
             break;
           } catch (err) {
@@ -551,7 +549,13 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
         }
       }
       const hasVector = queryVec.some((v) => v !== 0);
-      // Vector retrieval overlaps any lexical work still running.
+      if (!hasVector) {
+        log.warn(
+          `memory search: query embedding from ${semanticProvider.id} is all zeros; vector recall skipped; check the embedding service and retry`,
+        );
+      }
+      // Vector retrieval overlaps any lexical work still running; only the
+      // keyword-candidate completion waits for lexical ids.
       const vectorPending = hasVector
         ? this.searchVector(
             queryVec,
@@ -559,25 +563,32 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
             sourceFilterList,
             vectorProviderIdentity,
             indexState,
+            pendingKeywordResults.then((results) => results.map((entry) => entry.id)),
             opts?.signal,
-          ).catch((error: unknown) => handleRetrievalError("vector", error))
-        : Promise.resolve([]);
+          ).catch((error: unknown) => ({
+            results: this.handleRetrievalError("vector", error, opts?.signal),
+            candidates: [],
+          }))
+        : Promise.resolve({ results: [], candidates: [] });
       vectorPending.catch(() => undefined);
       keywordResults = await pendingKeywordResults;
-      const vectorResults = await vectorPending;
+      const vector = await vectorPending;
+      const vectorResults = vector.results;
 
       if (!hybrid.enabled || !this.fts.enabled || !this.fts.available) {
+        const activeProjects = prepareActiveProjectKeys(opts?.activeProjectKeys);
+        const eligible = applyRetrievalRanking(vectorResults, activeProjects).filter(
+          (entry) => entry.score >= minScore,
+        );
         const decayed = await applyTemporalDecayToHybridResults({
-          results: vectorResults,
+          results: eligible,
           temporalDecay: hybrid.temporalDecay,
           workspaceDir: this.workspaceDir,
           sessionSourceMtimes: this.loadSourceMtimes("sessions", vectorResults),
           memorySourceMtimes: this.loadSourceMtimes("memory", vectorResults),
         });
-        // Decay and importance can reverse the order returned by vector retrieval.
-        const activeProjects = prepareActiveProjectKeys(opts?.activeProjectKeys);
-        return applyRetrievalRanking(decayed, activeProjects)
-          .filter((entry) => entry.score >= minScore)
+        // Recency reorders eligible hits without changing their membership.
+        return decayed
           .toSorted(
             (left, right) =>
               right.score - left.score ||
@@ -614,6 +625,7 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       return selectHybridSearchResults({
         merged,
         keyword: keywordResults,
+        vectorCandidates: vector.candidates,
         maxResults,
         minScore,
       });
@@ -642,14 +654,30 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
     );
   }
 
+  private handleRetrievalError(
+    kind: "FTS keyword" | "vector",
+    error: unknown,
+    signal?: AbortSignal,
+  ): [] {
+    signal?.throwIfAborted();
+    if (error instanceof WorkerTaskError && error.code === "overloaded") {
+      throw error;
+    }
+    log.warn(`memory search: ${kind} query failed: ${formatErrorMessage(error)}`);
+    return [];
+  }
+
   private async searchVector(
     queryVec: number[],
     limit: number,
     sourceFilterList: MemorySource[],
     providerIdentity: { model: string; aliases: string[] },
     indexState: MemoryRetrievalIndexState,
+    keywordCandidateIds: Promise<string[]>,
     signal?: AbortSignal,
-  ): Promise<Array<MemoryRetrievalResult & { id: string }>> {
+  ): Promise<{ results: VectorSearchHit[]; candidates: VectorSearchHit[] }> {
+    // The caller surfaces a lexical failure itself; an early vector failure must not orphan it.
+    keywordCandidateIds.catch(() => undefined);
     const query = {
       providerModel: providerIdentity.model,
       providerModelAliases: providerIdentity.aliases,
@@ -657,11 +685,22 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       limit,
       snippetMaxChars: SNIPPET_MAX_CHARS,
     };
+    const readVectorRows = (candidateIds?: string[]) =>
+      runMemoryVectorFallback(
+        { agentId: this.agentId, databasePath: resolveUserPath(this.settings.store.databasePath) },
+        {
+          ...query,
+          candidateIds,
+          limit: candidateIds?.length ?? limit,
+          sourceFilter: this.buildSourceFilter(undefined, sourceFilterList),
+        },
+        signal,
+      );
     const results = await searchVector({
       vectorTable: VECTOR_TABLE,
       ...query,
       signal,
-      ensureVectorReady: async (dimensions) => {
+      ensureVectorReady: async () => {
         if (!this.vector.enabled) {
           return false;
         }
@@ -672,23 +711,9 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
           this.markConfiguredSourcesForFullReindex();
           return false;
         }
-        return (
-          indexState.vectorState.state === "complete" &&
-          (indexState.meta?.vectorDims === undefined || indexState.meta.vectorDims === dimensions)
-        );
+        return indexState.vectorState.state === "complete";
       },
-      runFallback: () =>
-        runMemoryVectorFallback(
-          {
-            agentId: this.agentId,
-            databasePath: resolveUserPath(this.settings.store.databasePath),
-          },
-          {
-            ...query,
-            sourceFilter: this.buildSourceFilter(undefined, sourceFilterList),
-          },
-          signal,
-        ),
+      runFallback: readVectorRows,
       runVectorKnn: async (request, knnSignal) => {
         const response = await runVectorKnnInSubprocess({
           databasePath: resolveUserPath(this.settings.store.databasePath),
@@ -706,6 +731,18 @@ export abstract class MemorySearchOrchestration extends MemoryKeywordRetrieval {
       },
       sourceFilterVec: this.buildSourceFilter("c", sourceFilterList),
     });
-    return this.attachRecallMetadata(results, signal);
+    // Keyword candidates outside the vector window still need their stored
+    // similarity; treating an unqueried vector as zero loses rare-term answers.
+    const candidates = [...results];
+    const scoredIds = new Set(candidates.map((entry) => entry.id));
+    const missingIds = (await keywordCandidateIds).filter((id) => !scoredIds.has(id));
+    if (missingIds.length > 0) {
+      results.push(
+        ...(await readVectorRows(missingIds).catch((error: unknown) =>
+          this.handleRetrievalError("vector", error, signal),
+        )),
+      );
+    }
+    return { results: await this.attachRecallMetadata(results, signal), candidates };
   }
 }

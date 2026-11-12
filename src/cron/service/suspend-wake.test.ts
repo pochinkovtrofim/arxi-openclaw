@@ -17,7 +17,7 @@ import { setupCronServiceSuite, writeCronStoreSnapshot } from "../service.test-h
 import { loadCronStore } from "../store.js";
 import { cronStoreKey } from "../store/key.js";
 import type { CronJob } from "../types.js";
-import { summarizeCronJobSchedule } from "./jobs-scheduling.js";
+import { nextWakeAtMs } from "./jobs-scheduling.js";
 import {
   repairManagedFlowAutomationObligations,
   managedFlowRepairDue,
@@ -25,7 +25,7 @@ import {
 import { pauseScheduling, resumeScheduling, start, stop } from "./ops-lifecycle.js";
 import { getSuspendWakeSnapshot } from "./ops-read.js";
 import { createCronServiceState } from "./state.js";
-import { MAX_CRON_TIMER_DELAY_MS, MIN_REFIRE_GAP_MS } from "./timer-execution-timeout.js";
+import { MIN_REFIRE_GAP_MS } from "./timer-execution-timeout.js";
 import { onTimer } from "./timer.test-support.js";
 
 const { logger, makeStorePath } = setupCronServiceSuite({ prefix: "cron-suspend-wake" });
@@ -333,10 +333,8 @@ describe("cron suspend wake policy", () => {
     const { state, run } = await startedState(storePath, clock);
     try {
       pauseScheduling(state);
-      expect(summarizeCronJobSchedule(state)).toMatchObject({
-        nextWakeAtMs: clock.now + EVERY_MS,
-        nextSuspendWakeAtMs: undefined,
-      });
+      expect(nextWakeAtMs(state)).toBe(clock.now + EVERY_MS);
+      expect(nextWakeAtMs(state, { suspendWakeOnly: true })).toBeUndefined();
       // Eight hours asleep: dozens of missed five-minute ticks.
       clock.now += 8 * HOUR_MS;
       resumeScheduling(state);
@@ -395,7 +393,8 @@ describe("cron suspend wake policy", () => {
       await onTimer(state);
       expect(run).toHaveBeenCalledTimes(1);
       expect(getSuspendWakeSnapshot(state)).toEqual({ complete: true, nextWakeAtMs: null });
-      expect(lastDelay()).toBe(MAX_CRON_TIMER_DELAY_MS);
+      // The worker owns the ordinary cadence; no further host repair kick is due.
+      expect(managedFlowRepairDue(state)).toBe(false);
     } finally {
       stop(state);
     }

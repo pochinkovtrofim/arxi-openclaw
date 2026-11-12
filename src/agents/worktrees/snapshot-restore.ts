@@ -2,17 +2,18 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getRuntimeConfig, type OpenClawConfig } from "../../config/config.js";
-import { lstatIfExists } from "../../infra/path-existence.js";
 import type { OpenClawStateWorkerContext } from "../../state/openclaw-state-worker-context.types.js";
 import type { WorktreeAllocationGuard } from "./allocation.js";
 import { estimateWorktreeCheckoutTransitionBytes, requireAllocationSpace } from "./capacity.js";
+import { materializeManagedWorktree } from "./checkout-materialize.js";
 import { usesSourceOnlyWorktreeGit } from "./checkout-policy.js";
-import { addManagedWorktree, materializeManagedWorktree } from "./checkout.js";
+import { addManagedWorktree } from "./checkout.js";
 import {
   requireGit,
   worktreePathExists,
   commandError,
   listGitWorktrees,
+  lstatIfExists,
   runGit,
   WORKTREE_CHECKOUT_TIMEOUT_MS,
 } from "./git.js";
@@ -30,18 +31,14 @@ import {
   restoreRetiredExactWorktree,
   requireExactWorktreeRepository,
 } from "./removal-git.js";
+import { resolveRepository, type ResolvedRepository } from "./repository-paths.js";
 import { captureWorktreeRunEndContext } from "./run-end-lifecycle.js";
 import {
   abortWorktreeRemoval,
   claimWorktreeRemoval,
   finalizeWorktreeRemoval,
 } from "./run-lease.js";
-import {
-  removeFailedWorktree,
-  resolveRepository,
-  withWorktreeSources,
-  type ResolvedRepository,
-} from "./service-preparation.js";
+import { removeFailedWorktree, withWorktreeSources } from "./service-preparation.js";
 import {
   exactStateRetirementSchema,
   type ExactStateRetirement,
@@ -492,7 +489,7 @@ async function restoreSnapshot(
       signal: params.signal,
       assertCurrent: params.commitGuard,
     });
-  const target = await lstatIfExists(record.path, "ENOENT");
+  const target = await lstatIfExists(record.path);
   const registrations = await listGitWorktrees(record.repoRoot, gitOptions);
   if (
     (target && (!target.isDirectory() || (await fs.readdir(record.path)).length > 0)) ||

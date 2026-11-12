@@ -14,6 +14,7 @@ export type CodexAppServerEventProjectorOptions = {
   modelCallTrace?: DiagnosticTraceContext;
   nativePostToolUseRelayEnabled?: boolean;
   asyncUserMessageAllowed?: boolean;
+  hasDeliveredFinalSourceReply?: () => boolean;
   onAsyncDelivery?: (delivery: {
     itemId: string;
     message: AssistantMessage;

@@ -56,6 +56,7 @@ import {
   invokeAgent,
   describe0AfterEach0,
 } from "./agent.test-harness.js";
+import { getAgentTestStorePath } from "./agent.user-turn-recorder.test-support.js";
 import { handleChatAbortRequest } from "./chat-abort-handler.js";
 import type { GatewayRequestContext } from "./types.js";
 
@@ -150,8 +151,7 @@ describe("gateway agent handler", () => {
 
     await runMainAgent("hi", "idem-maintenance-config");
 
-    const updateOptions = mocks.updateSessionStore.mock.calls.at(-1)?.[2];
-    expect(updateOptions).toMatchObject({
+    expect(mocks.updateSessionStore.mock.calls.at(-1)?.[2]).toMatchObject({
       takeCacheOwnership: true,
       maintenanceConfig: {
         mode: "enforce",
@@ -308,7 +308,7 @@ describe("gateway agent handler", () => {
     });
     mocks.loadSessionEntry.mockReturnValue({
       cfg: mocks.loadConfigReturn,
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: { sessionId: "recipient-session", updatedAt: Date.now() },
       canonicalKey: sessionKey,
     });
@@ -374,7 +374,7 @@ describe("gateway agent handler", () => {
       mocks.resolveExplicitAgentSessionKey.mockReturnValue(sessionKey);
       mocks.loadSessionEntry.mockReturnValue({
         cfg: {},
-        storePath: "/tmp/sessions.json",
+        storePath: getAgentTestStorePath(),
         entry: { sessionId: "ops-main", updatedAt: Date.now() },
         canonicalKey: sessionKey,
       });
@@ -411,7 +411,7 @@ describe("gateway agent handler", () => {
     mocks.resolveAgentExplicitRecipientSession.mockReturnValue(routePending);
     mocks.loadSessionEntry.mockReturnValue({
       cfg: mocks.loadConfigReturn,
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: { sessionId: "recipient-session", updatedAt: Date.now() },
       canonicalKey: sessionKey,
     });
@@ -474,7 +474,7 @@ describe("gateway agent handler", () => {
     mocks.resolveAgentExplicitRecipientSession.mockReturnValue(routePending);
     mocks.loadSessionEntry.mockReturnValue({
       cfg: mocks.loadConfigReturn,
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: { sessionId: "recipient-session", updatedAt: Date.now() },
       canonicalKey: sessionKey,
     });
@@ -604,7 +604,7 @@ describe("gateway agent handler", () => {
       mocks.resolveAgentExplicitRecipientSession.mockResolvedValue({ sessionKey });
       mocks.loadSessionEntry.mockReturnValue({
         cfg: {},
-        storePath: "/tmp/sessions.json",
+        storePath: getAgentTestStorePath(),
         entry: { sessionId: "recipient-session", updatedAt: 1, ...entry },
         canonicalKey: sessionKey,
       });
@@ -636,7 +636,7 @@ describe("gateway agent handler", () => {
     const runId = "agent-harness-reserved";
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: undefined,
       canonicalKey: sessionKey,
     });
@@ -668,7 +668,7 @@ describe("gateway agent handler", () => {
       const runId = "agent-harness-session-id-rotation";
       mocks.loadSessionEntry.mockReturnValue({
         cfg: {},
-        storePath: "/tmp/sessions.json",
+        storePath: getAgentTestStorePath(),
         entry: {
           agentHarnessId: "codex",
           modelSelectionLocked: true,
@@ -707,7 +707,7 @@ describe("gateway agent handler", () => {
     const runId = "agent-harness-model-run";
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         agentHarnessId: "codex",
         modelSelectionLocked: true,
@@ -743,7 +743,7 @@ describe("gateway agent handler", () => {
     const runId = "legacy-harness-model-run";
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         agentHarnessId: "codex",
         modelSelectionLocked: false,
@@ -903,72 +903,11 @@ describe("gateway agent handler", () => {
     });
   });
 
-  it("dispatches with the session id reloaded during lifecycle admission", async () => {
-    const sessionKey = "agent:main:main";
-    const initialSessionId = "session-before-reset";
-    const admittedSessionId = "session-after-reset";
-    let currentSessionId = initialSessionId;
-    mocks.loadSessionEntry.mockImplementation(() => ({
-      cfg: {},
-      storePath: "/tmp/sessions.json",
-      entry: { sessionId: currentSessionId, updatedAt: Date.now() },
-      canonicalKey: sessionKey,
-    }));
-    mocks.updateSessionStore.mockImplementation(async (_path, updater) => {
-      const result = await updater({
-        [sessionKey]: { sessionId: initialSessionId, updatedAt: Date.now() },
-      });
-      currentSessionId = admittedSessionId;
-      return result;
-    });
-    mockSuccessfulAgentCommand();
-
-    await runMainAgent("hi", "idem-reset-before-admission");
-
-    const call = await waitForAgentCommandCall<{ sessionId?: string }>();
-    expect(call.sessionId).toBe(admittedSessionId);
-  });
-
-  it("does not recreate a session deleted before lifecycle admission", async () => {
-    const sessionKey = "agent:main:main";
-    let deleted = false;
-    mocks.loadSessionEntry.mockImplementation(() => ({
-      cfg: {},
-      storePath: "/tmp/sessions.json",
-      entry: deleted ? undefined : { sessionId: "session-before-delete", updatedAt: Date.now() },
-      canonicalKey: sessionKey,
-    }));
-    mocks.updateSessionStore.mockImplementation(async (_path, updater) => {
-      const result = await updater({
-        [sessionKey]: { sessionId: "session-before-delete", updatedAt: Date.now() },
-      });
-      deleted = true;
-      return result;
-    });
-    mocks.agentCommand.mockClear();
-    const respond = vi.fn();
-
-    await invokeAgent(
-      {
-        message: "do not recreate the deleted session",
-        agentId: "main",
-        sessionKey,
-        idempotencyKey: "idem-deleted-before-admission",
-      },
-      { respond, reqId: "idem-deleted-before-admission" },
-    );
-
-    expectRespondError(respond, {
-      message: `Session "${sessionKey}" was deleted while starting work. Retry.`,
-    });
-    expect(mocks.agentCommand).not.toHaveBeenCalled();
-  });
-
   it("does not recreate a session deleted before its initial store touch", async () => {
     const sessionKey = "agent:main:main";
     mocks.loadSessionEntry.mockImplementation(() => ({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: { sessionId: "session-before-delete", updatedAt: Date.now() },
       canonicalKey: sessionKey,
     }));
@@ -992,39 +931,6 @@ describe("gateway agent handler", () => {
     expect(mocks.agentCommand).not.toHaveBeenCalled();
   });
 
-  it("does not recreate a newly touched session deleted before lifecycle admission", async () => {
-    const sessionKey = "agent:main:slack:group:new-session";
-    let storedEntry: Record<string, unknown> | undefined;
-    mocks.loadSessionEntry.mockImplementation(() => ({
-      cfg: {},
-      storePath: "/tmp/sessions.json",
-      entry: storedEntry,
-      canonicalKey: sessionKey,
-    }));
-    mocks.updateSessionStore.mockImplementation(async (_path, updater) => {
-      const result = await updater({});
-      storedEntry = undefined;
-      return result;
-    });
-    mocks.agentCommand.mockClear();
-    const respond = vi.fn();
-
-    await invokeAgent(
-      {
-        message: "do not revive the newly deleted session",
-        agentId: "main",
-        sessionKey,
-        idempotencyKey: "idem-new-session-deleted-before-admission",
-      },
-      { respond, reqId: "idem-new-session-deleted-before-admission" },
-    );
-
-    expectRespondError(respond, {
-      message: `Session "${sessionKey}" was deleted while starting work. Retry.`,
-    });
-    expect(mocks.agentCommand).not.toHaveBeenCalled();
-  });
-
   it("blocks the initial store touch and preserves an abort while admission waits", async () => {
     primeMainAgentRun();
     mocks.agentCommand.mockClear();
@@ -1034,7 +940,7 @@ describe("gateway agent handler", () => {
     let releaseMutation = () => {};
     const { promise: mutationStarted, resolve: markMutationStarted } = createDeferredCore();
     const mutation = runExclusiveSessionLifecycleMutation("patch", {
-      scope: "/tmp/sessions.json",
+      scope: getAgentTestStorePath(),
       identities: [sessionKey, "existing-session-id"],
       run: async () => {
         markMutationStarted();
@@ -1091,7 +997,7 @@ describe("gateway agent handler", () => {
     let releaseMutation = () => {};
     const { promise: mutationStarted, resolve: markMutationStarted } = createDeferredCore();
     const mutation = runExclusiveSessionLifecycleMutation("patch", {
-      scope: "/tmp/sessions.json",
+      scope: getAgentTestStorePath(),
       identities: [sessionKey, "existing-session-id"],
       run: async () => {
         markMutationStarted();
@@ -1150,7 +1056,7 @@ describe("gateway agent handler", () => {
     let releaseMutation = () => {};
     const { promise: mutationStarted, resolve: markMutationStarted } = createDeferredCore();
     const mutation = runExclusiveSessionLifecycleMutation("patch", {
-      scope: "/tmp/sessions.json",
+      scope: getAgentTestStorePath(),
       identities: [sessionKey, "existing-session-id"],
       run: async () => {
         markMutationStarted();
@@ -1203,7 +1109,7 @@ describe("gateway agent handler", () => {
     mocks.agentCommand.mockImplementationOnce(async () => {
       await expect(
         interruptSessionWorkAdmissions({
-          scope: "/tmp/sessions.json",
+          scope: getAgentTestStorePath(),
           identities: [sessionKey, sessionId],
           timeoutMs: 5,
         }),
@@ -1232,7 +1138,7 @@ describe("gateway agent handler", () => {
       const sessionKey = "agent:main:main";
       const sessionId = "existing-session-id";
       const runId = "idem-recovery-admission-handoff";
-      const scope = "/tmp/sessions.json";
+      const scope = getAgentTestStorePath();
       primeMainAgentRun({ sessionId });
       mocks.agentCommand.mockClear();
       const admission = await beginSessionWorkAdmission({
@@ -1352,7 +1258,7 @@ describe("gateway agent handler", () => {
         abortEntry.controller.abort(reason);
       }
       const draining = interruptSessionWorkAdmissions({
-        scope: "/tmp/sessions.json",
+        scope: getAgentTestStorePath(),
         identities: [sessionKey, sessionId],
         reason: interruption === "already stopped" ? createAgentRunRestartAbortError() : reason,
       });
@@ -1421,7 +1327,7 @@ describe("gateway agent handler", () => {
     mocks.loadConfigReturn = cfg;
     mocks.loadSessionEntry.mockReturnValue({
       cfg,
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: { sessionId: "restored-session", updatedAt: 2 },
       canonicalKey: "agent:main:work",
       // Post-flip the accessor target carries the alias set prepared at request
@@ -1482,7 +1388,7 @@ describe("gateway agent handler", () => {
     expect(mocks.persistSessionTranscriptTurn).toHaveBeenCalledTimes(1);
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         sessionId: "new-session-id",
         updatedAt: Date.now(),

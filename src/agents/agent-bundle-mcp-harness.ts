@@ -22,7 +22,7 @@ import { mergeMcpConnectCatalog } from "./agent-bundle-mcp-requester-connect.js"
 import type { McpToolCatalog } from "./agent-bundle-mcp-types.js";
 import type { CodexMcpServersConfig } from "./codex-mcp-config.types.js";
 import {
-  resolveConversationCapabilityProfile,
+  prepareConversationCapabilityProfile,
   type ConversationCapabilityProfileParams,
   type ResolvedConversationCapabilityProfile,
 } from "./conversation-capability-profile.js";
@@ -90,6 +90,17 @@ function buildMcpNameAllocations(
       },
     ];
   });
+}
+
+function createHarnessDisposer(runtime: Pick<StaticHarnessMcpTools, "dispose"> | undefined) {
+  let disposed = false;
+  return async () => {
+    if (disposed) {
+      return;
+    }
+    disposed = true;
+    await runtime?.dispose();
+  };
 }
 
 function formatConfiguredMcpDiagnosticNotice(
@@ -240,13 +251,13 @@ function notConnectedToolResult(serverName: string, toolName: string) {
   };
 }
 
-function resolveHarnessCapabilityProfile(
+async function resolveHarnessCapabilityProfile(
   params: MaterializeRequesterScopedMcpToolsForHarnessRunParams,
 ) {
   return (
     params.conversationCapabilityProfile ??
     (params.policyContext
-      ? resolveConversationCapabilityProfile({
+      ? prepareConversationCapabilityProfile({
           ...params.policyContext,
           runtimeToolAllowlist: params.toolsAllow,
         })
@@ -309,10 +320,11 @@ export async function materializeStaticMcpToolsForHarnessRunCore(
     nameOwnershipBaseReservedToolNames?: Iterable<string>;
   },
 ): Promise<StaticHarnessMcpTools> {
-  const conversationCapabilityProfile = resolveHarnessCapabilityProfile(params);
+  const conversationCapabilityProfile = await resolveHarnessCapabilityProfile(params);
   const acquisition = await acquireSessionMcpRuntime({
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
+    agentId: params.agentId ?? conversationCapabilityProfile?.agentId,
     workspaceDir: params.workspaceDir,
     agentDir: params.agentDir,
     cfg: params.cfg,
@@ -391,7 +403,6 @@ export async function materializeStaticMcpToolsForHarnessRunCore(
       ],
       params.requestInteractiveCodexApproval ? "this run" : "this scheduled run",
     );
-    let disposed = false;
     return {
       tools: allowed,
       mcpNameAllocations: buildMcpNameAllocations(
@@ -399,13 +410,7 @@ export async function materializeStaticMcpToolsForHarnessRunCore(
         params.nameOwnershipBaseReservedToolNames ?? params.reservedToolNames,
       ),
       ...(diagnosticNotice ? { diagnosticNotice } : {}),
-      dispose: async () => {
-        if (disposed) {
-          return;
-        }
-        disposed = true;
-        await liveRuntime.dispose();
-      },
+      dispose: createHarnessDisposer(liveRuntime),
     };
   } catch (error) {
     await liveRuntime.dispose();
@@ -424,11 +429,12 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
   const scheduledWarnings: string[] = [];
   const policyParams = {
     ...params,
-    conversationCapabilityProfile: resolveHarnessCapabilityProfile(params),
+    conversationCapabilityProfile: await resolveHarnessCapabilityProfile(params),
   };
   const scopedRuntimeHandle = await acquireRequesterScopedMcpRuntime({
     sessionId: params.sessionId,
     sessionKey: params.sessionKey,
+    agentId: params.agentId ?? policyParams.conversationCapabilityProfile?.agentId,
     workspaceDir: params.workspaceDir,
     agentDir: params.agentDir,
     cfg: params.cfg,
@@ -437,7 +443,6 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
     requesterSenderId: params.requesterSenderId,
     agentAccountId: params.agentAccountId,
     messageChannel: params.messageChannel,
-    agentId: params.agentId,
     chatType: params.chatType,
     conversationId: params.conversationId,
     runtimeGeneration: params.runtimeGeneration,
@@ -558,20 +563,13 @@ export async function materializeRequesterScopedMcpToolsForHarnessRunCore(
       "this scheduled run",
     );
 
-    let disposed = false;
     return {
       tools: executableTools,
       advertisedTools: filteredAdvertised,
       allocatedToolNames: advertisedTools.map((tool) => tool.name),
       mcpNameAllocations: buildMcpNameAllocations(advertisedTools, params.reservedToolNames),
       ...(diagnosticNotice ? { diagnosticNotice } : {}),
-      dispose: async () => {
-        if (disposed) {
-          return;
-        }
-        disposed = true;
-        await liveRuntime?.dispose();
-      },
+      dispose: createHarnessDisposer(liveRuntime),
     };
   } catch (error) {
     await liveRuntime?.dispose();

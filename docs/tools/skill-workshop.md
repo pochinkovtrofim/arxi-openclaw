@@ -35,9 +35,9 @@ Gateway, see [Personal library authoring](/tools/skill-workshop/personal-library
   incomplete, it views the skill and patches the misleading step. After hard
   multi-step work you are likely to repeat, it saves the working procedure,
   patching the skill that covers that kind of task or creating one when none does.
-- **Background review:** after enough model work in a conversation, or right
-  after a turn that used a learned skill, a background run reviews it and saves
-  anything worth keeping. See [Self-learning](/tools/self-learning).
+- **Background review:** after 10 accumulated model iterations in a conversation,
+  a background run reviews it and saves anything worth keeping.
+  See [Self-learning](/tools/self-learning).
 - **`/learn [request]`:** asks the agent to save a skill now, from the current
   conversation or from sources you name. See [`/learn`](#learn).
 - **Learn from history:** the Control UI button opens a normal chat
@@ -52,17 +52,39 @@ it started with.
 
 ## Undo
 
-Background changes are quiet: each is listed in the skill's history with its
-reason, one plain sentence in the user's language, and nothing is posted to the
-conversation; see [What you see](/tools/self-learning#what-you-see).
+When a background run changes a skill, the Control UI chat shows a compact
+**Learned** row; each skill name opens that skill in the Workshop. Each change is
+also listed in the skill's history with its reason, one plain sentence in the
+user's language. Channel messages are off by default, so nothing is posted to the
+conversation; see [What you see](/tools/self-learning#what-you-see). Set
+`skills.workshop.autonomous.channelNotices: true` to post the notice to the
+conversation that triggered the review instead; that session's Control UI chat
+then shows it as plain text:
 
-After a background change, reply "undo" in that conversation and the agent
-restores the previous version with `skill_workshop`, or archives a skill the
-review created.
+```text
+💾 Learned: updated `deploy-staging` (tightened the rollback step). Say "undo" to revert this skill change.
+```
 
-You can also undo from the Control UI (**Undo** on the skill's latest change or
-in its History tab) or the
-CLI:
+Say "undo" in the conversation and the agent restores the previous version
+with `skill_workshop`, or archives a skill the review created, whether channel
+notices are on or off. Nothing appears when the review changed nothing. Slack
+never gets a channel message; its sessions still get the Control UI row.
+
+To revert everything one review changed without asking the agent:
+
+- Press **Undo** on the notice. Channels with buttons render it under the
+  line; plain-text channels show the command to copy instead.
+- Press **Undo** on the Control UI **Learned** row.
+- Send `/learn undo <id>`, where `<id>` is the review id in the channel
+  notice's command.
+
+Each restores the version saved before the review's first change of a skill
+and archives skills the review created. Pressing it again reports that the
+change was already undone. The chat command needs the owner, plus
+`operator.admin` from Gateway clients.
+
+You can also undo one skill from the Control UI (**Undo** on the skill's latest
+change or in its History tab) or the CLI:
 
 ```bash
 openclaw skills workshop restore deploy-staging
@@ -116,6 +138,10 @@ durable to learn, it changes nothing.
 `/learn` works in both learning modes. It replies with an explanation instead
 when `skill_workshop` is unavailable, for example in a sandboxed session or
 when tool policy hides the tool.
+
+`/learn undo <id>` is the one exception: with a review id, it reverts that
+background review without a model turn. See [Undo](#undo). Any other text after
+`/learn` is a request.
 
 ## Agent tool
 
@@ -174,11 +200,12 @@ one and should be merged.
 }
 ```
 
-| Setting                             | Default  | Effect                                                                                                                                                                                                                                                                  |
-| ----------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `skills.workshop.autonomous.mode`   | `"auto"` | `"auto"` enables the background review and unused-skill cleanup. `"off"` disables both.                                                                                                                                                                                 |
-| `skills.workshop.autonomous.models` | unset    | Map from a reviewed turn's `provider/model` to the `provider/model` its background reviews use, for example `{"anthropic/claude-opus-5-5": "anthropic/claude-sonnet-5-5"}`. Mappings stay within one provider (same sign-in); unmapped turns review on their own model. |
-| `skills.workshop.maxSkillBytes`     | `40000`  | Maximum `SKILL.md` size in bytes (1024-200000).                                                                                                                                                                                                                         |
+| Setting                                     | Default  | Effect                                                                                                                                                                                                                                                                  |
+| ------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `skills.workshop.autonomous.mode`           | `"auto"` | `"auto"` enables the background review and unused-skill cleanup. `"off"` disables both.                                                                                                                                                                                 |
+| `skills.workshop.autonomous.channelNotices` | `false`  | Also post background review notices to channel conversations, except Slack.                                                                                                                                                                                             |
+| `skills.workshop.autonomous.models`         | unset    | Map from a reviewed turn's `provider/model` to the `provider/model` its background reviews use, for example `{"anthropic/claude-opus-5-5": "anthropic/claude-sonnet-5-5"}`. Mappings stay within one provider (same sign-in); unmapped turns review on their own model. |
+| `skills.workshop.maxSkillBytes`             | `40000`  | Maximum `SKILL.md` size in bytes (1024-200000).                                                                                                                                                                                                                         |
 
 ```bash
 openclaw config set skills.workshop.autonomous.mode off
@@ -235,9 +262,10 @@ Gateway methods take an optional `agentId` (default agent when omitted):
 | `skills.workshop.read`    | `operator.read`  | `name`, `filePath`, `versionId` | `name`, `filePath`, `content`, `files`                                                          |
 | `skills.workshop.archive` | `operator.admin` | `name`, `reason`                | `change`                                                                                        |
 | `skills.workshop.restore` | `operator.admin` | `name`, `versionId`             | `change`                                                                                        |
+| `skills.workshop.undo`    | `operator.admin` | `runId` (a review's run id)     | `status` (`undone` or `already-undone`), `changes` made by this call                            |
 
-Archive and restore from the CLI, Control UI, or Gateway are recorded as `user`
-changes.
+Archive, restore, and undo from the CLI, Control UI, chat, or Gateway are
+recorded as `user` changes.
 
 <a id="when-an-older-backup-cannot-be-restored-automatically" />
 
@@ -265,7 +293,7 @@ files you need from them by hand; OpenClaw does not restore them.
 | Nothing is ever learned            | `skills.workshop.autonomous.mode` is `auto`, the conversation is eligible, and tool policy allows `skill_workshop`. See [Self-learning](/tools/self-learning#troubleshooting). |
 | Agent cannot call `skill_workshop` | Sandboxed runs do not get the tool. Use a non-sandboxed session or the CLI. Otherwise add the tool to `tools.allow` or `tools.alsoAllow`.                                      |
 | A write is refused                 | The error names the fix: rename the skill, correct the frontmatter, shorten the description or `SKILL.md`, or remove the flagged line.                                         |
-| An unwanted change was made        | Say "undo", press **Undo** in the Control UI, or run `openclaw skills workshop restore <name>`.                                                                                |
+| An unwanted change was made        | Press **Undo** on the notice, say "undo", send `/learn undo <id>`, or run `openclaw skills workshop restore <name>`.                                                           |
 | A skill was archived unexpectedly  | Unused-skill cleanup archives skills with no activity for 30 days. Run `openclaw skills workshop restore <name>`.                                                              |
 
 In `auto` mode, `openclaw doctor` runs the `core/doctor/skill-workshop-tool-policy`

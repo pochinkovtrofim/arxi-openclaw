@@ -6,8 +6,8 @@ import {
   type FastModeAutoProgressState,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
-  createNativeSessionBindingAuthority,
-  prepareNativeSessionGenerationAuthority,
+  retainNativeSessionGenerationAuthority,
+  type RetainedNativeSessionGenerationAuthority,
 } from "openclaw/plugin-sdk/agent-harness-session-runtime";
 import { resolveAgentDir } from "openclaw/plugin-sdk/agent-runtime";
 import { resolveSessionAgentIdsStrict } from "openclaw/plugin-sdk/agent-scope-runtime";
@@ -19,7 +19,7 @@ import {
   isDiagnosticsEnabled,
   resolveDiagnosticModelContentCapturePolicy,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
-import { loadExecApprovals } from "openclaw/plugin-sdk/exec-approvals-runtime";
+import { loadExecApprovalsReadOnlyAsync } from "openclaw/plugin-sdk/exec-approvals-runtime";
 import { createStageTimingTracker } from "openclaw/plugin-sdk/time-runtime";
 import { resolveCodexAppServerForModelProvider } from "./app-server-policy.js";
 import { resolveCodexAppServerPreparedAuthHandoff } from "./auth-bridge.js";
@@ -67,6 +67,7 @@ import {
   getLeasedSharedCodexAppServerClient,
 } from "./shared-client.js";
 import { rotateOversizedCodexAppServerStartupBinding } from "./startup-binding.js";
+import { withCodexAppServerGitConfig } from "./transport-stdio.js";
 
 export async function prepareCodexAttemptConnection({ params, options }: CodexRunAttemptInput) {
   const attemptStartedAt = Date.now();
@@ -123,10 +124,23 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
           sessionKey: sandboxSessionKey,
           workspaceDir: resolvedWorkspace,
         });
+  const ownedSandbox = params.sandbox === undefined ? sandbox : undefined;
+  let sandboxTransferred = false;
+  using _ = {
+    [Symbol.dispose]: () => {
+      if (!sandboxTransferred) {
+        ownedSandbox?.[Symbol.dispose]?.();
+      }
+    },
+  };
   // Upstream cannot remove registered environments, so node leases own one disposable client.
+  // Strict one-shot runs also need an attempt-owned process: a shared peer can
+  // legitimately keep the cached client alive after this run has completed,
+  // which makes the required cleanup receipt impossible to prove.
   const attemptClientFactory =
     options.clientFactory ??
-    (isCodexPairedNodeRemoteExecPlacementSandbox(sandbox)
+    (isCodexPairedNodeRemoteExecPlacementSandbox(sandbox) ||
+    (params.oneShotCliRun === true && params.cleanupBundleMcpOnRunEnd === true)
       ? createIsolatedCodexAppServerClient
       : getLeasedSharedCodexAppServerClient);
   preDynamicStartupStages.mark("sandbox");
@@ -134,7 +148,8 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
     // Explicit modes replace legacy fields; full also replaces approval-file floors.
     permissionMode: params.permissionMode,
     execOverrides: params.execOverrides,
-    approvals: params.permissionMode === "full" ? undefined : loadExecApprovals(),
+    approvals:
+      params.permissionMode === "full" ? undefined : await loadExecApprovalsReadOnlyAsync(),
     config: params.config,
     agentId: policyAgentId,
   });
@@ -170,6 +185,7 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
       Object.keys(preparedEnvironment.credentialScrubEnv).length > 0);
   let shellEnvironment = baseShellEnvironment;
   let shellPathPrepend: readonly string[] | undefined;
+  let shellGitConfigParameters: string | undefined;
   const withPreparedProcessEnv = <T extends CodexAppServerRuntimeOptions>(appServer: T) => {
     // Peer locality is not process ownership: disconnected socket turns can outlive recovery.
     assertLocalTargetSupported(
@@ -177,14 +193,16 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
     );
     // Resolve placement before projecting host PATH; socket peers and remote workspaces
     // own their tool lookup even when their control connection runs on this machine.
-    const localToolEnv =
+    const ownedLocalProcess =
       !sandbox?.enabled &&
       !remoteExec &&
       appServer.start.transport === "stdio" &&
       !isCodexAppServerProxyLaunch(appServer.start.args) &&
-      !appServer.remoteWorkspaceRoot
-        ? preparedEnvironment?.localToolEnv
-        : undefined;
+      !appServer.remoteWorkspaceRoot;
+    const localToolEnv = ownedLocalProcess ? preparedEnvironment?.localToolEnv : undefined;
+    shellGitConfigParameters = ownedLocalProcess
+      ? preparedEnvironment?.localGitConfigParameters
+      : undefined;
     const hasLocalToolEnv = localToolEnv && Object.keys(localToolEnv).length > 0;
     shellPathPrepend = hasLocalToolEnv ? preparedEnvironment?.localToolPathPrepend : undefined;
     shellEnvironment = hasLocalToolEnv
@@ -192,12 +210,18 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
       : baseShellEnvironment;
     // Tool lookup must not reject native login requests. Codex owns profile and
     // snapshot startup; only the identity restrictions above disable login.
-    return shellEnvironment
+    const prepared = shellEnvironment
       ? {
           ...appServer,
           start: { ...appServer.start, env: { ...appServer.start.env, ...shellEnvironment } },
         }
       : appServer;
+    return shellGitConfigParameters
+      ? {
+          ...prepared,
+          start: withCodexAppServerGitConfig(prepared.start, shellGitConfigParameters),
+        }
+      : prepared;
   };
   let bindingIdentity: CodexAppServerBindingIdentity = sessionBindingIdentity({
     sessionId: params.sessionId,
@@ -212,19 +236,29 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
     : undefined;
   const isInactiveThreadBootstrapBinding = (binding: CodexAppServerThreadBinding | undefined) =>
     !activeContextEngine && binding?.contextEngine?.projection?.mode === "thread_bootstrap";
+  let generationAuthority: RetainedNativeSessionGenerationAuthority | undefined;
+  let generationAuthorityTransferred = false;
+  using captures = new DisposableStack();
+  captures.defer(() => {
+    if (!generationAuthorityTransferred) {
+      generationAuthority?.release();
+    }
+  });
   // Only a durable session row authorizes stable-key ownership. Caller-owned
   // transcripts omit a store target, so classify them against the default store too.
   if (bindingIdentity.kind === "session" && bindingIdentity.sessionKey) {
-    const { state: authority } = await prepareNativeSessionGenerationAuthority({
+    generationAuthority = await retainNativeSessionGenerationAuthority({
       config: params.config,
       storePath: params.sessionTarget?.storePath,
       target: bindingIdentity,
       createSupersededError: createCodexSessionGenerationSupersededError,
     });
-    if (authority === "superseded") {
+    if (generationAuthority.state === "superseded") {
       throw createCodexSessionGenerationSupersededError(bindingIdentity.sessionId);
     }
-    if (authority === "ephemeral") {
+    if (generationAuthority.state === "ephemeral") {
+      generationAuthority.release();
+      generationAuthority = undefined;
       // Stable-key fences protect only durable session rows. Ephemeral callers rotate
       // physical ids, so sharing that owner would strand every run after the first.
       const logicalIdentity = bindingIdentity;
@@ -245,25 +279,36 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
     | ReturnType<NonNullable<typeof params.hostCapabilities.bindModelExecution>>
     | undefined;
   const assertModelExecutionCurrent = () => modelExecution?.assertCurrent();
-  const { binding: admittedBinding, authority: bindingAuthority } =
-    await resolveCodexSessionBinding({
-      reclaimStale: true,
-      bindingStore,
-      identity: bindingIdentity,
-      config: params.config,
-      storePath: params.sessionTarget?.storePath,
-      assertCurrent: params.hostCapabilities.assertActive,
-      signal: params.abortSignal,
-      assertBinding: params.expectedSessionRuntimeOwnership
-        ? (binding) =>
-            assertCodexSessionRuntimeOwnership(binding, params.expectedSessionRuntimeOwnership)
-        : undefined,
-    });
+  generationAuthorityTransferred = true;
+  const {
+    binding: admittedBinding,
+    authority: bindingAuthority,
+    release: releaseBindingAuthority,
+  } = await resolveCodexSessionBinding({
+    reclaimStale: true,
+    generationAuthority,
+    bindingStore,
+    identity: bindingIdentity,
+    config: params.config,
+    storePath: params.sessionTarget?.storePath,
+    assertCurrent: params.hostCapabilities.assertActive,
+    signal: params.abortSignal,
+    assertBinding: params.expectedSessionRuntimeOwnership
+      ? (binding) =>
+          assertCodexSessionRuntimeOwnership(binding, params.expectedSessionRuntimeOwnership)
+      : undefined,
+  });
+  let bindingAuthorityTransferred = false;
+  captures.defer(() => {
+    if (!bindingAuthorityTransferred) {
+      releaseBindingAuthority();
+    }
+  });
   const assertCurrent = () => {
     bindingAuthority.assertCurrent();
     assertModelExecutionCurrent();
   };
-  const authority = createNativeSessionBindingAuthority(bindingAuthority.lineage, assertCurrent);
+  const authority = bindingAuthority.withLiveness(assertCurrent);
   let startupBinding = admittedBinding;
   preDynamicStartupStages.mark("read-binding");
   const usesSupervisionConnection = startupBinding?.connectionScope === "supervision";
@@ -324,7 +369,7 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
             store: params.authProfileStore,
             config: params.config,
           })
-        : resolveCodexAppServerAuthProfileIdForAgent({
+        : await resolveCodexAppServerAuthProfileIdForAgent({
             authProfileId: startupAuthProfileCandidate,
             agentDir,
             config: params.config,
@@ -533,6 +578,8 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
       );
     assertCurrent();
     // Host capabilities are identity-keyed; carry generation proof separately.
+    sandboxTransferred = true;
+    bindingAuthorityTransferred = true;
     return {
       params,
       prepareInputAttachments: async (
@@ -585,6 +632,7 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
       },
       assertCurrent,
       authority,
+      releaseBindingAuthority,
       withCurrent: authority.withCurrent,
       assertLegacyCurrent: authority.assertLegacyCurrent,
       assertModelExecutionCurrent,
@@ -611,9 +659,11 @@ export async function prepareCodexAttemptConnection({ params, options }: CodexRu
       sandboxSessionKey,
       contextSessionKey,
       sandbox,
+      releaseSandboxContext: () => ownedSandbox?.[Symbol.dispose]?.(),
       agentDir,
       shellEnvironment,
       shellPathPrepend,
+      shellGitConfigParameters,
       disableLoginShell,
       bindingIdentity,
       bindingStore,

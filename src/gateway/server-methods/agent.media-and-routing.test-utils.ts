@@ -40,6 +40,7 @@ import {
   invokeAgent,
   describe0AfterEach0,
 } from "./agent.test-harness.js";
+import { getAgentTestStorePath } from "./agent.user-turn-recorder.test-support.js";
 
 const mocks = getAgentTestMocks();
 
@@ -126,7 +127,6 @@ describe("gateway agent handler", () => {
         sessionId: scenario.sessionId,
         sessionKey: scenario.sessionKey,
         storePath,
-        sessionEntry: failedEntryWithStaleActivity,
       });
     } else {
       expect(mocks.hasSessionTranscriptEventsSync).not.toHaveBeenCalled();
@@ -150,21 +150,20 @@ describe("gateway agent handler", () => {
     const sessionsDir = `${root}/sessions`;
     await fs.mkdir(sessionsDir, { recursive: true });
     mocks.hasSessionTranscriptEventsSync.mockReturnValue(true);
-    const failedEntryWithResolvedTranscript = {
-      sessionId: "failed-present-session-id",
-      status: "failed",
-      startedAt: now - 1_000,
-      endedAt: now,
-      runtimeMs: 1_000,
-      abortedLastRun: true,
-      updatedAt: now,
-      sessionStartedAt: now,
-      lastInteractionAt: now,
-    };
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
       storePath: `${sessionsDir}/sessions.json`,
-      entry: failedEntryWithResolvedTranscript,
+      entry: {
+        sessionId: "failed-present-session-id",
+        status: "failed",
+        startedAt: now - 1_000,
+        endedAt: now,
+        runtimeMs: 1_000,
+        abortedLastRun: true,
+        updatedAt: now,
+        sessionStartedAt: now,
+        lastInteractionAt: now,
+      },
       canonicalKey: "agent:main:main",
     });
 
@@ -191,7 +190,7 @@ describe("gateway agent handler", () => {
     });
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: existingEntry,
       canonicalKey: sessionKey,
     });
@@ -242,15 +241,15 @@ describe("gateway agent handler", () => {
     let capturedEntry: Record<string, unknown> | undefined;
     mocks.loadSessionEntry.mockImplementation(() => ({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: capturedEntry,
       canonicalKey: sessionKey,
     }));
 
+    const store: Record<string, unknown> = {};
     mocks.updateSessionStore.mockImplementation(async (_path, updater) => {
-      const store: Record<string, unknown> = {};
       const result = await updater(store);
-      capturedEntry = result as Record<string, unknown>;
+      capturedEntry = store[sessionKey] as Record<string, unknown>;
       return result;
     });
 
@@ -290,7 +289,7 @@ describe("gateway agent handler", () => {
     let capturedEntry: Record<string, unknown> | undefined;
     mocks.loadSessionEntry.mockImplementation(() => ({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: capturedEntry,
       canonicalKey: sessionKey,
     }));
@@ -457,7 +456,7 @@ describe("gateway agent handler", () => {
     };
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: existingEntry,
       canonicalKey: sessionKey,
     });
@@ -710,7 +709,7 @@ describe("gateway agent handler", () => {
   it("preserves fresh modelOverride when cached entry is stale (#5369)", async () => {
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         sessionId: "subagent-session-id",
         updatedAt: Date.now() - 1000,
@@ -754,7 +753,7 @@ describe("gateway agent handler", () => {
   it("preserves all fresh session fields when cached entry is stale (#5369 broader)", async () => {
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         sessionId: "subagent-session-id",
         updatedAt: Date.now() - 1000,
@@ -821,7 +820,7 @@ describe("gateway agent handler", () => {
   it("checks delivery sendPolicy against the fresh store entry (#5369)", async () => {
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         sessionId: "subagent-session-id",
         updatedAt: Date.now() - 1000,
@@ -922,7 +921,7 @@ describe("gateway agent handler", () => {
     );
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         sessionId: "old-session-id",
         updatedAt: Date.now() - 1000,
@@ -976,7 +975,7 @@ describe("gateway agent handler", () => {
     const recoveredStartedAt = Date.now() - 5_000;
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         sessionId: "legacy-session-id",
         updatedAt: Date.now() - 1000,
@@ -1022,7 +1021,7 @@ describe("gateway agent handler", () => {
     const freshStartedAt = Date.now() - 2_500;
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       entry: {
         sessionId: "legacy-session-id",
         updatedAt: Date.now() - 1000,
@@ -1211,7 +1210,7 @@ describe("gateway agent handler", () => {
     };
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       canonicalKey: sessionKey,
       entry,
     });
@@ -1367,7 +1366,7 @@ describe("gateway agent handler", () => {
     };
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       canonicalKey: sessionKey,
       entry,
     });
@@ -1419,7 +1418,7 @@ describe("gateway agent handler", () => {
     };
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       canonicalKey: sessionKey,
       entry,
     });
@@ -1454,7 +1453,7 @@ describe("gateway agent handler", () => {
     let admissionActiveAtFinalResponse: boolean | undefined;
     first.mockImplementation((ok, payload) => {
       if (ok && payload && typeof payload === "object" && "status" in payload) {
-        admissionActiveAtFinalResponse = isSessionWorkAdmissionActive("/tmp/sessions.json", [
+        admissionActiveAtFinalResponse = isSessionWorkAdmissionActive(getAgentTestStorePath(), [
           sessionKey,
           "run-1",
         ]);
@@ -1580,7 +1579,7 @@ describe("gateway agent handler", () => {
     const store: Record<string, SessionEntry> = { [sessionKey]: structuredClone(entry) };
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       canonicalKey: sessionKey,
       entry,
     });
@@ -1626,7 +1625,7 @@ describe("gateway agent handler", () => {
     };
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       canonicalKey: sessionKey,
       entry,
     });
@@ -1698,7 +1697,7 @@ describe("gateway agent handler", () => {
     };
     mocks.loadSessionEntry.mockReturnValue({
       cfg: {},
-      storePath: "/tmp/sessions.json",
+      storePath: getAgentTestStorePath(),
       canonicalKey: sessionKey,
       entry,
     });

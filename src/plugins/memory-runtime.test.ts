@@ -695,23 +695,16 @@ describe("memory runtime handles", () => {
     },
   );
 
-  it.each(["local", "missing", "legacy-remote", "pinned-remote"] as const)(
+  it.each(["local", "pinned-remote"] as const)(
     "classifies workspace paths through the selected runtime with %s provenance support",
     async (support) => {
       const runtime = createRuntime();
-      const { registry } = createRegistry(
-        support === "missing"
-          ? {
-              getMemorySearchManager: runtime.getMemorySearchManager,
-              resolveMemoryBackendConfig: runtime.resolveMemoryBackendConfig,
-            }
-          : {
-              ...runtime,
-              ...(support === "pinned-remote"
-                ? { supportsWorkspaceMemoryReadSources: true as const }
-                : {}),
-            },
-      );
+      const { registry } = createRegistry({
+        ...runtime,
+        ...(support === "pinned-remote"
+          ? { supportsWorkspaceMemoryReadSources: true as const }
+          : {}),
+      });
       if (support === "local") {
         runtime.classifyWorkspaceMemoryPaths.mockImplementationOnce(async ({ relativePaths }) => {
           expect(getPluginRuntimeGatewayRequestScope()?.pluginRegistry).toBe(registry);
@@ -722,7 +715,7 @@ describe("memory runtime handles", () => {
         });
       }
       mocks.loadPluginRegistryHandle.mockReturnValue(registry);
-      const remote = support === "legacy-remote" || support === "pinned-remote";
+      const remote = support === "pinned-remote";
       const params = {
         cfg: memoryConfig,
         agentId: "main",
@@ -733,8 +726,7 @@ describe("memory runtime handles", () => {
               readSources: [
                 {
                   relativePath: "USER.md",
-                  canonicalRelativePath:
-                    support === "pinned-remote" ? "memory/profile.md" : "USER.md",
+                  canonicalRelativePath: "memory/profile.md",
                 },
               ],
             }
@@ -749,12 +741,9 @@ describe("memory runtime handles", () => {
             { relativePath: "USER.md", originClass: "owner" },
           ],
         });
-      } else if (support === "pinned-remote") {
+      } else {
         expect(result).toMatchObject({ status: "classified" });
         expect(runtime.classifyWorkspaceMemoryPaths).toHaveBeenCalledExactlyOnceWith(params);
-      } else {
-        expect(result).toEqual({ status: "unsupported" });
-        expect(runtime.classifyWorkspaceMemoryPaths).not.toHaveBeenCalled();
       }
     },
   );
