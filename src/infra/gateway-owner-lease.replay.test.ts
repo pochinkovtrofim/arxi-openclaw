@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import * as pidAlive from "../shared/pid-alive.js";
 import {
   closeOpenClawStateDatabaseAsync,
+  openOpenClawStateDatabase,
   withOpenClawStateStartupMigrationCheckpointDatabase,
 } from "../state/openclaw-state-db.js";
 import { resolveOpenClawStateSqlitePath } from "../state/openclaw-state-db.paths.js";
@@ -304,6 +305,73 @@ describe("Gateway owner lease", () => {
       coordinator.release();
     }
   });
+
+  it.each([
+    { label: "an earlier clone of this process", pid: () => process.pid },
+    { label: "a dead Gateway of the Owner's previous boot", pid: () => 2_147_483_647 },
+  ])(
+    "restarts in place over the Owner state a clone mounted, last held by $label",
+    async (previous) => {
+      const root = tempDirs.make("openclaw-gateway-owner-warm-restart-");
+      const placeholder = path.join(root, "placeholder");
+      const mounted = path.join(root, "mounted");
+      const env = { OPENCLAW_STATE_DIR: path.join(root, "home") };
+      fs.mkdirSync(placeholder);
+      fs.mkdirSync(mounted);
+      fs.mkdirSync(env.OPENCLAW_STATE_DIR);
+      const link = path.join(env.OPENCLAW_STATE_DIR, "state");
+      fs.symlinkSync(placeholder, link);
+      const databasePath = resolveOpenClawStateSqlitePath(env);
+      const acquire = () =>
+        acquireGatewayLock({ env, allowInTests: true, port: 19483, listenerMode: "foreground" });
+      const placeholderLock = await acquire();
+      if (!placeholderLock) {
+        throw new Error("Expected gateway lock");
+      }
+      // A running Gateway keeps the shared state database open across its lifecycle.
+      openOpenClawStateDatabase({ env });
+      const placeholderOwner = readGatewayOwnerLease({ env })?.owner;
+      const { DatabaseSync } = requireNodeSqlite();
+      const mountedPath = path.join(mounted, path.basename(databasePath));
+      const source = new DatabaseSync(databasePath, { readOnly: true });
+      try {
+        source.exec(`VACUUM INTO '${mountedPath}'`);
+      } finally {
+        source.close();
+      }
+      // The Owner's state names whoever held it before this boot, never this lifecycle.
+      const owner = new DatabaseSync(mountedPath);
+      try {
+        const row = owner
+          .prepare("SELECT payload_json FROM state_leases WHERE scope = 'gateway-owner'")
+          .get() as { payload_json: string };
+        const payload = JSON.parse(row.payload_json);
+        payload.owner.pid = previous.pid();
+        owner
+          .prepare(
+            "UPDATE state_leases SET owner = 'previous-generation', payload_json = ? WHERE scope = 'gateway-owner'",
+          )
+          .run(JSON.stringify(payload));
+      } finally {
+        owner.close();
+      }
+      fs.unlinkSync(link);
+      fs.symlinkSync(mounted, link);
+      await placeholderLock.release();
+      const restarted = await acquire();
+      if (!restarted) {
+        throw new Error("Expected gateway lock");
+      }
+      try {
+        const current = readGatewayOwnerLease({ env });
+        expect(current).toMatchObject({ pid: process.pid, state: "live" });
+        expect(current?.owner).not.toBe("previous-generation");
+        expect(current?.owner).not.toBe(placeholderOwner);
+      } finally {
+        await restarted.release();
+      }
+    },
+  );
 
   it("does not delete a replacement generation during an older owner's release", async () => {
     await using owner = fixture();
