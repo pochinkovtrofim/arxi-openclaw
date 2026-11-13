@@ -139,6 +139,14 @@ or runtime layers merely because they existed in the previous history.
   retires the host's admissions for the directory's files once it has sealed
   out host readers, before the owner deletes them, so a confirmed suspension
   holds none.
+- Gateway owner lease release over a clone mount: upstream 11.3 closes the
+  shared state database inside the lease release (`sealOnClose`), and the fork
+  skips that release when the path names another file (a golden clone mounts
+  the Owner's state over the placeholder's). The handle on the placeholder's
+  file then stayed open, the in-process restart acquired its next lease
+  through it, found its own lease live and exited (`failed to reacquire gateway
+  lock for in-process restart`), so every golden wake fell back to a cold
+  Gateway. The skipped release now closes that handle.
 - System prompt (#169): upstream moved tool catalogs below the workspace
   files. The cache boundary stays before `## Workspace Files`, so workspace
   files open the suffix ahead of upstream's per-run sections.

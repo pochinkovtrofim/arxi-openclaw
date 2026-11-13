@@ -8,6 +8,7 @@ import { getAsyncWorkSignal } from "../shared/async-work-scope.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { getFileLockProcessStartTime } from "../shared/pid-alive.js";
 import { releaseReplayedSelfAgentDatabaseLeasesInDatabase } from "../state/openclaw-agent-db-lease.js";
+import { closeOpenClawStateDatabaseByPath } from "../state/openclaw-state-db-cache.js";
 import type { OpenClawStateSchemaReadAdmission } from "../state/openclaw-state-db-contract.js";
 import {
   withExistingOpenClawStateDatabaseCurrentReadOnly,
@@ -405,13 +406,18 @@ export function acquireGatewayOwnerLease(params: {
       await heartbeat?.stop();
       try {
         // Lost custody may join its worker, but cannot mutate the recorded lease.
-        if (
-          !custody?.signal.aborted &&
-          inspectDatabasePathIdentitySync(databasePath)?.key === leaseFile
-        ) {
-          mutateLease("release", (db) => {
-            releaseOpenClawStateLeaseInTransaction(db, identity);
-          });
+        if (!custody?.signal.aborted) {
+          if (inspectDatabasePathIdentitySync(databasePath)?.key === leaseFile) {
+            mutateLease("release", (db) => {
+              releaseOpenClawStateLeaseInTransaction(db, identity);
+            });
+          } else {
+            // The release above closes the state database it wrote. This path now
+            // names another file, so the handle still open on the lease's file is
+            // closed here: the next lifecycle would otherwise acquire through it,
+            // find this lease live under its own token and refuse to start.
+            closeOpenClawStateDatabaseByPath(databasePath);
+          }
         }
       } catch (error) {
         if (!custody?.signal.aborted) {
