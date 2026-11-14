@@ -952,6 +952,14 @@ describe("mcp loopback server", () => {
         fullAccessBlockedReason: "runtime",
       },
       approvalReviewerDeviceId: "bound-reviewer",
+      trigger: "user",
+      requester: {
+        conversationId: "discord:bound",
+        channel: "discord",
+        accountId: "bound-account",
+        senderId: "bound-sender",
+        senderIsOwner: false,
+      },
       senderName: "Bound Name",
       senderUsername: "bound-user",
       senderE164: "+15557654321",
@@ -1016,6 +1024,10 @@ describe("mcp loopback server", () => {
       runId: "run-bound",
       workspaceDir: "/tmp/openclaw-workspace",
       approvalReviewerDeviceId: "bound-reviewer",
+      // A plugin tool scoped to the requester (an owner's private turn) sees the
+      // same run facts on a CLI backend as on an embedded attempt.
+      trigger: "user",
+      requester: boundContext.requester,
       channelId: "discord:bound",
       turnSourceChannel: "discord",
       turnSourceTo: "discord:bound",

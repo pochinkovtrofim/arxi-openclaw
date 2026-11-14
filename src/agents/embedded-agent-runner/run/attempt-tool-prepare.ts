@@ -8,7 +8,6 @@ import {
   logCodeModeDiagnostic,
 } from "../../../logging/code-mode-diagnostic.js";
 import { resolveStagedInputMediaPaths } from "../../../media/staged-inputs.js";
-import type { PluginHookToolRequesterContext } from "../../../plugins/hook-requester-context.types.js";
 import { extractModelCompat } from "../../../plugins/provider-model-compat.js";
 import { getPluginToolMeta } from "../../../plugins/tool-metadata.js";
 import { isSubagentSessionKey } from "../../../routing/session-key.js";
@@ -41,6 +40,7 @@ import {
   resolveSessionPermissionExecMode,
   type PreparedSessionPermissionPolicy,
 } from "../../tool-fs-policy.js";
+import { buildToolHookRequester } from "../../tool-hook-requester.js";
 import { toolPolicyRestrictsTools } from "../../tool-policy.js";
 import { isAgentToolRestartSafe } from "../../tool-replay-safety.js";
 import { TOOL_SEARCH_CONTROL_TOOL_NAMES } from "../../tool-search-types.js";
@@ -477,7 +477,7 @@ export async function prepareEmbeddedAttemptToolBase(params: {
         runId: attempt.runId,
         approvalReviewerDeviceId: attempt.approvalReviewerDeviceId,
         channelId: attempt.currentChannelId,
-        requester: attemptToolRequester(attempt),
+        requester: buildToolHookRequester(attempt),
         trace: params.runTrace,
         loopDetection: resolveToolLoopDetectionConfig({
           cfg: attempt.config,
@@ -551,31 +551,4 @@ export async function prepareEmbeddedAttemptToolBase(params: {
     }
     throw error;
   }
-}
-
-// The same requester the bundle MCP runtime is acquired with
-// (attempt-bundle-tools.ts), so a before_tool_call hook on an MCP tool sees the
-// conversation and sender its MCP call will carry.
-function attemptToolRequester(attempt: {
-  chatId?: string;
-  groupId?: string | null;
-  messageTo?: string;
-  chatType?: string;
-  senderId?: string | null;
-  senderIsOwner?: boolean;
-  agentAccountId?: string;
-  messageChannel?: string;
-  messageProvider?: string;
-}): PluginHookToolRequesterContext | undefined {
-  const conversationId = attempt.chatId ?? attempt.groupId ?? attempt.messageTo;
-  const channel = attempt.messageChannel ?? attempt.messageProvider;
-  const requester = {
-    ...(conversationId ? { conversationId } : {}),
-    ...(attempt.chatType ? { chatType: attempt.chatType } : {}),
-    ...(channel ? { channel } : {}),
-    ...(attempt.agentAccountId ? { accountId: attempt.agentAccountId } : {}),
-    ...(attempt.senderId ? { senderId: attempt.senderId } : {}),
-    ...(attempt.senderIsOwner !== undefined ? { senderIsOwner: attempt.senderIsOwner } : {}),
-  } satisfies PluginHookToolRequesterContext;
-  return Object.keys(requester).length > 0 ? requester : undefined;
 }
