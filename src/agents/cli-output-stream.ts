@@ -457,11 +457,19 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
       // Empty terminal result can follow already-streamed text; keep that text.
       const streamedText = assistantText.slice(segmentStart).trim();
       const preservedCandidate = assistantText.slice(preserveFrom).trim();
-      const keepStreamed = preferStreamedClaudeTextOverResult({
+      const streamedOutranksResult = preferStreamedClaudeTextOverResult({
         streamedText: preservedCandidate,
         finalMessageText: assistantText.slice(currentMessageStart).trim(),
         resultText: result.text,
       });
+      const keepStreamed = streamedOutranksResult && !params.finalMessageIsReply;
+      if (streamedOutranksResult && !keepStreamed) {
+        // The omitted text may have shown as a live preview; keep the fact on record.
+        params.onPreToolTextOmitted?.({
+          omitted: preservedCandidate.length - result.text.length,
+          reply: result.text.length,
+        });
+      }
       const nextText = (
         keepStreamed ? preservedCandidate : result.text || streamedText || texts.join("\n").trim()
       ).trim();

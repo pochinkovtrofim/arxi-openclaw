@@ -153,6 +153,11 @@ export async function executeCliProcess(params: {
           params.events.emitLiveEvents && runParams.emitCommentaryText
             ? params.events.emitCliCommentaryText
             : undefined,
+        finalMessageIsReply: runParams.replyIncludesPreToolText !== true,
+        onPreToolTextOmitted: ({ omitted, reply }) =>
+          cliBackendLog.info(
+            `cli reply is the final message alone: runId=${runParams.runId} omittedPreToolChars=${omitted} replyChars=${reply}`,
+          ),
         onSessionId: params.observeForkSuccessor,
         onNativeTools: context.preparedBackend.mcpClientGrantCapture?.captureNativeTools,
         onAssistantMessage: params.diagnostics?.observeAssistantMessage,

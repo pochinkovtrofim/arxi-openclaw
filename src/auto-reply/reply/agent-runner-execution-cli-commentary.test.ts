@@ -143,7 +143,10 @@ describe("executeAgentTurn: CLI durable commentary", () => {
     const executeAgentTurn = await getExecuteAgentTurnForTest();
     const result = await executeAgentTurn(createTurnParams({ onBlockReply }, true));
 
-    expect(state.runCliAgentMock.mock.calls[0]?.[0]).toMatchObject({ emitCommentaryText: true });
+    expect(state.runCliAgentMock.mock.calls[0]?.[0]).toMatchObject({
+      emitCommentaryText: true,
+      replyIncludesPreToolText: true,
+    });
     const resolveContextEngineHost = state.runEmbeddedAgentEntryMock.mock.calls[0]?.[0]?.harness
       ?.resolveContextEngineHost as
       | ((

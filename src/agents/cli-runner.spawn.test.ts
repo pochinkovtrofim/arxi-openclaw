@@ -1410,6 +1410,47 @@ describe("runCliAgent spawn path", () => {
     }
   });
 
+  it.each([
+    {
+      name: "the final message alone by default",
+      replyIncludesPreToolText: undefined,
+      text: "DONE",
+    },
+    {
+      name: "pre-tool text too for a caller that streamed it",
+      replyIncludesPreToolText: true,
+      text: "Before.\n\nDONE",
+    },
+  ])("replies with $name", async ({ replyIncludesPreToolText, text }) => {
+    const event = (value: Record<string, unknown>) =>
+      JSON.stringify({ type: "stream_event", event: value });
+    supervisorSpawnMock.mockImplementationOnce(async (...args: unknown[]) => {
+      const input = (args[0] ?? {}) as { onStdout?: (chunk: string) => void };
+      input.onStdout?.(
+        [
+          JSON.stringify({ type: "init", session_id: "session-123" }),
+          event({ type: "message_start" }),
+          event({ type: "content_block_delta", delta: { type: "text_delta", text: "Before." } }),
+          event({
+            type: "content_block_start",
+            content_block: { type: "tool_use", id: "tool-1", name: "Read" },
+          }),
+          event({ type: "message_stop" }),
+          event({ type: "message_start" }),
+          event({ type: "content_block_delta", delta: { type: "text_delta", text: "DONE" } }),
+          JSON.stringify({ type: "result", session_id: "session-123", result: "DONE" }),
+        ].join("\n") + "\n",
+      );
+      return createManagedRun(createSuccessfulProcessExit());
+    });
+
+    const result = await executePreparedCliRun(
+      buildPreparedCliRunContext({ replyIncludesPreToolText }),
+    );
+
+    expect(result.text).toBe(text);
+  });
+
   it("preserves completed output when system prompt cleanup fails after delivery", async () => {
     const cleanupError = new Error("system prompt cleanup failed");
     const logWarnSpy = vi.spyOn(cliBackendLog, "warn").mockImplementation(() => undefined);

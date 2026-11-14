@@ -172,6 +172,7 @@ type PreparedCliRunContextOverrides = {
   executionMode?: PreparedCliRunContext["params"]["executionMode"];
   cliToolAvailability?: PreparedCliRunContext["params"]["cliToolAvailability"];
   emitCommentaryText?: boolean;
+  replyIncludesPreToolText?: boolean;
   workspaceDir?: string;
   systemPrompt?: string;
   timeoutMs?: number;
@@ -253,6 +254,7 @@ export function buildPreparedCliRunContext(
       executionMode: overrides.executionMode,
       cliToolAvailability: overrides.cliToolAvailability,
       emitCommentaryText: overrides.emitCommentaryText,
+      replyIncludesPreToolText: overrides.replyIncludesPreToolText,
       onSuccessfulAuthBinding: overrides.onSuccessfulAuthBinding,
       timeoutMs: overrides.timeoutMs ?? 1_000,
       runId,
