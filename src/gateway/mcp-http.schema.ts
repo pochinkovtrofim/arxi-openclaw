@@ -61,6 +61,18 @@ function flattenUnionSchema(
     return raw;
   }
   const mergedProps = Object.create(null) as Record<string, boolean | Record<string, unknown>>;
+  // What the schema declares beside the union holds in every variant: a variant
+  // can only narrow such a property, so its declaration there is the one to
+  // publish, with its type and description.
+  const declared = new Set<string>();
+  if (isRecord(raw.properties)) {
+    for (const [key, schema] of Object.entries(raw.properties)) {
+      if (isPropertySchema(schema)) {
+        mergedProps[key] = schema;
+        declared.add(key);
+      }
+    }
+  }
   const requiredSets: Set<string>[] = [];
   for (const variant of variants) {
     if (variant === true) {
@@ -73,6 +85,9 @@ function flattenUnionSchema(
     const props = isRecord(variant.properties) ? variant.properties : undefined;
     if (props) {
       for (const [key, schema] of Object.entries(props)) {
+        if (declared.has(key)) {
+          continue;
+        }
         if (!isPropertySchema(schema)) {
           warnSchemaOnce(
             `${MCP_LOOPBACK_LOG_PREFIX}: malformed schema definition for "${toolName}.${key}", ignoring that variant`,
@@ -114,12 +129,15 @@ function flattenUnionSchema(
       new Set(Array.isArray(variant.required) ? (variant.required as string[]) : []),
     );
   }
-  const required =
-    requiredSets.length > 0
-      ? [...(requiredSets[0] ?? [])].filter(
-          (key) => Object.hasOwn(mergedProps, key) && requiredSets.every((set) => set.has(key)),
-        )
-      : [];
+  const always = Array.isArray(raw.required)
+    ? raw.required.filter((key): key is string => typeof key === "string")
+    : [];
+  const common = [...(requiredSets[0] ?? [])].filter((key) =>
+    requiredSets.every((set) => set.has(key)),
+  );
+  const required = [...new Set([...always, ...common])].filter((key) =>
+    Object.hasOwn(mergedProps, key),
+  );
   const { anyOf: _anyOf, oneOf: _oneOf, ...rest } = raw;
   return { ...rest, type: "object", properties: mergedProps, required };
 }

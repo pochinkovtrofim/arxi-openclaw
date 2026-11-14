@@ -651,6 +651,33 @@ describe("buildMcpToolSchema", () => {
     }
   });
 
+  it("keeps the properties and required names a schema declares beside its union", () => {
+    const action = { type: "string", enum: ["claim", "current", "settle"] };
+    const limit = { type: "integer", minimum: 1, maximum: 20, description: "How many" };
+    const updateId = { type: "integer", minimum: 1 };
+    const [entry] = buildMockMcpToolSchema([
+      makeMockTool({
+        name: "observation",
+        parameters: {
+          type: "object",
+          required: ["action"],
+          anyOf: [
+            { properties: { action: { enum: ["claim", "current"] } } },
+            {
+              properties: { action: { const: "settle" }, note: { type: "string" } },
+              required: ["updateId"],
+            },
+          ],
+          properties: { action, limit, updateId },
+        },
+      }),
+    ]);
+    expect(entry?.inputSchema).toEqual(
+      objectSchema({ action, limit, updateId, note: { type: "string" } }, ["action"]),
+    );
+    expect(logWarnMock.mock.calls).toEqual([]);
+  });
+
   it("unions compatible literals while preserving distinct validation constraints", () => {
     const action = (schema: Record<string, unknown>, constrained: string) =>
       objectSchema(
