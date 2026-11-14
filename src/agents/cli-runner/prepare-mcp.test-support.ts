@@ -177,6 +177,12 @@ export function registerCliMcpPreparationTests({
           fullAccessBlockedReason: "runtime",
         },
         trigger: "user",
+        // The requester a plugin tool's scope reads, built as an embedded attempt builds it.
+        requester: {
+          channel: "telegram",
+          conversationId: "chat123",
+          senderId: "canonical-sender",
+        },
         approvalReviewerDeviceId: "reviewer-device",
         channelContext: {
           sender: { id: "canonical-sender" },
