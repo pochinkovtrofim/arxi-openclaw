@@ -506,9 +506,11 @@ describe("createCliJsonlStreamingParser", () => {
 
   it("replies with the final message alone for a caller that delivers once", () => {
     const deltas: string[] = [];
+    const onPreToolTextOmitted = vi.fn();
     const parser = createParser({
       finalMessageIsReply: true,
       onAssistantDelta: ({ delta }) => deltas.push(delta),
+      onPreToolTextOmitted,
     });
     finishFrames(
       parser,
@@ -526,7 +528,9 @@ describe("createCliJsonlStreamingParser", () => {
       sessionId: "session-final-only",
       usage: undefined,
     });
+    // The notes still stream as a live preview; only the reply leaves them out.
     expect(deltas.join("")).toBe("Mac is up. Opening the page.\n\nDONE");
+    expect(onPreToolTextOmitted).toHaveBeenCalledExactlyOnceWith({ omitted: 30, reply: 4 });
   });
 
   it("keeps the streamed text for a once-delivering caller when the final message is empty", () => {

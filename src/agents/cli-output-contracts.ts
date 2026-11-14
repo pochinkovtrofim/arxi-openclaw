@@ -154,6 +154,8 @@ export type CliJsonlStreamingParserOptions = {
    * it. An empty final message still falls back to the streamed text.
    */
   finalMessageIsReply?: boolean;
+  /** Sizes only: the pre-tool text `finalMessageIsReply` left out of a reply. */
+  onPreToolTextOmitted?: (chars: { omitted: number; reply: number }) => void;
   onSessionId?: (sessionId: string) => void;
   /** Parent initialization fact; its authority owner validates the raw tool list. */
   onNativeTools?: (tools: unknown) => void;
