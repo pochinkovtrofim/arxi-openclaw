@@ -253,7 +253,7 @@ export async function retireSessionSqliteRecovery(params: {
         }
       }
       // Verified historical dependencies affect selection now, but stay provisional until consent.
-      protectRecoveryDependencies(report.artifacts, references, adoptions);
+      protectRecoveryDependencies(report.artifacts, references, adoptions, params.expiredBefore);
       const verified = summarizeRecoveryCleanup(report.stateDir, report.artifacts, "preview");
       const candidates = verified.artifacts.filter((item) => item.outcome === "candidate");
       const selected = candidates.filter((item) => item.kind !== "update-capture");
