@@ -4,6 +4,7 @@ import type {
   CliBackendPlugin,
   CliBackendPreparedExecution,
 } from "openclaw/plugin-sdk/cli-backend";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/plugin-entry";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import {
   CLAUDE_CLI_BACKEND_ID,
@@ -76,8 +77,24 @@ function projectClaudeNativeToolAuthority(nativeTools: readonly string[]): reado
 }
 
 // Orchestration tools whose descendants inherit the parent's tool list, so they confer
-// no capability of their own. Order is canonical: equivalent selections launch one argv.
-const CLAUDE_MANAGED_NATIVE_TOOLS = ["Agent", "Workflow"] as const;
+// no capability of their own.
+const CLAUDE_DELEGATION_NATIVE_TOOLS = ["Agent", "Workflow"] as const;
+// Everything an operator may keep on managed turns: orchestration plus Claude Code's
+// own file, shell and web tools, each still checked by before_tool_call and exec
+// policy. Scheduling, monitors and background shells stay blocked by the launch args.
+// Order is canonical: equivalent selections launch one argv and one cached prefix.
+const CLAUDE_MANAGED_NATIVE_TOOLS = [
+  ...CLAUDE_DELEGATION_NATIVE_TOOLS,
+  "Bash",
+  "Read",
+  "Write",
+  "Edit",
+  "Glob",
+  "Grep",
+  "NotebookEdit",
+  "WebFetch",
+  "WebSearch",
+] as const;
 
 /** Operator selection under `plugins.entries.anthropic.config.managedNativeTools`. */
 function resolveClaudeManagedNativeTools(
@@ -92,9 +109,49 @@ function resolveClaudeManagedNativeTools(
   const selected = Object.hasOwn(agents ?? {}, ctx.agentId)
     ? agents?.[ctx.agentId]
     : selection.default;
+  if (selected === "all") {
+    return [...CLAUDE_MANAGED_NATIVE_TOOLS];
+  }
   return Array.isArray(selected)
     ? CLAUDE_MANAGED_NATIVE_TOOLS.filter((name) => selected.includes(name))
     : [];
+}
+
+const CLAUDE_CLI_MODEL_ENV = [
+  "CLAUDE_CODE_SUBAGENT_MODEL",
+  "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_SMALL_FAST_MODEL",
+] as const;
+
+/**
+ * `plugins.entries.anthropic.config.turnModelOnly`: every model call the program
+ * makes on its own (subagents, a subagent's model alias or full id, page
+ * summaries, command checks) runs on the turn's model instead of a smaller
+ * default, and a refused model is never swapped for another one. Only a full
+ * Claude model id is pinned; an alias such as `default` keeps the program's own.
+ */
+function resolveClaudeCliTurnModelEnv(
+  config: OpenClawConfig | undefined,
+  modelId: string,
+): Record<string, string> {
+  const pluginConfig = config?.plugins?.entries?.anthropic?.config;
+  if (
+    !isRecord(pluginConfig) ||
+    pluginConfig.turnModelOnly !== true ||
+    !modelId.trim().startsWith("claude-")
+  ) {
+    return {};
+  }
+  return {
+    ...Object.fromEntries(CLAUDE_CLI_MODEL_ENV.map((name) => [name, modelId])),
+    // A subagent's own model choice otherwise outranks the pinned default.
+    CLAUDE_CODE_SUBAGENT_MODEL_FORCE: "1",
+    CLAUDE_CODE_NO_MODEL_FALLBACK: "1",
+  };
 }
 
 function createClaudeCliAuthInput(params: {
@@ -205,6 +262,7 @@ export function buildAnthropicCliBackend(
       appendClaudeCliToolNamingGuidance(systemPrompt, openClawMcpToolNames),
     projectNativeToolAuthority: projectClaudeNativeToolAuthority,
     resolveManagedNativeTools: resolveClaudeManagedNativeTools,
+    nativeDelegationTools: CLAUDE_DELEGATION_NATIVE_TOOLS,
     sideQuestionToolMode: "disabled",
     ownsNativeCompaction: true,
     manualCompaction: {
@@ -304,6 +362,7 @@ export function buildAnthropicCliBackend(
           ...resolveClaudeCliAutoCompactEnv(context.contextTokenBudget),
           ...(context.contextWindow === "200k" ? { CLAUDE_CODE_DISABLE_1M_CONTEXT: "1" } : {}),
           ...resolveClaudeCliThinkingEnv(context.thinkingLevel, context.modelId),
+          ...resolveClaudeCliTurnModelEnv(context.config, context.modelId),
           ...authInput?.env,
         };
         return {

@@ -407,21 +407,32 @@
           "enabled": { "type": "boolean", "default": true }
         }
       },
+      "turnModelOnly": { "type": "boolean" },
       "managedNativeTools": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "default": {
-            "type": "array",
-            "uniqueItems": true,
-            "items": { "type": "string", "enum": ["Agent", "Workflow"] }
+            "oneOf": [
+              { "type": "string", "const": "all" },
+              {
+                "type": "array",
+                "uniqueItems": true,
+                "items": { "type": "string", "enum": ["Agent", "Workflow", "Bash", "Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit", "WebFetch", "WebSearch"] }
+              }
+            ]
           },
           "agents": {
             "type": "object",
             "additionalProperties": {
-              "type": "array",
-              "uniqueItems": true,
-              "items": { "type": "string", "enum": ["Agent", "Workflow"] }
+              "oneOf": [
+                { "type": "string", "const": "all" },
+                {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": { "type": "string", "enum": ["Agent", "Workflow", "Bash", "Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit", "WebFetch", "WebSearch"] }
+                }
+              ]
             }
           }
         }
@@ -439,15 +450,19 @@
     },
     "managedNativeTools": {
       "label": "Claude Code Native Tools on Managed Turns",
-      "help": "Off by default. Keeps selected Claude Code orchestration tools on OpenClaw-managed claude-cli turns, which otherwise expose only OpenClaw tools. Descendant agents inherit the managed turn's tool list and isolation: no user settings, Claude plugins, auto-memory, slash commands, or Chrome. Applies to ordinary and subagent-completion turns alike so the cached prompt prefix stays stable; restricted senders, delegated runs, explicit tool caps, and tools.fs.workspaceOnly keep no native tools."
+      "help": "Off by default. Keeps selected Claude Code tools on OpenClaw-managed claude-cli turns, which otherwise expose only OpenClaw tools. Descendant agents inherit the managed turn's tool list and isolation: no user settings, Claude plugins, auto-memory, slash commands, or Chrome. Applies to ordinary and subagent-completion turns alike so the cached prompt prefix stays stable; restricted senders, delegated runs, explicit tool caps, and tools.fs.workspaceOnly keep no native tools."
     },
     "managedNativeTools.default": {
       "label": "Default Native Tools",
-      "help": "Claude Code tools kept for every agent without its own entry: Agent (subagents) and Workflow (scripted multi-agent orchestration)."
+      "help": "Claude Code tools kept for every agent without its own entry: Agent (subagents), Workflow (scripted multi-agent orchestration), Bash, Read, Write, Edit, Glob, Grep, NotebookEdit, WebFetch and WebSearch, or \"all\" for every one of them."
     },
     "managedNativeTools.agents": {
       "label": "Per-Agent Native Tools",
-      "help": "Agent id to its own list, replacing the default. An empty list opts that agent out."
+      "help": "Agent id to its own list or \"all\", replacing the default. An empty list opts that agent out."
+    },
+    "turnModelOnly": {
+      "label": "Claude Code Uses Only the Turn's Model",
+      "help": "Off by default. Runs every model call Claude Code makes on its own (subagents, a subagent's model alias or full id, page summaries, command checks) on the turn's model instead of a smaller default model, and never swaps a refused model for another one. Applies when the turn names a full Claude model id."
     }
   }
 }
