@@ -1411,7 +1411,11 @@ describe("runCliAgent spawn path", () => {
   });
 
   it.each([
-    { name: "the final message alone by default", replyIncludesPreToolText: undefined, text: "DONE" },
+    {
+      name: "the final message alone by default",
+      replyIncludesPreToolText: undefined,
+      text: "DONE",
+    },
     {
       name: "pre-tool text too for a caller that streamed it",
       replyIncludesPreToolText: true,
