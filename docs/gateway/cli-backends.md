@@ -263,8 +263,13 @@ a project's `.claude/agents/` are not loaded.
   `on-miss` or `always` routes it through approval, and exec security `deny`,
   or `allowlist` with ask `off`, refuses it. Under those two settings the
   opt-in has no effect, because every kept tool is refused or waits for
-  approval. With the default exec policy (security `full`, ask `off`) kept tools
-  run without asking.
+  approval first. With the default exec policy (security `full`, ask `off`)
+  kept tools run without asking.
+- Claude Code runs some work on a smaller model of its own: built-in subagents
+  such as Explore, an `Agent` call that names `haiku`, page summaries for
+  `WebFetch`, and command checks for `Bash`. Set
+  `plugins.entries.anthropic.config.turnModelOnly: true` to run all of it on the
+  turn's model.
 - Only `Agent` and `Workflow` are named in the turn's delegation guidance.
 - Descendants see the managed turn's tool list: the kept native tools plus
   OpenClaw's policy-filtered tools. Their OpenClaw tool calls pass the same

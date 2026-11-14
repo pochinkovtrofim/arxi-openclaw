@@ -4,6 +4,7 @@ import type {
   CliBackendPlugin,
   CliBackendPreparedExecution,
 } from "openclaw/plugin-sdk/cli-backend";
+import type { OpenClawConfig } from "openclaw/plugin-sdk/plugin-entry";
 import { isRecord } from "openclaw/plugin-sdk/string-coerce-runtime";
 import {
   CLAUDE_CLI_BACKEND_ID,
@@ -114,6 +115,31 @@ function resolveClaudeManagedNativeTools(
   return Array.isArray(selected)
     ? CLAUDE_MANAGED_NATIVE_TOOLS.filter((name) => selected.includes(name))
     : [];
+}
+
+const CLAUDE_CLI_MODEL_ENV = [
+  "CLAUDE_CODE_SUBAGENT_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL",
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_SMALL_FAST_MODEL",
+] as const;
+
+/**
+ * `plugins.entries.anthropic.config.turnModelOnly`: every model call the program
+ * makes on its own (subagents, a subagent's model alias, page summaries, command
+ * checks) runs on the turn's model instead of a smaller default.
+ */
+function resolveClaudeCliTurnModelEnv(
+  config: OpenClawConfig | undefined,
+  modelId: string,
+): Record<string, string> {
+  const pluginConfig = config?.plugins?.entries?.anthropic?.config;
+  if (!isRecord(pluginConfig) || pluginConfig.turnModelOnly !== true || !modelId.trim()) {
+    return {};
+  }
+  return Object.fromEntries(CLAUDE_CLI_MODEL_ENV.map((name) => [name, modelId]));
 }
 
 function createClaudeCliAuthInput(params: {
@@ -324,6 +350,7 @@ export function buildAnthropicCliBackend(
           ...resolveClaudeCliAutoCompactEnv(context.contextTokenBudget),
           ...(context.contextWindow === "200k" ? { CLAUDE_CODE_DISABLE_1M_CONTEXT: "1" } : {}),
           ...resolveClaudeCliThinkingEnv(context.thinkingLevel, context.modelId),
+          ...resolveClaudeCliTurnModelEnv(context.config, context.modelId),
           ...authInput?.env,
         };
         return {

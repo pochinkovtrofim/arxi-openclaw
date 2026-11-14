@@ -407,6 +407,7 @@
           "enabled": { "type": "boolean", "default": true }
         }
       },
+      "turnModelOnly": { "type": "boolean" },
       "managedNativeTools": {
         "type": "object",
         "additionalProperties": false,
@@ -457,7 +458,11 @@
     },
     "managedNativeTools.agents": {
       "label": "Per-Agent Native Tools",
-      "help": "Agent id to its own list, replacing the default. An empty list opts that agent out."
+      "help": "Agent id to its own list or \"all\", replacing the default. An empty list opts that agent out."
+    },
+    "turnModelOnly": {
+      "label": "Claude Code Uses Only the Turn's Model",
+      "help": "Off by default. Runs every model call Claude Code makes on its own (subagents, a subagent's model alias, page summaries, command checks) on the turn's model instead of a smaller default model."
     }
   }
 }
