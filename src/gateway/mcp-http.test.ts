@@ -1753,6 +1753,60 @@ describe("mcp loopback server", () => {
     expectMcpResultText(payload, "EXECUTED", false);
   });
 
+  it("lets a tool keep state it bound to the execution context through finalize", async () => {
+    // Ro's plugin tools trust a call only while prepare and finalize see the
+    // same run; a finalize without the context dropped that trust on CLI runs.
+    type Execution = { hookContext?: { sessionKey?: string } };
+    const trusted = new WeakMap<object, string>();
+    const bound = (execution?: Execution) => execution?.hookContext?.sessionKey;
+    const prepare = vi.fn(async (args: unknown, execution?: Execution) => {
+      const binding = bound(execution);
+      if (binding) {
+        trusted.set(args as object, binding);
+      }
+      return args;
+    });
+    const finalize = vi.fn((args: unknown, prior: unknown, execution?: Execution) => {
+      const old = trusted.get(prior as object);
+      trusted.delete(prior as object);
+      const binding = bound(execution);
+      if (binding && binding === old) {
+        trusted.set(args as object, binding);
+      }
+      return args;
+    });
+    const execute = vi.fn<MockGatewayTool["execute"]>(async (_id, args) => {
+      if (!trusted.get(args as object)) {
+        throw new Error("This tool is unavailable in the current conversation");
+      }
+      return { content: [{ type: "text", text: "EXECUTED" }] };
+    });
+    mockScopedTools([
+      makeMessageTool({
+        prepareBeforeToolCallParams: prepare,
+        finalizeBeforeToolCallParams: finalize,
+        execute,
+      }),
+    ]);
+    const { runtime } = await startLoopbackServerForTest();
+    const payload = await readOkMcpPayload(
+      await sendLoopbackToolCall({
+        token: runtime.ownerToken,
+        name: "message",
+        args: { stage: "raw" },
+      }),
+    );
+    expect(finalize).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({
+        toolCallId: expect.stringMatching(/^mcp-/),
+        hookContext: expect.objectContaining({ sessionKey: "agent:main:main" }),
+      }),
+    );
+    expectMcpResultText(payload, "EXECUTED", false);
+  });
+
   it("binds slow request bodies to their capture generation at header acceptance", async () => {
     const captureKey = "slow-request-generation";
     const requestClassified = vi.fn();

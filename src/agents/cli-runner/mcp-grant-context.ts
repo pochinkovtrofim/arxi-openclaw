@@ -188,7 +188,17 @@ export function buildCliMcpGrantContext(params: {
   );
   const currentChannelId = normalizeOptionalString(params.run.currentChannelId);
   // currentChannelId is the reply target an embedded attempt calls messageTo.
-  const requester = buildToolHookRequester({ ...params.run, messageTo: currentChannelId });
+  const requester = buildToolHookRequester({
+    chatId: params.run.chatId,
+    groupId: params.run.groupId,
+    messageTo: currentChannelId,
+    chatType: params.run.chatType,
+    senderId: params.run.senderId,
+    senderIsOwner: params.run.senderIsOwner,
+    agentAccountId: params.run.agentAccountId,
+    messageChannel: params.run.messageChannel,
+    messageProvider: params.run.messageProvider,
+  });
   const grantedToolsAllow = params.run.cliToolAvailability?.openClaw ?? params.toolsAllow;
   const delegationCapability = readCliMcpDelegationCapability(params.run);
   // Trusted message-only completions stay restricted even when source routing
