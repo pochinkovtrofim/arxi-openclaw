@@ -74,7 +74,9 @@ export function resolveCliNativeWebSearchEnabled(
   }
   // An operator who kept the native search tool on this run chose it beside the
   // configured provider; otherwise a configured provider owns web search.
-  return !search?.provider?.trim() || params.cliToolAvailability?.native.includes("WebSearch") === true;
+  return (
+    !search?.provider?.trim() || params.cliToolAvailability?.native.includes("WebSearch") === true
+  );
 }
 
 function sortJsonValue(value: unknown): unknown {

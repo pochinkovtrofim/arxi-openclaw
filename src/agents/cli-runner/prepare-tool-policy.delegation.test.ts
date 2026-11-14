@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveCliBootstrapFileAccess, resolveCliRuntimeToolPolicy } from "./prepare-tool-policy.js";
+import { resolveCliRuntimeToolPolicy } from "./prepare-tool-policy.js";
 import type { RunCliAgentParams } from "./types.js";
 
 const params: RunCliAgentParams = {
@@ -215,23 +215,4 @@ it("never adds managed native tools to delegated runs", async () => {
   });
   expect(result.managedNativeTools).toEqual([]);
   expect(result.params.cliToolAvailability?.native).toEqual([]);
-});
-
-it("counts kept native file tools as bootstrap file access by their capability", () => {
-  const backend = {
-    id: "claude-cli",
-    nativeToolMode: "selectable" as const,
-    projectNativeToolAuthority: (names: readonly string[]) =>
-      names.flatMap((name) => (name === "Read" ? ["read"] : name === "Write" ? ["write"] : [])),
-  };
-  const access = (native: string[]) =>
-    resolveCliBootstrapFileAccess({
-      backend,
-      params: { cliToolAvailability: { native, openClaw: [] } },
-      managedNativeTools: native,
-      projectedToolNames: [],
-    });
-  expect(access(["Agent", "Workflow"])).toBe(false);
-  expect(access(["Read"])).toBe(false);
-  expect(access(["Agent", "Read", "Write"])).toBe(true);
 });

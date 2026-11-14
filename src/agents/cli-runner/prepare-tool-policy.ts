@@ -170,25 +170,19 @@ export async function resolveCliRuntimeToolPolicy(input: {
 }
 /**
  * Bootstrap routing needs the run's final file access: a native file-capable
- * selection, or Claude's mediated OpenClaw read plus write tools. Operator-kept
- * native tools count by the capability the backend projects for them.
+ * selection, or Claude's mediated OpenClaw read plus write tools. Managed native
+ * selections confer no file capability by backend contract.
  */
 export function resolveCliBootstrapFileAccess(input: {
-  backend: Pick<ResolvedCliBackend, "id" | "nativeToolMode" | "projectNativeToolAuthority">;
+  backend: Pick<ResolvedCliBackend, "id" | "nativeToolMode">;
   params: Pick<RunCliAgentParams, "cliToolAvailability" | "disableTools">;
   managedNativeTools: readonly string[];
   projectedToolNames: readonly string[];
 }): boolean {
   const { backend, params, managedNativeTools, projectedToolNames } = input;
-  const managedCapabilities =
-    backend.projectNativeToolAuthority?.(
-      managedNativeTools.filter((name) => params.cliToolAvailability?.native.includes(name)),
-    ) ?? [];
   const selectedNativeToolsProvideFileAccess =
     params.cliToolAvailability === undefined ||
-    params.cliToolAvailability.native.some((name) => !managedNativeTools.includes(name)) ||
-    (managedCapabilities.includes("read") &&
-      managedCapabilities.some((name) => name === "write" || name === "edit"));
+    params.cliToolAvailability.native.some((name) => !managedNativeTools.includes(name));
   const mediatedBootstrapFileAccess =
     backend.id === "claude-cli" &&
     projectedToolNames.includes("read") &&
