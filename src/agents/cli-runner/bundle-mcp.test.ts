@@ -533,6 +533,31 @@ it("enforces an explicit search provider without bundle MCP", async () => {
   expect(prepared.backend.args).toContain('web_search="disabled"');
 });
 
+it("keeps Claude's native search beside a provider when the run kept WebSearch", async () => {
+  const prepare = async (native: string[], search: SearchConfig) => {
+    const prepared = await prepareCliBundleMcpConfig({
+      enabled: true,
+      backend: { command: "custom-cli", args: ["run"] },
+      workspaceDir: "/synthetic/cli-search",
+      config: { tools: { web: { search } } },
+      cliToolAvailability: { native },
+      exclusiveConfig: { mcpServers: {} },
+    });
+    if (prepared.cleanup) {
+      searchCleanups.push(prepared.cleanup);
+    }
+    const args = prepared.backend.args ?? [];
+    return args.includes("--disallowedTools")
+      ? (args[args.indexOf("--disallowedTools") + 1]?.split(",") ?? [])
+      : [];
+  };
+  expect(await prepare(["Agent", "WebSearch"], { provider: "brave" })).not.toContain("WebSearch");
+  expect(await prepare(["Agent"], { provider: "brave" })).toContain("WebSearch");
+  expect(await prepare(["WebSearch"], { provider: "brave", enabled: false })).toContain(
+    "WebSearch",
+  );
+});
+
 it("adapts opted-in bundle MCP to Claude by default", async () => {
   const prepared = await prepareCliBundleMcpConfig({
     enabled: true,

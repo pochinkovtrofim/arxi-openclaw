@@ -211,11 +211,12 @@ bridged through that catalog, with their instructions preserved; every request
 still checks the current turn's grant. Explicit native tool selections, node
 execution, and tool-free side questions retain their own contracts.
 
-### Keeping Claude Code orchestration tools on managed turns
+### Keeping Claude Code's own tools on managed turns
 
 Managed turns expose no Claude-native tools by default. Operators who want
-Claude Code's native subagents or workflows can opt in per agent, or for every
-agent, through the Anthropic plugin config:
+Claude Code's native subagents, workflows, or its own file, shell, and web
+tools can opt in per agent, or for every agent, through the Anthropic plugin
+config:
 
 ```json5
 {
@@ -226,6 +227,7 @@ agent, through the Anthropic plugin config:
           managedNativeTools: {
             default: ["Agent", "Workflow"],
             agents: { ops: [] }, // per-agent list replaces the default
+            // or default: "all" for every tool listed below
           },
         },
       },
@@ -234,10 +236,15 @@ agent, through the Anthropic plugin config:
 }
 ```
 
-Only `Agent` and `Workflow` are accepted: they add orchestration without
-granting file, shell, or network authority, so descendants act through the same
-policy-filtered OpenClaw tools as the parent. File and shell tools stay with
-OpenClaw. `Skill` is not offered because managed turns load no Claude skills.
+Accepted tools are `Agent` and `Workflow` (orchestration, no authority of their
+own), and `Bash`, `Read`, `Write`, `Edit`, `Glob`, `Grep`, `NotebookEdit`,
+`WebFetch`, and `WebSearch`; `"all"` keeps every one of them. A kept file, shell,
+or web tool counts as the matching OpenClaw capability (`Bash` as `exec`,
+`Read` and `Grep` as `read`, and so on) wherever OpenClaw records a turn's
+authority, such as a cron job the turn creates. `Bash` stays foreground-only.
+A kept `WebSearch` stays on even when `tools.web.search.provider` names a
+provider; `tools.web.search.enabled: false` still turns it off. `Skill` is not
+offered because managed turns load no Claude skills.
 Managed turns also load no user or project settings, so `Agent` offers Claude
 Code's built-in subagent types only; custom subagents in `~/.claude/agents/` or
 a project's `.claude/agents/` are not loaded.
@@ -255,12 +262,13 @@ a project's `.claude/agents/` are not loaded.
 - Each native call still passes `before_tool_call` and exec policy: ask
   `on-miss` or `always` routes it through approval, and exec security `deny`,
   or `allowlist` with ask `off`, refuses it. Under those two settings the
-  opt-in has no effect, because `Agent` and `Workflow` are refused before any
-  descendant starts.
-- Descendants see the managed turn's tool list: the selected orchestration
-  tools plus OpenClaw's policy-filtered tools, never Claude-native file or
-  shell tools. Their OpenClaw tool calls pass the same grant and hooks as the
-  parent's.
+  opt-in has no effect, because every kept tool is refused or waits for
+  approval. With the default exec policy (security `full`, ask `off`) kept tools
+  run without asking.
+- Only `Agent` and `Workflow` are named in the turn's delegation guidance.
+- Descendants see the managed turn's tool list: the kept native tools plus
+  OpenClaw's policy-filtered tools. Their OpenClaw tool calls pass the same
+  grant and hooks as the parent's.
 - Known limitations: native calls made by descendants (nested `Agent` or
   `Workflow`) reach `before_tool_call` but do not emit `after_tool_call`, and the
   parent sees only the descendant's result. OpenClaw does not track native

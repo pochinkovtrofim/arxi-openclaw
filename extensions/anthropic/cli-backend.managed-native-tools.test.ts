@@ -32,17 +32,44 @@ describe("Claude CLI managed native tools", () => {
     expect(resolve(selection, "ops")).toEqual([]);
   });
 
-  it("never returns tools outside the orchestration set or with their own capability", () => {
+  it("keeps file, shell and web tools by their projected capability, never scheduling", () => {
     const backend = buildAnthropicCliBackend();
-    const selected = resolve({ default: ["Agent", "Bash", "Read", "Monitor", "CronCreate"] });
-    expect(selected).toEqual(["Agent"]);
+    const selected = resolve({ default: ["Read", "Bash", "Agent", "Monitor", "CronCreate"] });
+    expect(selected).toEqual(["Agent", "Bash", "Read"]);
+    expect(backend.projectNativeToolAuthority?.(selected ?? [])).toEqual(["read", "exec"]);
     expect(backend.projectNativeToolAuthority?.(["Agent", "Workflow"])).toEqual([]);
+  });
+
+  it('"all" keeps every Claude Code tool a managed turn may hold', () => {
+    const all = resolve({ default: "all", agents: { ops: ["Agent"] } });
+    expect(all).toEqual([
+      "Agent",
+      "Workflow",
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "Glob",
+      "Grep",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+    ]);
+    expect(resolve({ default: "all", agents: { ops: ["Agent"] } }, "ops")).toEqual(["Agent"]);
+    expect(resolve({ agents: { ops: "all" } }, "ops")).toEqual(all);
+  });
+
+  it("names only orchestration tools as delegation", () => {
+    expect(buildAnthropicCliBackend().nativeDelegationTools).toEqual(["Agent", "Workflow"]);
   });
 
   it.each<[unknown, boolean]>([
     [{ default: ["Agent", "Workflow"], agents: { ops: [] } }, true],
+    [{ default: "all", agents: { ops: ["Bash", "WebSearch"] } }, true],
+    [{ agents: { ops: "all" } }, true],
     [{ default: ["Skill"] }, false],
-    [{ agents: { ops: ["Bash"] } }, false],
+    [{ agents: { ops: ["Monitor"] } }, false],
+    [{ default: "everything" }, false],
     [{ default: ["Agent", "Agent"] }, false],
     [{ allow: ["Agent"] }, false],
   ])("validates managedNativeTools config %j", (managedNativeTools, expected) => {

@@ -1054,6 +1054,7 @@ async function prepareCliRunContextWithinReadFence(
       workspaceDir,
       config: params.config,
       toolOverrides: params.toolOverrides,
+      cliToolAvailability: params.cliToolAvailability,
       agentDir,
       // Restricted runs serve only the loopback server; merging user/plugin
       // MCP servers would let the run reach tools outside its allowlist.
@@ -1515,7 +1516,9 @@ async function prepareCliRunContextWithinReadFence(
         isNewSession:
           !reusableCliSessionId?.trim() || reusableCliSession.mode === "reuse-with-drift",
         thinkLevel: params.thinkLevel,
-        nativeDelegationTools: keptManagedNativeTools(managedNativeTools, params),
+        nativeDelegationTools: keptManagedNativeTools(managedNativeTools, params).filter((name) =>
+          backendResolved.nativeDelegationTools?.includes(name),
+        ),
         runtimeContextFragments: params.runtimeContextFragments,
         // Caller-owned memory cannot grant access to persisted interrupted inputs.
         sessionTarget: params.isolatedCompletion ? undefined : cliHistoryWriter?.target,

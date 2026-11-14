@@ -76,8 +76,24 @@ function projectClaudeNativeToolAuthority(nativeTools: readonly string[]): reado
 }
 
 // Orchestration tools whose descendants inherit the parent's tool list, so they confer
-// no capability of their own. Order is canonical: equivalent selections launch one argv.
-const CLAUDE_MANAGED_NATIVE_TOOLS = ["Agent", "Workflow"] as const;
+// no capability of their own.
+const CLAUDE_DELEGATION_NATIVE_TOOLS = ["Agent", "Workflow"] as const;
+// Everything an operator may keep on managed turns: orchestration plus Claude Code's
+// own file, shell and web tools, each still checked by before_tool_call and exec
+// policy. Scheduling, monitors and background shells stay blocked by the launch args.
+// Order is canonical: equivalent selections launch one argv and one cached prefix.
+const CLAUDE_MANAGED_NATIVE_TOOLS = [
+  ...CLAUDE_DELEGATION_NATIVE_TOOLS,
+  "Bash",
+  "Read",
+  "Write",
+  "Edit",
+  "Glob",
+  "Grep",
+  "NotebookEdit",
+  "WebFetch",
+  "WebSearch",
+] as const;
 
 /** Operator selection under `plugins.entries.anthropic.config.managedNativeTools`. */
 function resolveClaudeManagedNativeTools(
@@ -92,6 +108,9 @@ function resolveClaudeManagedNativeTools(
   const selected = Object.hasOwn(agents ?? {}, ctx.agentId)
     ? agents?.[ctx.agentId]
     : selection.default;
+  if (selected === "all") {
+    return [...CLAUDE_MANAGED_NATIVE_TOOLS];
+  }
   return Array.isArray(selected)
     ? CLAUDE_MANAGED_NATIVE_TOOLS.filter((name) => selected.includes(name))
     : [];
@@ -205,6 +224,7 @@ export function buildAnthropicCliBackend(
       appendClaudeCliToolNamingGuidance(systemPrompt, openClawMcpToolNames),
     projectNativeToolAuthority: projectClaudeNativeToolAuthority,
     resolveManagedNativeTools: resolveClaudeManagedNativeTools,
+    nativeDelegationTools: CLAUDE_DELEGATION_NATIVE_TOOLS,
     sideQuestionToolMode: "disabled",
     ownsNativeCompaction: true,
     manualCompaction: {

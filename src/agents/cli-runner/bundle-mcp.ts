@@ -55,7 +55,11 @@ type PreparedCliBundleMcpConfig = {
 
 /** A managed provider pin replaces native search without disabling OpenClaw's MCP tool. */
 export function resolveCliNativeWebSearchEnabled(
-  params: { config?: OpenClawConfig; toolOverrides?: SessionToolOverrides },
+  params: {
+    config?: OpenClawConfig;
+    toolOverrides?: SessionToolOverrides;
+    cliToolAvailability?: { native: readonly string[] };
+  },
   backend: Pick<CliBackendPlugin, "bundleMcp" | "bundleMcpMode">,
 ): boolean {
   if (params.toolOverrides?.webSearch === false) {
@@ -65,7 +69,12 @@ export function resolveCliNativeWebSearchEnabled(
     return true;
   }
   const search = params.config?.tools?.web?.search;
-  return search?.enabled !== false && !search?.provider?.trim();
+  if (search?.enabled === false) {
+    return false;
+  }
+  // An operator who kept the native search tool on this run chose it beside the
+  // configured provider; otherwise a configured provider owns web search.
+  return !search?.provider?.trim() || params.cliToolAvailability?.native.includes("WebSearch") === true;
 }
 
 function sortJsonValue(value: unknown): unknown {
@@ -328,6 +337,8 @@ export async function prepareCliBundleMcpConfig(params: {
   workspaceDir: string;
   config?: OpenClawConfig;
   toolOverrides?: SessionToolOverrides;
+  /** The run's exact native tools; a kept native WebSearch stays on beside a provider. */
+  cliToolAvailability?: { native: readonly string[] };
   agentDir?: string;
   additionalConfig?: BundleMcpConfig;
   /**
