@@ -195,9 +195,14 @@ export async function handleMcpJsonRpc(params: {
           );
           return toolError(hookResult.reason);
         }
+        // A tool may re-bind state it prepared from the same execution context
+        // (a plugin tool scoped to the requester does), so finalize sees it too.
         const finalizedToolArgs =
-          tool.finalizeBeforeToolCallParams?.(hookResult.params, preparedToolArgs) ??
-          hookResult.params;
+          tool.finalizeBeforeToolCallParams?.(hookResult.params, preparedToolArgs, {
+            toolCallId,
+            hookContext: params.hookContext,
+            signal: params.signal,
+          }) ?? hookResult.params;
         executedToolArgs = finalizedToolArgs as Record<string, unknown>;
         try {
           params.onToolCallPrepared?.({ toolName, args: executedToolArgs });

@@ -11,6 +11,7 @@ import {
 import type { DelegationCapability } from "../delegation-capability.js";
 import { SESSION_PERMISSION_BY_EXEC_MODE } from "../session-permission-exec-mode.js";
 import { resolveStoredSessionPermissionPolicy } from "../tool-fs-policy.js";
+import { buildToolHookRequester } from "../tool-hook-requester.js";
 import type { RunCliAgentParams } from "./types.js";
 
 const cliMcpDelegationCapability = Symbol("cliMcpDelegationCapability");
@@ -186,6 +187,18 @@ export function buildCliMcpGrantContext(params: {
     params.run.messageChannel ?? params.run.messageProvider,
   );
   const currentChannelId = normalizeOptionalString(params.run.currentChannelId);
+  // currentChannelId is the reply target an embedded attempt calls messageTo.
+  const requester = buildToolHookRequester({
+    chatId: params.run.chatId,
+    groupId: params.run.groupId,
+    messageTo: currentChannelId,
+    chatType: params.run.chatType,
+    senderId: params.run.senderId,
+    senderIsOwner: params.run.senderIsOwner,
+    agentAccountId: params.run.agentAccountId,
+    messageChannel: params.run.messageChannel,
+    messageProvider: params.run.messageProvider,
+  });
   const grantedToolsAllow = params.run.cliToolAvailability?.openClaw ?? params.toolsAllow;
   const delegationCapability = readCliMcpDelegationCapability(params.run);
   // Trusted message-only completions stay restricted even when source routing
@@ -263,6 +276,7 @@ export function buildCliMcpGrantContext(params: {
     ...(execOverrides ? { execOverrides } : {}),
     ...(bashElevated ? { bashElevated } : {}),
     ...(params.run.trigger ? { trigger: params.run.trigger } : {}),
+    ...(requester ? { requester } : {}),
     ...(params.run.continuesConversation ? { continuesConversation: true } : {}),
     ...(normalizeOptionalString(params.run.approvalReviewerDeviceId)
       ? { approvalReviewerDeviceId: params.run.approvalReviewerDeviceId?.trim() }

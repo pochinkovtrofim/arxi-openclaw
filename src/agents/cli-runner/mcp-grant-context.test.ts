@@ -52,6 +52,33 @@ describe("buildCliMcpGrantContext source-reply authority", () => {
     expect(buildGrant()).not.toHaveProperty("requesterModel");
   });
 
+  it("carries the turn's trigger and requester as an embedded attempt builds them", () => {
+    const grant = buildGrant({
+      trigger: "user",
+      chatId: "telegram-chat:42",
+      chatType: "direct",
+      messageChannel: "arxi",
+      agentAccountId: "default",
+      senderId: "42",
+      senderIsOwner: true,
+    });
+
+    expect(grant.trigger).toBe("user");
+    expect(grant.requester).toEqual({
+      conversationId: "telegram-chat:42",
+      chatType: "direct",
+      channel: "arxi",
+      accountId: "default",
+      senderId: "42",
+      senderIsOwner: true,
+    });
+    // Without a chat id the reply target names the conversation, as messageTo does.
+    expect(buildGrant({ trigger: "cron" }).requester).toEqual({
+      conversationId: "telegram:chat123",
+      channel: "telegram",
+    });
+  });
+
   it("binds screen commands to the requesting browser in the server-owned grant", () => {
     const gatewayUiCommandTarget = { connId: "requester-tab", profileId: "requester" };
     expect(buildGrant({ gatewayUiCommandTarget }).gatewayUiCommandTarget).toEqual(
