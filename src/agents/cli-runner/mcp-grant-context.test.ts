@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { runWithDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import {
   buildCliMcpDelegationCapabilityBinding,
   buildCliMcpGrantContext,
 } from "./mcp-grant-context.js";
+import { buildCliPromptBuildHookContext } from "./prompt-hook-context.js";
 import type { RunCliAgentParams } from "./types.js";
 
 function buildGrant(
@@ -180,5 +182,35 @@ describe("buildCliMcpGrantContext delegationCapability", () => {
     // is absent rather than explicitly "full".
     expect(buildGrant()).not.toHaveProperty("delegationCapability");
     expect(buildGrant({}, "full")).not.toHaveProperty("delegationCapability");
+  });
+});
+
+describe("buildCliMcpGrantContext run origin", () => {
+  const trace = { traceId: "0123456789abcdef0123456789abcdef", spanId: "0123456789abcdef" };
+  const inputProvenance = { kind: "external_user" } as const;
+
+  it("gives loopback tool calls the trace and input origin its prompt hooks see", () => {
+    const { grant, promptContext } = runWithDiagnosticTraceContext(trace, () => ({
+      grant: buildGrant({ trigger: "user", inputProvenance }),
+      promptContext: buildCliPromptBuildHookContext(
+        {
+          trigger: "user",
+          inputProvenance,
+          runId: "run",
+          sessionId: "session",
+        } as RunCliAgentParams,
+        { agentId: "main", workspaceDir: "/workspace", modelId: "model" },
+      ),
+    }));
+
+    expect(grant.runOrigin).toEqual({ trace, inputProvenance });
+    expect(promptContext.trace).toEqual(trace);
+    expect(promptContext.inputProvenance).toEqual(inputProvenance);
+  });
+
+  it("names no origin for a run that has neither", () => {
+    expect(buildGrant({ trigger: "cron", inputProvenance: undefined })).not.toHaveProperty(
+      "runOrigin",
+    );
   });
 });

@@ -6,6 +6,7 @@ import {
 } from "../agents/admitted-run-context.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
 import type { ExecElevatedDefaults } from "../agents/bash-tools.exec-types.js";
+import type { CliRunOrigin } from "../agents/cli-runner/prompt-hook-context.js";
 import type { DelegationCapability } from "../agents/delegation-capability.js";
 import type { ExecPolicyOverrides, ExecSessionDefaults } from "../agents/exec-defaults.js";
 import type { PreparedQuestionAnswerAuthority } from "../agents/harness/host-private-capabilities.js";
@@ -105,6 +106,11 @@ export type McpLoopbackRequestContext = {
   trigger?: string;
   /** Host-derived requester for plugin tool hooks, as an embedded attempt builds it. */
   requester?: PluginHookToolRequesterContext;
+  /**
+   * The run's trace and input origin for plugin tool hooks (`buildCliRunOrigin`).
+   * Not tool authority, which reads the top-level `inputProvenance`.
+   */
+  runOrigin?: CliRunOrigin;
   continuesConversation?: boolean;
   approvalReviewerDeviceId?: string;
   channelContext?: PluginHookChannelContext;

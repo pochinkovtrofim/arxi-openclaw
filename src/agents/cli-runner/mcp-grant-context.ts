@@ -12,6 +12,7 @@ import type { DelegationCapability } from "../delegation-capability.js";
 import { SESSION_PERMISSION_BY_EXEC_MODE } from "../session-permission-exec-mode.js";
 import { resolveStoredSessionPermissionPolicy } from "../tool-fs-policy.js";
 import { buildToolHookRequester } from "../tool-hook-requester.js";
+import { buildCliRunOrigin } from "./prompt-hook-context.js";
 import type { RunCliAgentParams } from "./types.js";
 
 const cliMcpDelegationCapability = Symbol("cliMcpDelegationCapability");
@@ -199,6 +200,7 @@ export function buildCliMcpGrantContext(params: {
     messageChannel: params.run.messageChannel,
     messageProvider: params.run.messageProvider,
   });
+  const runOrigin = buildCliRunOrigin(params.run);
   const grantedToolsAllow = params.run.cliToolAvailability?.openClaw ?? params.toolsAllow;
   const delegationCapability = readCliMcpDelegationCapability(params.run);
   // Trusted message-only completions stay restricted even when source routing
@@ -277,6 +279,7 @@ export function buildCliMcpGrantContext(params: {
     ...(bashElevated ? { bashElevated } : {}),
     ...(params.run.trigger ? { trigger: params.run.trigger } : {}),
     ...(requester ? { requester } : {}),
+    ...(runOrigin.trace || runOrigin.inputProvenance ? { runOrigin } : {}),
     ...(params.run.continuesConversation ? { continuesConversation: true } : {}),
     ...(normalizeOptionalString(params.run.approvalReviewerDeviceId)
       ? { approvalReviewerDeviceId: params.run.approvalReviewerDeviceId?.trim() }
