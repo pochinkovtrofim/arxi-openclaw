@@ -269,7 +269,9 @@ a project's `.claude/agents/` are not loaded.
   such as Explore, an `Agent` call that names `haiku`, page summaries for
   `WebFetch`, and command checks for `Bash`. Set
   `plugins.entries.anthropic.config.turnModelOnly: true` to run all of it on the
-  turn's model.
+  turn's model; Claude Code then also never swaps a refused model for another
+  one. It applies when the turn names a full Claude model id, and not on a
+  paired node.
 - Only `Agent` and `Workflow` are named in the turn's delegation guidance.
 - Descendants see the managed turn's tool list: the kept native tools plus
   OpenClaw's policy-filtered tools. Their OpenClaw tool calls pass the same

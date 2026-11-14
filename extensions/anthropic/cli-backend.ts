@@ -119,6 +119,7 @@ function resolveClaudeManagedNativeTools(
 
 const CLAUDE_CLI_MODEL_ENV = [
   "CLAUDE_CODE_SUBAGENT_MODEL",
+  "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
   "ANTHROPIC_DEFAULT_FABLE_MODEL",
   "ANTHROPIC_DEFAULT_OPUS_MODEL",
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -128,18 +129,29 @@ const CLAUDE_CLI_MODEL_ENV = [
 
 /**
  * `plugins.entries.anthropic.config.turnModelOnly`: every model call the program
- * makes on its own (subagents, a subagent's model alias, page summaries, command
- * checks) runs on the turn's model instead of a smaller default.
+ * makes on its own (subagents, a subagent's model alias or full id, page
+ * summaries, command checks) runs on the turn's model instead of a smaller
+ * default, and a refused model is never swapped for another one. Only a full
+ * Claude model id is pinned; an alias such as `default` keeps the program's own.
  */
 function resolveClaudeCliTurnModelEnv(
   config: OpenClawConfig | undefined,
   modelId: string,
 ): Record<string, string> {
   const pluginConfig = config?.plugins?.entries?.anthropic?.config;
-  if (!isRecord(pluginConfig) || pluginConfig.turnModelOnly !== true || !modelId.trim()) {
+  if (
+    !isRecord(pluginConfig) ||
+    pluginConfig.turnModelOnly !== true ||
+    !modelId.trim().startsWith("claude-")
+  ) {
     return {};
   }
-  return Object.fromEntries(CLAUDE_CLI_MODEL_ENV.map((name) => [name, modelId]));
+  return {
+    ...Object.fromEntries(CLAUDE_CLI_MODEL_ENV.map((name) => [name, modelId])),
+    // A subagent's own model choice otherwise outranks the pinned default.
+    CLAUDE_CODE_SUBAGENT_MODEL_FORCE: "1",
+    CLAUDE_CODE_NO_MODEL_FALLBACK: "1",
+  };
 }
 
 function createClaudeCliAuthInput(params: {

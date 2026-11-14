@@ -60,16 +60,19 @@ describe("Claude CLI managed native tools", () => {
   });
 
   it("runs every model call of the program on the turn's model when the operator asks", () => {
-    const prepare = (turnModelOnly: unknown) =>
+    const prepare = (turnModelOnly: unknown, modelId = "claude-opus-5-5") =>
       buildAnthropicCliBackend().prepareExecution?.({
         workspaceDir: "/tmp/openclaw-claude-cli",
         provider: "claude-cli",
-        modelId: "claude-opus-5-5",
+        modelId,
         config: { plugins: { entries: { anthropic: { config: { turnModelOnly } } } } },
       }) as { env: Record<string, string> };
     const pinned = prepare(true).env;
+    expect(pinned.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe("1");
+    expect(pinned.CLAUDE_CODE_NO_MODEL_FALLBACK).toBe("1");
     for (const name of [
       "CLAUDE_CODE_SUBAGENT_MODEL",
+      "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
       "ANTHROPIC_DEFAULT_FABLE_MODEL",
       "ANTHROPIC_DEFAULT_OPUS_MODEL",
       "ANTHROPIC_DEFAULT_SONNET_MODEL",
@@ -79,6 +82,7 @@ describe("Claude CLI managed native tools", () => {
       expect(pinned[name]).toBe("claude-opus-5-5");
     }
     expect(Object.keys(prepare(undefined).env)).not.toContain("CLAUDE_CODE_SUBAGENT_MODEL");
+    expect(Object.keys(prepare(true, "default").env)).not.toContain("CLAUDE_CODE_SUBAGENT_MODEL");
   });
 
   it("names only orchestration tools as delegation", () => {
