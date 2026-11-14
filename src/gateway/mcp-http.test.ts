@@ -960,6 +960,10 @@ describe("mcp loopback server", () => {
         senderId: "bound-sender",
         senderIsOwner: false,
       },
+      runOrigin: {
+        trace: { traceId: "0123456789abcdef0123456789abcdef" },
+        inputProvenance: { kind: "external_user" },
+      },
       senderName: "Bound Name",
       senderUsername: "bound-user",
       senderE164: "+15557654321",
@@ -1028,6 +1032,9 @@ describe("mcp loopback server", () => {
       // same run facts on a CLI backend as on an embedded attempt.
       trigger: "user",
       requester: boundContext.requester,
+      // Permission proofs go by the run's trace; steward-only tools check the
+      // input's origin.
+      ...boundContext.runOrigin,
       channelId: "discord:bound",
       turnSourceChannel: "discord",
       turnSourceTo: "discord:bound",

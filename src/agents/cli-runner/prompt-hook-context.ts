@@ -1,6 +1,7 @@
 import { getActiveDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { buildAgentHookContextChannelFields } from "../../plugins/hook-agent-context.js";
 import type { PluginHookAgentContext } from "../../plugins/hook-types.js";
+import type { HookContext } from "../agent-tools.before-tool-call.types.js";
 import type { RunCliAgentParams } from "./types.js";
 
 export function buildCliPromptBuildHookContext(
@@ -9,8 +10,8 @@ export function buildCliPromptBuildHookContext(
 ): PluginHookAgentContext {
   return {
     runId: params.runId,
-    // Reuse the host-owned run trace. A new trace here would break source proofs.
-    trace: getActiveDiagnosticTraceContext(),
+    // Reuses the host-owned run trace. A new trace here would break source proofs.
+    ...buildCliRunOrigin(params),
     agentId: prepared.agentId,
     sessionKey: params.sessionKey,
     sessionId: params.sessionId,
@@ -30,7 +31,23 @@ export function buildCliPromptBuildHookContext(
           },
         }
       : {}),
-    inputProvenance: params.inputProvenance,
     ...buildAgentHookContextChannelFields(params),
+  };
+}
+
+/** The run's trace and the origin of its input, as embedded runs give them to tools. */
+export type CliRunOrigin = Pick<HookContext, "trace" | "inputProvenance">;
+
+/**
+ * Prompt hooks and the tool calls the program makes over the loopback MCP
+ * server both take the run's origin from here, so a tool that checks it (a
+ * permission proof by trace, a steward-only tool by input origin) sees what
+ * the prompt hooks saw. Reads the active run trace: call it in the run's scope.
+ */
+export function buildCliRunOrigin(params: RunCliAgentParams): CliRunOrigin {
+  const trace = getActiveDiagnosticTraceContext();
+  return {
+    ...(trace ? { trace } : {}),
+    ...(params.inputProvenance ? { inputProvenance: params.inputProvenance } : {}),
   };
 }
