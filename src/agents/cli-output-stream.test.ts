@@ -534,7 +534,8 @@ describe("createCliJsonlStreamingParser", () => {
   });
 
   it("keeps the streamed text for a once-delivering caller when the final message is empty", () => {
-    const parser = createParser({ finalMessageIsReply: true });
+    const onPreToolTextOmitted = vi.fn();
+    const parser = createParser({ finalMessageIsReply: true, onPreToolTextOmitted });
     finishFrames(
       parser,
       init("session-final-only-empty"),
@@ -547,6 +548,7 @@ describe("createCliJsonlStreamingParser", () => {
       result(""),
     );
     expect(parser.getOutput()).toMatchObject({ text: "Checking now.", rawFinalText: "" });
+    expect(onPreToolTextOmitted).not.toHaveBeenCalled();
   });
 
   it("keeps pre-tool text and reconstructible deltas without a commentary consumer", () => {
