@@ -504,6 +504,47 @@ describe("createCliJsonlStreamingParser", () => {
     expect(parser.getOutput()?.rawFinalText).toBe("");
   });
 
+  it("replies with the final message alone for a caller that delivers once", () => {
+    const deltas: string[] = [];
+    const parser = createParser({
+      finalMessageIsReply: true,
+      onAssistantDelta: ({ delta }) => deltas.push(delta),
+    });
+    finishFrames(
+      parser,
+      init("session-final-only"),
+      messageStart,
+      claudeTextDelta("Mac is up. Opening the page."),
+      toolStart(),
+      messageStop,
+      messageStart,
+      claudeTextDelta("DONE"),
+      result("DONE"),
+    );
+    expect(parser.getOutput()).toEqual({
+      text: "DONE",
+      sessionId: "session-final-only",
+      usage: undefined,
+    });
+    expect(deltas.join("")).toBe("Mac is up. Opening the page.\n\nDONE");
+  });
+
+  it("keeps the streamed text for a once-delivering caller when the final message is empty", () => {
+    const parser = createParser({ finalMessageIsReply: true });
+    finishFrames(
+      parser,
+      init("session-final-only-empty"),
+      messageStart,
+      claudeTextDelta("Checking now."),
+      toolStart(),
+      messageStop,
+      messageStart,
+      messageStop,
+      result(""),
+    );
+    expect(parser.getOutput()).toMatchObject({ text: "Checking now.", rawFinalText: "" });
+  });
+
   it("keeps pre-tool text and reconstructible deltas without a commentary consumer", () => {
     const deltas: Array<{ text: string; delta: string }> = [];
     const parser = createParser({ onAssistantDelta: (delta) => deltas.push(delta) });

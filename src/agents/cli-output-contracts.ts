@@ -148,6 +148,12 @@ export type CliJsonlStreamingParserOptions = {
   onDisplayToolUseStart?: (delta: CliToolUseStartDelta) => void;
   onDisplayToolResult?: (delta: CliToolResultDelta) => void;
   onCommentaryText?: (text: string) => void;
+  /**
+   * The caller delivers once, after the turn, so the reply is the final
+   * message: text written before a tool call is working notes and stays out of
+   * it. An empty final message still falls back to the streamed text.
+   */
+  finalMessageIsReply?: boolean;
   onSessionId?: (sessionId: string) => void;
   /** Parent initialization fact; its authority owner validates the raw tool list. */
   onNativeTools?: (tools: unknown) => void;

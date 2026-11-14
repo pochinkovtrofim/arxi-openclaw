@@ -482,6 +482,7 @@ async function runCliAgentWithLifecycleInternal(
           }
         : {}),
       emitCommentaryText: params.runParams.emitCommentaryText ?? Boolean(params.onCommentaryText),
+      replyIncludesPreToolText: true,
     });
     const restartAbortReason = params.runParams.abortSignal?.reason;
     if (isAgentRunRestartAbortReason(restartAbortReason)) {

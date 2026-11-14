@@ -182,6 +182,13 @@ export type RunCliAgentParams = {
   }) => void;
   emitCommentaryText?: boolean;
   /**
+   * The caller shows assistant text to the recipient while it streams, so text
+   * written before a tool call already reached them and the reply keeps it
+   * (#106760). Every other caller delivers once, and its reply is the final
+   * message alone.
+   */
+  replyIncludesPreToolText?: boolean;
+  /**
    * Close any long-lived CLI live session created for this run after the run
    * finishes. Intended for temporary helper calls that should not keep process
    * handles alive after returning.

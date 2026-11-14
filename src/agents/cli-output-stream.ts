@@ -457,11 +457,13 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
       // Empty terminal result can follow already-streamed text; keep that text.
       const streamedText = assistantText.slice(segmentStart).trim();
       const preservedCandidate = assistantText.slice(preserveFrom).trim();
-      const keepStreamed = preferStreamedClaudeTextOverResult({
-        streamedText: preservedCandidate,
-        finalMessageText: assistantText.slice(currentMessageStart).trim(),
-        resultText: result.text,
-      });
+      const keepStreamed =
+        !params.finalMessageIsReply &&
+        preferStreamedClaudeTextOverResult({
+          streamedText: preservedCandidate,
+          finalMessageText: assistantText.slice(currentMessageStart).trim(),
+          resultText: result.text,
+        });
       const nextText = (
         keepStreamed ? preservedCandidate : result.text || streamedText || texts.join("\n").trim()
       ).trim();
