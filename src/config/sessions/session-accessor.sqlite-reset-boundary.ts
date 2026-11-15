@@ -1,13 +1,13 @@
+import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
+import { readNonBlankString } from "@openclaw/normalization-core/string-coerce";
+import { executeSqliteQueryTakeFirstSync } from "../../infra/kysely-sync.js";
+import { coerceRequiredSqliteNumber as sqliteNumber } from "../../infra/sqlite-number.js";
 import { clearSessionProgressCardForReset } from "../../session-cards/progress-card-store.js";
 import { emitSessionLifecycleEvent } from "../../sessions/session-lifecycle-events.js";
 import {
   deferOpenClawAgentPostCommitPublication,
   type OpenClawAgentDatabase,
 } from "../../state/openclaw-agent-db.js";
-import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import { readNonBlankString } from "@openclaw/normalization-core/string-coerce";
-import { executeSqliteQueryTakeFirstSync } from "../../infra/kysely-sync.js";
-import { coerceRequiredSqliteNumber as sqliteNumber } from "../../infra/sqlite-number.js";
 import type { SessionResetBoundaryWrite } from "./session-accessor.lifecycle-types.js";
 import type { TranscriptEvent } from "./session-accessor.sqlite-contract.js";
 import { loadTranscriptEventsFromDatabase } from "./session-accessor.sqlite-read.js";
