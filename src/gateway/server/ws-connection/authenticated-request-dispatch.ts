@@ -44,8 +44,8 @@ import {
   registerGatewayPolicyResponse,
 } from "../ws-policy-close.js";
 import type { GatewayWsClient } from "../ws-types.js";
-import type { GatewayWsMessageHandlerParams } from "./message-handler-types.js";
 import type { GatewayFrameReceipt } from "./frame-receipt.js";
+import type { GatewayWsMessageHandlerParams } from "./message-handler-types.js";
 import { createGatewayRpcDiagnostics } from "./request-diagnostics.js";
 import { GatewayRequestStartTimeoutError, scheduleGatewayRequestStart } from "./request-start.js";
 
