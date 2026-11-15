@@ -129,7 +129,10 @@ export function createAgentTurnService(
     });
     // Content-free moments each step below finished, so the Gateway's time before the
     // agent command is timed per step rather than as one block.
-    const rpcCheckpoints: GatewayTurnCheckpoint[] = [];
+    // The handler's validation and request preflight ran before this turn started.
+    const rpcCheckpoints: GatewayTurnCheckpoint[] = [
+      { stage: "gateway_preflight", at: promptedAt },
+    ];
     const checkpoint = (stage: GatewayTurnStage) => {
       rpcCheckpoints.push({ stage, at: Date.now() });
     };

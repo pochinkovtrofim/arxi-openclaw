@@ -158,7 +158,11 @@ it("hands the moment each Gateway step finished to the run, in order", async () 
     rpcCheckpoints: Array<{ stage: string; at: number }>;
   };
   expect(params.rpcReceivedAt).toBe(1_000);
-  expect(params.rpcCheckpoints.map(({ stage, at }) => [stage, at])).toEqual([
+  // The handler's own work closes when the turn starts.
+  expect(params.rpcCheckpoints[0]?.stage).toBe("gateway_preflight");
+  expect(params.rpcCheckpoints[0]?.at).toBeGreaterThanOrEqual(1_000);
+  expect(params.rpcCheckpoints[0]?.at).toBeLessThanOrEqual(1_010);
+  expect(params.rpcCheckpoints.slice(1).map(({ stage, at }) => [stage, at])).toEqual([
     ["gateway_routing", 1_010],
     ["gateway_storage", 1_030],
     ["gateway_content", 1_060],

@@ -99,6 +99,7 @@ type DiagnosticSessionEvent = DiagnosticBaseEvent &
 
 /** Stages between taking up a turn and its agent run, in order; fixed code labels only. */
 export const REPLY_PREFLIGHT_STAGES = [
+  "gateway_preflight",
   "gateway_routing",
   "gateway_storage",
   "gateway_content",
@@ -132,6 +133,8 @@ type DiagnosticReplyPreflightStageEvent = DiagnosticSessionEvent & {
   type: "reply.preflight.stage";
   stage: (typeof REPLY_PREFLIGHT_STAGES)[number];
   durationMs: number;
+  /** When the stage began (epoch ms): a stage closed at a recorded moment is emitted later. */
+  startedAt?: number;
 };
 
 /** Stages between the end of an agent run and the reply's hand-off to the channel, in order. */

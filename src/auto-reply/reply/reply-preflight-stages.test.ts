@@ -71,6 +71,7 @@ it("closes the pre-run compaction step with the part that ran last", () => {
 it("pins the closed stage list", async () => {
   const { REPLY_PREFLIGHT_STAGES } = await import("../../infra/diagnostic-events.js");
   expect([...REPLY_PREFLIGHT_STAGES]).toEqual([
+    "gateway_preflight",
     "gateway_routing",
     "gateway_storage",
     "gateway_content",
@@ -137,6 +138,9 @@ it("closes stages at recorded moments, skipping those out of order or outside th
     ["gateway_dispatch", 500],
     ["gateway_rpc", 100],
   ]);
+  // Each stage says when it began, since stages closed at recorded moments are all
+  // emitted at the end.
+  expect(events.map((event) => event.startedAt)).toEqual([49_000, 49_100, 49_400, 49_900]);
   expect(new Set(events.map((event) => event.trace.spanId)).size).toBe(4);
   for (const event of events) {
     expect(event.trace).toMatchObject({ traceId: trace.traceId, parentSpanId: trace.spanId });
