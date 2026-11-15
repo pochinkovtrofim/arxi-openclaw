@@ -16,7 +16,7 @@ vi.mock("./browser/client-actions.js", async (importOriginal) => ({
   browserFlowPageFetch: client.browserFlowPageFetch,
 }));
 
-const { executeFlowAction, savedFlowsHint, DEVICE_FETCH_URL } =
+const { executeFlowAction, savedFlowsHint, writeVerdict, DEVICE_FETCH_URL } =
   await import("./browser-tool.flows.js");
 const { readFlow } = await import("./browser/flow-store.js");
 

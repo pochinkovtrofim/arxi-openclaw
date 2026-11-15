@@ -60,7 +60,7 @@ export function attachFlowCapture(page: Page): void {
   captures.set(page, state);
   page.on("request", (req: Request) => {
     const type = req.resourceType();
-    let mainDocument = false;
+    let mainDocument: boolean;
     try {
       mainDocument = type === "document" && req.frame() === page.mainFrame();
     } catch {

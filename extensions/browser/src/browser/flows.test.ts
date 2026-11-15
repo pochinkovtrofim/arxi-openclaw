@@ -206,7 +206,7 @@ describe("saved flows", () => {
     });
     expect(picked.flow.request.url).toBe("https://www.shop.example/api/config");
     expect(() =>
-      buildFlow({ name: "x", pageUrl: "https://www.shop.example/", exchanges, output: "c4" }),
+      buildFlow({ name: "x", pageUrl: "https://www.shop.example/", exchanges, output: "c5" }),
     ).toThrow(/candidates/);
     expect(() =>
       buildFlow({ name: "Bad Name", pageUrl: "https://www.shop.example/", exchanges }),
