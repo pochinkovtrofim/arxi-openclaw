@@ -146,7 +146,7 @@ export type CommandPrepareStep =
   | "skill_commands";
 export type SessionWriteStep =
   | "skill_library_selection"
-  /** The session store's writer took this turn's write: until then another write held it. */
+  /** The store's writer admitted this turn's entry read; until then another write held it. */
   | "session_writer_wait"
   | "session_patch_build"
   | "session_store_commit"

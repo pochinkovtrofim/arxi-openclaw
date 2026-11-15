@@ -68,8 +68,12 @@ export function appendSessionResetBoundary(
  * of the latest boundary window. Without branch ("leaf") control both depend only on the
  * rows from that window's first kept entry on, so a window that resets in place on every
  * run (a fresh-context cron session gains one boundary per run, for months) reads that
- * tail, not its whole history, inside the write transaction. The tail is used only when
- * the identity index covers every row; otherwise the whole transcript is read as before.
+ * tail, not its whole history, inside the write transaction.
+ *
+ * The identity index finds the latest boundary, the kept entry and any leaf control:
+ * every writer records an identity for each event that has an id, and a leaf control,
+ * a boundary and a kept entry are found only by id. A boundary row without an id later
+ * in the tail could keep entries from before it, so it reads the whole transcript.
  */
 function readResetBoundaryInputs(
   database: OpenClawAgentDatabase,
@@ -81,16 +85,6 @@ function readResetBoundaryInputs(
     }),
   });
   const db = getSessionKysely(database.db);
-  const rowCount = (table: "transcript_events" | "transcript_event_identities") =>
-    sqliteNumber(
-      executeSqliteQueryTakeFirstSync(
-        database.db,
-        db
-          .selectFrom(table)
-          .select(({ fn }) => fn.countAll<number>().as("count"))
-          .where("session_id", "=", sessionId),
-      )?.count ?? 0,
-    );
   const latestOfType = (types: string[]) =>
     executeSqliteQueryTakeFirstSync(
       database.db,
@@ -111,9 +105,6 @@ function readResetBoundaryInputs(
         .where("session_id", "=", sessionId)
         .where("event_id", "=", id),
     )?.seq;
-  if (rowCount("transcript_events") !== rowCount("transcript_event_identities")) {
-    return whole();
-  }
   if (latestOfType(["leaf"])) {
     return whole();
   }
@@ -129,7 +120,14 @@ function readResetBoundaryInputs(
     });
   let events = tailFrom(boundarySeq);
   const head = asOptionalRecord(events[0]);
-  if (readNonBlankString(head?.id) !== boundary.event_id) {
+  const isBoundary = (event: unknown) => {
+    const type = asOptionalRecord(event)?.type;
+    return type === "reset" || type === "compaction";
+  };
+  if (
+    readNonBlankString(head?.id) !== boundary.event_id ||
+    events.findLastIndex(isBoundary) !== 0
+  ) {
     return whole();
   }
   const firstKeptEntryId = readNonBlankString(head?.firstKeptEntryId);

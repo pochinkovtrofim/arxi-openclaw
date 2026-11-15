@@ -123,7 +123,7 @@ describe("SQLite reset boundary", () => {
     expect(appended).toMatchObject({ type: "reset", parentId: expected.parentId });
     expect(appended.parentId).toBe("m-199-9");
     expect(appended.firstKeptEntryId).toBeUndefined();
-    // One run of 2,200 rows: the boundary and its ten messages (plus the header check).
+    // Of 2,200 rows, the latest run: its boundary and ten messages (and the header check).
     expect(transcriptRowsRead).toBeLessThan(20);
   });
 
@@ -144,11 +144,12 @@ describe("SQLite reset boundary", () => {
 
   it("reads the whole transcript when a branch leaf controls the active path", () => {
     const events = windowOfRuns(20, 10, false);
+    // Back to an earlier entry of the latest run: the active path no longer ends at the last row.
     events.push({
       type: "leaf",
       id: "leaf-1",
       parentId: "m-19-9",
-      leafId: "m-10-3",
+      targetId: "m-19-3",
       timestamp: new Date(1_000).toISOString(),
     });
     const { expected, appended, transcriptRowsRead } = seedAndReset(events, {
@@ -156,7 +157,35 @@ describe("SQLite reset boundary", () => {
       reason: "new",
     });
 
+    expect(expected.parentId).not.toBe("leaf-1");
     expect(appended).toMatchObject({ type: "reset", parentId: expected.parentId });
+    expect(transcriptRowsRead).toBeGreaterThanOrEqual(events.length);
+  });
+
+  it("reads the whole transcript when a later boundary has no id to find it by", () => {
+    const events = windowOfRuns(20, 10, true);
+    // Keeps entries from before the latest identified boundary, which a tail would miss.
+    events.push(
+      {
+        type: "reset",
+        parentId: "m-19-9",
+        timestamp: new Date(1_000).toISOString(),
+        reason: "daily",
+        firstKeptEntryId: "m-18-8",
+      },
+      message("after-unnamed", "m-19-9", "user"),
+    );
+    const { expected, appended, transcriptRowsRead } = seedAndReset(events, {
+      context: "preserve-tail",
+      reason: "daily",
+    });
+
+    expect(expected.firstKeptEntryId).toBeDefined();
+    expect(appended).toMatchObject({
+      type: "reset",
+      parentId: expected.parentId,
+      firstKeptEntryId: expected.firstKeptEntryId,
+    });
     expect(transcriptRowsRead).toBeGreaterThanOrEqual(events.length);
   });
 });
