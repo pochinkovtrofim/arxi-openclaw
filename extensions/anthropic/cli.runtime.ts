@@ -297,7 +297,10 @@ function completeTurn(session: ClaudeCliSession, turn: ClaudeCliTurn) {
     // Input written into a turn that ended unanswered is the same kind of debt.
     session.handle.close(holdsBackgroundTasks || orphanedInput ? "abort" : "idle");
   } else {
-    session.idleTimer = setTimeout(() => session.handle.close("idle"), IDLE_TIMEOUT_MS);
+    session.idleTimer = setTimeout(
+      () => session.handle.close("idle"),
+      session.capability.idleTimeoutMs ?? IDLE_TIMEOUT_MS,
+    );
     session.idleTimer.unref();
   }
 }

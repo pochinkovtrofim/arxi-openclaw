@@ -4,6 +4,7 @@ import type {
   CliBackendLiveSessionCloseReason,
   CliBackendLiveSessionHandle,
 } from "../../plugins/cli-backend.types.js";
+import { isSubagentSessionKey } from "../../sessions/session-key-utils.js";
 import { runCliCleanup } from "./cleanup.js";
 import { createCliRunCurrentAssertion } from "./execution-target.js";
 import { createCliFailoverError } from "./exit-error.js";
@@ -12,6 +13,31 @@ import { cliBackendLog } from "./log.js";
 import type { PreparedCliRunContext } from "./types.js";
 
 const MAX_LIVE_SESSIONS = 16;
+// A person's conversation keeps its process an hour between turns: a respawn
+// costs every first reply after a pause more than a second, and one idle
+// process fits. Background, cron and completion sessions keep the backend's own
+// shorter default, since there can be many of them.
+export const PERSON_TURN_LIVE_SESSION_IDLE_MS = 60 * 60 * 1_000;
+
+// A person's own turn, or a background turn that continues their conversation.
+// Delegated runs keep user provenance (Gateway `agent` calls carry
+// trigger "user") but are not that conversation, and their processes are many.
+function isPersonConversationRun(params: PreparedCliRunContext["params"]): boolean {
+  const continuesConversation = params.continuesConversation === true;
+  if (params.trigger !== "user" && !continuesConversation) {
+    return false;
+  }
+  if (
+    isSubagentSessionKey(params.sessionKey) ||
+    params.spawnedBy ||
+    params.trustedInternalHandoff ||
+    params.inputProvenance?.kind === "inter_session"
+  ) {
+    return false;
+  }
+  // A continuing heartbeat is internal_system by provenance and still the conversation.
+  return continuesConversation || params.inputProvenance?.kind !== "internal_system";
+}
 
 type CliLiveSessionOwner = {
   backendId: string;
@@ -225,6 +251,9 @@ export function createCliLiveSessionCapability(params: {
 
   return Object.freeze({
     fingerprint,
+    ...(isPersonConversationRun(params.context.params)
+      ? { idleTimeoutMs: PERSON_TURN_LIVE_SESSION_IDLE_MS }
+      : {}),
     current: () => {
       assertActive();
       const handle = liveSessions.get(ownerKey)?.handle;
