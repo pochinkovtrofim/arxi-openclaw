@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const { clock, startExecution, admission, takes } = vi.hoisted(() => {
+const { fakeClock, startExecution, admission, takes } = vi.hoisted(() => {
   const clock = { tick: (_ms: number) => {} };
   return {
-    clock,
+    fakeClock: clock,
     startExecution: vi.fn(async (_params: unknown) => {}),
     admission: { outcome: false },
     /** Each mocked step takes a distinct, known time on the fake clock. */
@@ -35,11 +35,17 @@ vi.mock("./agent-dedupe-lifecycle.js", () => ({
   }),
 }));
 vi.mock("./agent-request-routing.js", () => ({
-  prepareAgentRequestRouting: takes(10, { requestedSessionKey: "agent:main:main", agentId: "main" }),
+  prepareAgentRequestRouting: takes(10, {
+    requestedSessionKey: "agent:main:main",
+    agentId: "main",
+  }),
 }));
 vi.mock("../../config/sessions/session-actor-storage-binding.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../config/sessions/session-actor-storage-binding.js")>()),
+  ...(await importOriginal<
+    typeof import("../../config/sessions/session-actor-storage-binding.js")
+  >()),
   acquireSessionActorStorage: takes(20, { actor: { release: async () => {} } }),
+  runWithSessionActorStorage: (_storage: unknown, run: () => Promise<void>) => run(),
 }));
 vi.mock("./agent-content-phase.js", () => ({
   prepareAgentContentPhase: takes(30, {
@@ -113,7 +119,7 @@ import { createAgentTurnService } from "./agent-turn-service.js";
 
 beforeEach(() => {
   vi.useFakeTimers({ now: 1_000, toFake: ["Date"] });
-  clock.tick = (ms) => vi.advanceTimersByTime(ms);
+  fakeClock.tick = (ms) => vi.advanceTimersByTime(ms);
   admission.outcome = false;
   startExecution.mockClear();
 });
