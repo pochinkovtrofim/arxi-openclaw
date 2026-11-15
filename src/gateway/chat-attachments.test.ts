@@ -644,6 +644,25 @@ describe("parseMessageWithAttachments validation errors", () => {
     expect(parsed.media[0]).toMatchObject({ durationMs: 2345 });
   });
 
+  it("keeps a declared audio duration without running ffprobe", async () => {
+    const { parsed } = await parseWithWarnings(
+      "voice",
+      [
+        {
+          type: "audio",
+          mimeType: "audio/ogg",
+          fileName: "voice.ogg",
+          content: Buffer.from("audio-fixture").toString("base64"),
+          durationMs: 7000,
+        },
+      ],
+      { supportsInlineImages: false },
+    );
+
+    expect(probeMediaFilesWithinBudgetMock).toHaveBeenCalledWith([], expect.anything());
+    expect(parsed.media[0]).toMatchObject({ durationMs: 7000 });
+  });
+
   it("returns before the audio probe when asked, and resolves the probed facts later", async () => {
     let finishProbe!: () => void;
     const probeHeld = new Promise<void>((resolve) => {
