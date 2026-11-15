@@ -1,5 +1,6 @@
 import { embeddedAgentLog } from "openclaw/plugin-sdk/agent-harness-runtime";
 import * as diagnostics from "openclaw/plugin-sdk/diagnostic-runtime";
+import { runWithDiagnosticTraceContext } from "openclaw/plugin-sdk/plugin-test-runtime";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createCodexAttemptPreparationTiming } from "./attempt-preparation-timing.js";
 
@@ -104,13 +105,19 @@ describe("Codex attempt preparation timing", () => {
         reported.push(event);
       }
     });
-    const diagnosticTrace = diagnostics.createDiagnosticTraceContext();
-    const preparation = createCodexAttemptPreparationTiming({
+    // The command's attempt trace is not exported until the turn ends; the
+    // harness run's span is the active scope while the run prepares.
+    const commandTrace = diagnostics.createDiagnosticTraceContext();
+    const runTrace = diagnostics.createChildDiagnosticTraceContext(commandTrace);
+    const attemptParams = {
       runId: "run-1",
       sessionId: "session-1",
       sessionKey: "agent:main:test",
-      diagnosticTrace,
-    });
+      diagnosticTrace: commandTrace,
+    };
+    const preparation = runWithDiagnosticTraceContext(runTrace, () =>
+      createCodexAttemptPreparationTiming(attemptParams),
+    );
     const durations = {
       connection: 40,
       runtime: 10,
@@ -132,7 +139,9 @@ describe("Codex attempt preparation timing", () => {
       nowMs += 600;
       return "started";
     });
-    const timedStart = preparation.timeNativeTurnStart(startTurn);
+    const timedStart = runWithDiagnosticTraceContext(runTrace, () =>
+      preparation.timeNativeTurnStart(startTurn),
+    );
     await expect(timedStart()).resolves.toBe("started");
     const turnStartEndedAt = nowMs;
     // A retried turn start must not report a second time.
@@ -158,8 +167,8 @@ describe("Codex attempt preparation timing", () => {
     ]);
     for (const event of reported) {
       expect(event.runId).toBe("run-1");
-      expect(event.trace?.traceId).toBe(diagnosticTrace.traceId);
-      expect(event.trace?.parentSpanId).toBe(diagnosticTrace.spanId);
+      expect(event.trace?.traceId).toBe(runTrace.traceId);
+      expect(event.trace?.parentSpanId).toBe(runTrace.spanId);
       for (const stage of event.stages) {
         expect(stage.name).toMatch(/^[a-z0-9][a-z0-9-]{0,47}$/u);
       }

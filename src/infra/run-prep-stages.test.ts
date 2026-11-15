@@ -2,7 +2,11 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createStageTimingTracker } from "../shared/stage-timing.js";
-import { createDiagnosticTraceContext } from "./diagnostic-trace-context.js";
+import {
+  createChildDiagnosticTraceContext,
+  createDiagnosticTraceContext,
+  runWithDiagnosticTraceContext,
+} from "./diagnostic-trace-context.js";
 import { createRunPrepStageReporter } from "./run-prep-stages.js";
 
 const emitted = vi.hoisted(() => ({ events: [] as unknown[] }));
@@ -53,6 +57,22 @@ describe("run preparation stage reporter", () => {
         { name: "setup", startedAt: 100, endedAt: 130 },
         { name: "native-turn-handoff", startedAt: 130, endedAt: 150 },
       ],
+    });
+  });
+
+  // The exporter binds stage spans only beneath a span it tracks. The command's
+  // attempt trace is never tracked, so stages parented there were dropped
+  // (Codex owner turns showed no preparation at all).
+  it("parents the stages on the run span active at creation", () => {
+    emitted.events.length = 0;
+    const commandTrace = createDiagnosticTraceContext();
+    const runTrace = createChildDiagnosticTraceContext(commandTrace);
+    const report = runWithDiagnosticTraceContext(runTrace, () =>
+      createRunPrepStageReporter({ tracker: createStageTimingTracker(), runId: "run-1" }),
+    );
+    runWithDiagnosticTraceContext(commandTrace, report);
+    expect(emitted.events[0]).toMatchObject({
+      trace: { traceId: runTrace.traceId, parentSpanId: runTrace.spanId },
     });
   });
 });

@@ -2,7 +2,9 @@ import type { createStageTimingTracker, StageTimingSummary } from "../shared/sta
 import { emitTrustedDiagnosticEvent, type DiagnosticContextStage } from "./diagnostic-events.js";
 import {
   createChildDiagnosticTraceContext,
+  createDiagnosticTraceContext,
   freezeDiagnosticTraceContext,
+  getActiveDiagnosticTraceContext,
   type DiagnosticTraceContext,
 } from "./diagnostic-trace-context.js";
 
@@ -31,18 +33,28 @@ export function placeStageTimings(
  * a measured stage (bundle-tools, tool-catalog) lies inside the checkpoint after
  * it (tool-preparation), so a sum must skip measured stages. `finalStage` names
  * the last checkpoint, from the previous one to the hand-off.
+ *
+ * Stage spans hang off the run's own span, the parent its model calls use. The
+ * exporter resolves a parent only among spans it tracks; a trace it never
+ * tracked (the command's attempt trace) leaves the stages parentless and the
+ * host never joins them to the turn. So the reporter takes the trace active at
+ * creation, the run's span when created inside the run; `runTrace` is only for
+ * a runner that creates it outside its run scope.
  */
 export function createRunPrepStageReporter(options: {
   tracker: Pick<ReturnType<typeof createStageTimingTracker>, "mark" | "snapshot">;
   runId: string;
   sessionKey?: string;
   sessionId?: string;
-  runTrace: DiagnosticTraceContext;
+  runTrace?: DiagnosticTraceContext;
   finalStage?: string;
   now?: () => number;
 }): () => void {
   let reported = false;
   const now = options.now ?? Date.now;
+  const runTrace = freezeDiagnosticTraceContext(
+    options.runTrace ?? getActiveDiagnosticTraceContext() ?? createDiagnosticTraceContext(),
+  );
   return () => {
     if (reported) {
       return;
@@ -56,7 +68,7 @@ export function createRunPrepStageReporter(options: {
       ...(options.sessionKey ? { sessionKey: options.sessionKey } : {}),
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
       stages,
-      trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(options.runTrace)),
+      trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(runTrace)),
     });
   };
 }
