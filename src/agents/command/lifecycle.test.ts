@@ -17,8 +17,13 @@ const { emitAgentEvent, lifecycleLog } = vi.hoisted(() => ({
   lifecycleLog: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("../../infra/agent-events.js", () => ({ emitAgentEvent }));
-vi.mock("../../logging/subsystem.js", () => ({
+// Partial mocks: modules this test loads indirectly use other exports at import time.
+vi.mock("../../infra/agent-events.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../infra/agent-events.js")>()),
+  emitAgentEvent,
+}));
+vi.mock("../../logging/subsystem.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../logging/subsystem.js")>()),
   createSubsystemLogger: () => lifecycleLog,
 }));
 
