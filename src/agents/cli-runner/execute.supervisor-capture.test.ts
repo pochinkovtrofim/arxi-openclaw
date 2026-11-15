@@ -13,12 +13,18 @@ import {
 import { onAgentEvent, resetAgentEventsForTest } from "../../infra/agent-events.js";
 import {
   areDiagnosticsEnabledForProcess,
+  type DiagnosticEventPayload,
+  onTrustedInternalDiagnosticEvent,
   onTrustedToolExecutionEvent,
   resetDiagnosticEventsForTest,
   setDiagnosticsEnabledForProcess,
   type TrustedToolExecutionEvent,
   waitForDiagnosticEventsDrained,
 } from "../../infra/diagnostic-events.js";
+import {
+  createDiagnosticTraceContext,
+  runWithDiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import {
   closeDiagnosticEmbeddedRunOwner,
   createDiagnosticEmbeddedRunOwner,
@@ -996,6 +1002,114 @@ describe("executePreparedCliRun supervisor output capture", () => {
       }),
     ]);
     expect(JSON.stringify(toolEvents)).not.toContain(secret);
+  });
+
+  it("gives every tool call its own span under the API step that requested it", async () => {
+    await withDiagnosticsEnabled(async () => {
+      const toolEvents = captureToolEvents();
+      const diagnosticEvents: DiagnosticEventPayload[] = [];
+      onTestFinished(onTrustedInternalDiagnosticEvent((event) => diagnosticEvents.push(event)));
+      const stream = (event: Record<string, unknown>) => ({
+        type: "stream_event",
+        event,
+        parent_tool_use_id: null,
+      });
+      const secret = "secret tool input and result";
+      mockOutput([
+        jsonl(
+          stream({
+            type: "message_start",
+            message: { id: "m1", usage: { input_tokens: 10, output_tokens: 1 } },
+          }),
+        ),
+        jsonl(stream({ type: "content_block_start", index: 0, content_block: { type: "text" } })),
+        jsonl(
+          messageRecord("assistant", [
+            toolUse("call-a", "Bash", { command: secret }, "tool_use"),
+            toolUse("call-b", "Read", { path: secret }, "tool_use"),
+          ]),
+        ),
+        jsonl(stream({ type: "message_delta", usage: { output_tokens: 20 } })),
+        jsonl(stream({ type: "message_stop" })),
+        jsonl(
+          messageRecord("user", [
+            toolResult("call-b", [{ type: "text", text: secret }]),
+            toolResult("call-a", [{ type: "text", text: secret }], true),
+          ]),
+        ),
+        jsonl(
+          stream({
+            type: "message_start",
+            message: { id: "m2", usage: { input_tokens: 30, output_tokens: 1 } },
+          }),
+        ),
+        jsonl(stream({ type: "content_block_start", index: 0, content_block: { type: "text" } })),
+        jsonl(stream({ type: "message_delta", usage: { output_tokens: 5 } })),
+        jsonl(stream({ type: "message_stop" })),
+        jsonl({
+          type: "result",
+          session_id: "session-jsonl",
+          result: "done",
+          usage: { input_tokens: 40, output_tokens: 25 },
+        }),
+      ]);
+      const context = buildPreparedCliRunContext({ output: "jsonl", provider: "claude-cli" });
+      const runTrace = createDiagnosticTraceContext();
+
+      await runWithDiagnosticTraceContext(runTrace, () => executePreparedCliRun(context));
+      await waitForDiagnosticEventsDrained();
+
+      const modelSpans = diagnosticEvents.filter((event) => event.type === "model.call.started");
+      const turnStart = modelSpans.find((event) => event.observationUnit === "turn");
+      const [step1, step2] = modelSpans.filter((event) => event.observationUnit === "request");
+      expect(turnStart?.trace?.parentSpanId).toBe(runTrace.spanId);
+      expect(step1?.trace?.parentSpanId).toBe(turnStart?.trace?.spanId);
+      expect(step2?.trace?.parentSpanId).toBe(turnStart?.trace?.spanId);
+
+      const byCall = (toolCallId: string) =>
+        toolEvents.filter((event) => event.toolCallId === toolCallId);
+      const [startedA, doneA] = byCall("call-a");
+      const [startedB, doneB] = byCall("call-b");
+      expect([startedA?.type, doneA?.type]).toEqual([
+        "tool.execution.started",
+        "tool.execution.error",
+      ]);
+      expect([startedB?.type, doneB?.type]).toEqual([
+        "tool.execution.started",
+        "tool.execution.completed",
+      ]);
+      // Start and terminal share one span; parallel tools never share one;
+      // none reuses the run's or the turn's span.
+      expect(doneA?.trace).toEqual(startedA?.trace);
+      expect(doneB?.trace).toEqual(startedB?.trace);
+      expect(startedA?.trace?.spanId).not.toBe(startedB?.trace?.spanId);
+      for (const started of [startedA, startedB]) {
+        expect(started?.trace?.traceId).toBe(runTrace.traceId);
+        expect(started?.trace?.parentSpanId).toBe(step1?.trace?.spanId);
+        expect([runTrace.spanId, turnStart?.trace?.spanId]).not.toContain(started?.trace?.spanId);
+      }
+      expect(JSON.stringify([toolEvents, diagnosticEvents])).not.toContain(secret);
+    });
+  });
+
+  it("parents tool calls on the run when no model diagnostics exist", async () => {
+    const toolEvents = captureToolEvents();
+    mockOutput([
+      jsonl(messageRecord("assistant", [toolUse("call-1", "Bash", { command: "ls" }, "tool_use")])),
+      jsonl(messageRecord("user", [toolResult("call-1", "ok")])),
+      jsonl({ type: "result", session_id: "session-jsonl", result: "done" }),
+    ]);
+    const context = buildPreparedCliRunContext({ output: "jsonl", provider: "claude-cli" });
+    const runTrace = createDiagnosticTraceContext();
+
+    await runWithDiagnosticTraceContext(runTrace, () => executePreparedCliRun(context));
+
+    expect(toolEvents).toHaveLength(2);
+    for (const event of toolEvents) {
+      expect(event.trace?.parentSpanId).toBe(runTrace.spanId);
+      expect(event.trace?.spanId).not.toBe(runTrace.spanId);
+    }
+    expect(toolEvents[1]?.trace).toEqual(toolEvents[0]?.trace);
   });
 
   it("binds a loopback call admitted before its parsed CLI identity", async () => {

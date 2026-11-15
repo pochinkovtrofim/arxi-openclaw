@@ -35,6 +35,7 @@ import { markTrustedOtelDiagnosticListener } from "./diagnostic-otel-listener-pr
 import { markHostPluginUsageDiagnosticEvent } from "./diagnostic-plugin-usage-provenance.js";
 import { resolveCoreSemanticRunProgressDiagnosticMetadata } from "./diagnostic-semantic-run-progress.js";
 import {
+  createChildDiagnosticTraceContext,
   createDiagnosticTraceContext,
   formatDiagnosticTraceparent,
   runWithDiagnosticTraceContext,
@@ -949,5 +950,46 @@ describe("private diagnostic data", () => {
     expect(received.mock.calls[2]?.[2]).toEqual({ errorMessage: "synthetic private error" });
     expect(readPrivateData).toHaveBeenCalledTimes(2);
     stopAfterReset();
+  });
+
+  it("never lets a tool execution event carry the enclosing scope's own span", async () => {
+    const events: DiagnosticEventPayload[] = [];
+    onTrustedInternalDiagnosticEvent((event) => events.push(event), {
+      include: ["tool.execution.started", "tool.execution.completed", "run.started"],
+    });
+    const scope = createDiagnosticTraceContext();
+    const ownChild = createChildDiagnosticTraceContext(scope);
+    runWithDiagnosticTraceContext(scope, () => {
+      // No trace: the scope's span would be inherited.
+      emitTrustedDiagnosticEvent({ type: "tool.execution.started", toolName: "exec" });
+      // An explicit copy of the scope's span is the same collision.
+      emitTrustedDiagnosticEvent({
+        type: "tool.execution.completed",
+        toolName: "exec",
+        durationMs: 1,
+        trace: { ...scope },
+      });
+      // A deliberate child span is kept as given.
+      emitTrustedDiagnosticEvent({
+        type: "tool.execution.completed",
+        toolName: "exec",
+        durationMs: 1,
+        trace: ownChild,
+      });
+      // Other events keep the scope's span: only tool calls are spans of their own.
+      emitTrustedDiagnosticEvent({ type: "run.started", runId: "r", sessionId: "s" } as never);
+    });
+    await waitForDiagnosticEventsDrained();
+    const toolEvents = events.filter((event) => event.type.startsWith("tool.execution."));
+    const [inherited, copied, explicit] = toolEvents;
+    const other = events.find((event) => event.type === "run.started");
+    for (const event of [inherited, copied]) {
+      expect(event?.trace?.traceId).toBe(scope.traceId);
+      expect(event?.trace?.parentSpanId).toBe(scope.spanId);
+      expect(event?.trace?.spanId).not.toBe(scope.spanId);
+    }
+    expect(inherited?.trace?.spanId).not.toBe(copied?.trace?.spanId);
+    expect(explicit?.trace?.spanId).toBe(ownChild.spanId);
+    expect(other?.trace?.spanId).toBe(scope.spanId);
   });
 });

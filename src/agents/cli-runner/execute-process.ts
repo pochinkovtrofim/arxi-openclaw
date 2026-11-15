@@ -161,6 +161,7 @@ export async function executeCliProcess(params: {
         onSessionId: params.observeForkSuccessor,
         onNativeTools: context.preparedBackend.mcpClientGrantCapture?.captureNativeTools,
         onAssistantMessage: params.diagnostics?.observeAssistantMessage,
+        onStep: params.diagnostics?.observeStep,
         onUsage: params.diagnostics?.observeUsage,
         onAttributedSubagentProgress: (parentToolUseId) => {
           if (!params.events.isActiveForegroundAgentTool(parentToolUseId)) {
@@ -282,6 +283,7 @@ export async function executeCliProcess(params: {
           params.cliSessionIdToUse === undefined && context.openClawHistoryPrompt !== undefined,
         sessionId: params.resolvedSessionId,
         noOutputTimeoutMs: params.noOutputTimeoutMs,
+        onRequestSent: params.diagnostics?.observeRequestSent,
         consumeStdout: (chunk) => {
           consumeStdout(chunk);
           const errorText = streamingParser?.getErrorText();
@@ -397,6 +399,8 @@ export async function executeCliProcess(params: {
           ),
         );
         managedRunPid = managedRun.pid;
+        // The prompt went in with the spawn, so the request is accepted here.
+        params.diagnostics?.observeRequestSent();
         stopForParserRefusal = () => {
           processCancelled = true;
           managedRun.cancel("manual-cancel");

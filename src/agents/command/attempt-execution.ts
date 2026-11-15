@@ -1,4 +1,5 @@
 import { sanitizeForLog } from "../../../packages/terminal-core/src/ansi.js";
+import { getReplySettleStages } from "../../auto-reply/reply/reply-settle-stages.js";
 import {
   readChannelSourceTurnId,
   readChannelSourceTurnSameThreadRequired,
@@ -702,6 +703,7 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
           }
           throw err;
         }
+        getReplySettleStages()?.runEnded();
         return settleResult({
           result,
           expectedSession: params.sessionEntry,
@@ -804,6 +806,8 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
     embeddedRunParams,
     readChannelSourceTurnSameThreadRequired(params.runContext),
   );
-  return runEmbeddedAgent(embeddedRunParams);
+  const embeddedResult = await runEmbeddedAgent(embeddedRunParams);
+  getReplySettleStages()?.runEnded();
+  return embeddedResult;
 }
 /* oxlint-disable max-lines -- TODO: split this grandfathered oversized file. */

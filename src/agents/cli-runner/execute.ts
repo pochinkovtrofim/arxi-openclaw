@@ -332,6 +332,7 @@ export async function executePreparedCliRun(
       context,
       toolTracking,
       getRunState: () => ({ failed: runFailed, error: runError }),
+      getStepTrace: () => diagnostics?.currentParentTrace(),
     });
     try {
       cliBackendLog.info(

@@ -55,4 +55,20 @@ describe("agentRunHandler diagnostic trace ownership", () => {
       expect.objectContaining({ diagnosticTrace: requestTrace }),
     );
   });
+
+  it("hands the moment of receipt to the turn", async () => {
+    const before = Date.now();
+    await agentRunHandler({
+      params: {},
+      respond: vi.fn(),
+      context: {},
+      client: null,
+      isWebchatConnect: () => false,
+    } as never);
+    expect(startTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rpcReceivedAt: expect.toSatisfy((at: number) => at >= before && at <= Date.now()),
+      }),
+    );
+  });
 });

@@ -103,12 +103,10 @@ export async function runCodexAppServerAttempt(
               ),
             );
             preparation.ready();
-            const turnStart = await startCodexAttemptTurn(
-              resources,
-              turnRuntime,
-              notifications,
-              turnRequest,
-            );
+            const turnStart = await startCodexAttemptTurn(resources, turnRuntime, notifications, {
+              ...turnRequest,
+              startCodexTurn: preparation.timeNativeTurnStart(turnRequest.startCodexTurn),
+            });
             if ("result" in turnStart) {
               connection.assertModelExecutionCurrent();
               return turnStart.result;

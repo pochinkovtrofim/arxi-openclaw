@@ -422,6 +422,7 @@ export async function executePluginOwnedProcess(params: {
   noOutputTimeoutMs: number;
   watchdogClock?: CliWatchdogClock;
   consumeStdout: (chunk: string) => void;
+  onRequestSent?: () => void;
   onOutstandingWorkChange?: (active: boolean) => void;
   activeToolCount?: () => number;
   compactionActive?: () => boolean;
@@ -613,6 +614,7 @@ export async function executePluginOwnedProcess(params: {
         ...(run.executionMode ? { executionMode: run.executionMode } : {}),
         ...(run.cliToolAvailability ? { toolAvailability: run.cliToolAvailability } : {}),
         ...(liveSession ? { liveSession } : {}),
+        ...(params.onRequestSent ? { onRequestSent: params.onRequestSent } : {}),
         ...(detachReplyBackend
           ? {
               registerMessageInjection: (injection: CliBackendMessageInjection) => {

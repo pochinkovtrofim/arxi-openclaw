@@ -1,5 +1,6 @@
 import { coerceErrorMessage } from "@openclaw/normalization-core/error-coercion";
 import { getReplyPayloadMetadata, type ReplyPayload } from "../../auto-reply/reply-payload.js";
+import { getReplySettleStages } from "../../auto-reply/reply/reply-settle-stages.js";
 import { recordAgentRunTerminalOutcome } from "../../channels/turn/agent-run-terminal-outcome.js";
 import type { CliDeps } from "../../cli/deps.types.js";
 import type { RestartRecoveryTerminalDeliveryEvidenceResult } from "../../config/sessions/restart-recovery-types.js";
@@ -176,7 +177,10 @@ export async function finalizeEmbeddedAgentCommand(params: {
       committedCompactionSessionId,
     );
 
+  const settleStages = getReplySettleStages();
   try {
+    // Closes the run's own exit: result binding and the return of the attempt.
+    settleStages?.mark("binding");
     await fallbackTrajectoryRecorder?.flush();
     const finalVisiblePayload = result.payloads
       ?.toReversed()
@@ -246,6 +250,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
     }
     runOwnedSessionId = effectiveSessionId;
     publishSessionOwnership();
+    settleStages?.mark("session_store");
 
     const transcriptPersistenceRunner = result.meta.executionTrace?.runner;
     let persistedCliTurnTranscript = false;
@@ -310,6 +315,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
       }
     }
 
+    settleStages?.mark("transcript");
     const payloads = result.payloads ?? [];
     const pendingFinalDeliveryMarker = await persistPendingFinalDeliveryMarker({
       admittedRecoverySource: params.admittedRecoverySource,
@@ -332,6 +338,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
       deliveryContext: params.currentRunDeliveryContext,
       runOwnedSessionId,
     });
+    settleStages?.mark("delivery_marker");
     sessionEntry = pendingFinalDeliveryMarker.sessionEntry;
     let deliveryLifecycleRevision = sessionEntry?.lifecycleRevision;
 
@@ -523,6 +530,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
       }
     }
 
+    settleStages?.mark("compaction");
     await params.opts.beforeTerminalDelivery?.(
       sessionReboundDuringRun
         ? undefined
@@ -533,6 +541,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
             storePath,
           },
     );
+    settleStages?.mark("before_delivery");
     const { deliverAgentCommandResult } = await loadDeliveryRuntime();
     const deliveryParams = {
       cfg,
@@ -579,6 +588,8 @@ export async function finalizeEmbeddedAgentCommand(params: {
         : deliveryParams,
     );
 
+    // Delivery that never reached the channel's send closes here, at its return.
+    settleStages?.mark("send");
     if (
       sessionStore &&
       sessionKey &&

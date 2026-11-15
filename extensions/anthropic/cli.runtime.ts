@@ -704,6 +704,7 @@ export async function* executeClaudeCli(
       throw turn.error ?? new Error("Claude CLI closed before its prompt was accepted.");
     }
     await transport.send(createUserInput(context, context.prompt, turn.inputUuid));
+    context.onRequestSent?.();
     context.registerMessageInjection?.({
       isAvailable: () =>
         session.hasInputLifecycle &&

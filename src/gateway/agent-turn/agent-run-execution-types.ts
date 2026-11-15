@@ -15,6 +15,7 @@ import type { AgentTurnContext, AgentTurnIo, AgentTurnPrincipal } from "./types.
 
 export type StartAgentRunExecutionParams = {
   diagnosticTrace?: DiagnosticTraceContext;
+  rpcReceivedAt?: number;
   assertContextCurrent?: () => void;
   prepared: PreparedAgentRunDispatch;
   mainRestartRecoveryOwnerLease?: MainSessionRecoveryOwnerLease;

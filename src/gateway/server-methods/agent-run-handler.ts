@@ -27,6 +27,7 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
   hasCurrentClientAuthority,
   sessionMutationCommitGuard,
 }) => {
+  const rpcReceivedAt = Date.now();
   const activeDiagnosticTrace = getActiveDiagnosticTraceContext();
   const diagnosticTrace = activeDiagnosticTrace
     ? freezeDiagnosticTraceContext(activeDiagnosticTrace)
@@ -84,6 +85,7 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
       io,
       onRunObserved,
       diagnosticTrace,
+      rpcReceivedAt,
     });
   } catch (error) {
     if (error instanceof SessionMutationAuthorizationChangedError) {

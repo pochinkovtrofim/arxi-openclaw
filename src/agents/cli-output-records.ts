@@ -149,6 +149,21 @@ function normalizeCliUsageRecord(raw: unknown): CliUsage | undefined {
     : undefined;
 }
 
+/** Usage carried by a Claude stream event (`message_start` nests it in the message). */
+export function readClaudeStreamEventUsage(event: Record<string, unknown>): CliUsage | undefined {
+  return normalizeCliUsageRecord(isRecord(event.message) ? event.message.usage : event.usage);
+}
+
+/** A user record that returns tool results to the model, which starts its next API step. */
+export function isClaudeToolResultUserRecord(parsed: Record<string, unknown>): boolean {
+  return (
+    parsed.type === "user" &&
+    isRecord(parsed.message) &&
+    Array.isArray(parsed.message.content) &&
+    parsed.message.content.some((block) => isRecord(block) && block.type === "tool_result")
+  );
+}
+
 export function readCliUsage(parsed: Record<string, unknown>): CliUsage | undefined {
   return (
     normalizeCliUsageRecord(isRecord(parsed.message) ? parsed.message.usage : undefined) ??

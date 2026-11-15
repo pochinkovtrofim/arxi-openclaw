@@ -50,6 +50,8 @@ import {
   type DiagnosticToolExecutionLiveness,
 } from "./diagnostic-tool-execution-liveness.js";
 import {
+  createChildDiagnosticTraceContext,
+  freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
@@ -97,6 +99,8 @@ type DiagnosticSessionEvent = DiagnosticBaseEvent &
 
 /** Stages between taking up a turn and its agent run, in order; fixed code labels only. */
 export const REPLY_PREFLIGHT_STAGES = [
+  "gateway_rpc",
+  "command_prepare",
   "admission",
   "prepare",
   "token_estimate",
@@ -111,6 +115,25 @@ type DiagnosticReplyPreflightStageEvent = DiagnosticSessionEvent & {
   type: "reply.preflight.stage";
   stage: (typeof REPLY_PREFLIGHT_STAGES)[number];
   durationMs: number;
+};
+
+/** Stages between the end of an agent run and the reply's hand-off to the channel, in order. */
+export const REPLY_SETTLE_STAGES = [
+  "binding",
+  "session_store",
+  "transcript",
+  "delivery_marker",
+  "compaction",
+  "before_delivery",
+  "send",
+] as const;
+
+/** One finished stage of a reply after its agent run ended. No content. */
+type DiagnosticReplySettleStageEvent = DiagnosticSessionEvent & {
+  type: "reply.settle.stage";
+  stage: (typeof REPLY_SETTLE_STAGES)[number];
+  durationMs: number;
+  runId?: string;
 };
 
 type DiagnosticGatewayRpcEvent = DiagnosticBaseEvent & DiagnosticGatewayRpcFields;
@@ -878,6 +901,7 @@ type DiagnosticTelemetryExporterEvent = DiagnosticBaseEvent & {
 
 export type DiagnosticEventPayload =
   | DiagnosticReplyPreflightStageEvent
+  | DiagnosticReplySettleStageEvent
   | DiagnosticGatewayRpcEvent
   | DiagnosticMemorySearchCompletedEvent
   | (DiagnosticBaseEvent & DiagnosticRuntimeMeasurementFields)
@@ -1071,6 +1095,7 @@ const MAX_ASYNC_DIAGNOSTIC_EVENTS_PER_TURN = 100;
 const DIAGNOSTIC_EVENTS_STATE_KEY = Symbol.for("openclaw.diagnosticEvents.state.v1");
 const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
   "reply.preflight.stage",
+  "reply.settle.stage",
   "worker.request",
   "diagnostic.gc",
   "gateway.event_loop.sample",
@@ -1335,6 +1360,15 @@ function enrichDiagnosticEvent(
     enriched[key] = value;
   }
   enriched.trace ??= getActiveDiagnosticTraceContext();
+  if (isToolExecutionEventInput(event)) {
+    // A tool call is its own span. Sharing the enclosing scope's span id makes the
+    // start, the end and the scope's own events collide for exporters and the host,
+    // so a tool event that would carry the scope's span gets a child span instead.
+    const scope = getActiveDiagnosticTraceContext();
+    if (scope?.spanId && enriched.trace?.spanId === scope.spanId) {
+      enriched.trace = freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(scope));
+    }
+  }
   state.seq += 1;
   enriched.seq = state.seq;
   enriched.ts = Date.now();

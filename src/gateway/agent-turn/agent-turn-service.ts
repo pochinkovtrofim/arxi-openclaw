@@ -60,6 +60,8 @@ type AgentTurnStartRequest = {
   io: AgentTurnIo;
   onRunObserved?: (runId: string) => void;
   diagnosticTrace?: DiagnosticTraceContext;
+  /** Epoch ms of the Gateway's receipt of the request. */
+  rpcReceivedAt?: number;
 };
 
 export function createAgentTurnService(
@@ -78,6 +80,7 @@ export function createAgentTurnService(
     io,
     onRunObserved,
     diagnosticTrace,
+    rpcReceivedAt,
   }: AgentTurnStartRequest): Promise<void> => {
     const promptedAt = Date.now();
     assertAdmissionCurrent?.();
@@ -576,6 +579,7 @@ export function createAgentTurnService(
                 inputProvenance: preparedDispatch.userTurn.inputProvenance,
                 effectiveBootstrapContextRunKind,
                 diagnosticTrace,
+                rpcReceivedAt,
                 releaseCronContinuationClaimWithRecovery: cronContinuation.releaseWithRecovery,
               }),
             );
