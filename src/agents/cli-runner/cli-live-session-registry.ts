@@ -23,16 +23,20 @@ export const PERSON_TURN_LIVE_SESSION_IDLE_MS = 60 * 60 * 1_000;
 // Delegated runs keep user provenance (Gateway `agent` calls carry
 // trigger "user") but are not that conversation, and their processes are many.
 function isPersonConversationRun(params: PreparedCliRunContext["params"]): boolean {
-  if (params.trigger !== "user" && params.continuesConversation !== true) {
+  const continuesConversation = params.continuesConversation === true;
+  if (params.trigger !== "user" && !continuesConversation) {
     return false;
   }
-  return (
-    !isSubagentSessionKey(params.sessionKey) &&
-    !params.spawnedBy &&
-    !params.trustedInternalHandoff &&
-    params.inputProvenance?.kind !== "inter_session" &&
-    params.inputProvenance?.kind !== "internal_system"
-  );
+  if (
+    isSubagentSessionKey(params.sessionKey) ||
+    params.spawnedBy ||
+    params.trustedInternalHandoff ||
+    params.inputProvenance?.kind === "inter_session"
+  ) {
+    return false;
+  }
+  // A continuing heartbeat is internal_system by provenance and still the conversation.
+  return continuesConversation || params.inputProvenance?.kind !== "internal_system";
 }
 
 type CliLiveSessionOwner = {

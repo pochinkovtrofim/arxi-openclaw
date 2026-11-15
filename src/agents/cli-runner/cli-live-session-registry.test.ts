@@ -197,7 +197,15 @@ describe("generic plugin-owned live session registry", () => {
 
   it("keeps a person's conversation process an hour between turns and leaves background runs to the backend", async () => {
     const person = await createOwner({ trigger: "user" });
-    const continued = await createOwner({ trigger: "heartbeat", continuesConversation: true });
+    const continued = await createOwner({
+      trigger: "heartbeat",
+      continuesConversation: true,
+      inputProvenance: { kind: "internal_system", sourceTool: "heartbeat" },
+    });
+    const heartbeat = await createOwner({
+      trigger: "heartbeat",
+      inputProvenance: { kind: "internal_system", sourceTool: "heartbeat" },
+    });
     const background = await createOwner({ trigger: "cron" });
     const subagent = await createOwner({
       trigger: "user",
@@ -208,6 +216,7 @@ describe("generic plugin-owned live session registry", () => {
     expect(person.capability.idleTimeoutMs).toBe(PERSON_TURN_LIVE_SESSION_IDLE_MS);
     expect(continued.capability.idleTimeoutMs).toBe(PERSON_TURN_LIVE_SESSION_IDLE_MS);
     expect(background.capability.idleTimeoutMs).toBeUndefined();
+    expect(heartbeat.capability.idleTimeoutMs).toBeUndefined();
     expect(subagent.capability.idleTimeoutMs).toBeUndefined();
     expect(sent.capability.idleTimeoutMs).toBeUndefined();
   });
