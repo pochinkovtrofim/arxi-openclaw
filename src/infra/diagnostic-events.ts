@@ -146,6 +146,11 @@ export type CommandPrepareStep =
   | "skill_commands";
 export type SessionWriteStep =
   | "skill_library_selection"
+  /**
+   * The store admitted this turn's entry read: until then another write held its writer,
+   * or a cold transcript was restored.
+   */
+  | "session_writer_wait"
   | "session_patch_build"
   | "session_store_commit"
   | "session_created_record";
