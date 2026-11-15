@@ -27,7 +27,6 @@ import {
 type RuntimeEntryParams = Omit<Parameters<CreateSessionMcpRuntime>[0], "configFingerprint"> & {
   configReloadAtAdmission?: SessionMcpConfigPublication;
   runtimeKey: string;
-  resolutionContextKey?: string;
 };
 
 type RequesterRuntimeParams = RuntimeEntryParams & {

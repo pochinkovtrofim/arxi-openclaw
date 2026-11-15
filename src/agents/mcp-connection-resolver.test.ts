@@ -315,13 +315,18 @@ describe("mcp connection resolver helpers", () => {
         "owner_probe",
       ]);
       expect(proof.mail.requests).toBe(listed);
+      // The kept transport still authenticates: it renews its headers before each request.
+      await expect(renewed.callTool("user-mail", "owner_probe", {})).resolves.toMatchObject({
+        content: [{ type: "text", text: "mail" }],
+      });
       // Another resolution context (a trace-bound bearer) is another connection.
       const retraced = expectDefined(sessionMcpRuntimeOwners.get(renewed), "owner").replace(
         renewing("Bearer issued-next", "trace-b"),
       );
       replacements.push(retraced);
+      const beforeRetrace = proof.mail.requests;
       await retraced.getCatalog();
-      expect(proof.mail.requests).toBeGreaterThan(listed);
+      expect(proof.mail.requests).toBeGreaterThan(beforeRetrace);
     } finally {
       for (const replacement of replacements.reverse()) {
         await replacement.dispose();
