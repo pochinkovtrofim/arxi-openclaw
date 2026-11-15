@@ -2,33 +2,24 @@ import {
   embeddedAgentLog,
   type EmbeddedRunAttemptParamsV2,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
-import {
-  createDiagnosticTraceContextFromActiveScope,
-  createRunPrepStageReporter,
-  freezeDiagnosticTraceContext,
-} from "openclaw/plugin-sdk/diagnostic-runtime";
+import { createRunPrepStageReporter } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { createStageTimingTracker, formatStageTimings } from "openclaw/plugin-sdk/time-runtime";
 import { isCodexAppServerProfilerEnabled } from "./profiler-flag.js";
 
 /** Records startup before the native turn owns inference and tool execution. */
 export function createCodexAttemptPreparationTiming(
-  params: Pick<
-    EmbeddedRunAttemptParamsV2,
-    "runId" | "sessionId" | "sessionKey" | "config" | "diagnosticTrace"
-  >,
+  params: Pick<EmbeddedRunAttemptParamsV2, "runId" | "sessionId" | "sessionKey" | "config">,
 ) {
   const tracker = createStageTimingTracker();
-  const runTrace = freezeDiagnosticTraceContext(
-    params.diagnosticTrace ?? createDiagnosticTraceContextFromActiveScope(),
-  );
   const stageIdentity = {
     runId: params.runId,
     ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
     ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-    runTrace,
   };
   // The work trace gets the same contiguous stages the slow-start log prints:
   // run preparation up to the native turn, then the native turn/start request.
+  // Both reporters are created inside the harness run's scope, so their spans
+  // hang off the run's span rather than the command's attempt trace.
   const reportPreparationStages = createRunPrepStageReporter({
     tracker,
     ...stageIdentity,
