@@ -307,6 +307,9 @@ export function createUserTurnTranscriptRecorder(
       message?: PersistedUserTurnMessage;
     },
   ): Promise<UserTurnTranscriptPersistResult | undefined> => {
+    const onPhase = options.onPhase;
+    // The session input actor admitted this call; its queue wait is what ran before.
+    onPhase?.("user-turn-actor-wait");
     const storageTarget = options.storageTarget ? { ...options.storageTarget } : undefined;
     if (options.skipWhenBlocked && blocked) {
       return undefined;
@@ -320,6 +323,7 @@ export function createUserTurnTranscriptRecorder(
     if (selfPersistencePromise) {
       const existingPromise = selfPersistencePromise;
       const existingResult = await existingPromise;
+      onPhase?.("user-turn-prior-write-wait");
       if (existingResult || !options.retryIfUnpersisted) {
         return persistedResult ?? existingResult;
       }
@@ -339,9 +343,11 @@ export function createUserTurnTranscriptRecorder(
           ...resolvedPersistenceTarget,
           logicalTurnId,
         });
+        onPhase?.("user-turn-committed-resolve");
         if (result) {
           persistedResult = result;
           await recordAdmission(result.admission, result.message);
+          onPhase?.("user-turn-admission");
           if (result.appended) {
             notifyOriginalInputCommitted({ message: result.message, anchor: result.admission });
           }
@@ -349,10 +355,12 @@ export function createUserTurnTranscriptRecorder(
         return result;
       }
       const resolvedMessage = options.message ?? (await resolveMessageForPersistence());
+      onPhase?.("user-turn-message-resolve");
       if (!resolvedMessage) {
         return undefined;
       }
       const target = await resolveUserTurnTranscriptTarget(options.target ?? params.target);
+      onPhase?.("user-turn-target-resolve");
       if (!target) {
         return undefined;
       }
@@ -453,9 +461,11 @@ export function createUserTurnTranscriptRecorder(
         return persistedResult;
       }
       const result = await persistMessage(resolvedMessage, updateMode);
+      onPhase?.("user-turn-write");
       if (result) {
         persistedResult = result;
         await recordAdmission(result.admission, result.message);
+        onPhase?.("user-turn-admission");
         notifyMessagePersisted(result.message);
       }
       return result;
@@ -660,6 +670,7 @@ export function createUserTurnTranscriptRecorder(
         sessionLifecyclePatch: options?.sessionLifecyclePatch,
         beforeFreshMessageCommit: options?.beforeFreshMessageCommit,
         retryIfUnpersisted: options?.retryIfUnpersisted,
+        onPhase: options?.onPhase,
       }),
     persistBlocked: async (blockedMessage, options) => {
       blocked = true;

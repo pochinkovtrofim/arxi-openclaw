@@ -219,6 +219,30 @@ describe("user turn transcript persistence", () => {
   });
 
   describe("createUserTurnTranscriptRecorder", () => {
+    it("names each finished step of the approved path through onPhase, in order", async () => {
+      const target = createSqliteTranscriptTarget({ dir: sessionDirs.make() });
+      const input = { text: "phase prompt", timestamp: 123, idempotencyKey: "phase:user" };
+      const phases: string[] = [];
+      const recorder = createUserTurnTranscriptRecorder({ input, target });
+      const persisted = await recorder.persistApproved({ onPhase: (phase) => phases.push(phase) });
+
+      expect(persisted).toMatchObject({ appended: true });
+      expect(phases).toEqual([
+        "user-turn-actor-wait",
+        "user-turn-message-resolve",
+        "user-turn-target-resolve",
+        "user-turn-write",
+        "user-turn-admission",
+      ]);
+
+      // Without the callback the same call behaves as before.
+      const quiet = createUserTurnTranscriptRecorder({
+        input: { text: "quiet prompt", timestamp: 124, idempotencyKey: "phase:quiet" },
+        target,
+      });
+      await expect(quiet.persistApproved()).resolves.toMatchObject({ appended: true });
+    });
+
     it("freezes the original prompt after initial steering and across reopened recorders", async () => {
       const target = createSqliteTranscriptTarget({ dir: sessionDirs.make() });
       const input = { text: "original prompt", timestamp: 123, idempotencyKey: "projection:user" };

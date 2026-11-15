@@ -684,13 +684,18 @@ async function runPreparedCliAgentOwned(
       return finishBlockedRun(block.message, block.blockedBy, block.heldReason);
     }
 
-    userTurnHandled = await persistApprovedCliUserTurnTranscript(params);
+    userTurnHandled = await persistApprovedCliUserTurnTranscript(
+      params,
+      prepStages ? (phase) => prepStages.mark(phase) : undefined,
+    );
+    // Whatever the approved path did not name (an early return, the blocked check) ends here.
+    prepStages?.mark("user-turn-settle");
     runAgentHarnessLlmInputHook({
       event: llmInputEvent,
       ctx: hookContext,
       hookRunner,
     });
-    prepStages?.mark("user-turn-record");
+    prepStages?.mark("llm-input-hook");
     return await runCliRecovery({
       context,
       executeAttempt: executeCliAttempt,

@@ -49,6 +49,7 @@ import {
 import { runAgentHarnessBeforeMessageWriteHook } from "../harness/hook-helpers.js";
 import { projectAgentHarnessTranscriptMessageForDisplay } from "../harness/transcript-visibility.js";
 import type { AgentMessage } from "../runtime/index.js";
+import type { UserTurnPersistPhase } from "../../sessions/user-turn-transcript.types.js";
 import { withSessionManagerWrite } from "../sessions/session-manager-write-admission.js";
 import { SessionManager } from "../sessions/session-manager.js";
 import { buildAssistantMessage, buildUsageWithNoCost } from "../stream-message-shared.js";
@@ -108,6 +109,7 @@ export async function runCliAgentEndHook(
 
 export async function persistApprovedCliUserTurnTranscript(
   params: RunCliAgentParams,
+  onPhase?: (phase: UserTurnPersistPhase) => void,
 ): Promise<boolean> {
   const recorder = params.userTurnTranscriptRecorder;
   const reusingPersistedTurn = params.suppressNextUserMessagePersistence === true;
@@ -117,6 +119,7 @@ export async function persistApprovedCliUserTurnTranscript(
 
   const persisted = await recorder.persistApproved({
     cwd: params.cwd ?? params.workspaceDir,
+    ...(onPhase ? { onPhase } : {}),
   });
   if (!persisted && !recorder.hasPersisted() && (await recorder.resolveMessage())) {
     // A prepared user row can be rejected by before_message_write. Preserve
