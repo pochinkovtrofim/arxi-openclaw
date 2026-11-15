@@ -356,7 +356,12 @@ describe("saved flow review cases", () => {
     expect(isWrite(post("https://x.example/api/items", '{"query":"lamp"}'))).toBe(true);
     expect(isWrite(post("https://x.example/api/search", '{"query":"lamp"}'))).toBe(false);
     expect(
-      isWrite(post("https://x.example/gql", '{"query":"# add\\nfragment F on Cart { id }\\nmutation Add { add { ...F } }"}')),
+      isWrite(
+        post(
+          "https://x.example/gql",
+          '{"query":"# add\\nfragment F on Cart { id }\\nmutation Add { add { ...F } }"}',
+        ),
+      ),
     ).toBe(true);
   });
 

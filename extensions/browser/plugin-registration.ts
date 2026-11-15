@@ -16,6 +16,12 @@ import { createSubsystemLogger, isTruthyEnvValue } from "openclaw/plugin-sdk/run
 import { registerBrowserCliMetadata } from "./cli-metadata.js";
 import { bindBrowserDashboardEvents } from "./src/browser-dashboard-events.js";
 import {
+  BROWSER_FLOW_TOOL_DESCRIPTION,
+  BROWSER_FLOW_TOOL_NAME,
+  BrowserFlowToolSchema,
+  browserFlowToBrowserArgs,
+} from "./src/browser-flow-tool.js";
+import {
   BROWSER_REQUEST_GATEWAY_METHOD,
   BROWSER_REQUEST_GATEWAY_SCOPE,
   SESSION_BROWSER_REQUEST_GATEWAY_METHOD,
@@ -25,12 +31,6 @@ import {
   BROWSER_PROXY_UPLOAD_COMMAND,
 } from "./src/browser-node-commands.js";
 import { getOptionalBrowserStateRuntime } from "./src/browser-runtime-state.js";
-import {
-  BROWSER_FLOW_TOOL_DESCRIPTION,
-  BROWSER_FLOW_TOOL_NAME,
-  BrowserFlowToolSchema,
-  browserFlowToBrowserArgs,
-} from "./src/browser-flow-tool.js";
 import { createBrowserToolDefinition } from "./src/browser-tool-description.js";
 import { getGatewayExtensionRelayModule } from "./src/browser/extension-relay.runtime.js";
 import {
