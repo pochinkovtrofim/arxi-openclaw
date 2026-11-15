@@ -109,7 +109,11 @@ function createDisposedError(sessionId: string): Error {
 
 type ServerMcpRuntime = SessionMcpRuntime & {
   readonly pluginOwned: boolean;
+  /** The server's configuration fingerprint without its resolved connection. */
+  readonly baseFingerprint: string;
   resetStartupBackoff: () => void;
+  /** The last tool list this server returned, kept for a successor's failed first listing. */
+  peekListedCatalog: () => McpToolCatalog | undefined;
 };
 
 export function createSessionMcpRuntime(
@@ -147,10 +151,11 @@ export function createSessionMcpRuntime(
         ),
       },
     });
+    const baseFingerprint = serverConfig.fingerprint;
     if (connection) {
       serverConfig.fingerprint += `:${hashMcpResolvedConnections(new Map([[serverName, connection]]))}`;
     }
-    return serverConfig;
+    return Object.assign(serverConfig, { baseFingerprint });
   };
   const owned = new Map<string, ServerMcpRuntime>();
   for (const serverName of Object.keys(config.loaded.mcpServers)) {
@@ -165,6 +170,19 @@ export function createSessionMcpRuntime(
       owned.set(serverName, existing);
       previous.delete(serverName);
     } else {
+      // A changed resolved connection (url/headers: a resolver's fresh bearer, say)
+      // replaces the runtime but not the server's configuration: its last tool list
+      // stands in if the first listing fails, so the advertised tools, and a Claude
+      // Code session bound to them, stay the same. Calls still wait for this
+      // runtime's own listing.
+      const seedListedCatalog =
+        existing?.baseFingerprint === serverConfig.baseFingerprint &&
+        existing.workspaceDir === params.workspaceDir &&
+        existing.agentDir === params.agentDir &&
+        JSON.stringify(existing.requesterScope ?? null) ===
+          JSON.stringify(params.requesterScope ?? null)
+          ? existing.peekListedCatalog()
+          : undefined;
       owned.set(
         serverName,
         createServerMcpRuntime({
@@ -173,6 +191,7 @@ export function createSessionMcpRuntime(
           serverConfig,
           safeServerNamesByServer: safeNames,
           configFingerprint: fingerprint,
+          ...(seedListedCatalog ? { seedListedCatalog } : {}),
         }),
       );
     }
@@ -336,7 +355,8 @@ export function createSessionMcpRuntime(
 function createServerMcpRuntime(
   params: Parameters<CreateSessionMcpRuntime>[0] & {
     serverName: string;
-    serverConfig: ReturnType<typeof loadSessionMcpConfig>;
+    serverConfig: ReturnType<typeof loadSessionMcpConfig> & { baseFingerprint: string };
+    seedListedCatalog?: McpToolCatalog;
   },
 ): ServerMcpRuntime {
   const { loaded, fingerprint: computedFingerprint } = params.serverConfig;
@@ -358,8 +378,9 @@ function createServerMcpRuntime(
   const lifecycleAbortController = new AbortController();
   let catalog: McpToolCatalog | null = null;
   // Transport health cannot revoke advertised schemas; only a successful list
-  // or retirement of this configuration owner replaces them.
-  let lastListedCatalog: McpToolCatalog | undefined;
+  // or retirement of this configuration owner replaces them. A successor with the
+  // same base configuration inherits them until its first successful list.
+  let lastListedCatalog: McpToolCatalog | undefined = params.seedListedCatalog;
   let catalogRetryAfterMs: number | undefined;
   let catalogInFlight: Promise<McpToolCatalog> | undefined;
   const invalidateCatalog = () => {
@@ -856,6 +877,8 @@ function createServerMcpRuntime(
   };
 
   const runtime: ServerMcpRuntime = {
+    baseFingerprint: params.serverConfig.baseFingerprint,
+    peekListedCatalog: () => lastListedCatalog,
     resetStartupBackoff() {
       resetMcpStartupBackoff(startupKey);
       if (startupRetryAfterMs !== undefined || (catalogInFlight && !currentSession?.connected)) {

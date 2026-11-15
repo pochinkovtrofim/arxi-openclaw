@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import http from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../config/io.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -17,7 +18,10 @@ import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-reque
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { setSessionMcpRuntimeScheduler } from "./agent-bundle-mcp-manager-api.js";
 import { getOrCreateSessionMcpRuntime } from "./agent-bundle-mcp-manager.test-support.js";
+import { sessionMcpRuntimeOwners } from "./agent-bundle-mcp-runtime-owner.js";
+import { createSessionMcpRuntime } from "./agent-bundle-mcp-runtime.js";
 import { disposeAllSessionMcpRuntimes, peekSessionMcpRuntime } from "./agent-bundle-mcp-tools.js";
+import type { SessionMcpRuntime } from "./agent-bundle-mcp-types.js";
 import {
   testing,
   applyMcpConnectionOverride,
@@ -263,6 +267,66 @@ describe("mcp connection resolver helpers", () => {
         requesterSenderId: "requester",
       }),
     ).resolves.toEqual(new Map());
+  });
+
+  it("keeps a server's tools when a rotated credential's first listing fails", async () => {
+    const proof = await startAuthenticatedMcpProofServer();
+    const base = {
+      sessionId: "rotated-credential-catalog",
+      workspaceDir: "/workspace",
+      cfg: {
+        mcp: {
+          servers: {
+            "user-mail": {
+              transport: "streamable-http" as const,
+              url: "https://placeholder.invalid",
+            },
+          },
+        },
+      },
+    };
+    const runtime = createSessionMcpRuntime({
+      ...base,
+      connectionOverrides: new Map([
+        [
+          "user-mail",
+          { url: proof.mail.url, headers: { Authorization: proof.mail.authorization } },
+        ],
+      ]),
+    });
+    let replacement: SessionMcpRuntime | undefined;
+    try {
+      const listed = await runtime.getCatalog();
+      expect(listed.tools.map((tool) => tool.toolName)).toEqual(["owner_probe"]);
+      // A resolver's fresh bearer replaces the server runtime; this one is refused, as a
+      // host restarting its services would refuse it, so the first listing fails.
+      replacement = expectDefined(sessionMcpRuntimeOwners.get(runtime), "owner").replace({
+        ...base,
+        connectionOverrides: new Map([
+          ["user-mail", { url: proof.mail.url, headers: { Authorization: "Bearer rotated" } }],
+        ]),
+      });
+      const afterRotation = await replacement.getCatalog();
+      expect(afterRotation.diagnostics?.length).toBeGreaterThan(0);
+      expect(afterRotation.tools.map((tool) => tool.toolName)).toEqual(["owner_probe"]);
+      // A changed policy is a different configuration: nothing is carried over.
+      const denied = expectDefined(sessionMcpRuntimeOwners.get(replacement), "owner").replace({
+        ...base,
+        toolOverrides: { mcpToolsDeny: { "user-mail": ["owner_probe"] } },
+        connectionOverrides: new Map([
+          ["user-mail", { url: proof.mail.url, headers: { Authorization: "Bearer rotated-2" } }],
+        ]),
+      });
+      try {
+        expect((await denied.getCatalog()).tools).toEqual([]);
+      } finally {
+        await denied.dispose();
+      }
+    } finally {
+      await replacement?.dispose();
+      await runtime.dispose();
+      await proof.close();
+    }
   });
 
   it("revokes MCP credentials during a full gateway plugin-disable replacement", async () => {
