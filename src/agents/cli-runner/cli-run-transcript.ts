@@ -34,6 +34,7 @@ import { formatErrorMessage } from "../../infra/errors.js";
 import type { StopReason } from "../../llm/types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
+import type { UserTurnPersistPhase } from "../../sessions/user-turn-transcript.types.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { isHeartbeatLifecycleRunKind } from "../bootstrap-mode.js";
 import type { CliOutput, CliUsage } from "../cli-output-contracts.js";
@@ -49,7 +50,6 @@ import {
 import { runAgentHarnessBeforeMessageWriteHook } from "../harness/hook-helpers.js";
 import { projectAgentHarnessTranscriptMessageForDisplay } from "../harness/transcript-visibility.js";
 import type { AgentMessage } from "../runtime/index.js";
-import type { UserTurnPersistPhase } from "../../sessions/user-turn-transcript.types.js";
 import { withSessionManagerWrite } from "../sessions/session-manager-write-admission.js";
 import { SessionManager } from "../sessions/session-manager.js";
 import { buildAssistantMessage, buildUsageWithNoCost } from "../stream-message-shared.js";
