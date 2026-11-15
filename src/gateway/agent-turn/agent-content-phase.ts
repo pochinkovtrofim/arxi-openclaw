@@ -280,8 +280,8 @@ export async function prepareAgentContentPhase(params: {
   // carry its result.
   const { probedMedia, ...parsed } = content;
   if (probedMedia) {
+    // The caller checks admission once it owns offloadedRefs and can delete them.
     parsed.media = await probedMedia;
-    params.assertAdmissionCurrent?.();
   }
   params.onStep?.("media_probe");
 
