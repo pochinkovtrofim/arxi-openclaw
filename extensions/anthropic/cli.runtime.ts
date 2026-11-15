@@ -4,6 +4,8 @@ import { PassThrough } from "node:stream";
 import type {
   CliBackendExecuteContext,
   CliBackendLiveSessionCapability,
+  CliBackendLiveSessionCloseReason,
+  CliBackendLiveSessionEndCause,
   CliBackendLiveSessionHandle,
   CliBackendToolPermissionResult,
 } from "openclaw/plugin-sdk/cli-backend";
@@ -65,6 +67,8 @@ type ClaudeCliSession = {
   notifiedTasks: Set<string>;
   hasInputLifecycle: boolean;
   closed: boolean;
+  /** Why the next close happens, when more specific than its lifecycle reason. */
+  endCause?: CliBackendLiveSessionEndCause;
 };
 const sessions = new WeakMap<CliBackendLiveSessionHandle, ClaudeCliSession>();
 
@@ -262,13 +266,21 @@ async function injectInput(
   await started.promise;
 }
 
-function closeSession(session: ClaudeCliSession, error?: unknown) {
+function endCauseOf(reason: CliBackendLiveSessionCloseReason): CliBackendLiveSessionEndCause {
+  return reason === "abort" ? "aborted" : reason;
+}
+
+function closeSession(
+  session: ClaudeCliSession,
+  reason: CliBackendLiveSessionCloseReason,
+  error?: unknown,
+) {
   if (session.closed) {
     return;
   }
   session.closed = true;
   clearTimeout(session.idleTimer);
-  session.capability?.remove(session.handle);
+  session.capability?.remove(session.handle, session.endCause ?? endCauseOf(reason));
   const turn = session.currentTurn;
   session.currentTurn = undefined;
   if (turn) {
@@ -295,6 +307,9 @@ function completeTurn(session: ClaudeCliSession, turn: ClaudeCliTurn) {
   if (!session.capability || holdsBackgroundTasks || orphanedInput) {
     // A failed parent does not stop native background continuations. Never lend them a new turn.
     // Input written into a turn that ended unanswered is the same kind of debt.
+    if (holdsBackgroundTasks || orphanedInput) {
+      session.endCause = holdsBackgroundTasks ? "background-tasks" : "orphaned-input";
+    }
     session.handle.close(holdsBackgroundTasks || orphanedInput ? "abort" : "idle");
   } else {
     session.idleTimer = setTimeout(
@@ -580,7 +595,7 @@ function createSession(capability?: CliBackendLiveSessionCapability): ClaudeCliS
       generation: randomUUID(),
       fingerprint: capability?.fingerprint ?? randomUUID(),
       isIdle: () => !session.closed && !session.currentTurn,
-      close: (_reason, error) => closeSession(session, error),
+      close: (reason, error) => closeSession(session, reason, error),
       waitForExit: async () => {
         const transport = session.transport ?? (await session.transportStartup);
         await transport?.waitForExit();
@@ -685,7 +700,10 @@ export async function* executeClaudeCli(
               : {};
           };
         },
-        onError: (error) => session.handle.close("abort", error),
+        onError: (error) => {
+          session.endCause ??= "error";
+          session.handle.close("abort", error);
+        },
       }).then((created) => {
         session.transport = created;
         if (session.closed) {
@@ -723,6 +741,7 @@ export async function* executeClaudeCli(
       throw new Error("Claude CLI exited without a terminal result.");
     }
   } catch (error) {
+    session.endCause ??= context.abortSignal?.aborted ? "aborted" : "error";
     session.handle.close("abort", error);
     throw turn.error ?? error;
   } finally {
@@ -730,6 +749,7 @@ export async function* executeClaudeCli(
     context.abortSignal?.removeEventListener("abort", abort);
     // Iterator.return() is cancellation too; a partially consumed turn cannot stay warm.
     if (session.currentTurn === turn) {
+      session.endCause ??= "cancelled";
       session.handle.close("abort");
     }
     if (session.closed) {

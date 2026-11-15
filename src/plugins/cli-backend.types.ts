@@ -212,8 +212,22 @@ export type CliBackendLiveSessionCapability = {
   register(handle: CliBackendLiveSessionHandle): void;
   /** Rebinds this exact admitted turn to the registered process's stable capture. */
   activate(handle: CliBackendLiveSessionHandle): void;
-  remove(handle: CliBackendLiveSessionHandle): void;
+  /** `cause` names why the process ended, for the next turn's start reason in the trace. */
+  remove(handle: CliBackendLiveSessionHandle, cause?: CliBackendLiveSessionEndCause): void;
 };
+
+/** Why a reusable execution process ended; a closed list, never content. */
+export type CliBackendLiveSessionEndCause =
+  | "idle"
+  | "restart"
+  | "evicted"
+  | "background-tasks"
+  | "orphaned-input"
+  | "aborted"
+  | "cancelled"
+  | "error"
+  | "mcp-capture-rotation"
+  | "unspecified";
 
 /** Plugin-owned input sink for the admitted turn; the host revalidates authority at each effect. */
 export type CliBackendMessageInjection = {

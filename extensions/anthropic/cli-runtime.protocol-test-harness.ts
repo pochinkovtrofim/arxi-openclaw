@@ -4,6 +4,7 @@ import path from "node:path";
 import type {
   CliBackendExecuteContext,
   CliBackendLiveSessionCapability,
+  CliBackendLiveSessionEndCause,
   CliBackendLiveSessionHandle,
 } from "openclaw/plugin-sdk/cli-backend";
 import {
@@ -77,10 +78,14 @@ ${fixtureSource}`,
   };
 }
 
-export function createLiveSession(cleanup?: () => Promise<void>): CliBackendLiveSessionCapability {
+export function createLiveSession(
+  cleanup?: () => Promise<void>,
+): CliBackendLiveSessionCapability & { endCauses: (CliBackendLiveSessionEndCause | undefined)[] } {
   let current: CliBackendLiveSessionHandle | undefined;
   let retiredCleanup: Promise<void> | undefined;
+  const endCauses: (CliBackendLiveSessionEndCause | undefined)[] = [];
   return {
+    endCauses,
     fingerprint: "synthetic-process-policy",
     current: () => current,
     restart: async () => {
@@ -97,9 +102,10 @@ export function createLiveSession(cleanup?: () => Promise<void>): CliBackendLive
       handles.add(handle);
     },
     activate: () => {},
-    remove: (handle) => {
+    remove: (handle, cause) => {
       if (current === handle) {
         current = undefined;
+        endCauses.push(cause);
         if (cleanup) {
           retiredCleanup = handle
             .waitForExit()

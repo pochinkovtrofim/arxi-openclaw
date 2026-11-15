@@ -1,13 +1,71 @@
 import { sha256Hex } from "../../infra/crypto-digest.js";
 import type { PreparedCliRunContext } from "./types.js";
 
-/** Fingerprints every process-stable input without retaining secrets or volatile artifact paths. */
-export function buildCliLiveSessionFingerprint(params: {
+type CliLiveSessionFingerprintParams = {
   context: PreparedCliRunContext;
   argv: readonly string[];
   argv0?: string;
   env: Readonly<Record<string, string>>;
-}): string {
+};
+
+/** Fingerprints every process-stable input without retaining secrets or volatile artifact paths. */
+export function buildCliLiveSessionFingerprint(params: CliLiveSessionFingerprintParams): string {
+  return sha256Hex(JSON.stringify(buildCliLiveSessionFingerprintInputs(params)));
+}
+
+/** Trace labels of the fingerprint inputs, in the order a changed one is named. */
+const FINGERPRINT_PART_LABELS = {
+  argv: "argv",
+  argv0: "argv0",
+  workspaceDirHash: "workspace",
+  cwdHash: "cwd",
+  provider: "provider",
+  model: "model",
+  systemPromptHash: "system-prompt",
+  agentAccountId: "account",
+  authProfileIdHash: "auth-profile",
+  authEpochHash: "auth-epoch",
+  extraSystemPromptHash: "extra-system-prompt",
+  promptToolNamesHash: "tool-names",
+  mcpResumeHash: "mcp",
+  credentialFingerprint: "credential",
+  skillsFingerprint: "skills",
+  env: "env",
+} as const satisfies Record<keyof ReturnType<typeof buildCliLiveSessionFingerprintInputs>, string>;
+
+/** A fingerprint input's trace label, or "unknown" when the previous inputs are missing. */
+export type CliLiveSessionFingerprintPartLabel =
+  | (typeof FINGERPRINT_PART_LABELS)[keyof typeof FINGERPRINT_PART_LABELS]
+  | "unknown";
+
+export type CliLiveSessionFingerprintParts = Readonly<Record<string, string>>;
+
+/** One digest per fingerprint input, so a restart can name the input that changed. */
+export function buildCliLiveSessionFingerprintParts(
+  params: CliLiveSessionFingerprintParams,
+): CliLiveSessionFingerprintParts {
+  const inputs = buildCliLiveSessionFingerprintInputs(params);
+  return Object.fromEntries(
+    Object.entries(inputs).map(([key, value]) => [key, sha256Hex(JSON.stringify(value ?? null))]),
+  );
+}
+
+/** The trace label of the first fingerprint input that differs, or "unknown". */
+export function changedCliLiveSessionFingerprintPart(
+  previous: CliLiveSessionFingerprintParts | undefined,
+  next: CliLiveSessionFingerprintParts,
+): CliLiveSessionFingerprintPartLabel {
+  if (previous) {
+    for (const [key, label] of Object.entries(FINGERPRINT_PART_LABELS)) {
+      if (previous[key] !== next[key]) {
+        return label;
+      }
+    }
+  }
+  return "unknown";
+}
+
+function buildCliLiveSessionFingerprintInputs(params: CliLiveSessionFingerprintParams) {
   const context = params.context;
   const managedGrant = context.preparedBackend.mcpClientGrantCapture;
   const normalizeGrantToken = params.env.OPENCLAW_MCP_TOKEN === managedGrant?.transportToken;
@@ -73,37 +131,35 @@ export function buildCliLiveSessionFingerprint(params: {
     argv.push(value);
   }
 
-  return sha256Hex(
-    JSON.stringify({
-      argv,
-      argv0: params.argv0,
-      workspaceDirHash: sha256Hex(context.workspaceDir),
-      cwdHash: context.cwdHash ?? sha256Hex(context.cwd ?? context.workspaceDir),
-      provider: context.params.provider,
-      model: context.normalizedModel,
-      // A warm process fixes its prompt at initialization; changed bytes require restart.
-      systemPromptHash: sha256Hex(context.systemPrompt),
-      agentAccountId: context.params.agentAccountId,
-      authProfileIdHash: context.effectiveAuthProfileId
-        ? sha256Hex(context.effectiveAuthProfileId)
-        : undefined,
-      authEpochHash: context.authEpoch ? sha256Hex(context.authEpoch) : undefined,
-      extraSystemPromptHash: context.extraSystemPromptHash,
-      promptToolNamesHash: context.promptToolNamesHash,
-      mcpResumeHash: context.preparedBackend.mcpResumeHash ?? context.preparedBackend.mcpConfigHash,
-      credentialFingerprint: context.preparedBackend.secretInput?.fingerprint,
-      skillsFingerprint,
-      env: Object.keys(params.env)
-        .toSorted()
-        .filter((key) => key !== "OPENCLAW_MCP_CLI_CAPTURE_KEY")
-        .map((key) => [
-          key,
-          key === "OPENCLAW_MCP_TOKEN" && normalizeGrantToken
-            ? "<managed-mcp-grant>"
-            : params.env[key]
-              ? sha256Hex(params.env[key])
-              : "",
-        ]),
-    }),
-  );
+  return {
+    argv,
+    argv0: params.argv0,
+    workspaceDirHash: sha256Hex(context.workspaceDir),
+    cwdHash: context.cwdHash ?? sha256Hex(context.cwd ?? context.workspaceDir),
+    provider: context.params.provider,
+    model: context.normalizedModel,
+    // A warm process fixes its prompt at initialization; changed bytes require restart.
+    systemPromptHash: sha256Hex(context.systemPrompt),
+    agentAccountId: context.params.agentAccountId,
+    authProfileIdHash: context.effectiveAuthProfileId
+      ? sha256Hex(context.effectiveAuthProfileId)
+      : undefined,
+    authEpochHash: context.authEpoch ? sha256Hex(context.authEpoch) : undefined,
+    extraSystemPromptHash: context.extraSystemPromptHash,
+    promptToolNamesHash: context.promptToolNamesHash,
+    mcpResumeHash: context.preparedBackend.mcpResumeHash ?? context.preparedBackend.mcpConfigHash,
+    credentialFingerprint: context.preparedBackend.secretInput?.fingerprint,
+    skillsFingerprint,
+    env: Object.keys(params.env)
+      .toSorted()
+      .filter((key) => key !== "OPENCLAW_MCP_CLI_CAPTURE_KEY")
+      .map((key) => [
+        key,
+        key === "OPENCLAW_MCP_TOKEN" && normalizeGrantToken
+          ? "<managed-mcp-grant>"
+          : params.env[key]
+            ? sha256Hex(params.env[key])
+            : "",
+      ]),
+  };
 }
