@@ -750,6 +750,7 @@ async function prepareCliRunContextWithinReadFence(
         },
         resolvePolicyTools: resolveMcpLoopbackPolicyTools,
         resolveScopedTools: resolveMcpLoopbackScopedTools,
+        markStage,
       })
     : { params, tools: [] };
   params = mcpProjection.params;
@@ -1489,6 +1490,7 @@ async function prepareCliRunContextWithinReadFence(
             rawTranscriptReseedReason,
             nativeSessionId: reusableCliSessionId,
             tools: promptTools,
+            markStage,
           });
     markStage("session-prompt-context");
     const effectiveReplyGuidance =
