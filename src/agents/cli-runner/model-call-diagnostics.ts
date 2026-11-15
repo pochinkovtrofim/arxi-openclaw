@@ -561,9 +561,7 @@ export function createClaudeCliModelCallDiagnostics(params: {
             : []),
           { name: CLI_PROCESS_START_STAGE, startedAt, endedAt: requestSentAt },
         ],
-        trace: freezeDiagnosticTraceContext(
-          createChildDiagnosticTraceContext(runTrace ?? trace),
-        ),
+        trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(runTrace ?? trace)),
       });
     },
     observeStep: (event: CliStepEvent): void => {
