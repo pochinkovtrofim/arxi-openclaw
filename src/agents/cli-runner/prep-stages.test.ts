@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { recordHookPhaseTiming, takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
+import {
+  createDiagnosticTraceContext,
+  runWithDiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { CLI_PREP_HANDOFF_STAGE, createCliPrepStages } from "./prep-stages.js";
 import type { PreparedCliRunContext } from "./types.js";
 
@@ -103,6 +107,20 @@ describe("CLI turn preparation stages", () => {
     expect(reported).toMatchObject({ runId: "run-1", sessionKey: "agent:main:test" });
     expect(reported?.trace).toMatchObject({
       parentSpanId: (assembled?.trace as { parentSpanId: string } | undefined)?.parentSpanId,
+    });
+  });
+
+  it("hangs its stage spans directly off the run's own span", () => {
+    const runTrace = createDiagnosticTraceContext();
+    const stages = runWithDiagnosticTraceContext(runTrace, () =>
+      createCliPrepStages({ runId: "run-2" }),
+    );
+    stages.mark("run-admission");
+    stages.handOff({ context: preparedContext("run-2"), historyMessages: [] });
+    const reported = emitted.events.find((event) => event.type === "context.stages");
+    expect(reported?.trace).toMatchObject({
+      traceId: runTrace.traceId,
+      parentSpanId: runTrace.spanId,
     });
   });
 });
