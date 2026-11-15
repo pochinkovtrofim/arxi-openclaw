@@ -693,6 +693,7 @@ async function prepareCliRunContextWithinReadFence(
           modelId,
         })
       : undefined;
+  markStage("mcp-grant-context");
   const mcpToolAuthAgentDir = mcpContextBase
     ? resolveRuntimeAuthProfileAgentDir(agentDir)
     : undefined;
@@ -702,6 +703,7 @@ async function prepareCliRunContextWithinReadFence(
         store: authStore ?? (await loadScopedAuthStore()),
       }
     : undefined;
+  markStage("mcp-tool-auth-store");
   params.assertCurrent?.();
   // Exclusive runs cannot hand configured MCP servers to the CLI. Serve them
   // through the loopback bridge so every turn lists the same tools.

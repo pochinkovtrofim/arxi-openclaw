@@ -34,6 +34,7 @@ import { formatErrorMessage } from "../../infra/errors.js";
 import type { StopReason } from "../../llm/types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
+import type { UserTurnPersistPhase } from "../../sessions/user-turn-transcript.types.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { isHeartbeatLifecycleRunKind } from "../bootstrap-mode.js";
 import type { CliOutput, CliUsage } from "../cli-output-contracts.js";
@@ -108,6 +109,7 @@ export async function runCliAgentEndHook(
 
 export async function persistApprovedCliUserTurnTranscript(
   params: RunCliAgentParams,
+  onPhase?: (phase: UserTurnPersistPhase) => void,
 ): Promise<boolean> {
   const recorder = params.userTurnTranscriptRecorder;
   const reusingPersistedTurn = params.suppressNextUserMessagePersistence === true;
@@ -117,6 +119,7 @@ export async function persistApprovedCliUserTurnTranscript(
 
   const persisted = await recorder.persistApproved({
     cwd: params.cwd ?? params.workspaceDir,
+    ...(onPhase ? { onPhase } : {}),
   });
   if (!persisted && !recorder.hasPersisted() && (await recorder.resolveMessage())) {
     // A prepared user row can be rejected by before_message_write. Preserve

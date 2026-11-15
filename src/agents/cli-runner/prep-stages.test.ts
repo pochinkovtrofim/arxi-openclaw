@@ -110,6 +110,43 @@ describe("CLI turn preparation stages", () => {
     });
   });
 
+  it("places user-turn and MCP sub-stages in order, contiguous, covering the old windows", () => {
+    let nowMs = 5_000;
+    vi.spyOn(Date, "now").mockImplementation(() => nowMs);
+    const stages = createCliPrepStages({ runId: "run-3" });
+    const steps: Array<[string, number]> = [
+      ["mcp-tool-auth-store", 40],
+      ["mcp-bundle-tools", 60],
+      ["before-agent-run-hooks", 15],
+      ["user-turn-actor-wait", 1],
+      ["user-turn-message-resolve", 12],
+      ["user-turn-target-resolve", 8],
+      ["user-turn-write", 90],
+      ["user-turn-admission", 25],
+      ["user-turn-settle", 2],
+      ["llm-input-hook", 3],
+    ];
+    for (const [stage, ms] of steps) {
+      nowMs += ms;
+      stages.mark(stage);
+    }
+    stages.handOff({ context: preparedContext("run-3"), historyMessages: [] });
+    const reported = emitted.events.find((event) => event.type === "context.stages");
+    const placed = reported?.stages as Array<{ name: string; startedAt: number; endedAt: number }>;
+    expect(placed.map((stage) => stage.name).slice(0, steps.length)).toEqual(
+      steps.map(([stage]) => stage),
+    );
+    let cursor = 5_000;
+    for (const [index, [, ms]] of steps.entries()) {
+      expect(placed[index]?.startedAt).toBe(cursor);
+      expect(placed[index]?.endedAt).toBe(cursor + ms);
+      cursor += ms;
+    }
+    for (const stage of placed) {
+      expect(stage.name).toMatch(STAGE_NAME);
+    }
+  });
+
   it("hangs its stage spans directly off the run's own span", () => {
     const runTrace = createDiagnosticTraceContext();
     const stages = runWithDiagnosticTraceContext(runTrace, () =>

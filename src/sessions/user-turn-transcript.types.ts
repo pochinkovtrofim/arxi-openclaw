@@ -196,6 +196,17 @@ export type CreateUserTurnTranscriptRecorderParams = {
   sessionLifecyclePatch?: SessionTranscriptTurnLifecyclePatch;
 };
 
+/** The finished steps of an approved user-turn persistence, in the order they can occur. */
+export type UserTurnPersistPhase =
+  | "user-turn-actor-wait"
+  | "user-turn-prior-write-wait"
+  | "user-turn-committed-resolve"
+  | "user-turn-message-resolve"
+  | "user-turn-target-resolve"
+  | "user-turn-write"
+  | "user-turn-media-write"
+  | "user-turn-admission";
+
 type UserTurnPersistenceOptions = {
   target?: UserTurnTranscriptTargetResolver;
   /** Pin admitted storage without replacing the recorder's target resolver or metadata. */
@@ -268,6 +279,12 @@ export type UserTurnTranscriptRecorder = {
       beforeFreshMessageCommit?: SessionSourceAssertion;
       /** Allow a later explicit persistence attempt when this attempt appends nothing. */
       retryIfUnpersisted?: boolean;
+      /**
+       * Measurement only: called with a closed phase name each time a step of the
+       * approved path finishes, so a caller can time its waits. Must not throw: it is
+       * called inside the persistence and never changes its flow.
+       */
+      onPhase?: (phase: UserTurnPersistPhase) => void;
     },
   ) => Promise<UserTurnTranscriptPersistResult | undefined>;
   persistBlocked: (
