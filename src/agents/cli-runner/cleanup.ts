@@ -2,6 +2,7 @@ import { toErrorObject } from "../../infra/errors.js";
 import { recordModelFallbackStop } from "../failover-error.js";
 import { runOwnedAgentCleanup } from "../run-cleanup-timeout.js";
 import { cliBackendLog } from "./log.js";
+import { noteCliSettleStep } from "./turn-end-marks.js";
 import type { RunCliAgentParams } from "./types.js";
 
 /** Release in order even after failure, preserving the last cleanup error. */
@@ -29,6 +30,7 @@ export async function runCliCleanup(
   cleanup: () => Promise<void>,
   settlement?: "required",
 ): Promise<void> {
+  const startedAt = Date.now();
   try {
     await runOwnedAgentCleanup({ ...params, step, cleanup, settlement, log: cliBackendLog });
   } catch (error) {
@@ -39,5 +41,7 @@ export async function runCliCleanup(
     // A different provider must not replace resources whose previous owner is still unclosed.
     recordModelFallbackStop(failure);
     throw failure;
+  } finally {
+    noteCliSettleStep(params.runId, step, startedAt, Date.now());
   }
 }

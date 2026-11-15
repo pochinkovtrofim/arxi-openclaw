@@ -313,14 +313,15 @@ function reportRunSettle(
   if (turnEndedAt === undefined || turnEndedAt < runStartedAt || endedAt <= turnEndedAt) {
     return;
   }
-  // Each settlement step from the previous one's end, inside the settle stage.
-  const steps: Array<{ name: string; startedAt: number; endedAt: number }> = [];
-  let stepStart = turnEndedAt;
-  for (const { step, at } of settleSteps) {
-    const stepEnd = Math.min(Math.max(at, stepStart), endedAt);
-    steps.push({ name: `${CLI_RUN_SETTLE_STAGE}-${step}`, startedAt: stepStart, endedAt: stepEnd });
-    stepStart = stepEnd;
-  }
+  // Cleanup steps after the model turn, inside the settle stage; the rest of it is
+  // the run resolving its result and settling its credential.
+  const steps = settleSteps
+    .filter((step) => step.startedAt >= turnEndedAt && step.endedAt <= endedAt)
+    .map((step) => ({
+      name: `${CLI_RUN_SETTLE_STAGE}-${step.step.replace(/^cli-/u, "")}`,
+      startedAt: step.startedAt,
+      endedAt: step.endedAt,
+    }));
   emitTrustedDiagnosticEvent({
     type: "context.stages",
     runId: params.runId,

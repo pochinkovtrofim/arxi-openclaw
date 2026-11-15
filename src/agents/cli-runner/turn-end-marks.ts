@@ -30,13 +30,16 @@ export function clearCliTurnEnd(runId: string): void {
   settleSteps.delete(runId);
 }
 
-/** Settlement steps after a run's model turn, each reported as its own stage. */
-export type CliSettleStep = "resolve" | "backend-release" | "live-close" | "mcp-retire" | "auth-profile";
+/** Cleanup steps of a run (each a code name), reported inside its settle stage. */
+const settleSteps = new Map<string, Array<{ step: string; startedAt: number; endedAt: number }>>();
 
-const settleSteps = new Map<string, Array<{ step: CliSettleStep; at: number }>>();
-
-/** Marks the end of one settlement step of a run. */
-export function noteCliSettleStep(runId: string, step: CliSettleStep, at = Date.now()): void {
+/** Records one cleanup step of a run with its start and end. */
+export function noteCliSettleStep(
+  runId: string,
+  step: string,
+  startedAt: number,
+  endedAt: number,
+): void {
   let steps = settleSteps.get(runId);
   if (!steps) {
     steps = [];
@@ -49,10 +52,12 @@ export function noteCliSettleStep(runId: string, step: CliSettleStep, at = Date.
       settleSteps.delete(oldest);
     }
   }
-  steps.push({ step, at });
+  steps.push({ step, startedAt, endedAt });
 }
 
-export function takeCliSettleSteps(runId: string): Array<{ step: CliSettleStep; at: number }> {
+export function takeCliSettleSteps(
+  runId: string,
+): Array<{ step: string; startedAt: number; endedAt: number }> {
   const steps = settleSteps.get(runId) ?? [];
   settleSteps.delete(runId);
   return steps;

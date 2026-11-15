@@ -122,16 +122,17 @@ describe("Claude CLI run diagnostics", () => {
     }
   });
 
-  it("splits the settle stage into its settlement steps, each from the previous one's end", async () => {
+  it("shows each cleanup step after the model turn inside the settle stage", async () => {
     const runId = "settle-steps-run";
     const diagnostics = captureLifecycle(runId);
     try {
       await runClaudeCliAgentTurnWithDiagnostics({ runId, sessionId: "settle-steps" }, async () => {
         const turnEnd = Date.now();
+        // A step before the turn ended is not part of its settlement.
+        noteCliSettleStep(runId, "cli-outer-resource", turnEnd - 5, turnEnd - 1);
         noteCliTurnEnded(runId, turnEnd);
-        noteCliSettleStep(runId, "resolve", turnEnd + 1);
-        noteCliSettleStep(runId, "backend-release", turnEnd + 3);
-        noteCliSettleStep(runId, "mcp-retire", turnEnd + 3);
+        noteCliSettleStep(runId, "cli-backend-release", turnEnd + 1, turnEnd + 3);
+        noteCliSettleStep(runId, "cli-bundle-mcp-retire", turnEnd + 3, turnEnd + 4);
         await new Promise<void>((resolve) => {
           setTimeout(resolve, 10);
         });
@@ -139,17 +140,14 @@ describe("Claude CLI run diagnostics", () => {
       });
       await flushDiagnosticEvents();
       const stage = diagnostics.events.find(({ event }) => event.type === "context.stages")?.event;
-      const stages = (
+      const [settle, ...steps] = (
         stage as { stages: Array<{ name: string; startedAt: number; endedAt: number }> }
       ).stages;
-      const [settle, ...steps] = stages;
-      expect(steps.map((step) => step.name)).toEqual([
-        "cli-run-settle-resolve",
-        "cli-run-settle-backend-release",
-        "cli-run-settle-mcp-retire",
+      expect(settle?.name).toBe(CLI_RUN_SETTLE_STAGE);
+      expect(steps.map((step) => [step.name, step.endedAt - step.startedAt])).toEqual([
+        ["cli-run-settle-backend-release", 2],
+        ["cli-run-settle-bundle-mcp-retire", 1],
       ]);
-      expect(steps[0]!.startedAt).toBe(settle!.startedAt);
-      expect(steps.map((step) => step.endedAt - step.startedAt)).toEqual([1, 2, 0]);
       expect(takeCliSettleSteps(runId)).toEqual([]);
     } finally {
       diagnostics.unsubscribe();
