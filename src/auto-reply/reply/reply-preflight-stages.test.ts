@@ -147,3 +147,50 @@ it("closes stages at recorded moments, skipping those out of order or outside th
     expect(event.trace).toMatchObject({ traceId: trace.traceId, parentSpanId: trace.spanId });
   }
 });
+
+it("emits sub-stages contiguous inside a closed stage's window, one child span each", () => {
+  vi.useFakeTimers({ now: 50_000 });
+  const trace = createDiagnosticTraceContext();
+  runWithDiagnosticTraceContext(trace, () => {
+    const stages = createReplyPreflightStages({ startedAt: 49_000 });
+    stages.markAt("gateway_routing", 49_100);
+    const window = stages.markAt("gateway_storage", 49_900);
+    expect(window).toEqual({ startedAt: 49_100, endedAt: 49_900 });
+    stages.subStages(
+      "gateway_storage",
+      [
+        { step: "open_store", at: 49_300 },
+        { step: "too_early", at: 49_200 }, // before the cursor
+        { step: "read_rows", at: 49_700 },
+        { step: "after_window", at: 49_950 },
+        { step: "not_finite", at: Number.NaN },
+        { step: "Bad-Name", at: 49_800 }, // outside the closed step pattern
+        { step: "tail", at: 49_900 },
+      ],
+      window,
+    );
+    stages.subStages("gateway_storage", [{ step: "x", at: 49_500 }], undefined);
+    stages.mark("gateway_rpc");
+  });
+  const events = emitTrustedDiagnosticEvent.mock.calls.map(([event]) => event);
+  expect(events.map((event) => [event.stage, event.startedAt, event.durationMs])).toEqual([
+    ["gateway_routing", 49_000, 100],
+    ["gateway_storage", 49_100, 800],
+    ["gateway_storage.open_store", 49_100, 200],
+    ["gateway_storage.read_rows", 49_300, 400],
+    ["gateway_storage.tail", 49_700, 200],
+    ["gateway_rpc", 49_900, 100],
+  ]);
+  expect(new Set(events.map((event) => event.trace.spanId)).size).toBe(6);
+  for (const event of events) {
+    expect(event.trace).toMatchObject({ traceId: trace.traceId, parentSpanId: trace.spanId });
+  }
+});
+
+it("emits no sub-stages outside a traced reply", () => {
+  runWithDiagnosticTraceContext(undefined, () => {
+    const stages = createReplyPreflightStages({ startedAt: Date.now() - 100 });
+    stages.subStages("command_prepare", [{ step: "a", at: Date.now() - 50 }], stages.mark("prepare"));
+  });
+  expect(emitTrustedDiagnosticEvent).not.toHaveBeenCalled();
+});

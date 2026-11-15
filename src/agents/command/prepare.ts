@@ -65,10 +65,31 @@ export type PreparedAgentCommandRuntimeContext = Readonly<{
   pluginGeneration: PreparedModelRuntimePluginGeneration;
 }>;
 
+/** Awaited steps of command preparation, named by what they do; code constants, never data. */
+export type PrepareAgentCommandPhase =
+  | "runtime_config"
+  | "database_admission"
+  | "recipient_session"
+  | "session_resolve"
+  | "acp_runtime_load"
+  | "acp_session_resolve"
+  | "plugin_metadata"
+  | "stable_reply_mode"
+  | "worktree_resolve"
+  | "worktree_lease"
+  | "workspace_provisioning"
+  | "workspace_ensure"
+  | "skill_commands";
+
 export async function prepareAgentCommandExecution(
   opts: AgentCommandOpts,
   runtime: RuntimeEnv,
   runtimeContext?: PreparedAgentCommandRuntimeContext,
+  /**
+   * Measurement only: called with a fixed step name after each awaited step finishes.
+   * Must not throw; it never changes what preparation does.
+   */
+  onPhase?: (step: PrepareAgentCommandPhase) => void,
 ) {
   const {
     abortSignal,
@@ -112,6 +133,7 @@ export async function prepareAgentCommandExecution(
           ? { channel: recipientChannel, accountId: opts.accountId }
           : undefined,
     }));
+  onPhase?.("runtime_config");
   const normalizedSpawned = normalizeSpawnedRunMetadata(opts);
   const agentIdOverrideRaw = opts.agentId?.trim();
   const agentIdOverride = agentIdOverrideRaw ? normalizeAgentId(agentIdOverrideRaw) : undefined;
@@ -162,6 +184,7 @@ export async function prepareAgentCommandExecution(
       agentIdOverride ?? resolveSessionAgentId({ sessionKey: explicitSessionKey, config: cfg }),
     );
   }
+  onPhase?.("database_admission");
   const agentCfg = cfg.agents?.defaults;
 
   const verboseOverride = normalizeVerboseLevel(opts.verbose);
@@ -196,6 +219,7 @@ export async function prepareAgentCommandExecution(
           threadId: selectedCommandOpts.threadId,
         })
       : undefined;
+  onPhase?.("recipient_session");
   if (explicitRecipientSession?.error) {
     throw explicitRecipientSession.error;
   }
@@ -227,6 +251,7 @@ export async function prepareAgentCommandExecution(
     signal: abortSignal,
     assertCurrent: assertPreparationCurrent,
   });
+  onPhase?.("session_resolve");
   assertPreparationCurrent();
   const {
     sessionId,
@@ -261,6 +286,7 @@ export async function prepareAgentCommandExecution(
   const workspaceDirRaw = normalizedSpawned.workspaceDir ?? agentWorkspaceDir;
   const workspaceDir = resolveUserPath(workspaceDirRaw);
   const { getAcpSessionManager } = await loadAcpManagerRuntime();
+  onPhase?.("acp_runtime_load");
   const acpManager = getAcpSessionManager();
   const assertAcpPreparationCurrent = () => {
     assertPreparationCurrent();
@@ -274,6 +300,7 @@ export async function prepareAgentCommandExecution(
         assertCurrent: assertAcpPreparationCurrent,
       })
     : null;
+  onPhase?.("acp_session_resolve");
   assertAcpPreparationCurrent();
   // Configured run cwd is a Gateway-local path; ACP-placed sessions ("ready" or
   // "stale") execute on their own node with a node-owned execCwd, so the config
@@ -290,6 +317,7 @@ export async function prepareAgentCommandExecution(
     ? (preparedMetadataSnapshot ??
       (await resolvePluginMetadataSnapshotAsync({ config: cfg, env: process.env, workspaceDir })))
     : undefined;
+  onPhase?.("plugin_metadata");
   const modelManifestContext = {
     manifestPlugins: manifestMetadataSnapshot ?? [],
   } satisfies ModelManifestNormalizationContext;
@@ -322,6 +350,7 @@ export async function prepareAgentCommandExecution(
     sessionAgentId,
     sessionKey,
   });
+  onPhase?.("stable_reply_mode");
   commandOpts = {
     ...commandOpts,
     // Seed the same reusable policy before the first row and on later completion turns.
@@ -359,9 +388,11 @@ export async function prepareAgentCommandExecution(
     sessionEntry: sessionEntryRaw,
     candidatePaths: [resolvedCwd ?? workspaceDir, workspaceDir],
   });
+  onPhase?.("worktree_resolve");
   const runLease = worktreeSource
     ? await acquireWorktreeRunLease(worktreeSource.record.id, { source: worktreeSource })
     : undefined;
+  onPhase?.("worktree_lease");
   try {
     const { resolveAcpAgentWorkspaceProvisioningForTurn } =
       await import("../acp-workspace-provisioning.js");
@@ -373,6 +404,7 @@ export async function prepareAgentCommandExecution(
       sessionKey: sessionKey ?? undefined,
       sessionEntry: sessionEntryRaw ?? undefined,
     });
+    onPhase?.("workspace_provisioning");
     await ensureAgentWorkspace({
       dir: agentWorkspaceDir,
       ensureBootstrapFiles: !agentCfg?.skipBootstrap,
@@ -380,6 +412,7 @@ export async function prepareAgentCommandExecution(
       provisioning: workspaceProvisioning,
       guard: { assertHost: assertAcpPreparationCurrent },
     });
+    onPhase?.("workspace_ensure");
     const runId = opts.runId?.trim() || sessionId;
     let promptMessage = message;
     if (!isRawModelRun && (message.includes("$") || message.trimStart().startsWith("/"))) {
@@ -423,6 +456,7 @@ export async function prepareAgentCommandExecution(
           throw new Error(expansion.error);
         }
         promptMessage = expansion.body;
+        onPhase?.("skill_commands");
       }
     }
     const acpRuntimeContext = projectRuntimeContextFragments(opts.runtimeContextFragments ?? []);

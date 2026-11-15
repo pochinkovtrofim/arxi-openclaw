@@ -128,13 +128,27 @@ export type GatewayTurnStage = Exclude<
   "gateway_rpc"
 >;
 
+/**
+ * A sub-stage inside a stage's window, named `<parent>.<step>`. The step is a fixed code
+ * constant (`^[a-z0-9_]{1,40}$`), never data; the parent stays as it is.
+ */
+export type ReplyPreflightSubStage = `${(typeof REPLY_PREFLIGHT_STAGES)[number]}.${string}`;
+
+/** The moment a step inside a stage finished. No content. */
+export type PreflightStepMoment = { step: string; at: number };
+
 /** The moment a Gateway turn step finished, closing `stage`. No content. */
-export type GatewayTurnCheckpoint = { stage: GatewayTurnStage; at: number };
+export type GatewayTurnCheckpoint = {
+  stage: GatewayTurnStage;
+  at: number;
+  /** Moments of the steps inside this stage's window, in order. */
+  steps?: ReadonlyArray<PreflightStepMoment>;
+};
 
 /** One finished stage of a reply before its agent run starts. No content. */
 type DiagnosticReplyPreflightStageEvent = DiagnosticSessionEvent & {
   type: "reply.preflight.stage";
-  stage: (typeof REPLY_PREFLIGHT_STAGES)[number];
+  stage: (typeof REPLY_PREFLIGHT_STAGES)[number] | ReplyPreflightSubStage;
   durationMs: number;
   /** When the stage began (epoch ms): a stage closed at a recorded moment is emitted later. */
   startedAt?: number;

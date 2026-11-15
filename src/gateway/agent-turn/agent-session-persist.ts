@@ -89,6 +89,12 @@ export type AgentSessionPersistResult = {
   restoredCronContinuation?: RestoredCronContinuation;
 };
 
+/** Awaited steps of the session write, named by what they do; code constants, never data. */
+export type AgentSessionPersistStep =
+  | "session_patch_build"
+  | "session_store_commit"
+  | "session_created_record";
+
 export async function persistAgentSessionPhase(params: {
   freshChild?: boolean;
   assertAdmissionCurrent?: () => void;
@@ -121,6 +127,8 @@ export async function persistAgentSessionPhase(params: {
   expectedSession: Parameters<typeof assertExpectedExistingSession>[0]["constraint"];
   maintenanceConfig: SessionEntryPatchOptions["maintenanceConfig"];
   abortForLifecycleRotation: (target?: { sessionKey?: string; agentId?: string }) => boolean;
+  /** Measurement only: called with a fixed step name after an awaited step. Must not throw. */
+  onStep?: (step: AgentSessionPersistStep) => void;
   assertGatewayWorkAdmissionAllowed: () => void;
   respondToGatewayAdmissionOutcome: () => boolean;
   setCronContinuationClaim: (claim: CronContinuationClaim) => void;
@@ -307,6 +315,7 @@ export async function persistAgentSessionPhase(params: {
         });
       }
       patchBuild = await params.buildSessionPatch(entryForPatch);
+      params.onStep?.("session_patch_build");
       if (
         resetReason &&
         (patchBuild.automaticResetReason !== resetReason ||
@@ -476,6 +485,7 @@ export async function persistAgentSessionPhase(params: {
       }
       throw err;
     }
+    params.onStep?.("session_store_commit");
     if (abortForLifecycleRotation()) {
       return undefined;
     }
@@ -523,6 +533,7 @@ export async function persistAgentSessionPhase(params: {
       agentId: params.sessionAgentId,
       entry: sessionEntry,
     });
+    params.onStep?.("session_created_record");
   }
   if (isNewSession && params.entry?.sessionId && resolvedSessionId !== params.entry.sessionId) {
     supersededSessionId = params.entry.sessionId;

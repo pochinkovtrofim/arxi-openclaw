@@ -9,6 +9,7 @@ import {
   runWithReplySettleStages,
 } from "../auto-reply/reply/reply-settle-stages.js";
 import type { VerboseLevel } from "../auto-reply/thinking.js";
+import { createPreflightStepRecorder } from "../infra/preflight-step-recorder.js";
 import type { CliDeps } from "../cli/deps.types.js";
 import { createSessionWorkStartChangedError } from "../config/sessions/lifecycle.js";
 import type { RestartRecoveryTerminalDeliveryEvidenceResult } from "../config/sessions/restart-recovery-types.js";
@@ -687,7 +688,11 @@ async function agentCommandFromIngressInternal(
   });
   if (opts.rpcReceivedAt !== undefined) {
     for (const checkpoint of opts.rpcCheckpoints ?? []) {
-      preflightStages.markAt(checkpoint.stage, checkpoint.at);
+      preflightStages.subStages(
+        checkpoint.stage,
+        checkpoint.steps,
+        preflightStages.markAt(checkpoint.stage, checkpoint.at),
+      );
     }
     preflightStages.mark("gateway_rpc");
   }
@@ -703,12 +708,18 @@ async function agentCommandFromIngressInternal(
           senderIsOwner: opts.senderIsOwner === true,
         },
         prepare: async (preparedOpts) => {
+          const phases = createPreflightStepRecorder();
           const prepared = await prepareAgentCommandExecution(
             preparedOpts,
             ingressRuntime,
             runtimeContext,
+            phases.record,
           );
-          preflightStages.mark("command_prepare");
+          preflightStages.subStages(
+            "command_prepare",
+            phases.steps,
+            preflightStages.mark("command_prepare"),
+          );
           return prepared;
         },
         restoreAdmittedRecovery: recovery?.restoreAdmittedRecovery,
