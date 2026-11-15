@@ -758,9 +758,9 @@ function* createOpenClawToolsSteps(
     options?.recordToolPrepStage?.("openclaw-tools:tool-hooks");
   }
   const wrapped = wrapAssembled(allTools);
-  const computerIndex = computerTool ? allTools.indexOf(computerTool) : -1;
-  if (computerIndex >= 0) {
-    computerToolRebuilders.set(wrapped[computerIndex], (prepared) => {
+  const builtComputer = wrapped[computerTool ? allTools.indexOf(computerTool) : -1];
+  if (builtComputer) {
+    computerToolRebuilders.set(builtComputer, (prepared) => {
       const rebuilt = createOpenClawComputerTool({ ...options, pairedNodeComputerUse: prepared });
       return rebuilt ? wrapAssembled(assemble([rebuilt]))[0] : undefined;
     });
