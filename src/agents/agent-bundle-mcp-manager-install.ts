@@ -102,7 +102,6 @@ export function createSessionMcpRuntimeManagerInstall(
     allowMcpAppModelContext(runtime);
   };
 
-  /** Install under the runtime-key queue shared by acquisition and disposal. */
   /** A real use of the runtime; the background re-resolution is not one. */
   const markReused = (params: RuntimeEntryParams, runtime: SessionMcpRuntime) => {
     if (!params.background) {
@@ -111,6 +110,7 @@ export function createSessionMcpRuntimeManagerInstall(
     }
   };
 
+  /** Install under the runtime-key queue shared by acquisition and disposal. */
   const getOrCreateRuntimeEntry = async (
     params: RuntimeEntryParams,
   ): Promise<SessionMcpRuntime> => {
