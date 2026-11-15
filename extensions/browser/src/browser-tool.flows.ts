@@ -284,7 +284,7 @@ function nextStepHint(attempts: Attempt[], flow: SavedFlow, via: FlowInput["via"
       a.tier === "page" && a.outcome.kind === "unanswered" && a.outcome.error === "not_on_site",
   );
   if (kinds.has("drift")) {
-    return "The site changed: do the task in the page, then flow_save again.";
+    return "The site changed: do the task in the page, then browser_flow op=save again.";
   }
   if (pageNotOnSite && (kinds.has("auth") || flow.request.session)) {
     return `Open ${flow.startUrl} (signed in) and run again: the page tier sends the site's own cookies.`;

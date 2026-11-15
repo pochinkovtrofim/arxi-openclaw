@@ -223,9 +223,9 @@ function urlWithoutQuery(raw: string): string {
 
 const READ_PATH = /(^|\/)(search|query|find|list|lookup|suggest|autocomplete)(\/|$)/i;
 const GRAPHQL_PATH = /(^|\/)graphql(\/|$)/i;
-const GRAPHQL_TEXT = /^\s*(#[^\n]*\n\s*)*(\{|query\b|mutation\b|subscription\b|fragment\b)/;
-// A mutation operation anywhere in the document, comments removed.
-const GRAPHQL_MUTATION = /(^|\})\s*mutation\b/;
+const GRAPHQL_TEXT = /^\s*(#[^\n]*\n\s*)*(\{|query\b|mutation\b|subscription\b|fragment\b)[\s\S]*\{/;
+// A mutation operation anywhere in the document, line comments removed.
+const GRAPHQL_MUTATION = /(^|\})[\s,]*mutation\b/;
 
 /**
  * Whether sending the request changes something on the site. A GraphQL
@@ -256,7 +256,7 @@ export function isWrite(exchange: Pick<FlowExchange, "method" | "url" | "postDat
       (entry) =>
         isRecord(entry) &&
         graphql(entry.query) &&
-        GRAPHQL_MUTATION.test(entry.query.replace(/#[^\n]*/g, "")),
+        GRAPHQL_MUTATION.test(entry.query.replace(/^\s*#[^\n]*/gm, "")),
     );
   }
   const opaqueOperation =
@@ -478,7 +478,7 @@ export function buildFlow(params: {
   }
   const site = siteOf(pageUrl);
   if (!site) {
-    throw new Error("flow_save needs a tab on a website");
+    throw new Error("op=save needs a tab on a website");
   }
   const skipped: Record<string, number> = {};
   const skip = (reason: string) => {
