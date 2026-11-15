@@ -550,4 +550,34 @@ describe("MCP loopback catalog build count", () => {
 
     expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
   });
+  it("does not refresh the cached catalog's age from a request that only read it", async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new McpLoopbackToolCache();
+      const scope = { ...ownerScope(), grantToken: "grant-a" };
+      await cache.resolve(scope);
+      for (const seconds of [20, 40]) {
+        vi.setSystemTime(Date.now() + 20_000);
+        await cache.resolve(scope);
+        expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(seconds === 20 ? 1 : 2);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("falls back to a full build with the prepared surface when computer cannot be re-created", async () => {
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot", "launch_app"])]);
+    resolveGatewayScopedTools.mockImplementation(({ pairedNodeComputerUse }) => ({
+      agentId: "main",
+      tools: [createComputerTool({ pairedNodeComputerUse })],
+    }));
+
+    const resolved = await new McpLoopbackToolCache().resolve(ownerScope());
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
+    expect(resolveGatewayScopedTools.mock.calls[0]?.[0].pairedNodeComputerUse).toBeUndefined();
+    expect(resolveGatewayScopedTools.mock.calls[1]?.[0].pairedNodeComputerUse).toBeDefined();
+    expect(readComputerActions(resolved)).toContain("launch_app");
+  });
 });

@@ -79,6 +79,8 @@ export function createOpenClawToolAssembly(params: {
     if (builtComputer) {
       computerToolRebuilders.set(builtComputer, (prepared) => {
         const rebuilt = params.createComputerTool({ ...options, pairedNodeComputerUse: prepared });
+        // Availability finalization sees computer alone here, which is exact only because
+        // computer has no availability binding (pinned by tool-resolution.computer-rebuild.test.ts).
         return rebuilt ? wrap(assemble([rebuilt]))[0] : undefined;
       });
     }

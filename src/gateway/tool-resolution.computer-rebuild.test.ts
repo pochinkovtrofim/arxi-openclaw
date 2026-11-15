@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { getAgentToolAvailabilityBinding } from "../agents/agent-tool-availability.js";
 import { getAgentToolActionDescriptor } from "../agents/agent-tool-metadata.js";
 import type { PreparedPairedComputerUse } from "../agents/computer-use-node-capabilities.js";
 import { getGatewayToolCallerIdentity } from "../agents/tools/gateway-caller-context.js";
@@ -67,6 +68,9 @@ describe("computer-only rebuild of a scoped catalog", () => {
     expect(rebuilt?.parameters).toMatchObject({
       properties: { action: { enum: expect.arrayContaining(["launch_app"]) } },
     });
+    // Re-assembling computer alone is exact only while it has no availability binding.
+    expect(getAgentToolAvailabilityBinding(expected!)).toBeUndefined();
+    expect(getAgentToolAvailabilityBinding(rebuilt!)).toBeUndefined();
     expect(getAgentToolActionDescriptor(rebuilt!)).toBeDefined();
     expect(getAgentToolActionDescriptor(rebuilt!)).toEqual(getAgentToolActionDescriptor(expected!));
     // Tools other than computer are the very ones the first build returned.

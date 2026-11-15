@@ -215,7 +215,7 @@ function isComputerAllowedByMcpScope(
 type ResolvedNodeScope = {
   params: CapturedMcpLoopbackScope;
   policyResolved?: CachedScopedTools;
-  /** The catalog built for the scope before paired availability was added. */
+  /** The catalog freshly built for the scope before paired availability was added. */
   baseCatalog?: CachedScopedTools;
   /** Paired action surface the catalog's computer tool still has to carry. */
   preparedComputerUse?: PreparedPairedComputerUse;
@@ -223,9 +223,13 @@ type ResolvedNodeScope = {
 
 /** The catalog this scope serves; re-creates only computer when it must carry paired actions. */
 function projectResolvedCatalog(resolved: ResolvedNodeScope): CachedScopedTools | undefined {
-  const { policyResolved, preparedComputerUse } = resolved;
+  const { policyResolved, preparedComputerUse, params } = resolved;
+  // A stale catalog is rebuilt by the caller; do not create a computer only to discard it.
+  if (!policyResolved || !isMcpCatalogSessionCurrent(policyResolved, params)) {
+    return undefined;
+  }
   return preparedComputerUse
-    ? policyResolved?.withPairedComputerUse?.(preparedComputerUse)
+    ? policyResolved.withPairedComputerUse?.(preparedComputerUse)
     : policyResolved;
 }
 
@@ -245,6 +249,8 @@ async function resolvePairedComputerNodeScope(
   // alone is insufficient: profile, agent, sandbox, sender, and Gateway policy
   // can all remove computer from the final catalog.
   const policyResolved = await resolveMcpLoopbackTools(params, mode, adopted);
+  // Only a catalog built now may refresh the cached one's age.
+  const freshBase = policyResolved === adopted ? undefined : policyResolved;
   params.assertCurrent();
   const computerAllowed = policyResolved.tools.some(
     (tool) => readMcpLoopbackToolName(tool) === "computer",
@@ -256,14 +262,14 @@ async function resolvePairedComputerNodeScope(
   });
   params.assertCurrent();
   if (!pairedComputerUseAvailability) {
-    return { params, policyResolved, baseCatalog: policyResolved };
+    return { params, policyResolved, baseCatalog: freshBase };
   }
   const resolvedParams = {
     params: {
       ...params,
       pairedComputerUseAvailability,
     },
-    baseCatalog: policyResolved,
+    baseCatalog: freshBase,
   };
   if (!pairedComputerUseAvailability.prepared) {
     return { ...resolvedParams, policyResolved };
