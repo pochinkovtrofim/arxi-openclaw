@@ -197,7 +197,9 @@ async function runCliAgentInternal(
     const { prepareCliRunContext } = await import("./cli-runner/prepare.runtime.js");
     let context: PreparedCliRunContext;
     try {
-      context = await prepareCliRunContext(runParams, { markStage: prepStages.mark });
+      context = await prepStages.within(() =>
+        prepareCliRunContext(runParams, { markStage: prepStages.mark }),
+      );
     } catch (error) {
       await settleCliPreparationError(error, runParams);
       throw error;

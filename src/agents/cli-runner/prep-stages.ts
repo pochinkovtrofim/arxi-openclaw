@@ -8,7 +8,7 @@ import {
   freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
-import { createRunPrepStageReporter } from "../../infra/run-prep-stages.js";
+import { createRunPrepStageReporter, withPrepStages } from "../../infra/run-prep-stages.js";
 import { takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
 import { createStageTimingTracker } from "../../shared/stage-timing.js";
 import { summarizeSessionContext } from "../embedded-agent-runner/run/attempt-context-summary.js";
@@ -21,6 +21,8 @@ export const CLI_PREP_HANDOFF_STAGE = "execution-setup";
 export type CliPrepStages = {
   /** Records the time since the previous checkpoint under a closed stage name. */
   mark: (stage: string) => void;
+  /** Runs the preparation with this tracker in scope for measurePrepStage. */
+  within: <T>(run: () => T) => T;
   /**
    * Hands the request to the CLI execution: reports the hook timings and the
    * contiguous stages once for the run. Later calls (a retry) report nothing.
@@ -54,6 +56,7 @@ export function createCliPrepStages(params: {
   let handedOff = false;
   return {
     mark: (stage) => tracker.mark(stage),
+    within: (run) => withPrepStages(tracker, run),
     handOff: ({ context, historyMessages }) => {
       if (handedOff) {
         return;

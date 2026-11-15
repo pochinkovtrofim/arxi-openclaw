@@ -7,7 +7,7 @@ import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
 } from "./diagnostic-trace-context.js";
-import { createRunPrepStageReporter } from "./run-prep-stages.js";
+import { createRunPrepStageReporter, measurePrepStage, withPrepStages } from "./run-prep-stages.js";
 
 const emitted = vi.hoisted(() => ({ events: [] as unknown[] }));
 vi.mock("./diagnostic-events.js", async (importOriginal) => ({
@@ -119,4 +119,31 @@ describe("model call emitters report preparation stages", () => {
       }
     },
   );
+});
+
+describe("measured preparation steps", () => {
+  it("times a step inside the preparation that put its tracker in scope", async () => {
+    let clock = 0;
+    const tracker = createStageTimingTracker(() => clock);
+    await withPrepStages(tracker, async () => {
+      clock = 10;
+      tracker.mark("mcp-run-admission");
+      await measurePrepStage("mcp-requester-resolve", async () => {
+        clock = 480;
+      });
+      tracker.mark("mcp-tool-projection");
+    });
+    expect(tracker.snapshot().stages).toEqual([
+      { name: "mcp-run-admission", durationMs: 10, elapsedMs: 10 },
+      { name: "mcp-requester-resolve", durationMs: 470, elapsedMs: 480 },
+      { name: "mcp-tool-projection", durationMs: 470, elapsedMs: 480 },
+    ]);
+  });
+
+  it("only runs a step outside any preparation", async () => {
+    const tracker = createStageTimingTracker(() => 0);
+    await withPrepStages(tracker, async () => {});
+    await expect(measurePrepStage("mcp-requester-resolve", async () => 7)).resolves.toBe(7);
+    expect(tracker.snapshot().stages).toEqual([]);
+  });
 });
