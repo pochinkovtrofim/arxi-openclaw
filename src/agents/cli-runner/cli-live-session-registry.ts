@@ -2,13 +2,19 @@ import { sha256Hex } from "../../infra/crypto-digest.js";
 import type {
   CliBackendLiveSessionCapability,
   CliBackendLiveSessionCloseReason,
+  CliBackendLiveSessionEndCause,
   CliBackendLiveSessionHandle,
 } from "../../plugins/cli-backend.types.js";
 import { isSubagentSessionKey } from "../../sessions/session-key-utils.js";
 import { runCliCleanup } from "./cleanup.js";
 import { createCliRunCurrentAssertion } from "./execution-target.js";
 import { createCliFailoverError } from "./exit-error.js";
-import { buildCliLiveSessionFingerprint } from "./live-session-fingerprint.js";
+import {
+  buildCliLiveSessionFingerprint,
+  buildCliLiveSessionFingerprintParts,
+  changedCliLiveSessionFingerprintPart,
+  type CliLiveSessionFingerprintParts,
+} from "./live-session-fingerprint.js";
 import { cliBackendLog } from "./log.js";
 import type { PreparedCliRunContext } from "./types.js";
 
@@ -60,6 +66,25 @@ type CliLiveSessionRecord = {
 };
 
 const liveSessions = new Map<string, CliLiveSessionRecord>();
+// Why each conversation's last process ended, and each live process's
+// fingerprint inputs: the next turn's start reason in the trace.
+const lastEndCause = new Map<string, CliBackendLiveSessionEndCause>();
+const handleFingerprintParts = new WeakMap<
+  CliBackendLiveSessionHandle,
+  CliLiveSessionFingerprintParts
+>();
+const startReasons = new WeakMap<PreparedCliRunContext, string>();
+const evictedHandles = new WeakSet<CliBackendLiveSessionHandle>();
+
+/**
+ * Why this turn's CLI process was reused or started: "reused", "new" (no
+ * process for this conversation yet in this Gateway), the cause the previous
+ * process ended with, or "fingerprint-<input>" when an input of the warm
+ * process changed. A closed list, never content.
+ */
+export function getCliLiveSessionStartReason(context: PreparedCliRunContext): string | undefined {
+  return startReasons.get(context);
+}
 const retiredSessionCleanup = new Map<string, Promise<void>>();
 const retiringSessionHandles = new WeakSet<CliBackendLiveSessionHandle>();
 
@@ -178,6 +203,7 @@ function ensureCliLiveSessionCapacity(context: PreparedCliRunContext): void {
   }
   for (const { handle } of liveSessions.values()) {
     if (handle.isIdle()) {
+      evictedHandles.add(handle);
       handle.close("idle");
       return;
     }
@@ -213,12 +239,14 @@ export function createCliLiveSessionCapability(params: {
   claimResources?: () => (() => Promise<void>) | undefined;
 }): CliBackendLiveSessionCapability {
   const ownerKey = buildCliLiveSessionKey(params.context);
-  const fingerprint = buildCliLiveSessionFingerprint({
+  const fingerprintInput = {
     context: params.context,
     argv: params.argv,
     argv0: params.argv0,
     env: params.env,
-  });
+  };
+  const fingerprint = buildCliLiveSessionFingerprint(fingerprintInput);
+  const fingerprintParts = buildCliLiveSessionFingerprintParts(fingerprintInput);
   const grant = params.context.preparedBackend.mcpClientGrantCapture;
   if (Boolean(grant) !== Boolean(params.captureKey)) {
     throw new Error("CLI live process and current turn disagree about MCP capture ownership.");
@@ -257,6 +285,14 @@ export function createCliLiveSessionCapability(params: {
     current: () => {
       assertActive();
       const handle = liveSessions.get(ownerKey)?.handle;
+      startReasons.set(
+        params.context,
+        !handle
+          ? (lastEndCause.get(ownerKey) ?? "new")
+          : handle.fingerprint === fingerprint
+            ? "reused"
+            : `fingerprint-${changedCliLiveSessionFingerprintPart(handleFingerprintParts.get(handle), fingerprintParts)}`,
+      );
       if (params.requiredGeneration && handle?.generation !== params.requiredGeneration) {
         throw requiredSessionError(
           handle ? "cli_live_session_changed" : "cli_live_session_missing",
@@ -310,6 +346,7 @@ export function createCliLiveSessionCapability(params: {
           : {}),
       };
       liveSessions.set(ownerKey, record);
+      handleFingerprintParts.set(handle, fingerprintParts);
       retainCleanup(params.context, record);
       cliBackendLog.info(
         `cli live session start: provider=${params.context.backendResolved.id} model=${params.context.normalizedModel} activeSessions=${liveSessions.size}`,
@@ -329,11 +366,12 @@ export function createCliLiveSessionCapability(params: {
       }
       retainCleanup(params.context, record);
     },
-    remove: (handle) => {
+    remove: (handle, cause) => {
       const record = liveSessions.get(ownerKey);
       if (record?.handle !== handle) {
         return;
       }
+      lastEndCause.set(ownerKey, evictedHandles.has(handle) ? "evicted" : (cause ?? "error"));
       record.capture?.revoke();
       liveSessions.delete(ownerKey);
       record.approvalGrants.clear();

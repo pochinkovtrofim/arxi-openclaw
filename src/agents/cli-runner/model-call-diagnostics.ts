@@ -28,6 +28,7 @@ import {
 } from "../../infra/diagnostic-trace-context.js";
 import type { CliOutput, CliStepEvent, CliUsage } from "../cli-output-contracts.js";
 import { isFailoverError } from "../failover-error.js";
+import { getCliLiveSessionStartReason } from "./cli-live-session-registry.js";
 import { clearCliTurnEnd, noteCliTurnEnded } from "./turn-end-marks.js";
 import type { PreparedCliRunContext } from "./types.js";
 
@@ -549,6 +550,7 @@ export function createClaudeCliModelCallDiagnostics(params: {
       }
       requestSentAt = now();
       nextStepStartAt = requestSentAt;
+      const liveStartReason = getCliLiveSessionStartReason(params.context);
       emitTrustedDiagnosticEvent({
         type: "context.stages",
         runId: params.context.params.runId,
@@ -561,6 +563,10 @@ export function createClaudeCliModelCallDiagnostics(params: {
             ? [{ name: CLI_LANE_QUEUE_STAGE, startedAt: preparedAt, endedAt: startedAt }]
             : []),
           { name: CLI_PROCESS_START_STAGE, startedAt, endedAt: requestSentAt },
+          // Why the process was reused or started: a zero-length mark.
+          ...(liveStartReason
+            ? [{ name: `cli-live-${liveStartReason}`, startedAt: requestSentAt, endedAt: requestSentAt }]
+            : []),
         ],
         trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(runTrace ?? trace)),
       });

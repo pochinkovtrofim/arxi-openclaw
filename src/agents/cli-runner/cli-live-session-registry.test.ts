@@ -19,6 +19,7 @@ import {
   createCliLiveSessionCapability,
   getCliLiveSessionApprovalGrants,
   getCliLiveSessionGeneration,
+  getCliLiveSessionStartReason,
   hasCliLiveSession,
   PERSON_TURN_LIVE_SESSION_IDLE_MS,
   restartCliLiveSession,
@@ -219,6 +220,27 @@ describe("generic plugin-owned live session registry", () => {
     expect(heartbeat.capability.idleTimeoutMs).toBeUndefined();
     expect(subagent.capability.idleTimeoutMs).toBeUndefined();
     expect(sent.capability.idleTimeoutMs).toBeUndefined();
+  });
+
+  it("names why each turn's process was reused or started", async () => {
+    const sessionId = "registry-start-reason";
+    const first = await createOwner({ sessionId, systemPrompt: "Policy A." });
+    first.capability.current();
+    expect(getCliLiveSessionStartReason(first.context)).toBe("new");
+    first.register();
+
+    const same = await createOwner({ sessionId, systemPrompt: "Policy A." });
+    same.capability.current();
+    expect(getCliLiveSessionStartReason(same.context)).toBe("reused");
+
+    const changed = await createOwner({ sessionId, systemPrompt: "Policy B." });
+    changed.capability.current();
+    expect(getCliLiveSessionStartReason(changed.context)).toBe("fingerprint-system-prompt");
+
+    first.capability.remove(first.session, "background-tasks");
+    const after = await createOwner({ sessionId, systemPrompt: "Policy A." });
+    after.capability.current();
+    expect(getCliLiveSessionStartReason(after.context)).toBe("background-tasks");
   });
 
   it("keeps owner identity deterministic and isolated across sessions", () => {

@@ -1,13 +1,66 @@
 import { sha256Hex } from "../../infra/crypto-digest.js";
 import type { PreparedCliRunContext } from "./types.js";
 
-/** Fingerprints every process-stable input without retaining secrets or volatile artifact paths. */
-export function buildCliLiveSessionFingerprint(params: {
+type CliLiveSessionFingerprintParams = {
   context: PreparedCliRunContext;
   argv: readonly string[];
   argv0?: string;
   env: Readonly<Record<string, string>>;
-}): string {
+};
+
+/** Fingerprints every process-stable input without retaining secrets or volatile artifact paths. */
+export function buildCliLiveSessionFingerprint(params: CliLiveSessionFingerprintParams): string {
+  return sha256Hex(JSON.stringify(buildCliLiveSessionFingerprintInputs(params)));
+}
+
+/** Trace labels of the fingerprint inputs, in the order a changed one is named. */
+const FINGERPRINT_PART_LABELS = {
+  argv: "argv",
+  argv0: "argv0",
+  workspaceDirHash: "workspace",
+  cwdHash: "cwd",
+  provider: "provider",
+  model: "model",
+  systemPromptHash: "system-prompt",
+  agentAccountId: "account",
+  authProfileIdHash: "auth-profile",
+  authEpochHash: "auth-epoch",
+  extraSystemPromptHash: "extra-system-prompt",
+  promptToolNamesHash: "tool-names",
+  mcpResumeHash: "mcp",
+  credentialFingerprint: "credential",
+  skillsFingerprint: "skills",
+  env: "env",
+} as const;
+
+export type CliLiveSessionFingerprintParts = Readonly<Record<string, string>>;
+
+/** One digest per fingerprint input, so a restart can name the input that changed. */
+export function buildCliLiveSessionFingerprintParts(
+  params: CliLiveSessionFingerprintParams,
+): CliLiveSessionFingerprintParts {
+  const inputs = buildCliLiveSessionFingerprintInputs(params);
+  return Object.fromEntries(
+    Object.entries(inputs).map(([key, value]) => [key, sha256Hex(JSON.stringify(value ?? null))]),
+  );
+}
+
+/** The trace label of the first fingerprint input that differs, or "unknown". */
+export function changedCliLiveSessionFingerprintPart(
+  previous: CliLiveSessionFingerprintParts | undefined,
+  next: CliLiveSessionFingerprintParts,
+): string {
+  if (previous) {
+    for (const [key, label] of Object.entries(FINGERPRINT_PART_LABELS)) {
+      if (previous[key] !== next[key]) {
+        return label;
+      }
+    }
+  }
+  return "unknown";
+}
+
+function buildCliLiveSessionFingerprintInputs(params: CliLiveSessionFingerprintParams) {
   const context = params.context;
   const managedGrant = context.preparedBackend.mcpClientGrantCapture;
   const normalizeGrantToken = params.env.OPENCLAW_MCP_TOKEN === managedGrant?.transportToken;
@@ -73,8 +126,7 @@ export function buildCliLiveSessionFingerprint(params: {
     argv.push(value);
   }
 
-  return sha256Hex(
-    JSON.stringify({
+  return {
       argv,
       argv0: params.argv0,
       workspaceDirHash: sha256Hex(context.workspaceDir),
@@ -104,6 +156,5 @@ export function buildCliLiveSessionFingerprint(params: {
               ? sha256Hex(params.env[key])
               : "",
         ]),
-    }),
-  );
+  };
 }

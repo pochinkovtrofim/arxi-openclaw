@@ -10,6 +10,7 @@ export type {
   CliBackendJsonlUsage,
   CliBackendLiveSessionCapability,
   CliBackendLiveSessionCloseReason,
+  CliBackendLiveSessionEndCause,
   CliBackendLiveSessionHandle,
   CliBackendMessageInjection,
   CliBackendNormalizeConfigContext,
