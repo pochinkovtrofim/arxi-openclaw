@@ -7,6 +7,14 @@ import type { GatewayStartupTrace } from "./server-startup-trace.js";
 
 const GATEWAY_HANDLER_PREWARM_RETRY_DELAY_MS = 250;
 
+const PREWARMED_HANDLER_METHODS = [
+  "chat.history",
+  "chat.send",
+  "sessions.list",
+  "agent",
+  "agent.wait",
+];
+
 type GatewayHandlerPrewarmItem = {
   name: string;
   notBeforeMs?: number;
@@ -27,7 +35,7 @@ function gatewayPrewarmItems(getConfig: () => OpenClawConfig): GatewayHandlerPre
         }
       },
     },
-    ...["chat.history", "chat.send", "sessions.list", "agent", "agent.wait"].map((method): GatewayHandlerPrewarmItem => ({
+    ...PREWARMED_HANDLER_METHODS.map((method): GatewayHandlerPrewarmItem => ({
       name: method,
       load: async (isCancelled) => {
         const [{ coreGatewayHandlers }, { prepareGatewayRequestHandler }] = await Promise.all([
