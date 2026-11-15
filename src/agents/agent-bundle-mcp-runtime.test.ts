@@ -2349,6 +2349,10 @@ describe("requester-scoped MCP connection resolution", () => {
       expect(disposed).toEqual([]);
       expect(manager.listRuntimeKeys().some((key) => key.startsWith("{"))).toBe(true);
       clock.setTime(clock.clock.now() + 1);
+      // Past the window the turn is served at once; the re-resolution after it revokes,
+      // and the next turn gets the static part only.
+      await manager.getOrCreate(params);
+      await vi.waitFor(() => expect(disposed).toContain("scoped"));
       const after = await manager.getOrCreate(params);
 
       expect(disposed).toContain("scoped");

@@ -29,11 +29,14 @@ import {
 type RuntimeEntryParams = Omit<Parameters<CreateSessionMcpRuntime>[0], "configFingerprint"> & {
   configReloadAtAdmission?: SessionMcpConfigPublication;
   runtimeKey: string;
+  /**
+   * The re-resolution that runs after a served turn: it resolves in this call and is
+   * not a use of the runtime, so it neither extends idle time nor settles retirement.
+   */
+  background?: boolean;
 };
 
 type RequesterRuntimeParams = RuntimeEntryParams & {
-  /** Resolve in this call rather than serving the installed runtime and resolving after it. */
-  revalidateNow?: boolean;
   oauthRequesterNameSet: ReadonlySet<string>;
   mcpServers: Record<string, BundleMcpServerConfig>;
   resolverRequesterServerNames: readonly string[];
@@ -100,6 +103,14 @@ export function createSessionMcpRuntimeManagerInstall(
   };
 
   /** Install under the runtime-key queue shared by acquisition and disposal. */
+  /** A real use of the runtime; the background re-resolution is not one. */
+  const markReused = (params: RuntimeEntryParams, runtime: SessionMcpRuntime) => {
+    if (!params.background) {
+      reconcileReusableRetirement(params, runtime);
+      runtime.markUsed();
+    }
+  };
+
   const getOrCreateRuntimeEntry = async (
     params: RuntimeEntryParams,
   ): Promise<SessionMcpRuntime> => {
@@ -109,15 +120,14 @@ export function createSessionMcpRuntimeManagerInstall(
       params.requesterConnect,
     );
     const hasServers = Object.keys(config.loaded.mcpServers).length > 0;
-    const { runtimeKey, configReloadAtAdmission, ...runtimeParams } = params;
+    const { runtimeKey, configReloadAtAdmission, background, ...runtimeParams } = params;
     const existing = store.runtimesBySessionId.get(runtimeKey);
     const connectionMatches =
       !params.connectionOverrides ||
       store.connectionMetaByRuntimeKey.get(runtimeKey)?.connectionHash ===
         hashMcpResolvedConnections(params.connectionOverrides);
     if (existing && connectionMatches && matchesRuntime(existing, params, nextFingerprint)) {
-      reconcileReusableRetirement(params, existing);
-      existing.markUsed();
+      markReused(params, existing);
       return existing;
     }
     const slot = lifecycle.reserveRuntimeSlot(existing, hasServers);
@@ -159,7 +169,9 @@ export function createSessionMcpRuntimeManagerInstall(
         await lifecycle.releaseEmptyRuntimeSlot(runtimeKey, runtime);
       }
       reconcileReusableRetirement(params, runtime);
-      runtime.markUsed();
+      if (!background) {
+        runtime.markUsed();
+      }
       return runtime;
     } catch (error) {
       store.runtimesBySessionId.delete(runtimeKey);
@@ -238,8 +250,7 @@ export function createSessionMcpRuntimeManagerInstall(
       meta.resolutionContextKey === resolutionContextKey &&
       store.scheduler.now() - meta.resolvedAt < resolveMcpConnectionRevalidateMs();
     if (withinRevalidateWindow && existing && matchesRuntime(existing, params, scopedFingerprint)) {
-      reconcileReusableRetirement(params, existing);
-      existing.markUsed();
+      markReused(params, existing);
       return existing;
     }
     // Past the window, the installed runtime serves this turn at once and the
@@ -248,7 +259,7 @@ export function createSessionMcpRuntimeManagerInstall(
     // the re-resolution finds applies from the next turn on; calls already renew
     // their credential before each request and fail once it is revoked.
     if (
-      !params.revalidateNow &&
+      !params.background &&
       meta !== undefined &&
       meta.resolutionContextKey === resolutionContextKey &&
       existing &&
@@ -273,7 +284,7 @@ export function createSessionMcpRuntimeManagerInstall(
             }
             // The turn's own diagnostics sink has been read by now.
             const { onResolverUnavailable: _turnSink, ...current } = params;
-            await resolveAndInstallRequesterRuntime({ ...current, revalidateNow: true });
+            await resolveAndInstallRequesterRuntime({ ...current, background: true });
           })
           .catch((error: unknown) => {
             logWarn(`bundle-mcp: background connection revalidation failed: ${String(error)}`);
@@ -332,8 +343,7 @@ export function createSessionMcpRuntimeManagerInstall(
       matchesRuntime(existing, params, scopedFingerprint)
     ) {
       meta.failingSince = failingSince;
-      reconcileReusableRetirement(params, existing);
-      existing.markUsed();
+      markReused(params, existing);
       return existing;
     }
     const activeNameSet = new Set([
@@ -352,6 +362,7 @@ export function createSessionMcpRuntimeManagerInstall(
       installRequesterRuntime({
         runtimeKey: params.runtimeKey,
         configReloadAtAdmission: params.configReloadAtAdmission,
+        background: params.background,
         sessionId: params.sessionId,
         sessionKey: params.sessionKey,
         agentId: params.agentId,

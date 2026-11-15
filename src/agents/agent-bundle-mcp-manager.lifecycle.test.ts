@@ -273,7 +273,9 @@ describe("MCP manager creation ownership", () => {
     const disposed = manager.disposeSession(params.sessionId);
     await served;
     await disposed;
-    await vi.waitFor(() => expect(manager.listSessionIds()).toEqual([]));
+    // Queued behind the revalidation on the same key, so that job has settled.
+    await manager.disposeSession(params.sessionId);
+    expect(manager.listSessionIds()).toEqual([]);
     expect(createRuntime).toHaveBeenCalledOnce();
   });
 
