@@ -60,8 +60,8 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveEventSessionRoutingPolicy } from "../infra/event-session-routing.js";
 import { loadExecApprovalsReadOnlyAsync } from "../infra/exec-approvals-store.js";
 import { resolveExactExecModeFromPolicy } from "../infra/exec-approvals.js";
-import { logWarn } from "../logger.js";
 import { measurePrepStage } from "../infra/run-prep-stages.js";
+import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
 import {
   DEFAULT_GATEWAY_HTTP_TOOL_DENY,
@@ -210,14 +210,12 @@ export async function resolveGatewayScopedTools(
   } = configuredToolPolicies;
   const policyAgentId = resolvedPolicyAgentId ?? runtimePolicyAgentId;
   const senderId = params.channelContext?.sender?.id;
-  const requesterPolicies = await measurePrepStage("mcp-requester-policies", () =>
-    resolveGatewayRequesterToolPolicies(params, {
-      runtimePolicySessionKey,
-      policyAgentId,
-      nodeExecSurface,
-      accountId: gatewayCaller.accountId,
-    }),
-  );
+  const requesterPolicies = await resolveGatewayRequesterToolPolicies(params, {
+    runtimePolicySessionKey,
+    policyAgentId,
+    nodeExecSurface,
+    accountId: gatewayCaller.accountId,
+  });
   const { groupPolicy, senderPolicy, subagentPolicy, inheritedToolPolicy } = requesterPolicies;
   const completionHandoff =
     stableSessionSurface && requesterPolicies.requesterPolicySource === "completion-handoff";
@@ -225,15 +223,13 @@ export async function resolveGatewayScopedTools(
     requesterPolicies.inheritedToolPolicySource === "sender"
       ? params.sessionPermissionPolicy
       : undefined;
-  const sandboxRuntime = await measurePrepStage("mcp-sandbox-runtime", () =>
-    resolveSandboxRuntimeStatusAsync({
-      cfg: params.cfg,
-      sessionKey: params.sessionKey,
-      agentId: sessionAgentId,
-      classificationSessionKey: runtimePolicySessionKey,
-      classificationAgentId: policyAgentId,
-    }),
-  );
+  const sandboxRuntime = await resolveSandboxRuntimeStatusAsync({
+    cfg: params.cfg,
+    sessionKey: params.sessionKey,
+    agentId: sessionAgentId,
+    classificationSessionKey: runtimePolicySessionKey,
+    classificationAgentId: policyAgentId,
+  });
   const sandboxed = sandboxRuntime.sandboxed;
   const preparedSandboxPolicy = sandboxRuntime.sandboxed ? sandboxRuntime.toolPolicy : undefined;
   const sessionControlAuthority = readAdmittedRunOperatorAuthority(params.admittedRunContext);
