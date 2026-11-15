@@ -565,6 +565,10 @@ export class McpLoopbackToolCache {
         this.#policyEntries.get(preDiscoveryCacheKey, nodeExecParams.cfg),
       );
       nodeExecParams.assertCurrent();
+      // Only a catalog built for this request refreshes the base entry, so it expires 30 s
+      // after it was built. A projection over an adopted base gets its own 30 s in #entries,
+      // so non-computer tools can live up to about 60 s; session facts and config are
+      // still checked on every request.
       if (
         resolved.baseCatalog &&
         epoch === this.#epoch &&
