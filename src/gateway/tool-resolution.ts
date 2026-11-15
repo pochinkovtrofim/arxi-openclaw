@@ -739,14 +739,16 @@ export async function resolveGatewayScopedTools(
         ? (
             prepared: NonNullable<typeof params.pairedNodeComputerUse>,
           ): AnyAgentTool[] | undefined => {
-          const computer = createOpenClawComputerTool({
-            ...openClawToolOptions,
-            pairedNodeComputerUse: prepared,
-          });
-          return computer
-            ? finalizeTools(tools.map((tool, index) => (index === computerIndex ? computer : tool)))
-            : undefined;
-        }
+            const computer = createOpenClawComputerTool({
+              ...openClawToolOptions,
+              pairedNodeComputerUse: prepared,
+            });
+            return computer
+              ? finalizeTools(
+                  tools.map((tool, index) => (index === computerIndex ? computer : tool)),
+                )
+              : undefined;
+          }
         : undefined,
     // Only the MCP owner knows which tools survived its grant and schema gates.
     captureFinalCronCreatorTools: cronCreatorToolAllowlistCaptureRef

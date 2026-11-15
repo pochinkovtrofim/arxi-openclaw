@@ -512,9 +512,7 @@ export function resolveMcpLoopbackPolicyTools(params: McpLoopbackScopeParams): P
   agentId: string | undefined;
   tools: McpLoopbackTool[];
 }> {
-  return resolveMcpLoopbackCatalog(params, "policy").then(
-    ({ base: _base, ...catalog }) => catalog,
-  );
+  return resolveMcpLoopbackCatalog(params, "policy").then(({ base: _base, ...catalog }) => catalog);
 }
 
 /**

@@ -99,7 +99,9 @@ export async function prepareCliMcpToolProjection(
     params: admittedParams,
     tools,
     // Only an exact-grant projection can serve the turn's own loopback grant.
-    ...(preparedCatalog && options.runtimeToolsAllowPolicy === undefined ? { preparedCatalog } : {}),
+    ...(preparedCatalog && options.runtimeToolsAllowPolicy === undefined
+      ? { preparedCatalog }
+      : {}),
   };
 }
 
