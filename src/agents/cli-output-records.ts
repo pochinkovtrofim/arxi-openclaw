@@ -149,9 +149,39 @@ function normalizeCliUsageRecord(raw: unknown): CliUsage | undefined {
     : undefined;
 }
 
-/** Usage carried by a Claude stream event (`message_start` nests it in the message). */
+/**
+ * Usage carried by a Claude stream event (`message_start` nests it in the message), as the
+ * API reports it. A zero is a count, not a missing value: a request that reads nothing from
+ * the cache reports `cache_read_input_tokens: 0`, and dropping it would leave the request's
+ * usage incomplete.
+ */
 export function readClaudeStreamEventUsage(event: Record<string, unknown>): CliUsage | undefined {
-  return normalizeCliUsageRecord(isRecord(event.message) ? event.message.usage : event.usage);
+  const raw = isRecord(event.message) ? event.message.usage : event.usage;
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  const count = (value: unknown): number | undefined =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? Math.trunc(value)
+      : undefined;
+  const input = count(raw.input_tokens);
+  const output = count(raw.output_tokens);
+  const cacheRead = count(raw.cache_read_input_tokens);
+  const cacheWrite = count(raw.cache_creation_input_tokens);
+  if (
+    input === undefined &&
+    output === undefined &&
+    cacheRead === undefined &&
+    cacheWrite === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    ...(input !== undefined ? { input } : {}),
+    ...(output !== undefined ? { output } : {}),
+    ...(cacheRead !== undefined ? { cacheRead } : {}),
+    ...(cacheWrite !== undefined ? { cacheWrite } : {}),
+  };
 }
 
 /** A user record that returns tool results to the model, which starts its next API step. */

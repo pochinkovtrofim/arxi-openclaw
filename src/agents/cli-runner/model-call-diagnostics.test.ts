@@ -409,6 +409,30 @@ describe("Claude CLI model-call diagnostics", () => {
       });
     });
 
+    it("keeps a full cache miss's counts when the delta repeats them or reports only output", async () => {
+      const { diagnostics, events, at } = createStepHarness();
+      at(1_000);
+      diagnostics.emitStarted();
+      diagnostics.observeRequestSent();
+      const cold = { input: 2, cacheRead: 0, cacheWrite: 158_721, output: 1 };
+      diagnostics.observeStep({ kind: "message_start", messageId: "m1", usage: cold });
+      diagnostics.observeStep({ kind: "message_delta", usage: { ...cold, output: 40 } });
+      diagnostics.observeStep({ kind: "message_stop" });
+      diagnostics.observeStep({ kind: "tool_result" });
+      diagnostics.observeStep({ kind: "message_start", messageId: "m2", usage: cold });
+      diagnostics.observeStep({ kind: "message_delta", usage: { output: 7 } });
+      diagnostics.observeStep({ kind: "message_stop" });
+      diagnostics.emitCompleted({ text: "x" } as CliOutput);
+      await waitForDiagnosticEventsDrained();
+      const done = events.filter(
+        (event) => event.type === "model.call.completed" && event.observationUnit === "request",
+      );
+      expect(done.map((event) => event.usage)).toEqual([
+        { input: 2, output: 40, cacheRead: 0, cacheWrite: 158_721, total: 158_763 },
+        { input: 2, output: 7, cacheRead: 0, cacheWrite: 158_721, total: 158_730 },
+      ]);
+    });
+
     it("starts the first step at its message when no request-sent mark arrived", async () => {
       const { diagnostics, events, at } = createStepHarness();
       diagnostics.emitStarted();
