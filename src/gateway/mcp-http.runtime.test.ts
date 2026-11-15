@@ -479,9 +479,11 @@ describe("MCP loopback catalog is built once per turn", () => {
     resolveGatewayScopedTools.mockImplementation(computerScoped);
   });
 
-  const ownerScope = (extra: Partial<ScopeParams["context"]> = {}, cfg: ScopeParams["cfg"] = {}) =>
+  // The cache keys on the config object, so one turn shares one.
+  const turnCfg = { tools: { allow: ["computer", "message"] } };
+  const ownerScope = (extra: Partial<ScopeParams["context"]> = {}, cfg?: ScopeParams["cfg"]) =>
     scopeParams({
-      cfg: { tools: { allow: ["computer", "message"] }, ...cfg },
+      cfg: cfg ?? turnCfg,
       sessionKey: "agent:main:main",
       senderIsOwner: true,
       modelHasVision: true,
@@ -512,7 +514,7 @@ describe("MCP loopback catalog is built once per turn", () => {
 
   it("builds the catalog once when policy removes computer", async () => {
     const resolved = await new McpLoopbackToolCache().resolve(
-      ownerScope({}, { tools: { deny: ["computer"] } }),
+      ownerScope({}, { tools: { allow: ["message"], deny: ["computer"] } }),
     );
 
     expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
