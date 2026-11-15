@@ -309,6 +309,19 @@ describe("mcp connection resolver helpers", () => {
       const afterRotation = await replacement.getCatalog();
       expect(afterRotation.diagnostics?.length).toBeGreaterThan(0);
       expect(afterRotation.tools.map((tool) => tool.toolName)).toEqual(["owner_probe"]);
+      // A changed policy is a different configuration: nothing is carried over.
+      const denied = expectDefined(sessionMcpRuntimeOwners.get(replacement), "owner").replace({
+        ...base,
+        toolOverrides: { mcpToolsDeny: { "user-mail": ["owner_probe"] } },
+        connectionOverrides: new Map([
+          ["user-mail", { url: proof.mail.url, headers: { Authorization: "Bearer rotated-2" } }],
+        ]),
+      });
+      try {
+        expect((await denied.getCatalog()).tools).toEqual([]);
+      } finally {
+        await denied.dispose();
+      }
     } finally {
       await replacement?.dispose();
       await runtime.dispose();

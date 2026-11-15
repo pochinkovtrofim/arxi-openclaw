@@ -170,9 +170,11 @@ export function createSessionMcpRuntime(
       owned.set(serverName, existing);
       previous.delete(serverName);
     } else {
-      // A rotated credential (a resolver's fresh bearer) replaces the runtime but not
-      // the server: its last tool list stands in if the first listing fails, so the
-      // advertised tools, and a Claude Code session bound to them, stay the same.
+      // A changed resolved connection (url/headers: a resolver's fresh bearer, say)
+      // replaces the runtime but not the server's configuration: its last tool list
+      // stands in if the first listing fails, so the advertised tools, and a Claude
+      // Code session bound to them, stay the same. Calls still wait for this
+      // runtime's own listing.
       const seedListedCatalog =
         existing?.baseFingerprint === serverConfig.baseFingerprint &&
         existing.workspaceDir === params.workspaceDir &&
@@ -376,7 +378,8 @@ function createServerMcpRuntime(
   const lifecycleAbortController = new AbortController();
   let catalog: McpToolCatalog | null = null;
   // Transport health cannot revoke advertised schemas; only a successful list
-  // or retirement of this configuration owner replaces them.
+  // or retirement of this configuration owner replaces them. A successor with the
+  // same base configuration inherits them until its first successful list.
   let lastListedCatalog: McpToolCatalog | undefined = params.seedListedCatalog;
   let catalogRetryAfterMs: number | undefined;
   let catalogInFlight: Promise<McpToolCatalog> | undefined;
