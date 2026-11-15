@@ -23,6 +23,7 @@ import { resolveDiagnosticModelResponse } from "../diagnostic-model-response.js"
 import type { EmbeddedAgentRunResult } from "../embedded-agent-runner.js";
 import { isSignalTimeoutReason, isTimeoutError } from "../failover-error.js";
 import { subscribeAgentCommentaryDiagnostics } from "../harness/commentary-diagnostics.js";
+import { clearCliTurnEnd, takeCliTurnEnd } from "./turn-end-marks.js";
 import type { RunCliAgentParams } from "./types.js";
 
 type ClaudeCliRunPhase = DiagnosticHarnessRunErrorEvent["phase"];
@@ -190,7 +191,10 @@ export async function runClaudeCliAgentTurnWithDiagnostics(
   });
 
   try {
+    // A mark left by an earlier run with this id never belongs to this one.
+    clearCliTurnEnd(params.runId);
     const result = await runWithDiagnosticTraceContext(runTrace, () => run(lifecycle));
+    reportRunSettle(params, runTrace, startedAt);
     const runOutcome = resultRunOutcome(result);
     const resultErrorMessage = result.meta.error?.message;
     const runErrorMessage = runOutcome === "error" ? resultErrorMessage : undefined;
@@ -287,5 +291,29 @@ export async function runClaudeCliAgentTurnWithDiagnostics(
     throw error;
   } finally {
     unsubscribeCommentary?.();
+    clearCliTurnEnd(params.runId);
   }
+}
+
+/** Fixed label of the run's time after its model turn ended, up to the run's end. */
+export const CLI_RUN_SETTLE_STAGE = "cli-run-settle";
+
+function reportRunSettle(
+  params: { runId: string; sessionKey?: string; sessionId?: string },
+  runTrace: DiagnosticTraceContext,
+  runStartedAt: number,
+): void {
+  const turnEndedAt = takeCliTurnEnd(params.runId);
+  const endedAt = Date.now();
+  if (turnEndedAt === undefined || turnEndedAt < runStartedAt || endedAt <= turnEndedAt) {
+    return;
+  }
+  emitTrustedDiagnosticEvent({
+    type: "context.stages",
+    runId: params.runId,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+    ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+    stages: [{ name: CLI_RUN_SETTLE_STAGE, startedAt: turnEndedAt, endedAt }],
+    trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(runTrace)),
+  });
 }
