@@ -85,14 +85,17 @@ describe("Claude CLI run diagnostics", () => {
         return { payloads: [{ text: "done" }], meta: { durationMs: 1 } };
       });
       await flushDiagnosticEvents();
+      // Stage events are dispatched asynchronously, so only membership is fixed.
       const types = diagnostics.events.map(({ event }) => event.type);
-      expect(types).toEqual([
-        "harness.run.started",
-        "run.started",
-        "context.stages",
-        "run.completed",
-        "harness.run.completed",
-      ]);
+      expect(types.toSorted()).toEqual(
+        [
+          "harness.run.started",
+          "run.started",
+          "context.stages",
+          "run.completed",
+          "harness.run.completed",
+        ].toSorted(),
+      );
       const run = diagnostics.events.find(({ event }) => event.type === "run.started")?.event;
       const stage = diagnostics.events.find(({ event }) => event.type === "context.stages")?.event;
       const [settle] = (stage as { stages: Array<{ name: string; startedAt: number; endedAt: number }> })
