@@ -71,6 +71,29 @@ describe("Claude API-step events", () => {
     expect(JSON.stringify(steps)).not.toContain("secret");
   });
 
+  it("keeps a zero count, so a full cache miss still has complete usage", () => {
+    const steps = parseSteps([
+      streamEvent({
+        type: "message_start",
+        message: {
+          id: "msg-cold",
+          usage: {
+            input_tokens: 2,
+            cache_read_input_tokens: 0,
+            cache_creation_input_tokens: 158_721,
+            output_tokens: 1,
+          },
+        },
+      }),
+      streamEvent({ type: "message_stop" }),
+    ]);
+    expect(steps[0]).toEqual({
+      kind: "message_start",
+      messageId: "msg-cold",
+      usage: { input: 2, output: 1, cacheRead: 0, cacheWrite: 158_721 },
+    });
+  });
+
   it("ignores subagent records, which are not steps of the main agent", () => {
     const steps = parseSteps([
       streamEvent(
