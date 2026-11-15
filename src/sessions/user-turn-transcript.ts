@@ -442,13 +442,16 @@ export function createUserTurnTranscriptRecorder(
         // capture is preparing dispatch. New media belongs to a separate turn (#99495).
         if (!runtimePersisted && !persistedResult && message) {
           const admittedResult = await persistMessage(message, updateMode);
+          onPhase?.("user-turn-write");
           if (admittedResult) {
             persistedResult = admittedResult;
             await recordAdmission(admittedResult.admission, admittedResult.message);
+            onPhase?.("user-turn-admission");
             notifyMessagePersisted(admittedResult.message);
           }
         }
         const appendedMedia = await persistMessage(lateMediaMessage, "none");
+        onPhase?.("user-turn-media-write");
         if (appendedMedia) {
           persistedResult = appendedMedia;
         }

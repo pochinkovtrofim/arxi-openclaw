@@ -693,6 +693,7 @@ async function prepareCliRunContextWithinReadFence(
           modelId,
         })
       : undefined;
+  markStage("mcp-grant-context");
   const mcpToolAuthAgentDir = mcpContextBase
     ? resolveRuntimeAuthProfileAgentDir(agentDir)
     : undefined;

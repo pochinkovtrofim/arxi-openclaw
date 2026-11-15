@@ -280,7 +280,8 @@ export type UserTurnTranscriptRecorder = {
       retryIfUnpersisted?: boolean;
       /**
        * Measurement only: called with a closed phase name each time a step of the
-       * approved path finishes, so a caller can time its waits. Never changes the flow.
+       * approved path finishes, so a caller can time its waits. Must not throw: it is
+       * called inside the persistence and never changes its flow.
        */
       onPhase?: (phase: UserTurnPersistPhase) => void;
     },
