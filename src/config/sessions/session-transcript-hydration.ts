@@ -76,7 +76,7 @@ type SessionTranscriptHydrationReader = {
 /** Capture identity before queueing; a missing file remains the creation owner's responsibility. */
 export function prepareSessionTranscriptHydration(
   source: SessionTranscriptRuntimeTarget & { env?: NodeJS.ProcessEnv },
-  limits?: { maxBytes: number; maxEvents: number },
+  limits?: { maxBytes: number; maxEvents: number; fromLatestBoundary?: boolean },
   signal?: AbortSignal,
   lane?: SessionHistoryWorkerLane,
 ): SessionTranscriptHydrationReader {
@@ -147,7 +147,11 @@ export function prepareSessionTranscriptHydration(
   }
   const target = captureSessionTranscriptTargetBinding(source);
   const contextLimits = limits
-    ? { maxBytes: limits.maxBytes, maxEvents: limits.maxEvents }
+    ? {
+        maxBytes: limits.maxBytes,
+        maxEvents: limits.maxEvents,
+        ...(limits.fromLatestBoundary ? { fromLatestBoundary: true } : {}),
+      }
     : undefined;
   const receipt = resolveSessionTranscriptReadFence(target);
   const admission = receipt ? { ...receipt } : undefined;

@@ -4,7 +4,12 @@ import type { PreparedSessionTranscriptHydration } from "../../config/sessions/s
 import type { SessionTranscriptTargetBinding } from "../../config/sessions/transcript-target-binding.js";
 
 export type SessionManagerPersistenceTarget = SessionTranscriptTargetBinding;
-export type SessionManagerBoundedContextLimits = { maxBytes: number; maxEvents: number };
+export type SessionManagerBoundedContextLimits = {
+  maxBytes: number;
+  maxEvents: number;
+  /** Read only the latest boundary's context window (see the bounded active-context reader). */
+  fromLatestBoundary?: boolean;
+};
 export type PreparedSessionTranscriptReload = PreparedSessionTranscriptHydration;
 export type SessionManagerTranscriptCohort = {
   selection: NonNullable<SessionEntryCohortRequest["transcript"]>;

@@ -330,6 +330,8 @@ async function loadCliSessionEntries({
         signal: abortSignal,
         maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
         maxEvents: MAX_CLI_SESSION_HISTORY_EVENTS,
+        // Every consumer here builds the context window; older rows only cost reading.
+        fromLatestBoundary: true,
         onTruncated: () =>
           cliBackendLog.warn(
             `cli session history truncated to bounded active context: ${sessionTarget.sessionId}`,

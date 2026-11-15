@@ -239,6 +239,11 @@ export function readSessionTranscriptBoundedActiveContextCore(
   options: {
     maxBytes: number;
     maxEvents: number;
+    /**
+     * Read only the latest boundary's context window: the rows a context build keeps,
+     * not the older eligible rows up to maxEvents that it would discard.
+     */
+    fromLatestBoundary?: boolean;
     ignoreReadFence?: boolean;
     readOnly?: boolean;
     resolvedScope?: ResolvedTranscriptReadScope;
@@ -329,13 +334,13 @@ export function readSessionTranscriptBoundedActiveContextCore(
     const headerBytes = header?.serialized_bytes ?? 0;
     // Explicit reset retention wins over ordinary exclusion. The window owner
     // selects paired entries; only its newest candidates can fit this bounded read.
-    const retained = covered
-      ? []
-      : (resolveTranscriptBoundaryWindow(
-          projection,
-          "context",
-          fence?.beforeRawSeq,
-        )?.keptMessagePositions.slice(-(maxEvents + 1)) ?? []);
+    const window = covered
+      ? undefined
+      : resolveTranscriptBoundaryWindow(projection, "context", fence?.beforeRawSeq);
+    const retained = window?.keptMessagePositions.slice(-(maxEvents + 1)) ?? [];
+    const contextAfter = options.fromLatestBoundary
+      ? window?.contextAfterActivePosition
+      : undefined;
     const metadata = covered
       ? covered.rows
           .filter((row) => !fence || row.event_seq < fence.beforeRawSeq)
@@ -359,14 +364,18 @@ export function readSessionTranscriptBoundedActiveContextCore(
             .$if(fence !== undefined, (query) =>
               query.where("active.event_seq", "<", fence!.beforeRawSeq),
             )
-            .where((eb) =>
-              retained.length > 0
-                ? eb.or([
-                    eb("active.context_eligible", "=", 1),
-                    eb("active.message_position", "in", retained),
-                  ])
-                : eb("active.context_eligible", "=", 1),
-            )
+            .where((eb) => {
+              const eligible =
+                contextAfter === undefined
+                  ? eb("active.context_eligible", "=", 1)
+                  : eb.and([
+                      eb("active.context_eligible", "=", 1),
+                      eb("active.active_position", ">", contextAfter),
+                    ]);
+              return retained.length > 0
+                ? eb.or([eligible, eb("active.message_position", "in", retained)])
+                : eligible;
+            })
             .orderBy("active.active_position", "desc")
             .limit(maxEvents + 1),
         );
