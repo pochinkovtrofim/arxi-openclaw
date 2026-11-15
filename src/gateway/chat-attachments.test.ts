@@ -644,6 +644,35 @@ describe("parseMessageWithAttachments validation errors", () => {
     expect(parsed.media[0]).toMatchObject({ durationMs: 2345 });
   });
 
+  it("returns before the audio probe when asked, and resolves the probed facts later", async () => {
+    let finishProbe!: () => void;
+    const probeHeld = new Promise<void>((resolve) => {
+      finishProbe = resolve;
+    });
+    probeMediaFilesWithinBudgetMock.mockImplementationOnce(async (inputs: readonly unknown[]) => {
+      await probeHeld;
+      return inputs.map(() => ({ durationMs: 4200 }));
+    });
+    const { parsed } = await parseWithWarnings(
+      "voice",
+      [
+        {
+          type: "audio",
+          mimeType: "audio/mpeg",
+          fileName: "voice.mp3",
+          content: Buffer.from("audio-fixture").toString("base64"),
+        },
+      ],
+      { supportsInlineImages: false, deferMediaProbe: true },
+    );
+
+    // Parsing returned while the probe still runs: the voice note can be
+    // transcribed meanwhile, and its facts lack the duration so far.
+    expect(parsed.media[0]).not.toHaveProperty("durationMs");
+    finishProbe();
+    expect((await parsed.probedMedia)?.[0]).toMatchObject({ durationMs: 4200 });
+  });
+
   it("passes through unchanged on text-only session with no attachments", async () => {
     const { parsed } = await parseWithWarnings("hello", [], { supportsInlineImages: false });
     expect(parsed.message).toBe("hello");

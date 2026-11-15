@@ -154,7 +154,8 @@ export type ContentStep =
   | "model_capabilities"
   | "voice_wake_routing"
   | "attachment_parse"
-  | "audio_understanding";
+  | "audio_understanding"
+  | "media_probe";
 /**
  * The embedded runner's startup checkpoints (its slow-start log names, `-` as `_`), after
  * the command hands the run over and the session's admission (placement, maintenance,

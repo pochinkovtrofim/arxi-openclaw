@@ -230,6 +230,7 @@ export async function prepareAgentContentPhase(params: {
         supportsInlineImages,
         acceptNonImage: true,
         assertCurrent: params.assertAdmissionCurrent,
+        deferMediaProbe: true,
       });
       content.message = content.message.trim();
     } catch (err) {
@@ -275,12 +276,20 @@ export async function prepareAgentContentPhase(params: {
     }
   }
   params.onStep?.("audio_understanding");
+  // The duration/codec probe ran beside transcription; the facts the model sees
+  // carry its result.
+  const { probedMedia, ...parsed } = content;
+  if (probedMedia) {
+    // The caller checks admission once it owns offloadedRefs and can delete them.
+    parsed.media = await probedMedia;
+  }
+  params.onStep?.("media_probe");
 
   return {
     agentId,
     requestedSessionKey,
     effectiveTranscriptInputText,
-    ...content,
+    ...parsed,
     replyTo,
     recipientChannel,
     recipientAccountId,

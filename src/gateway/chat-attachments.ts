@@ -96,6 +96,11 @@ type ParsedMessageWithImages = {
   imageOrder: PromptImageOrderEntry[];
   media: MediaFact[];
   offloadedRefs: OffloadedRef[];
+  /**
+   * With `deferMediaProbe`: `media` lacks probed durations and codecs, and this
+   * resolves to the same facts with them once the audio/video probe finishes.
+   */
+  probedMedia?: Promise<MediaFact[]>;
 };
 
 type AttachmentLog = {
@@ -312,6 +317,11 @@ export async function parseMessageWithAttachments(
     imageStorage?: "inline";
     signal?: AbortSignal;
     assertCurrent?: () => void;
+    /**
+     * Return before probing audio/video duration and codecs, so a caller can
+     * transcribe a voice note while ffprobe runs; see `probedMedia`.
+     */
+    deferMediaProbe?: boolean;
   },
 ): Promise<ParsedMessageWithImages> {
   const maxBytes = opts?.maxBytes ?? DEFAULT_CHAT_ATTACHMENT_MAX_BYTES;
@@ -346,6 +356,7 @@ export async function parseMessageWithAttachments(
   let updatedMessage = message;
   let textOnlyImageOffloadCount = 0;
   const savedMediaIds: string[] = [];
+  let mediaProbe: Promise<void> | undefined;
 
   try {
     opts?.assertCurrent?.();
@@ -494,8 +505,12 @@ export async function parseMessageWithAttachments(
         }
       }
     }
-    await enrichOffloadedMediaMetadata(offloadedRefs);
-    opts?.assertCurrent?.();
+    // Probe failures degrade to absent fields and never throw.
+    mediaProbe = enrichOffloadedMediaMetadata(offloadedRefs);
+    if (!opts?.deferMediaProbe) {
+      await mediaProbe;
+      opts?.assertCurrent?.();
+    }
   } catch (err) {
     if (savedMediaIds.length > 0) {
       await Promise.allSettled(savedMediaIds.map((id) => deleteMediaBuffer(id, "inbound")));
@@ -518,5 +533,12 @@ export async function parseMessageWithAttachments(
     imageOrder,
     media: offloadedRefs.map((ref) => projectOffloadedMediaFact(ref, false)),
     offloadedRefs,
+    ...(opts?.deferMediaProbe && mediaProbe
+      ? {
+          probedMedia: mediaProbe.then(() =>
+            offloadedRefs.map((ref) => projectOffloadedMediaFact(ref, false)),
+          ),
+        }
+      : {}),
   };
 }
