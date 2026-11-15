@@ -51,7 +51,9 @@ export function registerBrowserAgentDebugRoutes(
     "get",
     "/flows/capture",
     "flow capture",
-    () => (pw, { cdpUrl, targetId }) => pw.getFlowCaptureViaPlaywright({ cdpUrl, targetId }),
+    () =>
+      (pw, { cdpUrl, targetId }) =>
+        pw.getFlowCaptureViaPlaywright({ cdpUrl, targetId }),
     EXISTING_SESSION_LIMITS.flows,
   );
 

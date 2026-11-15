@@ -222,7 +222,13 @@ export async function browserRequests(
 export async function browserFlowCapture(
   baseUrl: BrowserClientTarget,
   opts: BrowserActionOptions = {},
-): Promise<{ ok: true; exchanges: FlowExchange[]; pageUrl: string; targetId: string; url?: string }> {
+): Promise<{
+  ok: true;
+  exchanges: FlowExchange[];
+  pageUrl: string;
+  targetId: string;
+  url?: string;
+}> {
   return await readBrowserPageJson(
     baseUrl,
     "/flows/capture",
@@ -232,7 +238,14 @@ export async function browserFlowCapture(
 }
 
 export type BrowserFlowPageFetchResult =
-  | { ok: true; status: number; contentType?: string; retryAfter?: string; body: string; finalUrl: string }
+  | {
+      ok: true;
+      status: number;
+      contentType?: string;
+      retryAfter?: string;
+      body: string;
+      finalUrl: string;
+    }
   | { ok: false; error: "not_on_site" | "network"; detail?: string; pageUrl: string };
 
 /** Send one saved-flow request from the tab's own page, with its cookies. */

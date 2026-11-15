@@ -20,7 +20,9 @@ import {
   type FlowExchange,
 } from "./flows.js";
 
-function exchange(overrides: Partial<CapturedExchange> & { id: string; url: string }): CapturedExchange {
+function exchange(
+  overrides: Partial<CapturedExchange> & { id: string; url: string },
+): CapturedExchange {
   return {
     method: "GET",
     kind: "data",
@@ -44,16 +46,39 @@ const products = {
 
 function recording(): FlowExchange[] {
   return [
-    exchange({ id: "c1", url: "https://www.shop.example/", kind: "document", contentType: "text/html", body: "<html></html>" }),
-    exchange({ id: "c2", url: "https://www.shop.example/api/config", body: JSON.stringify({ flags: {} }) }),
+    exchange({
+      id: "c1",
+      url: "https://www.shop.example/",
+      kind: "document",
+      contentType: "text/html",
+      body: "<html></html>",
+    }),
+    exchange({
+      id: "c2",
+      url: "https://www.shop.example/api/config",
+      body: JSON.stringify({ flags: {} }),
+    }),
     exchange({
       id: "c3",
       url: "https://api.shop.example/v2/search?q=red+shoes&page=1",
-      headers: { accept: "application/json", cookie: "sid=secret", authorization: "Bearer t", "x-csrf-token": "c" },
+      headers: {
+        accept: "application/json",
+        cookie: "sid=secret",
+        authorization: "Bearer t",
+        "x-csrf-token": "c",
+      },
       body: JSON.stringify(products),
     }),
-    exchange({ id: "c4", url: "https://www.shop.example/collect?q=red+shoes", body: JSON.stringify({ ok: true, a: 1, b: 2, c: 3 }) }),
-    exchange({ id: "c5", url: "https://tracker.other.example/api?q=red+shoes", body: JSON.stringify(products) }),
+    exchange({
+      id: "c4",
+      url: "https://www.shop.example/collect?q=red+shoes",
+      body: JSON.stringify({ ok: true, a: 1, b: 2, c: 3 }),
+    }),
+    exchange({
+      id: "c5",
+      url: "https://tracker.other.example/api?q=red+shoes",
+      body: JSON.stringify(products),
+    }),
   ].map(sanitizeExchange);
 }
 
@@ -70,17 +95,30 @@ describe("saved flows", () => {
       exchange({
         id: "c1",
         url: "https://a.example/api",
-        headers: { cookie: "s=1", Authorization: "x", "X-XSRF-TOKEN": "y", "content-type": "application/json", host: "a.example" },
+        headers: {
+          cookie: "s=1",
+          Authorization: "x",
+          "X-XSRF-TOKEN": "y",
+          "content-type": "application/json",
+          host: "a.example",
+        },
       }),
     );
     expect(clean.headers).toEqual({ "content-type": "application/json" });
     expect(clean.session).toBe(true);
-    const token = sanitizeExchange(exchange({ id: "c2", url: "https://a.example/api?access_token=abc&q=1" }));
+    const token = sanitizeExchange(
+      exchange({ id: "c2", url: "https://a.example/api?access_token=abc&q=1" }),
+    );
     expect(token.skip).toBe("credential_in_url");
     expect(token.url).toBe("https://a.example/api");
     expect(token.body).toBeUndefined();
     const login = sanitizeExchange(
-      exchange({ id: "c3", method: "POST", url: "https://a.example/login", postData: '{"email":"a","password":"hunter2"}' }),
+      exchange({
+        id: "c3",
+        method: "POST",
+        url: "https://a.example/login",
+        postData: '{"email":"a","password":"hunter2"}',
+      }),
     );
     expect(login.skip).toBe("login");
     expect(JSON.stringify(login)).not.toContain("hunter2");
@@ -118,7 +156,10 @@ describe("saved flows", () => {
             method: "POST",
             url: "https://x.example/graphql",
             headers: { "content-type": "application/json" },
-            postData: JSON.stringify({ query: "query Find($q: String) { items }", variables: { q: "lamp", first: 20 } }),
+            postData: JSON.stringify({
+              query: "query Find($q: String) { items }",
+              variables: { q: "lamp", first: 20 },
+            }),
             body: JSON.stringify({ data: { items: [{ id: "a" }] } }),
           }),
         ),
@@ -157,10 +198,19 @@ describe("saved flows", () => {
     const auto = buildFlow({ name: "list", pageUrl: "https://www.shop.example/", exchanges });
     expect(auto.flow.request.url).toContain("/v2/search");
     expect(auto.candidates.map((c) => c.id)).toEqual(["c3", "c2"]);
-    const picked = buildFlow({ name: "config", pageUrl: "https://www.shop.example/", exchanges, output: "c2" });
+    const picked = buildFlow({
+      name: "config",
+      pageUrl: "https://www.shop.example/",
+      exchanges,
+      output: "c2",
+    });
     expect(picked.flow.request.url).toBe("https://www.shop.example/api/config");
-    expect(() => buildFlow({ name: "x", pageUrl: "https://www.shop.example/", exchanges, output: "c4" })).toThrow(/candidates/);
-    expect(() => buildFlow({ name: "Bad Name", pageUrl: "https://www.shop.example/", exchanges })).toThrow(/flow name/);
+    expect(() =>
+      buildFlow({ name: "x", pageUrl: "https://www.shop.example/", exchanges, output: "c4" }),
+    ).toThrow(/candidates/);
+    expect(() =>
+      buildFlow({ name: "Bad Name", pageUrl: "https://www.shop.example/", exchanges }),
+    ).toThrow(/flow name/);
   });
 
   it("marks writes and reads the data a server-rendered page embeds", () => {
@@ -169,7 +219,13 @@ describe("saved flows", () => {
       pageUrl: "https://x.example/",
       exchanges: [
         sanitizeExchange(
-          exchange({ id: "c1", method: "POST", url: "https://x.example/cart/add", postData: '{"sku":"a1"}', body: '{"cart":{"n":1}}' }),
+          exchange({
+            id: "c1",
+            method: "POST",
+            url: "https://x.example/cart/add",
+            postData: '{"sku":"a1"}',
+            body: '{"cart":{"n":1}}',
+          }),
         ),
       ],
     }).flow;
@@ -179,7 +235,17 @@ describe("saved flows", () => {
     const page = buildFlow({
       name: "page",
       pageUrl: "https://x.example/list",
-      exchanges: [sanitizeExchange(exchange({ id: "c1", kind: "document", url: "https://x.example/list?q=tea", contentType: "text/html", body: html }))],
+      exchanges: [
+        sanitizeExchange(
+          exchange({
+            id: "c1",
+            kind: "document",
+            url: "https://x.example/list?q=tea",
+            contentType: "text/html",
+            body: html,
+          }),
+        ),
+      ],
       values: { q: "tea" },
     }).flow;
     expect(page.request.kind).toBe("html");
@@ -191,21 +257,40 @@ describe("saved flows", () => {
     expect(checkShape(shape, products)).toEqual({ ok: true });
     expect(checkShape(shape, { ...products, results: [] })).toEqual({ ok: true });
     expect(checkShape(shape, { query: "", total: 0 })).toEqual({ ok: false, missing: "results" });
-    expect(checkShape(shape, { ...products, results: [{ other: 1 }] })).toMatchObject({ ok: false });
+    expect(checkShape(shape, { ...products, results: [{ other: 1 }] })).toMatchObject({
+      ok: false,
+    });
   });
 
   it("returns only the records and fields asked for", () => {
     const shape = shapeOf(products);
-    const picked = selectFlowData(shape, products, { where: { brand: "acme" }, select: ["title", "price.amount"], limit: 1 });
-    expect(picked).toEqual({ data: [{ title: "Red runner", "price.amount": 40 }], total: 3, matched: 2, returned: 1, truncated: false });
-    const big = { results: Array.from({ length: 100 }, (_, i) => ({ id: i, text: "x".repeat(500) })) };
+    const picked = selectFlowData(shape, products, {
+      where: { brand: "acme" },
+      select: ["title", "price.amount"],
+      limit: 1,
+    });
+    expect(picked).toEqual({
+      data: [{ title: "Red runner", "price.amount": 40 }],
+      total: 3,
+      matched: 2,
+      returned: 1,
+      truncated: false,
+    });
+    const big = {
+      results: Array.from({ length: 100 }, (_, i) => ({ id: i, text: "x".repeat(500) })),
+    };
     const bounded = selectFlowData(shapeOf(big), big, { limit: 100 });
     expect(bounded.truncated).toBe(true);
     expect(JSON.stringify(bounded.data).length).toBeLessThanOrEqual(12_000);
   });
 
   it("classifies answers", () => {
-    const { flow } = buildFlow({ name: "search", pageUrl: "https://www.shop.example/", exchanges: recording(), values: { query: "red shoes" } });
+    const { flow } = buildFlow({
+      name: "search",
+      pageUrl: "https://www.shop.example/",
+      exchanges: recording(),
+      values: { query: "red shoes" },
+    });
     const classify = (status: number, body: string, retryAfter?: string) =>
       classifyFlowResponse({ flow, status, body, retryAfter }).kind;
     expect(classify(200, JSON.stringify(products))).toBe("ok");
@@ -229,11 +314,19 @@ describe("saved flow storage", () => {
   it("writes, finds, lists and deletes flows per site, and ignores unknown files", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "flows-"));
     roots.push(root);
-    const { flow } = buildFlow({ name: "search", pageUrl: "https://www.shop.example/", exchanges: recording(), values: { query: "red shoes" } });
+    const { flow } = buildFlow({
+      name: "search",
+      pageUrl: "https://www.shop.example/",
+      exchanges: recording(),
+      values: { query: "red shoes" },
+    });
     const file = await writeFlow(flow, root);
     expect(file).toBe(path.join(root, "shop.example", "search.json"));
     expect((await fs.stat(file)).mode & 0o777).toBe(0o600);
-    await fs.writeFile(path.join(root, "shop.example", "odd.json"), JSON.stringify({ ...flow, name: "odd", cookie: "x" }));
+    await fs.writeFile(
+      path.join(root, "shop.example", "odd.json"),
+      JSON.stringify({ ...flow, name: "odd", cookie: "x" }),
+    );
     expect((await listFlows("shop.example", root)).map((f) => f.name)).toEqual(["search"]);
     expect((await readFlow("search", undefined, root))?.site).toBe("shop.example");
     await writeFlow({ ...flow, site: "other.example" }, root);

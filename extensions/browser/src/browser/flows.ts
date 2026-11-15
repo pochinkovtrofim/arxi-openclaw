@@ -224,7 +224,11 @@ export function getPath(value: Json | undefined, dotted: string): Json | undefin
   return current;
 }
 
-function findItems(value: Json, prefix: string, depth: number): { path: string; size: number } | undefined {
+function findItems(
+  value: Json,
+  prefix: string,
+  depth: number,
+): { path: string; size: number } | undefined {
   let best: { path: string; size: number } | undefined;
   if (Array.isArray(value)) {
     if (value.length > 0 && value.every(isRecord)) {
@@ -263,7 +267,10 @@ export function shapeOf(data: Json): FlowShape {
 }
 
 /** Whether a response still has the recorded shape; names the first thing missing. */
-export function checkShape(shape: FlowShape, data: Json | undefined): { ok: true } | { ok: false; missing: string } {
+export function checkShape(
+  shape: FlowShape,
+  data: Json | undefined,
+): { ok: true } | { ok: false; missing: string } {
   if (data === undefined) {
     return { ok: false, missing: "data" };
   }
@@ -303,9 +310,14 @@ function isWrite(exchange: FlowExchange): boolean {
   const queries = Array.isArray(body) ? body : [body];
   const graphql = queries.every((entry) => isRecord(entry) && typeof entry.query === "string");
   if (graphql) {
-    return queries.some((entry) => /^\s*mutation\b/.test(String((entry as { query: string }).query)));
+    return queries.some((entry) =>
+      /^\s*mutation\b/.test(String((entry as { query: string }).query)),
+    );
   }
-  if (method === "POST" && /(^|\/)(search|query|graphql|find|list|lookup|suggest|autocomplete)(\/|$|\?)/i.test(pathname)) {
+  if (
+    method === "POST" &&
+    /(^|\/)(search|query|graphql|find|list|lookup|suggest|autocomplete)(\/|$|\?)/i.test(pathname)
+  ) {
     return false;
   }
   return true;
@@ -378,7 +390,12 @@ function templateJsonValue(value: Json, params: Placeholder[], found: Set<string
   return value;
 }
 
-function templateBody(body: string, contentType: string, params: Placeholder[], found: Set<string>): string {
+function templateBody(
+  body: string,
+  contentType: string,
+  params: Placeholder[],
+  found: Set<string>,
+): string {
   const json = parseJson(body);
   if (json !== undefined) {
     let out = JSON.stringify(templateJsonValue(json, params, found));
@@ -408,7 +425,8 @@ function templateBody(body: string, contentType: string, params: Placeholder[], 
   return body;
 }
 
-const PLACEHOLDER = /"\{\{([A-Za-z][A-Za-z0-9_]*)\|(json|jsonnum)\}\}"|\{\{([A-Za-z][A-Za-z0-9_]*)\|(url|form)\}\}/g;
+const PLACEHOLDER =
+  /"\{\{([A-Za-z][A-Za-z0-9_]*)\|(json|jsonnum)\}\}"|\{\{([A-Za-z][A-Za-z0-9_]*)\|(url|form)\}\}/g;
 
 /** Fill a template's placeholders, each encoded for the place it stands in. */
 export function renderTemplate(template: string, values: Record<string, string>): string {
@@ -440,7 +458,14 @@ export function renderFlowRequest(flow: SavedFlow, values: Record<string, string
   };
 }
 
-export type FlowCandidate = { id: string; method: string; path: string; bytes: number; keys: string[]; write: boolean };
+export type FlowCandidate = {
+  id: string;
+  method: string;
+  path: string;
+  bytes: number;
+  keys: string[];
+  write: boolean;
+};
 
 export type FlowSaveResult = {
   flow: SavedFlow;
@@ -471,7 +496,9 @@ function containedCount(exchange: FlowExchange, values: string[]): number {
     haystacks.push(decodeURIComponent(exchange.url.replace(/\+/g, " ")));
   } catch {}
   return values.filter((value) =>
-    haystacks.some((text) => text.includes(value) || text.includes(JSON.stringify(value).slice(1, -1))),
+    haystacks.some(
+      (text) => text.includes(value) || text.includes(JSON.stringify(value).slice(1, -1)),
+    ),
   ).length;
 }
 
@@ -521,7 +548,12 @@ export function buildFlow(params: {
       skip(exchange.skip);
       continue;
     }
-    if (exchange.failed || exchange.status === undefined || exchange.status < 200 || exchange.status >= 300) {
+    if (
+      exchange.failed ||
+      exchange.status === undefined ||
+      exchange.status < 200 ||
+      exchange.status >= 300
+    ) {
       skip("not_answered");
       continue;
     }
@@ -556,12 +588,17 @@ export function buildFlow(params: {
     const lastNavigation = eligible.map(({ exchange }) => exchange.kind).lastIndexOf("document");
     pool = lastNavigation >= 0 ? eligible.slice(lastNavigation) : eligible;
   }
-  const candidates = eligible.slice(-12).map(({ exchange, data }) => candidateOf(exchange, data)).reverse();
+  const candidates = eligible
+    .slice(-12)
+    .map(({ exchange, data }) => candidateOf(exchange, data))
+    .reverse();
   let chosen: { exchange: FlowExchange; data: Json } | undefined;
   if (params.output) {
     chosen = eligible.find(({ exchange }) => exchange.id === params.output);
     if (!chosen) {
-      throw new Error(`no saved-able request ${params.output}; candidates: ${candidates.map((c) => c.id).join(", ") || "none"}`);
+      throw new Error(
+        `no saved-able request ${params.output}; candidates: ${candidates.map((c) => c.id).join(", ") || "none"}`,
+      );
     }
   } else {
     const reads = pool.filter(({ exchange }) => !isWrite(exchange));
@@ -571,9 +608,10 @@ export function buildFlow(params: {
     chosen = ranked[0];
   }
   if (!chosen) {
-    const why = valueList.length > 0
-      ? "no first-party data request sent those param values"
-      : "no first-party JSON or embedded page data was recorded since the last navigation";
+    const why =
+      valueList.length > 0
+        ? "no first-party data request sent those param values"
+        : "no first-party JSON or embedded page data was recorded since the last navigation";
     throw Object.assign(new Error(`nothing to save: ${why}`), { candidates, skipped });
   }
   const placeholders = Object.entries(values)
@@ -582,9 +620,10 @@ export function buildFlow(params: {
   const found = new Set<string>();
   const { exchange, data } = chosen;
   const url = templateUrl(exchange.url, placeholders, found);
-  const body = exchange.postData !== undefined
-    ? templateBody(exchange.postData, exchange.headers["content-type"] ?? "", placeholders, found)
-    : undefined;
+  const body =
+    exchange.postData !== undefined
+      ? templateBody(exchange.postData, exchange.headers["content-type"] ?? "", placeholders, found)
+      : undefined;
   const now = (params.now ?? new Date()).toISOString();
   const flow: SavedFlow = {
     version: FLOW_VERSION,
@@ -592,7 +631,10 @@ export function buildFlow(params: {
     ...(params.description ? { description: params.description.slice(0, 200) } : {}),
     site,
     startUrl: urlWithoutQuery(pageUrl),
-    params: placeholders.map((p) => p.name).filter((p) => found.has(p)).sort(),
+    params: placeholders
+      .map((p) => p.name)
+      .filter((p) => found.has(p))
+      .sort(),
     request: {
       method: exchange.method,
       url,
@@ -654,7 +696,11 @@ function pick(item: Json, fields: string[]): Json {
 const MAX_RESULT_CHARS = 12_000;
 
 /** Only the records and fields asked for, within the result budget. */
-export function selectFlowData(shape: FlowShape, data: Json, selection: FlowSelection): {
+export function selectFlowData(
+  shape: FlowShape,
+  data: Json,
+  selection: FlowSelection,
+): {
   data: Json;
   total?: number;
   matched?: number;
@@ -671,9 +717,10 @@ export function selectFlowData(shape: FlowShape, data: Json, selection: FlowSele
   }
   const list = getPath(data, shape.items);
   const all = Array.isArray(list) ? list : [];
-  const filtered = selection.where && Object.keys(selection.where).length > 0
-    ? all.filter((item) => matches(item, selection.where!))
-    : all;
+  const filtered =
+    selection.where && Object.keys(selection.where).length > 0
+      ? all.filter((item) => matches(item, selection.where!))
+      : all;
   const limit = Math.max(1, Math.min(selection.limit ?? 10, 100));
   let items = filtered.slice(0, limit).map((item) => pick(item, fields));
   let truncated = false;
@@ -683,9 +730,21 @@ export function selectFlowData(shape: FlowShape, data: Json, selection: FlowSele
   }
   const text = JSON.stringify(items);
   if (text.length > MAX_RESULT_CHARS) {
-    return { data: text.slice(0, MAX_RESULT_CHARS), total: all.length, matched: filtered.length, returned: 1, truncated: true };
+    return {
+      data: text.slice(0, MAX_RESULT_CHARS),
+      total: all.length,
+      matched: filtered.length,
+      returned: 1,
+      truncated: true,
+    };
   }
-  return { data: items, total: all.length, matched: filtered.length, returned: items.length, truncated };
+  return {
+    data: items,
+    total: all.length,
+    matched: filtered.length,
+    returned: items.length,
+    truncated,
+  };
 }
 
 export type FlowOutcome =
@@ -694,7 +753,8 @@ export type FlowOutcome =
   | { kind: "rate_limited"; retryAfter?: string }
   | { kind: "auth" | "blocked" | "server_error" | "not_json" | "rejected"; status: number };
 
-const CHALLENGE = /cf-chl|challenge-platform|captcha|just a moment|attention required|access denied|are you a robot|px-captcha/i;
+const CHALLENGE =
+  /cf-chl|challenge-platform|captcha|just a moment|attention required|access denied|are you a robot|px-captcha/i;
 const LOGIN_PAGE = /<input[^>]+type=["']?password/i;
 
 /** What one tier's answer means for the flow. */
@@ -707,7 +767,10 @@ export function classifyFlowResponse(params: {
 }): FlowOutcome {
   const { status, body } = params;
   if (status === 429) {
-    return { kind: "rate_limited", ...(params.retryAfter ? { retryAfter: params.retryAfter } : {}) };
+    return {
+      kind: "rate_limited",
+      ...(params.retryAfter ? { retryAfter: params.retryAfter } : {}),
+    };
   }
   if ((status === 403 || status === 503) && CHALLENGE.test(body.slice(0, 20_000))) {
     return { kind: "blocked", status };
@@ -748,8 +811,19 @@ function flowPath(root: string, site: string, name: string): string {
 }
 
 const FLOW_KEYS = new Set([
-  "version", "name", "description", "site", "startUrl", "params", "request", "shape",
-  "tier", "verified", "drift", "createdAt", "updatedAt",
+  "version",
+  "name",
+  "description",
+  "site",
+  "startUrl",
+  "params",
+  "request",
+  "shape",
+  "tier",
+  "verified",
+  "drift",
+  "createdAt",
+  "updatedAt",
 ]);
 
 function parseFlow(text: string): SavedFlow | undefined {
@@ -773,7 +847,11 @@ export async function writeFlow(flow: SavedFlow, root = flowsRoot()): Promise<st
   return file;
 }
 
-export async function readFlow(name: string, site: string | undefined, root = flowsRoot()): Promise<SavedFlow | undefined> {
+export async function readFlow(
+  name: string,
+  site: string | undefined,
+  root = flowsRoot(),
+): Promise<SavedFlow | undefined> {
   if (site) {
     try {
       return parseFlow(await fs.readFile(flowPath(root, site, name), "utf8"));
@@ -783,12 +861,17 @@ export async function readFlow(name: string, site: string | undefined, root = fl
   }
   const matches = (await listFlows(undefined, root)).filter((flow) => flow.name === name);
   if (matches.length > 1) {
-    throw new Error(`several sites have a flow named ${name}: ${matches.map((f) => f.site).join(", ")}; pass flow.site`);
+    throw new Error(
+      `several sites have a flow named ${name}: ${matches.map((f) => f.site).join(", ")}; pass flow.site`,
+    );
   }
   return matches[0];
 }
 
-export async function listFlows(site: string | undefined, root = flowsRoot()): Promise<SavedFlow[]> {
+export async function listFlows(
+  site: string | undefined,
+  root = flowsRoot(),
+): Promise<SavedFlow[]> {
   let sites: string[];
   try {
     sites = site ? [site] : await fs.readdir(root);

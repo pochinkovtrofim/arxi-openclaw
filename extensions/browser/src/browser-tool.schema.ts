@@ -287,7 +287,9 @@ export function createBrowserToolSchema(capabilities: BrowserToolCapabilities) {
             Type.Object(
               {
                 name: Type.Optional(Type.String({ description: "Flow name: a-z, 0-9, - or _." })),
-                site: Type.Optional(Type.String({ description: "Site, when two sites share a name." })),
+                site: Type.Optional(
+                  Type.String({ description: "Site, when two sites share a name." }),
+                ),
                 description: Type.Optional(Type.String()),
                 params: Type.Optional(
                   Type.Object(
@@ -311,7 +313,9 @@ export function createBrowserToolSchema(capabilities: BrowserToolCapabilities) {
                 select: Type.Optional(
                   Type.Array(Type.String(), { description: "Return only these fields (dotted)." }),
                 ),
-                output: Type.Optional(Type.String({ description: "flow_save: candidate id to save." })),
+                output: Type.Optional(
+                  Type.String({ description: "flow_save: candidate id to save." }),
+                ),
                 via: optionalStringEnum(["auto", "device"] as const, {
                   description: "device: send from the owner's computer.",
                 }),

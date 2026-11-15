@@ -69,7 +69,8 @@ function readStringRecord(value: unknown, label: string): Record<string, string>
 }
 
 export function readFlowInput(raw: unknown): FlowInput {
-  const record = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const record =
+    raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const via = normalizeOptionalString(record.via);
   if (via !== undefined && via !== "auto" && via !== "device") {
     throw new Error("flow.via must be auto or device");
@@ -94,7 +95,11 @@ type TierAnswer =
   | { ok: true; status: number; contentType?: string; retryAfter?: string; body: string }
   | { ok: false; error: string; detail?: string };
 
-async function httpTier(request: FlowRequest, timeoutMs: number, signal?: AbortSignal): Promise<TierAnswer> {
+async function httpTier(
+  request: FlowRequest,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<TierAnswer> {
   try {
     const { response, release } = await fetchWithSsrFGuard({
       url: request.url,
@@ -130,7 +135,11 @@ async function httpTier(request: FlowRequest, timeoutMs: number, signal?: AbortS
   }
 }
 
-async function deviceTier(request: FlowRequest, timeoutMs: number, signal?: AbortSignal): Promise<TierAnswer> {
+async function deviceTier(
+  request: FlowRequest,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<TierAnswer> {
   try {
     const response = await fetch(DEVICE_FETCH_URL, {
       method: "POST",
@@ -143,13 +152,23 @@ async function deviceTier(request: FlowRequest, timeoutMs: number, signal?: Abor
         timeoutMs,
         write: request.write,
       }),
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs + 15_000)]) : AbortSignal.timeout(timeoutMs + 15_000),
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs + 15_000)])
+        : AbortSignal.timeout(timeoutMs + 15_000),
     });
     if (response.status === 404) {
-      return { ok: false, error: "device_unavailable", detail: "this runtime has no owner computer" };
+      return {
+        ok: false,
+        error: "device_unavailable",
+        detail: "this runtime has no owner computer",
+      };
     }
     if (!response.ok) {
-      return { ok: false, error: "device_unavailable", detail: `relay answered ${response.status}` };
+      return {
+        ok: false,
+        error: "device_unavailable",
+        detail: `relay answered ${response.status}`,
+      };
     }
     const answer = (await response.json()) as TierAnswer;
     if (answer.ok) {
@@ -173,7 +192,11 @@ type FlowContext = {
   root?: string;
 };
 
-async function pageTier(request: FlowRequest, context: FlowContext, timeoutMs: number): Promise<TierAnswer> {
+async function pageTier(
+  request: FlowRequest,
+  context: FlowContext,
+  timeoutMs: number,
+): Promise<TierAnswer> {
   try {
     const answer = await browserFlowPageFetch(context.target, {
       url: request.url,
@@ -189,7 +212,11 @@ async function pageTier(request: FlowRequest, context: FlowContext, timeoutMs: n
       return answer;
     }
     return answer.error === "not_on_site"
-      ? { ok: false, error: "not_on_site", detail: `the tab is on ${siteOf(answer.pageUrl) || "no site"}` }
+      ? {
+          ok: false,
+          error: "not_on_site",
+          detail: `the tab is on ${siteOf(answer.pageUrl) || "no site"}`,
+        }
       : { ok: false, error: "network", detail: answer.detail };
   } catch (err) {
     context.signal?.throwIfAborted();
@@ -206,7 +233,10 @@ export function flowTierOrder(flow: SavedFlow, via: FlowInput["via"]): FlowTier[
   return flow.tier === "page" ? ["page", "http"] : order;
 }
 
-type Attempt = { tier: FlowTier; outcome: FlowOutcome | { kind: "unanswered"; error: string; detail?: string } };
+type Attempt = {
+  tier: FlowTier;
+  outcome: FlowOutcome | { kind: "unanswered"; error: string; detail?: string };
+};
 
 // A read moves on to the next tier after these; anything else is the answer.
 const NEXT_TIER = new Set(["unanswered", "auth", "blocked", "server_error", "not_json", "drift"]);
@@ -230,7 +260,8 @@ function attemptSummary(attempt: Attempt): string {
 function nextStepHint(attempts: Attempt[], flow: SavedFlow, via: FlowInput["via"]): string {
   const kinds = new Set(attempts.map((a) => a.outcome.kind));
   const pageNotOnSite = attempts.some(
-    (a) => a.tier === "page" && a.outcome.kind === "unanswered" && a.outcome.error === "not_on_site",
+    (a) =>
+      a.tier === "page" && a.outcome.kind === "unanswered" && a.outcome.error === "not_on_site",
   );
   if (kinds.has("drift")) {
     return "The site changed: do the task in the page, then flow_save again.";
@@ -267,7 +298,10 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
           ? await deviceTier(request, timeoutMs, context.signal)
           : await pageTier(request, context, timeoutMs);
     if (!answer.ok) {
-      attempts.push({ tier, outcome: { kind: "unanswered", error: answer.error, detail: answer.detail } });
+      attempts.push({
+        tier,
+        outcome: { kind: "unanswered", error: answer.error, detail: answer.detail },
+      });
       if (request.write && tier !== "page") {
         // A write that got no answer may still have been applied.
         break;
@@ -311,16 +345,17 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
         : "outcome_unknown"
       : last?.outcome.kind === "unanswered"
         ? last.outcome.error
-        : last?.outcome.kind ?? "failed";
+        : (last?.outcome.kind ?? "failed");
     return jsonResult({
       ok: false,
       error,
       flow: flow.name,
       verified: updated.verified,
       tried: attempts.map(attemptSummary),
-      hint: request.write && error === "outcome_unknown"
-        ? "The change may or may not have happened: check the site before running it again."
-        : nextStepHint(attempts, flow, input.via),
+      hint:
+        request.write && error === "outcome_unknown"
+          ? "The change may or may not have happened: check the site before running it again."
+          : nextStepHint(attempts, flow, input.via),
     });
   }
   const selected = selectFlowData(flow.shape, winner.data, {
@@ -333,7 +368,9 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
     payload: {
       flow: flow.name,
       via: winner.tier,
-      ...(selected.total !== undefined ? { total: selected.total, matched: selected.matched, returned: selected.returned } : {}),
+      ...(selected.total !== undefined
+        ? { total: selected.total, matched: selected.matched, returned: selected.returned }
+        : {}),
       ...(selected.truncated ? { truncated: true } : {}),
       ...(drifted ? { verified: false, drift: updated.drift } : {}),
       data: selected.data,
@@ -341,7 +378,12 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
   });
   return {
     content: [{ type: "text" as const, text: wrapped.wrappedText }],
-    details: { ...wrapped.safeDetails, flow: flow.name, via: winner.tier, verified: updated.verified },
+    details: {
+      ...wrapped.safeDetails,
+      flow: flow.name,
+      via: winner.tier,
+      verified: updated.verified,
+    },
   };
 }
 
@@ -388,13 +430,18 @@ async function saveFlow(input: FlowInput, context: FlowContext, root?: string) {
     request: `${flow.request.method} ${path}`,
     params: flow.params,
     ...(result.unusedParams.length > 0
-      ? { unusedParams: result.unusedParams, note: "These values were not in the saved request; they are not params." }
+      ? {
+          unusedParams: result.unusedParams,
+          note: "These values were not in the saved request; they are not params.",
+        }
       : {}),
     ...(flow.shape.items !== undefined
       ? { items: flow.shape.items || "(the body is the list)", itemFields: flow.shape.itemKeys }
       : { fields: flow.shape.keys }),
     ...(flow.request.write ? { write: true } : {}),
-    ...(flow.request.session ? { session: "the recording was signed in; runs fall back to the page for its cookies" } : {}),
+    ...(flow.request.session
+      ? { session: "the recording was signed in; runs fall back to the page for its cookies" }
+      : {}),
     candidates: result.candidates,
     run: `action=flow_run flow={name:"${flow.name}"${flow.params.length > 0 ? `, params:{${flow.params.map((p) => `${p}:…`).join(", ")}}` : ""}}`,
   });
@@ -431,7 +478,10 @@ export async function executeFlowAction(
         throw new Error("flow.name required");
       }
       const flow = await readFlow(input.name, input.site, root);
-      return jsonResult({ ok: flow ? await deleteFlow(flow.name, flow.site, root) : false, flow: input.name });
+      return jsonResult({
+        ok: flow ? await deleteFlow(flow.name, flow.site, root) : false,
+        flow: input.name,
+      });
     }
     case "flow_run": {
       if (!input.name) {
@@ -477,7 +527,10 @@ export async function appendSavedFlowsHint(
   if (!hint) {
     return result;
   }
-  const details = result.details && typeof result.details === "object" ? (result.details as Record<string, unknown>) : {};
+  const details =
+    result.details && typeof result.details === "object"
+      ? (result.details as Record<string, unknown>)
+      : {};
   return {
     content: [...result.content, { type: "text", text: hint.text }],
     details: { ...details, savedFlows: hint.flows },

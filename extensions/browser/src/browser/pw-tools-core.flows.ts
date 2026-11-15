@@ -28,7 +28,14 @@ export async function flowPageFetchViaPlaywright(opts: {
   body?: string;
   timeoutMs?: number;
 }): Promise<
-  | { ok: true; status: number; contentType?: string; retryAfter?: string; body: string; finalUrl: string }
+  | {
+      ok: true;
+      status: number;
+      contentType?: string;
+      retryAfter?: string;
+      body: string;
+      finalUrl: string;
+    }
   | { ok: false; error: "not_on_site" | "network"; detail?: string; pageUrl: string }
 > {
   const page = await getPageForTargetId(opts);
