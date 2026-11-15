@@ -80,10 +80,13 @@ describe("Claude CLI run diagnostics", () => {
     const runId = "settle-run";
     const diagnostics = captureLifecycle(runId);
     try {
-      await runClaudeCliAgentTurnWithDiagnostics({ runId, sessionId: "settle-session" }, async () => {
-        noteCliTurnEnded(runId, Date.now() - 180);
-        return { payloads: [{ text: "done" }], meta: { durationMs: 1 } };
-      });
+      await runClaudeCliAgentTurnWithDiagnostics(
+        { runId, sessionId: "settle-session" },
+        async () => {
+          noteCliTurnEnded(runId, Date.now() - 180);
+          return { payloads: [{ text: "done" }], meta: { durationMs: 1 } };
+        },
+      );
       await flushDiagnosticEvents();
       // Stage events are dispatched asynchronously, so only membership is fixed.
       const types = diagnostics.events.map(({ event }) => event.type);
@@ -98,8 +101,9 @@ describe("Claude CLI run diagnostics", () => {
       );
       const run = diagnostics.events.find(({ event }) => event.type === "run.started")?.event;
       const stage = diagnostics.events.find(({ event }) => event.type === "context.stages")?.event;
-      const [settle] = (stage as { stages: Array<{ name: string; startedAt: number; endedAt: number }> })
-        .stages;
+      const [settle] = (
+        stage as { stages: Array<{ name: string; startedAt: number; endedAt: number }> }
+      ).stages;
       expect(settle?.name).toBe(CLI_RUN_SETTLE_STAGE);
       expect(settle!.endedAt - settle!.startedAt).toBeGreaterThanOrEqual(180);
       expect(stage?.trace?.parentSpanId).toBe(run?.trace?.spanId);
