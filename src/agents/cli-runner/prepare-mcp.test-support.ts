@@ -345,7 +345,8 @@ export function registerCliMcpPreparationTests({
     });
     try {
       expect(resolveMcpLoopbackScopedTools).toHaveBeenCalledTimes(1);
-      expect(mintMcpLoopbackClientGrant.mock.calls[0]?.[0].preparedCatalog).toBe(preparedCatalog);
+      const minted = mintMcpLoopbackClientGrant.mock.calls[0]?.[0] as { preparedCatalog?: unknown };
+      expect(minted.preparedCatalog).toBe(preparedCatalog);
     } finally {
       await context.preparedBackend.cleanup?.();
     }
