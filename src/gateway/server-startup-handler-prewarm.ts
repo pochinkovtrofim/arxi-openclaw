@@ -2,18 +2,13 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { racePromiseWithAbortSignal } from "../infra/abort-signal.js";
 import type { GatewayScheduler } from "../infra/gateway-scheduler.js";
 import { getActiveGatewayRootWorkCount } from "../process/gateway-work-admission.js";
+import { runInDetachedAsyncContext } from "../shared/detached-async-context.js";
 import { scheduleGatewayIdleTask, type GatewayIdleTaskHandle } from "./server-idle-task.js";
 import type { GatewayStartupTrace } from "./server-startup-trace.js";
 
 const GATEWAY_HANDLER_PREWARM_RETRY_DELAY_MS = 250;
 
-const PREWARMED_HANDLER_METHODS = [
-  "chat.history",
-  "chat.send",
-  "sessions.list",
-  "agent",
-  "agent.wait",
-];
+const PREWARMED_HANDLER_METHODS = ["chat.history", "chat.send", "sessions.list"];
 
 type GatewayHandlerPrewarmItem = {
   name: string;
@@ -21,6 +16,57 @@ type GatewayHandlerPrewarmItem = {
   waitForIdle?: boolean;
   load: (isCancelled: () => boolean) => Promise<unknown>;
 };
+
+function handlerItem(method: string): GatewayHandlerPrewarmItem {
+  return {
+    name: method,
+    load: (isCancelled) =>
+      // Process-lifetime module state must not inherit this idle task's async context.
+      runInDetachedAsyncContext(async () => {
+        const [{ coreGatewayHandlers }, { prepareGatewayRequestHandler }] = await Promise.all([
+          import("./server-methods/core-handlers.js"),
+          import("./server-methods/lazy-core-handlers.js"),
+        ]);
+        if (!isCancelled()) {
+          const handler = coreGatewayHandlers[method];
+          if (!handler) {
+            throw new Error(`Gateway prewarm handler not found: ${method}`);
+          }
+          await prepareGatewayRequestHandler(handler);
+        }
+      }),
+  };
+}
+
+// Module loads only. No step reads sessions, spawns, reaches the network or memoizes auth,
+// PATH or version probes: a golden snapshot predates the per-boot PATH link. Each step is its
+// own item so work admission can close between steps and each has a trace name.
+function agentTurnModuleItems(): GatewayHandlerPrewarmItem[] {
+  const step = (name: string, load: () => Promise<unknown>): GatewayHandlerPrewarmItem => ({
+    name: `agent-turn.${name}`,
+    load: async (isCancelled) => {
+      if (!isCancelled()) {
+        await runInDetachedAsyncContext(load);
+      }
+    },
+  });
+  const loaders = () => import("../agents/command/runtime-loaders.js");
+  return [
+    step("attempt-execution", async () => (await loaders()).loadAttemptExecutionRuntime()),
+    step("delivery", async () => (await loaders()).loadDeliveryRuntime()),
+    step("session-store", async () => (await loaders()).loadSessionStoreRuntime()),
+    step("acp-manager", async () => (await loaders()).loadAcpManagerRuntime()),
+    step("cli-compaction", async () => (await loaders()).loadCliCompactionRuntime()),
+    step("skills", async () => (await loaders()).loadSkillsRuntime()),
+    step("exec-defaults", async () => (await loaders()).loadExecDefaultsRuntime()),
+    step("cli-deps", async () => (await loaders()).loadCliDepsRuntime()),
+    step("cli-prepare", () => import("../agents/cli-runner/prepare.runtime.js")),
+    step("cli-execute", () => import("../agents/cli-runner/execute.runtime.js")),
+    step("acp-workspace", () => import("../agents/acp-workspace-provisioning.js")),
+    step("model-catalog", () => import("../agents/model-catalog.runtime.js")),
+    step("chat-commands", () => import("../skills/discovery/chat-commands.runtime.js")),
+  ];
+}
 
 function gatewayPrewarmItems(getConfig: () => OpenClawConfig): GatewayHandlerPrewarmItem[] {
   return [
@@ -35,51 +81,11 @@ function gatewayPrewarmItems(getConfig: () => OpenClawConfig): GatewayHandlerPre
         }
       },
     },
-    ...PREWARMED_HANDLER_METHODS.map((method): GatewayHandlerPrewarmItem => ({
-      name: method,
-      load: async (isCancelled) => {
-        const [{ coreGatewayHandlers }, { prepareGatewayRequestHandler }] = await Promise.all([
-          import("./server-methods/core-handlers.js"),
-          import("./server-methods/lazy-core-handlers.js"),
-        ]);
-        if (!isCancelled()) {
-          const handler = coreGatewayHandlers[method];
-          if (!handler) {
-            throw new Error(`Gateway prewarm handler not found: ${method}`);
-          }
-          await prepareGatewayRequestHandler(handler);
-        }
-      },
-    })),
-    {
-      name: "agent-turn-modules",
-      load: async (isCancelled) => {
-        // Module loads only: no loader here reads sessions, spawns, reaches the network or
-        // memoizes auth, PATH or version probes (a golden snapshot predates the boot PATH link).
-        const loaders = await import("../agents/command/runtime-loaders.js");
-        const steps: Array<() => Promise<unknown>> = [
-          loaders.loadAttemptExecutionRuntime,
-          loaders.loadDeliveryRuntime,
-          loaders.loadSessionStoreRuntime,
-          loaders.loadAcpManagerRuntime,
-          loaders.loadCliCompactionRuntime,
-          loaders.loadSkillsRuntime,
-          loaders.loadExecDefaultsRuntime,
-          loaders.loadCliDepsRuntime,
-          () => import("../agents/cli-runner/prepare.runtime.js"),
-          () => import("../agents/cli-runner/execute.runtime.js"),
-          () => import("../agents/acp-workspace-provisioning.js"),
-          () => import("../agents/model-catalog.runtime.js"),
-          () => import("../skills/discovery/chat-commands.runtime.js"),
-        ];
-        for (const step of steps) {
-          if (isCancelled()) {
-            return;
-          }
-          await step();
-        }
-      },
-    },
+    // Agent turns first: a snapshot bake suspends the Gateway soon after readiness, and a
+    // restored Gateway starts the first owner turn at once, so later items may never run.
+    handlerItem("agent"),
+    ...agentTurnModuleItems(),
+    ...PREWARMED_HANDLER_METHODS.map(handlerItem),
     { name: "agent-events", load: () => import("./server-chat.js") },
     { name: "session-key", load: () => import("./server-session-key.js") },
     {

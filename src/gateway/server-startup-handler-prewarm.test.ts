@@ -122,10 +122,11 @@ describe("scheduleGatewayHandlerPrewarm", () => {
     mocks.getMemoryCapabilityRegistration.mockReturnValue({ pluginId: "memory-core" });
     const cfg: OpenClawConfig = { agents: { entries: {} } };
 
+    const warn = vi.fn();
     const sidecar = scheduleGatewayHandlerPrewarm({
       scheduler: createTestGatewayScheduler("fake-timers"),
       getConfig: () => cfg,
-      log: { warn: vi.fn() },
+      log: { warn },
     });
 
     try {
@@ -316,6 +317,26 @@ describe("scheduleGatewayHandlerPrewarm", () => {
     expect(requestLoad).toHaveBeenCalledOnce();
     expect(laterPrewarm).toHaveBeenCalledOnce();
     await expect(requestLoad()).resolves.toBe("request result");
+  });
+
+  it("stops loading agent-turn modules once the prewarm is cancelled", async () => {
+    vi.useFakeTimers();
+    let sidecar: ReturnType<typeof scheduleGatewayHandlerPrewarm> | undefined;
+    mocks.agentTurnLoaders.loadAttemptExecutionRuntime.mockImplementationOnce(async () => {
+      void sidecar?.stop();
+    });
+    sidecar = scheduleGatewayHandlerPrewarm({
+      scheduler: createTestGatewayScheduler("fake-timers"),
+      getConfig: () => ({ agents: { entries: {} } }),
+      log: { warn: vi.fn() },
+    });
+    do {
+      await vi.runAllTimersAsync();
+      await vi.dynamicImportSettled();
+    } while (vi.getTimerCount() > 0);
+    expect(mocks.agentTurnLoaders.loadAttemptExecutionRuntime).toHaveBeenCalledOnce();
+    expect(mocks.agentTurnLoaders.loadDeliveryRuntime).not.toHaveBeenCalled();
+    expect(mocks.listManagedPlugins).not.toHaveBeenCalled();
   });
 
   it("stops before scheduling another event-loop turn", async () => {
