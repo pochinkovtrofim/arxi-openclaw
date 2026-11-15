@@ -194,7 +194,9 @@ async function resolveNodeExecScope(
   if (!shouldResolveExec) {
     return params;
   }
-  const nodeExecAvailability = await loadNodeExecAvailability(params.signal);
+  const nodeExecAvailability = await measurePrepStage("mcp-node-exec", () =>
+    loadNodeExecAvailability(params.signal),
+  );
   params.assertCurrent();
   return { ...params, nodeExecAvailability };
 }
@@ -249,18 +251,22 @@ async function resolvePairedComputerNodeScope(
   // Resolve the actual configured surface before contacting Gateway. Grant policy
   // alone is insufficient: profile, agent, sandbox, sender, and Gateway policy
   // can all remove computer from the final catalog.
-  const policyResolved = await resolveMcpLoopbackTools(params, mode, adopted);
+  const policyResolved = await measurePrepStage("mcp-computer-catalog", () =>
+    resolveMcpLoopbackTools(params, mode, adopted),
+  );
   // Only a catalog built now may refresh the cached one's age.
   const freshBase = policyResolved === adopted ? undefined : policyResolved;
   params.assertCurrent();
   const computerAllowed = policyResolved.tools.some(
     (tool) => readMcpLoopbackToolName(tool) === "computer",
   );
-  const pairedComputerUseAvailability = await loadPairedComputerUseAvailabilityForSurface({
-    computerAllowed,
-    modelHasVision: params.context.modelHasVision,
-    signal: params.signal,
-  });
+  const pairedComputerUseAvailability = await measurePrepStage("mcp-paired-computer", () =>
+    loadPairedComputerUseAvailabilityForSurface({
+      computerAllowed,
+      modelHasVision: params.context.modelHasVision,
+      signal: params.signal,
+    }),
+  );
   params.assertCurrent();
   if (!pairedComputerUseAvailability) {
     return { params, policyResolved, baseCatalog: freshBase };
