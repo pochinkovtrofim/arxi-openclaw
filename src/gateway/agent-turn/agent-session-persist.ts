@@ -33,6 +33,7 @@ import {
   restoreCronPinnedExecGrant,
 } from "../../cron/scheduled-tool-policy.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
+import type { SessionWriteStep } from "../../infra/diagnostic-events.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { recordSessionCreated } from "../../sessions/session-created.js";
@@ -89,6 +90,8 @@ export type AgentSessionPersistResult = {
   restoredCronContinuation?: RestoredCronContinuation;
 };
 
+export type AgentSessionPersistStep = Exclude<SessionWriteStep, "skill_library_selection">;
+
 export async function persistAgentSessionPhase(params: {
   freshChild?: boolean;
   assertAdmissionCurrent?: () => void;
@@ -121,6 +124,8 @@ export async function persistAgentSessionPhase(params: {
   expectedSession: Parameters<typeof assertExpectedExistingSession>[0]["constraint"];
   maintenanceConfig: SessionEntryPatchOptions["maintenanceConfig"];
   abortForLifecycleRotation: (target?: { sessionKey?: string; agentId?: string }) => boolean;
+  /** Measurement only: called with a fixed step name after an awaited step. Must not throw. */
+  onStep?: (step: AgentSessionPersistStep) => void;
   assertGatewayWorkAdmissionAllowed: () => void;
   respondToGatewayAdmissionOutcome: () => boolean;
   setCronContinuationClaim: (claim: CronContinuationClaim) => void;
@@ -307,6 +312,7 @@ export async function persistAgentSessionPhase(params: {
         });
       }
       patchBuild = await params.buildSessionPatch(entryForPatch);
+      params.onStep?.("session_patch_build");
       if (
         resetReason &&
         (patchBuild.automaticResetReason !== resetReason ||
@@ -476,6 +482,7 @@ export async function persistAgentSessionPhase(params: {
       }
       throw err;
     }
+    params.onStep?.("session_store_commit");
     if (abortForLifecycleRotation()) {
       return undefined;
     }
@@ -523,6 +530,7 @@ export async function persistAgentSessionPhase(params: {
       agentId: params.sessionAgentId,
       entry: sessionEntry,
     });
+    params.onStep?.("session_created_record");
   }
   if (isNewSession && params.entry?.sessionId && resolvedSessionId !== params.entry.sessionId) {
     supersededSessionId = params.entry.sessionId;

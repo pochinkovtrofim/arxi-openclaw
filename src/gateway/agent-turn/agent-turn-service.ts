@@ -15,8 +15,14 @@ import {
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
-import type { GatewayTurnCheckpoint, GatewayTurnStage } from "../../infra/diagnostic-events.js";
+import type {
+  GatewayTurnCheckpoint,
+  GatewayTurnStage,
+  PreflightStepMoment,
+  SessionWriteStep,
+} from "../../infra/diagnostic-events.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
+import { createPreflightStepRecorder } from "../../infra/preflight-step-recorder.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import { discardPreparedInboundMedia, type OffloadedRef } from "../chat-attachments.js";
 import { errorShapeFromError } from "../error-shape.js";
@@ -133,8 +139,8 @@ export function createAgentTurnService(
     const rpcCheckpoints: GatewayTurnCheckpoint[] = [
       { stage: "gateway_preflight", at: promptedAt },
     ];
-    const checkpoint = (stage: GatewayTurnStage) => {
-      rpcCheckpoints.push({ stage, at: Date.now() });
+    const checkpoint = (stage: GatewayTurnStage, steps?: ReadonlyArray<PreflightStepMoment>) => {
+      rpcCheckpoints.push({ stage, at: Date.now(), ...(steps?.length ? { steps } : {}) });
     };
     const routing = await prepareAgentRequestRouting({
       ...preflight,
@@ -444,7 +450,15 @@ export function createAgentTurnService(
           if (admissionController.respondToOutcome()) {
             return;
           }
+          const sessionWriteSteps = createPreflightStepRecorder<SessionWriteStep>();
+          const creation = await prepareSkillLibrarySessionCreation(
+            principal,
+            () => context.getRuntimeConfig(),
+            resolveAgentRunSessionCreation(principal),
+          );
+          sessionWriteSteps.record("skill_library_selection");
           const persistedSession = await persistAgentSessionPhase({
+            onStep: sessionWriteSteps.record,
             freshChild: preparedSession.freshChild,
             onSessionCommitted: (committedEntry) => {
               session.sessionEntry = committedEntry;
@@ -463,11 +477,7 @@ export function createAgentTurnService(
             canonicalSessionKey,
             sessionAgentId,
             mainSessionKey,
-            creation: await prepareSkillLibrarySessionCreation(
-              principal,
-              () => context.getRuntimeConfig(),
-              resolveAgentRunSessionCreation(principal),
-            ),
+            creation,
             ...(principal?.authenticatedUserProfile
               ? { requestingOperatorProfileId: principal.authenticatedUserProfile.profileId }
               : {}),
@@ -496,7 +506,7 @@ export function createAgentTurnService(
             },
             respond,
           });
-          checkpoint("gateway_session_write");
+          checkpoint("gateway_session_write", sessionWriteSteps.steps);
           if (!persistedSession) {
             return;
           }

@@ -99,7 +99,12 @@ vi.mock("./agent-admission-controller.js", () => ({
   }),
 }));
 vi.mock("./agent-session-persist.js", () => ({
-  persistAgentSessionPhase: takes(60, { resolvedSessionId: "s1" }),
+  persistAgentSessionPhase: async (params: { onStep?: (step: string) => void }) => {
+    fakeClock.tick(40);
+    params.onStep?.("session_store_commit");
+    fakeClock.tick(20);
+    return { resolvedSessionId: "s1" };
+  },
 }));
 vi.mock("./agent-delivery-phase.js", () => ({
   resolveAgentDeliveryPhase: takes(70, { activeSessionAgentId: "main" }),
@@ -172,5 +177,24 @@ it("hands the moment each Gateway step finished to the run, in order", async () 
     ["gateway_session_write", 1_215],
     ["gateway_delivery", 1_285],
     ["gateway_dispatch", 1_365],
+  ]);
+});
+
+it("carries the session write's step moments with its checkpoint, and no other", async () => {
+  await start();
+  await vi.waitFor(() => expect(startExecution).toHaveBeenCalledOnce());
+  const params = startExecution.mock.calls[0]?.[0] as {
+    rpcCheckpoints: Array<{ stage: string; steps?: Array<{ step: string; at: number }> }>;
+  };
+  expect(
+    params.rpcCheckpoints.filter((checkpoint) => checkpoint.steps).map((c) => [c.stage, c.steps]),
+  ).toEqual([
+    [
+      "gateway_session_write",
+      [
+        { step: "skill_library_selection", at: 1_155 },
+        { step: "session_store_commit", at: 1_195 },
+      ],
+    ],
   ]);
 });

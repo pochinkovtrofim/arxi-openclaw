@@ -147,3 +147,59 @@ it("closes stages at recorded moments, skipping those out of order or outside th
     expect(event.trace).toMatchObject({ traceId: trace.traceId, parentSpanId: trace.spanId });
   }
 });
+
+it("emits sub-stages contiguous inside a closed stage's window, one child span each", () => {
+  vi.useFakeTimers({ now: 50_000 });
+  const trace = createDiagnosticTraceContext();
+  runWithDiagnosticTraceContext(trace, () => {
+    const stages = createReplyPreflightStages({ startedAt: 49_000 });
+    stages.markAt("gateway_routing", 49_100);
+    const window = stages.markAt("gateway_storage", 49_900);
+    expect(window).toEqual({ startedAt: 49_100, endedAt: 49_900 });
+    stages.subStages(
+      "gateway_storage",
+      [
+        { step: "runtime_config", at: 49_300 },
+        { step: "plugin_metadata", at: 49_200 }, // before the cursor
+        { step: "session_resolve", at: 49_700 },
+        { step: "workspace_ensure", at: 49_950 },
+        { step: "skill_commands", at: Number.NaN },
+        { step: "Bad-Name" as never, at: 49_800 }, // outside the closed step pattern
+        { step: "worktree_lease", at: 49_900 },
+      ],
+      window,
+    );
+    stages.subStages("gateway_storage", [{ step: "command_entry", at: 49_500 }], undefined);
+    stages.mark("gateway_rpc");
+  });
+  const events = emitTrustedDiagnosticEvent.mock.calls.map(([event]) => event);
+  expect(events.map((event) => [event.stage, event.startedAt, event.durationMs])).toEqual([
+    ["gateway_routing", 49_000, 100],
+    ["gateway_storage", 49_100, 800],
+    ["gateway_storage.runtime_config", 49_100, 200],
+    ["gateway_storage.session_resolve", 49_300, 400],
+    ["gateway_storage.worktree_lease", 49_700, 200],
+    ["gateway_rpc", 49_900, 100],
+  ]);
+  expect(new Set(events.map((event) => event.trace.spanId)).size).toBe(6);
+  for (const event of events) {
+    expect(event.trace).toMatchObject({ traceId: trace.traceId, parentSpanId: trace.spanId });
+  }
+});
+
+it("pins the step pattern", async () => {
+  const { REPLY_PREFLIGHT_STEP_PATTERN } = await import("../../infra/diagnostic-events.js");
+  expect(REPLY_PREFLIGHT_STEP_PATTERN.source).toBe("^[a-z0-9_]{1,40}$");
+});
+
+it("emits no sub-stages outside a traced reply", () => {
+  runWithDiagnosticTraceContext(undefined, () => {
+    const stages = createReplyPreflightStages({ startedAt: Date.now() - 100 });
+    stages.subStages(
+      "command_prepare",
+      [{ step: "command_entry", at: Date.now() - 50 }],
+      stages.mark("prepare"),
+    );
+  });
+  expect(emitTrustedDiagnosticEvent).not.toHaveBeenCalled();
+});

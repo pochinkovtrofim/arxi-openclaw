@@ -23,7 +23,9 @@ import {
   captureAgentRunLifecycleGeneration,
   withAgentRunLifecycleGeneration,
 } from "../infra/agent-events.js";
+import type { CommandPrepareStep } from "../infra/diagnostic-events.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import { createPreflightStepRecorder } from "../infra/preflight-step-recorder.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
@@ -687,7 +689,11 @@ async function agentCommandFromIngressInternal(
   });
   if (opts.rpcReceivedAt !== undefined) {
     for (const checkpoint of opts.rpcCheckpoints ?? []) {
-      preflightStages.markAt(checkpoint.stage, checkpoint.at);
+      preflightStages.subStages(
+        checkpoint.stage,
+        checkpoint.steps,
+        preflightStages.markAt(checkpoint.stage, checkpoint.at),
+      );
     }
     preflightStages.mark("gateway_rpc");
   }
@@ -703,12 +709,18 @@ async function agentCommandFromIngressInternal(
           senderIsOwner: opts.senderIsOwner === true,
         },
         prepare: async (preparedOpts) => {
+          const phases = createPreflightStepRecorder<CommandPrepareStep>();
           const prepared = await prepareAgentCommandExecution(
             preparedOpts,
             ingressRuntime,
             runtimeContext,
+            phases.record,
           );
-          preflightStages.mark("command_prepare");
+          preflightStages.subStages(
+            "command_prepare",
+            phases.steps,
+            preflightStages.mark("command_prepare"),
+          );
           return prepared;
         },
         restoreAdmittedRecovery: recovery?.restoreAdmittedRecovery,

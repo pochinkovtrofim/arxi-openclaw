@@ -128,13 +128,53 @@ export type GatewayTurnStage = Exclude<
   "gateway_rpc"
 >;
 
+/** Closed step labels (code constants, never data); a new label is added here first. */
+export type CommandPrepareStep =
+  | "command_entry"
+  | "runtime_config"
+  | "database_admission"
+  | "recipient_session"
+  | "session_resolve"
+  | "acp_runtime_load"
+  | "acp_session_resolve"
+  | "plugin_metadata"
+  | "stable_reply_mode"
+  | "worktree_resolve"
+  | "worktree_lease"
+  | "workspace_provisioning"
+  | "workspace_ensure"
+  | "skill_commands";
+export type SessionWriteStep =
+  | "skill_library_selection"
+  | "session_patch_build"
+  | "session_store_commit"
+  | "session_created_record";
+export type PreflightStep = CommandPrepareStep | SessionWriteStep;
+
+/** What a sub-stage step name may look like; the host and guest accept the same pattern. */
+export const REPLY_PREFLIGHT_STEP_PATTERN = /^[a-z0-9_]{1,40}$/;
+
+/**
+ * A sub-stage inside a stage's window, named `<parent>.<step>`. The step is a fixed code
+ * constant (`^[a-z0-9_]{1,40}$`), never data; the parent stays as it is.
+ */
+export type ReplyPreflightSubStage = `${(typeof REPLY_PREFLIGHT_STAGES)[number]}.${string}`;
+
+/** The moment a step inside a stage finished. No content. */
+export type PreflightStepMoment = { step: PreflightStep; at: number };
+
 /** The moment a Gateway turn step finished, closing `stage`. No content. */
-export type GatewayTurnCheckpoint = { stage: GatewayTurnStage; at: number };
+export type GatewayTurnCheckpoint = {
+  stage: GatewayTurnStage;
+  at: number;
+  /** Moments of the steps inside this stage's window, in order. */
+  steps?: ReadonlyArray<PreflightStepMoment>;
+};
 
 /** One finished stage of a reply before its agent run starts. No content. */
 type DiagnosticReplyPreflightStageEvent = DiagnosticSessionEvent & {
   type: "reply.preflight.stage";
-  stage: (typeof REPLY_PREFLIGHT_STAGES)[number];
+  stage: (typeof REPLY_PREFLIGHT_STAGES)[number] | ReplyPreflightSubStage;
   durationMs: number;
   /** When the stage began (epoch ms): a stage closed at a recorded moment is emitted later. */
   startedAt?: number;

@@ -1,6 +1,9 @@
 import {
   emitTrustedDiagnosticEvent,
+  type PreflightStepMoment,
+  REPLY_PREFLIGHT_STEP_PATTERN,
   type REPLY_PREFLIGHT_STAGES,
+  type ReplyPreflightSubStage,
 } from "../../infra/diagnostic-events.js";
 import {
   createChildDiagnosticTraceContext,
@@ -10,6 +13,9 @@ import {
 
 // guest_dispatch is reported by the guest service, never marked here.
 type ReplyPreflightStage = Exclude<(typeof REPLY_PREFLIGHT_STAGES)[number], "guest_dispatch">;
+
+/** The span a closed stage covered (epoch ms). */
+export type ReplyPreflightWindow = { startedAt: number; endedAt: number };
 
 /**
  * Times a turn from the moment it is taken up to its agent run as consecutive stages:
@@ -21,18 +27,18 @@ export function createReplyPreflightStages(params: { startedAt?: number; session
   let stageStartedAt = params.startedAt ?? Date.now();
   let memoryFlushed = false;
   let compacting = false;
-  const mark = (stage: ReplyPreflightStage, at?: number) => {
-    const endedAt = at ?? Date.now();
-    const startedAt = stageStartedAt;
-    const durationMs = Math.max(0, endedAt - startedAt);
-    stageStartedAt = endedAt;
+  const emit = (
+    stage: ReplyPreflightStage | ReplyPreflightSubStage,
+    startedAt: number,
+    endedAt: number,
+  ) => {
     if (!trace) {
       return;
     }
     emitTrustedDiagnosticEvent({
       type: "reply.preflight.stage",
       stage,
-      durationMs,
+      durationMs: Math.max(0, endedAt - startedAt),
       // A stage closed at a recorded moment is emitted later than it ended, so it
       // carries its start rather than leaving the reader to infer it from now.
       startedAt,
@@ -40,18 +46,55 @@ export function createReplyPreflightStages(params: { startedAt?: number; session
       trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(trace)),
     });
   };
+  const mark = (stage: ReplyPreflightStage, at?: number): ReplyPreflightWindow => {
+    const endedAt = at ?? Date.now();
+    const startedAt = stageStartedAt;
+    stageStartedAt = endedAt;
+    emit(stage, startedAt, endedAt);
+    return { startedAt, endedAt };
+  };
   return {
+    /** Closes the open stage now and returns the window it covered. */
     mark: (stage: ReplyPreflightStage) => mark(stage),
     /**
      * Closes a stage at a recorded moment. A moment before the open stage began or after
      * now would break the contiguous timeline, so it is skipped; its time then counts
      * toward the next stage that closes.
      */
-    markAt: (stage: ReplyPreflightStage, at: number) => {
+    markAt: (stage: ReplyPreflightStage, at: number): ReplyPreflightWindow | undefined => {
       if (!Number.isFinite(at) || at < stageStartedAt || at > Date.now()) {
+        return undefined;
+      }
+      return mark(stage, at);
+    },
+    /**
+     * Emits `<parent>.<step>` detail inside a closed stage's window, contiguous from its
+     * start: each step ends at its recorded moment and begins where the previous one
+     * ended. A moment before the cursor, after the window or not finite is skipped (its
+     * time counts toward the next step), as is a step name outside the closed pattern.
+     * Coverage detail only; the parent stage is unchanged.
+     */
+    subStages: (
+      parent: ReplyPreflightStage,
+      steps: ReadonlyArray<PreflightStepMoment> | undefined,
+      window: ReplyPreflightWindow | undefined,
+    ) => {
+      if (!steps || !window) {
         return;
       }
-      mark(stage, at);
+      let cursor = window.startedAt;
+      for (const { step, at } of steps) {
+        if (
+          !REPLY_PREFLIGHT_STEP_PATTERN.test(step) ||
+          !Number.isFinite(at) ||
+          at < cursor ||
+          at > window.endedAt
+        ) {
+          continue;
+        }
+        emit(`${parent}.${step}`, cursor, at);
+        cursor = at;
+      }
     },
     /** Wraps the memory checkpoint that the cold-cache or token compaction runs first. */
     memoryFlush: async <T>(run: () => Promise<T>): Promise<T> => {
