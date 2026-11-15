@@ -2037,9 +2037,13 @@ describe("requester-scoped MCP connection resolution", () => {
       const clock = vi.spyOn(Date, "now").mockImplementation(time.clock.now);
 
       const resolverApi = resolverRegistry.apiFor("test-plugin");
+      let resolves = 0;
       resolverApi.registerMcpServerConnectionResolver({
         serverName: "user-mail",
-        resolve: async () => ({ url: "https://mcp.example.test/user" }),
+        resolve: async () => {
+          resolves += 1;
+          return { url: "https://mcp.example.test/user" };
+        },
       });
       const scheduler = createTestGatewayScheduler(time.clock);
       const manager = createSessionMcpRuntimeManager({ scheduler });
@@ -2067,6 +2071,9 @@ describe("requester-scoped MCP connection resolution", () => {
 
         const reused = expectDefined(await getRuntime(), "admitted MCP runtime");
         expect(reused.lastUsedAt).toBe(time.clock.now());
+        // Past the revalidation window the turn is served at once; its re-resolution
+        // settles before the clock moves on.
+        await vi.waitFor(() => expect(resolves).toBe(2));
         await time.advanceBy(1_200_000 - 1);
         expect(await manager.sweepIdleRuntimes()).toBe(0);
         const release = expectDefined(reused.acquireLease, "MCP runtime lease")();
@@ -2349,6 +2356,10 @@ describe("requester-scoped MCP connection resolution", () => {
       expect(disposed).toEqual([]);
       expect(manager.listRuntimeKeys().some((key) => key.startsWith("{"))).toBe(true);
       clock.setTime(clock.clock.now() + 1);
+      // Past the window the turn is served at once; the re-resolution after it revokes,
+      // and the next turn gets the static part only.
+      await manager.getOrCreate(params);
+      await vi.waitFor(() => expect(disposed).toContain("scoped"));
       const after = await manager.getOrCreate(params);
 
       expect(disposed).toContain("scoped");

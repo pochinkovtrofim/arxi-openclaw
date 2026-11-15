@@ -1,4 +1,5 @@
-import { measurePrepStage } from "../infra/run-prep-stages.js";
+import { measurePrepStage, outsidePrepStages } from "../infra/run-prep-stages.js";
+import { logWarn } from "../logger.js";
 import type { BundleMcpServerConfig } from "../plugins/bundle-mcp.types.js";
 import type {
   SessionMcpConfigPublication,
@@ -28,6 +29,11 @@ import {
 type RuntimeEntryParams = Omit<Parameters<CreateSessionMcpRuntime>[0], "configFingerprint"> & {
   configReloadAtAdmission?: SessionMcpConfigPublication;
   runtimeKey: string;
+  /**
+   * The re-resolution that runs after a served turn: it resolves in this call and is
+   * not a use of the runtime, so it neither extends idle time nor settles retirement.
+   */
+  background?: boolean;
 };
 
 type RequesterRuntimeParams = RuntimeEntryParams & {
@@ -96,6 +102,14 @@ export function createSessionMcpRuntimeManagerInstall(
     allowMcpAppModelContext(runtime);
   };
 
+  /** A real use of the runtime; the background re-resolution is not one. */
+  const markReused = (params: RuntimeEntryParams, runtime: SessionMcpRuntime) => {
+    if (!params.background) {
+      reconcileReusableRetirement(params, runtime);
+      runtime.markUsed();
+    }
+  };
+
   /** Install under the runtime-key queue shared by acquisition and disposal. */
   const getOrCreateRuntimeEntry = async (
     params: RuntimeEntryParams,
@@ -106,15 +120,14 @@ export function createSessionMcpRuntimeManagerInstall(
       params.requesterConnect,
     );
     const hasServers = Object.keys(config.loaded.mcpServers).length > 0;
-    const { runtimeKey, configReloadAtAdmission, ...runtimeParams } = params;
+    const { runtimeKey, configReloadAtAdmission, background, ...runtimeParams } = params;
     const existing = store.runtimesBySessionId.get(runtimeKey);
     const connectionMatches =
       !params.connectionOverrides ||
       store.connectionMetaByRuntimeKey.get(runtimeKey)?.connectionHash ===
         hashMcpResolvedConnections(params.connectionOverrides);
     if (existing && connectionMatches && matchesRuntime(existing, params, nextFingerprint)) {
-      reconcileReusableRetirement(params, existing);
-      existing.markUsed();
+      markReused(params, existing);
       return existing;
     }
     const slot = lifecycle.reserveRuntimeSlot(existing, hasServers);
@@ -156,7 +169,9 @@ export function createSessionMcpRuntimeManagerInstall(
         await lifecycle.releaseEmptyRuntimeSlot(runtimeKey, runtime);
       }
       reconcileReusableRetirement(params, runtime);
-      runtime.markUsed();
+      if (!background) {
+        runtime.markUsed();
+      }
       return runtime;
     } catch (error) {
       store.runtimesBySessionId.delete(runtimeKey);
@@ -235,6 +250,55 @@ export function createSessionMcpRuntimeManagerInstall(
       meta.resolutionContextKey === resolutionContextKey &&
       store.scheduler.now() - meta.resolvedAt < resolveMcpConnectionRevalidateMs();
     if (withinRevalidateWindow && existing && matchesRuntime(existing, params, scopedFingerprint)) {
+      markReused(params, existing);
+      return existing;
+    }
+    // Past the window, the installed runtime serves this turn at once and the
+    // re-resolution runs right after it, on this runtime key's queue: a turn never
+    // waits on a resolver's round trip (about 0.4 s for a host bearer). A revocation
+    // the re-resolution finds applies from the next turn on; calls already renew
+    // their credential before each request and fail once it is revoked.
+    if (
+      !params.background &&
+      meta !== undefined &&
+      meta.resolutionContextKey === resolutionContextKey &&
+      existing &&
+      store.runtimesBySessionId.get(params.runtimeKey) === existing &&
+      matchesRuntime(existing, params, scopedFingerprint)
+    ) {
+      if (!meta.revalidating) {
+        meta.revalidating = true;
+        // The turn does not wait for it, so it is not one of the turn's preparation stages.
+        const revalidation = outsidePrepStages(() =>
+          lifecycle.runExclusiveOnRuntimeKeys([params.runtimeKey], async () => {
+            store.scheduler.signal.throwIfAborted();
+            // Only the runtime this turn was served still needs it: a disposal,
+            // retirement or config publication queued meanwhile wins, and the next
+            // real turn resolves with current inputs.
+            if (
+              store.runtimesBySessionId.get(params.runtimeKey) !== existing ||
+              store.requiredRetirementSessionIds.has(params.sessionId) ||
+              store.deferredRetirementSessionIds.has(params.sessionId) ||
+              store.configReload !== params.configReloadAtAdmission
+            ) {
+              return;
+            }
+            // The turn's own diagnostics sink has been read by now.
+            const { onResolverUnavailable: _turnSink, ...current } = params;
+            await resolveAndInstallRequesterRuntime({ ...current, background: true });
+          }),
+        );
+        void revalidation
+          .catch((error: unknown) => {
+            logWarn(`bundle-mcp: background connection revalidation failed: ${String(error)}`);
+          })
+          .finally(() => {
+            const current = store.connectionMetaByRuntimeKey.get(params.runtimeKey);
+            if (current) {
+              current.revalidating = false;
+            }
+          });
+      }
       reconcileReusableRetirement(params, existing);
       existing.markUsed();
       return existing;
@@ -282,8 +346,7 @@ export function createSessionMcpRuntimeManagerInstall(
       matchesRuntime(existing, params, scopedFingerprint)
     ) {
       meta.failingSince = failingSince;
-      reconcileReusableRetirement(params, existing);
-      existing.markUsed();
+      markReused(params, existing);
       return existing;
     }
     const activeNameSet = new Set([
@@ -302,6 +365,7 @@ export function createSessionMcpRuntimeManagerInstall(
       installRequesterRuntime({
         runtimeKey: params.runtimeKey,
         configReloadAtAdmission: params.configReloadAtAdmission,
+        background: params.background,
         sessionId: params.sessionId,
         sessionKey: params.sessionKey,
         agentId: params.agentId,
