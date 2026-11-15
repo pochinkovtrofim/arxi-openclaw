@@ -5,11 +5,13 @@ import { replaceSessionEntry } from "../../config/sessions/session-accessor.js";
 import * as sessionEntryReads from "../../config/sessions/session-entry-read-runtime.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
+import * as mediaProbe from "../../media/media-probe.js";
 import {
   createOpenClawTestState,
   type OpenClawTestState,
 } from "../../test-utils/openclaw-test-state.js";
 import { createChatRunState } from "../server-chat-state.js";
+import * as audioUnderstanding from "./agent-audio-understanding.js";
 import { prepareAgentContentPhase } from "./agent-content-phase.js";
 import type { AgentTurnContext } from "./types.js";
 
@@ -143,6 +145,7 @@ it.each([
       "voice_wake_routing",
       "attachment_parse",
       "audio_understanding",
+      "media_probe",
     ]);
     expect(result).toMatchObject({
       agentId,
@@ -155,3 +158,81 @@ it.each([
     });
   },
 );
+
+it("transcribes a voice note while its duration probe runs", async () => {
+  state = await createOpenClawTestState({ label: "agent-content-voice" });
+  const { stateDir, workspaceDir } = state;
+  const cfg: OpenClawConfig = {
+    agents: { defaults: { workspace: workspaceDir } },
+    plugins: { enabled: false },
+  };
+  await state.writeConfig(cfg);
+  setRuntimeConfigSnapshot(cfg);
+  let finishProbe!: () => void;
+  const probeHeld = new Promise<void>((resolve) => {
+    finishProbe = resolve;
+  });
+  vi.spyOn(mediaProbe, "probeMediaFilesWithinBudget").mockImplementation(async (inputs) => {
+    await probeHeld;
+    return inputs.map(() => ({ durationMs: 4200 }));
+  });
+  // Transcription starts while the probe is held; awaiting the probe first
+  // would never reach it.
+  vi.spyOn(audioUnderstanding, "applyAgentAudioUnderstanding").mockImplementation(async () => {
+    finishProbe();
+    return { applied: true, message: "synthetic transcript" };
+  });
+  const context: AgentTurnContext = {
+    addChatRun: vi.fn(),
+    agentRunSeq: new Map(),
+    broadcast: vi.fn(),
+    broadcastToConnIds: vi.fn(),
+    chatAbortControllers: new Map(),
+    chatQueuedTurns: new Map(),
+    chatRunState: createChatRunState(),
+    dedupe: new Map(),
+    deps: {},
+    getRuntimeConfig: () => cfg,
+    trackExecution: async (work) => await work(),
+    getSessionEventSubscriberConnIds: () => new Set(),
+    loadGatewayModelCatalog: vi.fn(async () => []),
+    loadGatewayModelCatalogSnapshot: vi.fn(async () => ({
+      agentId: "main",
+      agentDir: stateDir,
+      workspaceDir,
+      catalogComplete: true,
+      config: cfg,
+      entries: [],
+      routeVariants: [],
+    })),
+    logGateway: createSubsystemLogger("test/agent-content-voice"),
+    nodeSendToSession: vi.fn(),
+    removeChatRun: vi.fn(() => undefined),
+  };
+  const respond = vi.fn();
+  const result = await prepareAgentContentPhase({
+    request: { message: "", agentId: "main", sessionKey: "main", idempotencyKey: "voice-note" },
+    cfg,
+    context,
+    respond,
+    isRawModelRun: false,
+    requestedSessionKeyRaw: "main",
+    requestedSessionKey: "main",
+    agentId: "main",
+    knownAgents: ["main"],
+    normalizedAttachments: [
+      {
+        type: "audio",
+        mimeType: "audio/mpeg",
+        fileName: "voice.mp3",
+        content: Buffer.from("audio-fixture").toString("base64"),
+      },
+    ],
+  });
+  expect(respond).not.toHaveBeenCalled();
+  expect(result).toMatchObject({
+    message: "synthetic transcript",
+    media: [expect.objectContaining({ durationMs: 4200 })],
+  });
+  expect(result).not.toHaveProperty("probedMedia");
+});
