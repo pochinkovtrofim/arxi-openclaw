@@ -444,20 +444,15 @@ describe("MCP loopback Computer Use schema", () => {
   });
 });
 
-describe("MCP loopback catalog is built once per turn", () => {
+describe("MCP loopback catalog build count", () => {
   type PreparedComputer = Parameters<typeof createComputerTool>[0];
-  const grantChecks: Array<(() => boolean) | undefined> = [];
-
   function computerScoped({
     cfg,
     pairedNodeComputerUse,
-    isGrantCurrent,
   }: {
     cfg: { tools?: { deny?: string[] } };
     pairedNodeComputerUse?: NonNullable<PreparedComputer>["pairedNodeComputerUse"];
-    isGrantCurrent?: () => boolean;
   }) {
-    grantChecks.push(isGrantCurrent);
     const computerDenied = cfg.tools?.deny?.includes("computer");
     return {
       agentId: "main",
@@ -475,7 +470,6 @@ describe("MCP loopback catalog is built once per turn", () => {
   }
 
   beforeEach(() => {
-    grantChecks.length = 0;
     resolveGatewayScopedTools.mockImplementation(computerScoped);
   });
 
@@ -522,96 +516,38 @@ describe("MCP loopback catalog is built once per turn", () => {
     expect(listNodes).not.toHaveBeenCalled();
   });
 
-  it.each([
-    { name: "a paired node", nodes: [computerNode("windows-node", ["screenshot", "launch_app"])] },
-    { name: "no node", nodes: [] },
-  ])("prepare builds once and the first loopback request adopts it: $name", async ({ nodes }) => {
-    listNodes.mockResolvedValue(nodes);
-    const prepared = await resolveMcpLoopbackScopedTools(ownerScope());
-    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
-    expect(prepared.preparedCatalog).toBeDefined();
-
+  it("re-checks computer from the cached catalog on later requests of a grant", async () => {
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot", "launch_app"])]);
     const cache = new McpLoopbackToolCache();
-    const isGrantCurrent = vi.fn(() => true);
-    const first = await cache.resolve({
-      ...ownerScope(),
-      grantToken: "grant-a",
-      isGrantCurrent,
-      preparedCatalog: prepared.preparedCatalog,
-    });
-    const second = await cache.resolve({ ...ownerScope(), grantToken: "grant-a" });
+    const scope = { ...ownerScope(), grantToken: "grant-a" };
+
+    const first = await cache.resolve(scope);
+    const second = await cache.resolve(scope);
 
     expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
     expect(second).toBe(first);
-    expect(first.tools.map((tool) => tool.name)).toEqual(["message", "computer"]);
-    if (nodes.length > 0) {
-      expect(readComputerActions(first)).toEqual(expect.arrayContaining(["launch_app"]));
-    }
-    // The prepared tools answer to the row that adopted them, not to anything earlier.
-    expect(grantChecks[0]?.()).toBe(true);
-    isGrantCurrent.mockReturnValue(false);
-    expect(grantChecks[0]?.()).toBe(false);
+    expect(listNodes).toHaveBeenCalledTimes(2);
   });
 
-  it("never reuses another turn's catalog or adopts twice", async () => {
-    const turnA = await resolveMcpLoopbackScopedTools(ownerScope({ currentMessageId: "m-a" }));
+  it("re-creates only computer when node availability changes", async () => {
     const cache = new McpLoopbackToolCache();
+    const scope = { ...ownerScope(), grantToken: "grant-a" };
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot"])]);
+    expect(readComputerActions(await cache.resolve(scope))).not.toContain("launch_app");
 
-    // A different message id is a different turn: the key differs, so the loopback builds.
-    await cache.resolve({
-      ...ownerScope({ currentMessageId: "m-b" }),
-      grantToken: "grant-b",
-      preparedCatalog: turnA.preparedCatalog,
-    });
-    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
-
-    // The matching grant adopts once; a second grant presenting it builds fresh.
-    await cache.resolve({
-      ...ownerScope({ currentMessageId: "m-a" }),
-      grantToken: "grant-a",
-      preparedCatalog: turnA.preparedCatalog,
-    });
-    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
-    await cache.resolve({
-      ...ownerScope({ currentMessageId: "m-a" }),
-      grantToken: "grant-c",
-      preparedCatalog: turnA.preparedCatalog,
-    });
-    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(3);
-  });
-
-  it("treats a pending native authority like an absent one and a captured list as different", async () => {
-    const prepared = await resolveMcpLoopbackScopedTools(ownerScope());
-    const cache = new McpLoopbackToolCache();
-    await cache.resolve({
-      ...ownerScope({ nativeCronCreatorToolAllowlist: null }),
-      grantToken: "grant-pending",
-      preparedCatalog: prepared.preparedCatalog,
-    });
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot", "launch_app"])]);
+    expect(readComputerActions(await cache.resolve(scope))).toContain("launch_app");
     expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
-
-    const other = await resolveMcpLoopbackScopedTools(ownerScope());
-    await cache.resolve({
-      ...ownerScope({ nativeCronCreatorToolAllowlist: ["read"] }),
-      grantToken: "grant-captured",
-      preparedCatalog: other.preparedCatalog,
-    });
-    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(3);
   });
 
-  it("evictGrant clears the adopted catalog", async () => {
-    const prepared = await resolveMcpLoopbackScopedTools(ownerScope());
+  it("evictGrant clears the cached pre-availability catalog too", async () => {
     const cache = new McpLoopbackToolCache();
-    await cache.resolve({
-      ...ownerScope(),
-      grantToken: "grant-a",
-      preparedCatalog: prepared.preparedCatalog,
-    });
-    await cache.resolve({ ...ownerScope(), grantToken: "grant-a" });
-    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    const scope = { ...ownerScope(), grantToken: "grant-a" };
+    await cache.resolve(scope);
 
     expect(cache.evictGrant("grant-a")).toBe(true);
-    await cache.resolve({ ...ownerScope(), grantToken: "grant-a" });
+    await cache.resolve(scope);
+
     expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
   });
 });
