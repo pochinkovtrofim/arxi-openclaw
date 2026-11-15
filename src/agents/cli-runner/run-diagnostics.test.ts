@@ -17,7 +17,12 @@ import {
   type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import { CLI_RUN_SETTLE_STAGE, runClaudeCliAgentTurnWithDiagnostics } from "./run-diagnostics.js";
-import { noteCliTurnEnded, takeCliTurnEnd } from "./turn-end-marks.js";
+import {
+  noteCliSettleStep,
+  noteCliTurnEnded,
+  takeCliSettleSteps,
+  takeCliTurnEnd,
+} from "./turn-end-marks.js";
 
 const parentTrace: DiagnosticTraceContext = {
   traceId: "11111111111111111111111111111111",
@@ -112,6 +117,38 @@ describe("Claude CLI run diagnostics", () => {
       expect(stage?.trace?.parentSpanId).toBe(run?.trace?.spanId);
       // The mark is taken once.
       expect(takeCliTurnEnd(runId)).toBeUndefined();
+    } finally {
+      diagnostics.unsubscribe();
+    }
+  });
+
+  it("shows each cleanup step after the model turn inside the settle stage", async () => {
+    const runId = "settle-steps-run";
+    const diagnostics = captureLifecycle(runId);
+    try {
+      await runClaudeCliAgentTurnWithDiagnostics({ runId, sessionId: "settle-steps" }, async () => {
+        const turnEnd = Date.now();
+        // A step before the turn ended is not part of its settlement.
+        noteCliSettleStep(runId, "cli-outer-resource", turnEnd - 5, turnEnd - 1);
+        noteCliTurnEnded(runId, turnEnd);
+        noteCliSettleStep(runId, "cli-backend-release", turnEnd + 1, turnEnd + 3);
+        noteCliSettleStep(runId, "cli-bundle-mcp-retire", turnEnd + 3, turnEnd + 4);
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 10);
+        });
+        return { payloads: [{ text: "done" }], meta: { durationMs: 1 } };
+      });
+      await flushDiagnosticEvents();
+      const stage = diagnostics.events.find(({ event }) => event.type === "context.stages")?.event;
+      const [settle, ...steps] = (
+        stage as { stages: Array<{ name: string; startedAt: number; endedAt: number }> }
+      ).stages;
+      expect(settle?.name).toBe(CLI_RUN_SETTLE_STAGE);
+      expect(steps.map((step) => [step.name, step.endedAt - step.startedAt])).toEqual([
+        ["cli-run-settle-backend-release", 2],
+        ["cli-run-settle-bundle-mcp-retire", 1],
+      ]);
+      expect(takeCliSettleSteps(runId)).toEqual([]);
     } finally {
       diagnostics.unsubscribe();
     }

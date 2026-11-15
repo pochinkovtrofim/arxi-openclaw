@@ -15,6 +15,7 @@ import { recordRuntimeActionDecision } from "../audit/runtime-action-decision.js
 import { finalizeGroupThreadToolReply } from "../auto-reply/group-thread-context.js";
 import { formatHookErrorForLog } from "../hooks/fire-and-forget.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 import { projectModelContextMessages } from "../shared/model-context-message.js";
 import { concatOptionalTextSegments } from "../shared/text/join-segments.js";
 import {
@@ -34,7 +35,12 @@ import {
   isHookDecision,
 } from "./hook-decision-types.js";
 import { cloneHookIsolationValue, HookIsolationError } from "./hook-isolation.js";
-import { hookTimingLabel, isTimedHookPhase, recordHookPhaseTiming } from "./hook-phase-timing.js";
+import {
+  hookTimingLabel,
+  isTimedHookPhase,
+  promptHookStageName,
+  recordHookPhaseTiming,
+} from "./hook-phase-timing.js";
 import type { GlobalHookRunnerRegistry, HookRunnerRegistry } from "./hook-registry.types.js";
 import { acceptPluginReplyPayload, toPluginReplyPayload } from "./hook-reply-payload.js";
 import {
@@ -734,8 +740,21 @@ export function createHookRunner(
         const startedAt = timedRunId ? Date.now() : 0;
         let timedOut = false;
         try {
-          const promise = Promise.resolve(handler(handlerEvent, handlerContext));
-          handlerResult = await awaitHook(hook, promise, modifyingHookTimeoutMsByHook[hookName]);
+          const invoke = () =>
+            awaitHook(
+              hook,
+              Promise.resolve(handler(handlerEvent, handlerContext)),
+              modifyingHookTimeoutMsByHook[hookName],
+            );
+          // Each prompt hook is a measured step of the run's preparation, so a trace
+          // names the one the first model request waited for.
+          handlerResult =
+            hookName === "before_prompt_build"
+              ? await measurePrepStage(
+                  promptHookStageName(hookTimingLabel(hook, hookIndex)),
+                  invoke,
+                )
+              : await invoke();
         } catch (err) {
           timedOut = err instanceof HookTimeoutError;
           throw err;

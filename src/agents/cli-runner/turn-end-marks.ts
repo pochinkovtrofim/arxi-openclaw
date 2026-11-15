@@ -25,6 +25,45 @@ export function takeCliTurnEnd(runId: string): number | undefined {
   return at;
 }
 
+/** Forgets a run's turn mark and its settlement steps. */
 export function clearCliTurnEnd(runId: string): void {
   turnEnds.delete(runId);
+  settleSteps.delete(runId);
+}
+
+/** Cleanup steps of a run (each a code name), reported inside its settle stage. */
+const settleSteps = new Map<string, Array<{ step: string; startedAt: number; endedAt: number }>>();
+
+/** Records one cleanup step of a run with its start and end. */
+export function noteCliSettleStep(
+  runId: string,
+  step: string,
+  startedAt: number,
+  endedAt: number,
+): void {
+  // Only a run whose model turn has ended settles; earlier steps are never reported.
+  if (!turnEnds.has(runId)) {
+    return;
+  }
+  let steps = settleSteps.get(runId);
+  if (!steps) {
+    steps = [];
+    settleSteps.set(runId, steps);
+    while (settleSteps.size > MAX_MARKS) {
+      const oldest = settleSteps.keys().next().value;
+      if (oldest === undefined) {
+        break;
+      }
+      settleSteps.delete(oldest);
+    }
+  }
+  steps.push({ step, startedAt, endedAt });
+}
+
+export function takeCliSettleSteps(
+  runId: string,
+): Array<{ step: string; startedAt: number; endedAt: number }> {
+  const steps = settleSteps.get(runId) ?? [];
+  settleSteps.delete(runId);
+  return steps;
 }

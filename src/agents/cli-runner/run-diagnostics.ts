@@ -24,7 +24,7 @@ import { resolveDiagnosticModelResponse } from "../diagnostic-model-response.js"
 import type { EmbeddedAgentRunResult } from "../embedded-agent-runner.js";
 import { isSignalTimeoutReason, isTimeoutError } from "../failover-error.js";
 import { subscribeAgentCommentaryDiagnostics } from "../harness/commentary-diagnostics.js";
-import { clearCliTurnEnd, takeCliTurnEnd } from "./turn-end-marks.js";
+import { clearCliTurnEnd, takeCliSettleSteps, takeCliTurnEnd } from "./turn-end-marks.js";
 import type { RunCliAgentParams } from "./types.js";
 
 type ClaudeCliRunPhase = DiagnosticHarnessRunErrorEvent["phase"];
@@ -308,16 +308,26 @@ function reportRunSettle(
   runStartedAt: number,
 ): void {
   const turnEndedAt = takeCliTurnEnd(params.runId);
+  const settleSteps = takeCliSettleSteps(params.runId);
   const endedAt = Date.now();
   if (turnEndedAt === undefined || turnEndedAt < runStartedAt || endedAt <= turnEndedAt) {
     return;
   }
+  // Cleanup steps after the model turn, inside the settle stage; the rest of it is
+  // the run resolving its result and settling its credential.
+  const steps = settleSteps
+    .filter((step) => step.startedAt >= turnEndedAt && step.endedAt <= endedAt)
+    .map((step) => ({
+      name: `${CLI_RUN_SETTLE_STAGE}-${step.step.replace(/^cli-/u, "")}`,
+      startedAt: step.startedAt,
+      endedAt: step.endedAt,
+    }));
   emitTrustedDiagnosticEvent({
     type: "context.stages",
     runId: params.runId,
     ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
     ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-    stages: [{ name: CLI_RUN_SETTLE_STAGE, startedAt: turnEndedAt, endedAt }],
+    stages: [{ name: CLI_RUN_SETTLE_STAGE, startedAt: turnEndedAt, endedAt }, ...steps],
     trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(runTrace)),
   });
 }
