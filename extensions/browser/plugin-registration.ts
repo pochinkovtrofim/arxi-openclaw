@@ -25,6 +25,12 @@ import {
   BROWSER_PROXY_UPLOAD_COMMAND,
 } from "./src/browser-node-commands.js";
 import { getOptionalBrowserStateRuntime } from "./src/browser-runtime-state.js";
+import {
+  BROWSER_FLOW_TOOL_DESCRIPTION,
+  BROWSER_FLOW_TOOL_NAME,
+  BrowserFlowToolSchema,
+  browserFlowToBrowserArgs,
+} from "./src/browser-flow-tool.js";
 import { createBrowserToolDefinition } from "./src/browser-tool-description.js";
 import { getGatewayExtensionRelayModule } from "./src/browser/extension-relay.runtime.js";
 import {
@@ -85,6 +91,28 @@ function createLazyBrowserTool(
       });
       return await tool.execute(toolCallId, args, signal, onUpdate);
     },
+  };
+}
+
+/** browser_flow runs each call as the browser tool's own flow action. */
+function createLazyBrowserFlowTool(
+  opts?: BrowserToolOptions,
+  config?: OpenClawPluginToolContext["runtimeConfig"],
+): AnyAgentTool {
+  const browser = createLazyBrowserTool(opts, config);
+  return {
+    label: "Browser flow",
+    name: BROWSER_FLOW_TOOL_NAME,
+    resultContentSource: "network" as const,
+    description: BROWSER_FLOW_TOOL_DESCRIPTION,
+    parameters: BrowserFlowToolSchema,
+    execute: async (toolCallId, args, signal, onUpdate) =>
+      await browser.execute(
+        toolCallId,
+        browserFlowToBrowserArgs(args as Record<string, unknown>),
+        signal,
+        onUpdate,
+      ),
   };
 }
 
@@ -320,6 +348,13 @@ export function registerBrowserPlugin(api: OpenClawPluginApi) {
       return createLazyBrowserTool(createBrowserToolOptions(ctx), config);
     },
     { name: "browser", workspaceAccess: false },
+  );
+  api.registerTool(
+    (ctx: OpenClawPluginToolContext) => {
+      const config = ctx.getRuntimeConfig?.() ?? ctx.runtimeConfig ?? ctx.config;
+      return createLazyBrowserFlowTool(createBrowserToolOptions(ctx), config);
+    },
+    { name: BROWSER_FLOW_TOOL_NAME, workspaceAccess: false },
   );
   registerBrowserCliMetadata(api);
   api.registerGatewayMethod(

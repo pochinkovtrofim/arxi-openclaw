@@ -206,7 +206,9 @@ export function createBrowserToolSchema(capabilities: BrowserToolCapabilities) {
     { description: "act" },
   );
   return Type.Object({
-    action: stringEnum(capabilities.actions),
+    // Saved flows are called through the browser_flow tool, which keeps their
+    // parameters out of this schema.
+    action: stringEnum(capabilities.actions.filter((action) => !action.startsWith("flow_"))),
     target: optionalStringEnum(BROWSER_TARGETS),
     ...(!capabilities.tabBound
       ? {
@@ -280,11 +282,6 @@ export function createBrowserToolSchema(capabilities: BrowserToolCapabilities) {
           accept: Type.Optional(Type.Boolean()),
           promptText: Type.Optional(Type.String()),
         }
-      : {}),
-    // Saved-flow fields ride in one open object, described in the tool text:
-    // a typed object would cost the provider schema budget for every action.
-    ...(capabilities.actions.includes("flow_run")
-      ? { flow: Type.Optional(Type.Object({}, { additionalProperties: true })) }
       : {}),
     // Legacy flattened act params (preferred: request={...})
     kind: Type.Optional(stringEnum(capabilities.actKinds, { description: actKindDescription })),

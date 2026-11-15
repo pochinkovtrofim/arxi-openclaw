@@ -15,7 +15,7 @@
     "onConfigPaths": ["browser"]
   },
   "contracts": {
-    "tools": ["browser"]
+    "tools": ["browser", "browser_flow"]
   },
   "commandAliases": [{ "name": "browser" }],
   "skills": ["./skills"],

@@ -441,7 +441,7 @@ describe("saved flow storage", () => {
     expect((await listFlows("shop.example", root)).map((f) => f.name)).toEqual(["search"]);
     expect((await readFlow("search", undefined, root))?.site).toBe("shop.example");
     await writeFlow({ ...flow, site: "other.example" }, root);
-    await expect(readFlow("search", undefined, root)).rejects.toThrow(/pass flow.site/);
+    await expect(readFlow("search", undefined, root)).rejects.toThrow(/pass site/);
     expect(await deleteFlow("search", "shop.example", root)).toBe(true);
     expect(await readFlow("search", "shop.example", root)).toBeUndefined();
   });

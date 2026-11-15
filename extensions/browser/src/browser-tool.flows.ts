@@ -52,7 +52,7 @@ function readStringRecord(value: unknown, label: string): Record<string, string>
     return undefined;
   }
   if (typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`flow.${label} must be an object of strings`);
+    throw new Error(`${label} must be an object of strings`);
   }
   const out: Record<string, string> = {};
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
@@ -61,7 +61,7 @@ function readStringRecord(value: unknown, label: string): Record<string, string>
     } else if (typeof entry === "string") {
       out[key] = entry;
     } else {
-      throw new Error(`flow.${label}.${key} must be a string`);
+      throw new Error(`${label}.${key} must be a string`);
     }
   }
   return out;
@@ -72,7 +72,7 @@ export function readFlowInput(raw: unknown): FlowInput {
     raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const via = normalizeOptionalString(record.via);
   if (via !== undefined && via !== "auto" && via !== "device") {
-    throw new Error("flow.via must be auto or device");
+    throw new Error("via must be auto or device");
   }
   const select = Array.isArray(record.select)
     ? record.select.filter((entry): entry is string => typeof entry === "string" && entry !== "")
@@ -431,7 +431,7 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
         ok: false,
         error: "write_not_allowed",
         flow: flow.name,
-        hint: "This flow changes something on the site. Run it with flow.allowWrite=true only when the owner's task asks for that change.",
+        hint: "This flow changes something on the site. Run it with allowWrite=true only when the owner's task asks for that change.",
       });
     }
     return await runWrite(flow, request, input, context, timeoutMs, root);
@@ -494,7 +494,7 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
 
 async function saveFlow(input: FlowInput, context: FlowContext, root?: string) {
   if (!input.name) {
-    throw new Error("flow.name required");
+    throw new Error("name required");
   }
   const capture = await browserFlowCapture(context.target, {
     targetId: context.targetId,
@@ -518,7 +518,7 @@ async function saveFlow(input: FlowInput, context: FlowContext, root?: string) {
       error: formatErrorMessage(err),
       ...(extra.candidates ? { candidates: extra.candidates } : {}),
       ...(extra.skipped ? { skipped: extra.skipped } : {}),
-      hint: "Do the task in this tab first (search, filter, open the list), then save; pass flow.output with a candidate id to pick another request.",
+      hint: "Do the task in this tab first (search, filter, open the list), then save; pass output with a candidate id to pick another request.",
     });
   }
   await writeFlow(result.flow, root);
@@ -548,7 +548,7 @@ async function saveFlow(input: FlowInput, context: FlowContext, root?: string) {
       ? { session: "the recording was signed in; runs fall back to the page for its cookies" }
       : {}),
     candidates: result.candidates,
-    run: `action=flow_run flow={name:"${flow.name}"${flow.params.length > 0 ? `, params:{${flow.params.map((p) => `${p}:…`).join(", ")}}` : ""}}`,
+    run: `browser_flow op=run name=${flow.name}${flow.params.length > 0 ? ` params={${flow.params.map((p) => `${p}:…`).join(", ")}}` : ""}`,
   });
 }
 
@@ -580,7 +580,7 @@ export async function executeFlowAction(
     }
     case "flow_delete": {
       if (!input.name) {
-        throw new Error("flow.name required");
+        throw new Error("name required");
       }
       const flow = await readFlow(input.name, input.site, root);
       return jsonResult({
@@ -590,7 +590,7 @@ export async function executeFlowAction(
     }
     case "flow_run": {
       if (!input.name) {
-        throw new Error("flow.name required");
+        throw new Error("name required");
       }
       const flow = await readFlow(input.name, input.site, root);
       if (!flow) {
@@ -619,7 +619,7 @@ export async function savedFlowsHint(pageUrl: string | undefined, root?: string)
     return undefined;
   }
   return {
-    text: `[saved flows on ${site}: ${describeFlows(flows)}. If one fits the task, use action=flow_run instead of driving the page.]`,
+    text: `[saved flows on ${site}: ${describeFlows(flows)}. If one fits the task, use browser_flow op=run instead of driving the page.]`,
     flows: flows.map((flow) => ({ name: flow.name, params: flow.params, verified: flow.verified })),
   };
 }

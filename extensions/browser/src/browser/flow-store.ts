@@ -70,7 +70,7 @@ export async function readFlow(
   const matches = (await listFlows(undefined, root)).filter((flow) => flow.name === name);
   if (matches.length > 1) {
     throw new Error(
-      `several sites have a flow named ${name}: ${matches.map((f) => f.site).join(", ")}; pass flow.site`,
+      `several sites have a flow named ${name}: ${matches.map((f) => f.site).join(", ")}; pass site`,
     );
   }
   return matches[0];
