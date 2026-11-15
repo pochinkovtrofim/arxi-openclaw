@@ -68,9 +68,7 @@ describe("computer-only rebuild of a scoped catalog", () => {
       properties: { action: { enum: expect.arrayContaining(["launch_app"]) } },
     });
     expect(getAgentToolActionDescriptor(rebuilt!)).toBeDefined();
-    expect(getAgentToolActionDescriptor(rebuilt!)).toEqual(
-      getAgentToolActionDescriptor(expected!),
-    );
+    expect(getAgentToolActionDescriptor(rebuilt!)).toEqual(getAgentToolActionDescriptor(expected!));
     // Tools other than computer are the very ones the first build returned.
     for (const tool of rebuiltTools ?? []) {
       if (tool.name !== "computer") {
@@ -82,9 +80,9 @@ describe("computer-only rebuild of a scoped catalog", () => {
   it("carries the same gateway caller identity, turn source included", async () => {
     const scoped = await resolve();
     const full = await resolve({ pairedNodeComputerUse: prepared });
-    const rebuilt = scoped.rebuildWithPairedComputerUse?.(prepared)?.find(
-      (tool) => tool.name === "computer",
-    );
+    const rebuilt = scoped
+      .rebuildWithPairedComputerUse?.(prepared)
+      ?.find((tool) => tool.name === "computer");
     const expected = full.tools.find((tool) => tool.name === "computer");
 
     const rebuiltIdentity = await observeCallerIdentity(rebuilt!);
