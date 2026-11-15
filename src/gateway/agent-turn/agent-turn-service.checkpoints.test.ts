@@ -1,16 +1,20 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const clock = vi.hoisted(() => ({ tick: (_ms: number) => {} }));
-const startExecution = vi.hoisted(() => vi.fn(async (_params: unknown) => {}));
-const admission = vi.hoisted(() => ({ outcome: false }));
-
-/** Each mocked step takes a distinct, known time on the fake clock. */
-const takes = <T>(ms: number, value: T) => {
-  return async () => {
-    clock.tick(ms);
-    return value;
+const { clock, startExecution, admission, takes } = vi.hoisted(() => {
+  const clock = { tick: (_ms: number) => {} };
+  return {
+    clock,
+    startExecution: vi.fn(async (_params: unknown) => {}),
+    admission: { outcome: false },
+    /** Each mocked step takes a distinct, known time on the fake clock. */
+    takes: <T>(ms: number, value: T) => {
+      return async () => {
+        clock.tick(ms);
+        return value;
+      };
+    },
   };
-};
+});
 
 vi.mock("./agent-dedupe.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./agent-dedupe.js")>()),
