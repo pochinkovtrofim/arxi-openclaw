@@ -3,6 +3,7 @@ import {
   captureExternalSessionCommitGuard,
   composeSessionSourceAssertion,
 } from "../../config/sessions/session-source-authority.js";
+import type { PreflightStepMoment } from "../../infra/diagnostic-events.js";
 import {
   freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
@@ -26,8 +27,16 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
   isWebchatConnect,
   hasCurrentClientAuthority,
   sessionMutationCommitGuard,
+  frameReceipt: frame,
 }) => {
-  const rpcReceivedAt = Date.now();
+  // A request read off a socket starts the turn's clock there: frame admission and
+  // authorization ran before this handler did.
+  const handlerEnteredAt = Date.now();
+  const rpcReceivedAt =
+    frame && frame.receivedAt <= handlerEnteredAt ? frame.receivedAt : handlerEnteredAt;
+  const receiptSteps: PreflightStepMoment[] = frame
+    ? [...frame.steps, { step: "handler_entry", at: handlerEnteredAt }]
+    : [];
   const activeDiagnosticTrace = getActiveDiagnosticTraceContext();
   const diagnosticTrace = activeDiagnosticTrace
     ? freezeDiagnosticTraceContext(activeDiagnosticTrace)
@@ -86,6 +95,7 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
       onRunObserved,
       diagnosticTrace,
       rpcReceivedAt,
+      receiptSteps,
     });
   } catch (error) {
     if (error instanceof SessionMutationAuthorizationChangedError) {

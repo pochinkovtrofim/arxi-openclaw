@@ -44,6 +44,7 @@ import {
   registerGatewayPolicyResponse,
 } from "../ws-policy-close.js";
 import type { GatewayWsClient } from "../ws-types.js";
+import type { GatewayFrameReceipt } from "./frame-receipt.js";
 import type { GatewayWsMessageHandlerParams } from "./message-handler-types.js";
 import { createGatewayRpcDiagnostics } from "./request-diagnostics.js";
 import { GatewayRequestStartTimeoutError, scheduleGatewayRequestStart } from "./request-start.js";
@@ -113,6 +114,8 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
     frameBytes: number,
     admission?: "continuation",
     sendResponse: (frame: ResponseFrame) => ReturnType<typeof send> = send,
+    /** When the frame was read off the socket; only the wire caller has one. */
+    frameReceipt?: GatewayFrameReceipt,
   ): Promise<void> => {
     if (!validateRequestFrame(parsed)) {
       send({
@@ -504,6 +507,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
                   ...(admission ? { admission } : {}),
                   requestEntry: entry,
                   ...(signal ? { signal } : {}),
+                  ...(frameReceipt ? { frameReceipt } : {}),
                 },
                 client,
                 getRequiredSharedGatewaySessionGeneration,

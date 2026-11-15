@@ -64,6 +64,7 @@ import {
   runWithGatewayObservationScope,
   workAdmissionUnavailableError,
 } from "./server-request-lifecycle.js";
+import { markGatewayFrameStep } from "./server/ws-connection/frame-receipt.js";
 import { GatewayRpcDiagnostics } from "./server/ws-connection/request-diagnostics.js";
 import type { GatewaySessionAccessAuthority } from "./session-access-authority.js";
 import { sessionLog } from "./session-log.js";
@@ -277,6 +278,7 @@ export async function handleGatewayRequest(
   let observationResponded = false;
   let respondCancelled = opts.respond;
   const dispatch = async (retainRoot?: () => void) => {
+    markGatewayFrameStep(opts.frameReceipt, "frame_admission");
     const observationSignal = observation ? getAsyncWorkSignal() : undefined;
     using chatSendDiagnostics =
       req.method === "chat.send" ? startChatSendDiagnostics(context.logGateway) : undefined;
@@ -372,6 +374,7 @@ export async function handleGatewayRequest(
           requestMutationAuthority.assertPreparationCurrent();
         },
       });
+      markGatewayFrameStep(opts.frameReceipt, "request_authorize");
       sessionAccessAuthority = authorization.sessionAccessAuthority;
       releaseSessionMutation = authorization.sessionMutationAuthorization?.release;
       entry?.assertOpen();
@@ -462,6 +465,7 @@ export async function handleGatewayRequest(
         subscribeDiagnostics?.mark("handlerPreparation");
         chatSendPhase?.mark("preparation");
         const preparedHandler = await prepareGatewayRequestHandler(handler, entry, opts);
+        markGatewayFrameStep(opts.frameReceipt, "handler_prepare");
         // Lazy preparation may yield across a hot config change. Keep the router fence
         // unless the canonical owner reconciles accepted input before new admission.
         const uploadError = gatewayRouterUploadPolicyError(requestFacts, methodRegistry);
@@ -484,6 +488,7 @@ export async function handleGatewayRequest(
             sessionMutationCommitGuard,
             sessionMutationAuthorization,
             withSessionTurnAuthority,
+            ...(opts.frameReceipt ? { frameReceipt: opts.frameReceipt } : {}),
             markSessionSubscribePhase: subscribeDiagnostics?.mark,
             ...(authorization.sessionAccessAuthority
               ? { sessionAccessAuthority: authorization.sessionAccessAuthority }

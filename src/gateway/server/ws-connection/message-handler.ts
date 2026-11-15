@@ -61,6 +61,7 @@ import { authenticateGatewayConnect } from "./connect-auth.js";
 import { authorizeGatewayConnectDevice } from "./connect-device-pairing.js";
 import { publishConnectModelCatalog } from "./connect-model-catalog.js";
 import { attachAuthenticatedGatewayConnect } from "./connect-session.js";
+import { runWithGatewayFrameReceipt, takeGatewayFrameReceipt } from "./frame-receipt.js";
 import { resolveHandshakeBrowserSecurityContext } from "./handshake-auth-helpers.js";
 import type {
   GatewayConnectPhaseContext,
@@ -410,6 +411,8 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
         client,
         rawDataByteLength(data),
         admission,
+        undefined,
+        takeGatewayFrameReceipt(),
       );
     } catch (err) {
       await releasePendingNodePairingCleanup();
@@ -544,10 +547,14 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
       onSettled?.();
       return;
     }
+    // A frame queued during the handshake is stamped here, at its replay.
+    const receivedAt = Date.now();
     void params.connectionWork
       .track(() =>
-        runWithDiagnosticTraceContext(createDiagnosticTraceContext(), () =>
-          runWithMainThreadTask("gateway:ws:frame", () => handleIncomingMessage(data, admission)),
+        runWithGatewayFrameReceipt(receivedAt, () =>
+          runWithDiagnosticTraceContext(createDiagnosticTraceContext(), () =>
+            runWithMainThreadTask("gateway:ws:frame", () => handleIncomingMessage(data, admission)),
+          ),
         ),
       )
       .catch((error: unknown) => {
