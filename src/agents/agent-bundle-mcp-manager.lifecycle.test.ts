@@ -246,6 +246,37 @@ describe("MCP manager creation ownership", () => {
     expect(await acquire()).toBeUndefined();
   });
 
+  it("does not bring back a runtime for a session disposed before its revalidation runs", async () => {
+    resolverTesting.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "scoped",
+        requiresRequesterIdentity: false,
+        resolve: async () => ({ url: "https://mcp.example.test/scoped" }),
+      },
+    ]);
+    const gatewayClock = createGatewaySchedulerClock(1_000_000);
+    const createRuntime = vi.fn<CreateSessionMcpRuntime>(createRuntimeFixture);
+    const manager = createSessionMcpRuntimeManager({
+      createRuntime,
+      scheduler: createTestGatewayScheduler(gatewayClock.clock),
+    });
+    managers.push(manager);
+    const scoped = {
+      ...params,
+      agentId: "main",
+      cfg: { mcp: { servers: { scoped: { transport: "streamable-http" as const } } } },
+    };
+    expectDefined(await manager.getOrCreateRequesterScoped(scoped), "first runtime");
+    await gatewayClock.advanceBy(61_000);
+    // The served turn queues its revalidation; a disposal queued alongside wins.
+    const served = manager.getOrCreateRequesterScoped(scoped);
+    const disposed = manager.disposeSession(params.sessionId);
+    await served;
+    await disposed;
+    await vi.waitFor(() => expect(manager.listSessionIds()).toEqual([]));
+    expect(createRuntime).toHaveBeenCalledOnce();
+  });
+
   it("drops a failing server once its failure outlasts the keep window", async () => {
     let answer: "ok" | "throw" = "ok";
     resolverTesting.setMcpServerConnectionResolversForTest([

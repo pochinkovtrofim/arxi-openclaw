@@ -260,10 +260,20 @@ export function createSessionMcpRuntimeManagerInstall(
         void lifecycle
           .runExclusiveOnRuntimeKeys([params.runtimeKey], async () => {
             store.scheduler.signal.throwIfAborted();
-            await resolveAndInstallRequesterRuntime({
-              ...params,
-              revalidateNow: true,
-            });
+            // Only the runtime this turn was served still needs it: a disposal,
+            // retirement or config publication queued meanwhile wins, and the next
+            // real turn resolves with current inputs.
+            if (
+              store.runtimesBySessionId.get(params.runtimeKey) !== existing ||
+              store.requiredRetirementSessionIds.has(params.sessionId) ||
+              store.deferredRetirementSessionIds.has(params.sessionId) ||
+              store.configReload !== params.configReloadAtAdmission
+            ) {
+              return;
+            }
+            // The turn's own diagnostics sink has been read by now.
+            const { onResolverUnavailable: _turnSink, ...current } = params;
+            await resolveAndInstallRequesterRuntime({ ...current, revalidateNow: true });
           })
           .catch((error: unknown) => {
             logWarn(`bundle-mcp: background connection revalidation failed: ${String(error)}`);
