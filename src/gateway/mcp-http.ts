@@ -319,9 +319,6 @@ async function startMcpLoopbackServer(
                   ...(boundClientGrant?.bundledTools
                     ? { bundledTools: boundClientGrant.bundledTools }
                     : {}),
-                  ...(boundClientGrant?.preparedCatalog
-                    ? { preparedCatalog: boundClientGrant.preparedCatalog }
-                    : {}),
                 }),
             );
           } catch (error) {

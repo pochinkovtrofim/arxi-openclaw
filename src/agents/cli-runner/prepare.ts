@@ -749,7 +749,7 @@ async function prepareCliRunContextWithinReadFence(
         resolvePolicyTools: resolveMcpLoopbackPolicyTools,
         resolveScopedTools: resolveMcpLoopbackScopedTools,
       })
-    : { params, tools: [], preparedCatalog: undefined };
+    : { params, tools: [] };
   params = mcpProjection.params;
   params.assertCurrent?.();
   markStage("mcp-tool-projection");
@@ -937,9 +937,6 @@ async function prepareCliRunContextWithinReadFence(
               bindQuestionAnswerAuthorityForSession(mcpGrant.context.sessionKey, assertActive),
             ...(skillLibraryAuthoring ? { skillLibraryAuthoring } : {}),
             ...(loopbackBundleMcp ? { bundledTools: loopbackBundleMcp.tools } : {}),
-            ...(mcpProjection.preparedCatalog
-              ? { preparedCatalog: mcpProjection.preparedCatalog }
-              : {}),
             ...(mcpToolAuth ? { toolAuth: mcpToolAuth } : {}),
           })
         : undefined;

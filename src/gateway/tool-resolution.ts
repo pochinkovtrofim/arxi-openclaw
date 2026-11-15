@@ -730,8 +730,7 @@ export async function resolveGatewayScopedTools(
     workspaceDir,
     rebuildWithPairedComputerUse: createPairedComputerRebuild({
       tools,
-      constructedComputer: openClawTools.find((tool) => tool.name === "computer"),
-      options: openClawToolOptions,
+      builtComputer: openClawTools.find((tool) => tool.name === "computer"),
       finalizeTools,
     }),
     // Only the MCP owner knows which tools survived its grant and schema gates.

@@ -58,6 +58,7 @@ import {
 import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import { createAskUserTool } from "./tools/ask-user-tool.js";
+import type { PreparedPairedComputerUse } from "./computer-use-node-capabilities.js";
 import type { AnyAgentTool } from "./tools/common.js";
 import { createComputerTool } from "./tools/computer-tool.js";
 import { createCronTool } from "./tools/cron-tool.js";
@@ -103,10 +104,25 @@ import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
+// A built computer tool remembers how to be re-created with a prepared paired-node surface,
+// through the same captured options and assembly steps as the full build that made it.
+const computerToolRebuilders = new WeakMap<
+  AnyAgentTool,
+  (prepared: PreparedPairedComputerUse) => AnyAgentTool | undefined
+>();
+
+/** Re-creates a built computer tool exactly as a full build would, for a prepared surface. */
+export function rebuildOpenClawComputerTool(
+  built: AnyAgentTool,
+  prepared: PreparedPairedComputerUse,
+): AnyAgentTool | undefined {
+  return computerToolRebuilders.get(built)?.(prepared);
+}
+
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
 
 /** The one construction of the ordinary computer tool, so a later rebuild matches it exactly. */
-export function createOpenClawComputerTool(options?: OpenClawToolsOptions): AnyAgentTool | null {
+function createOpenClawComputerTool(options?: OpenClawToolsOptions): AnyAgentTool | null {
   return options?.modelHasVision === false || options?.computerTransport === null
     ? null
     : createComputerTool({
@@ -464,6 +480,7 @@ function* createOpenClawToolsSteps(
     : null;
   const transcriptsTool = resolveTranscriptsTool(resolvedConfig, sessionAgentId, options);
   const githubTools = createGitHubTools(options);
+  const computerTool = embedded ? null : createOpenClawComputerTool(options);
   const tools: AnyAgentTool[] = [
     ...createInstalledSkillTools(options?.installedSkills ?? []),
     createDashboardTool({
@@ -475,7 +492,7 @@ function* createOpenClawToolsSteps(
       : [
           nodesTool,
           createMobileUiTool({ idempotencyScope: options?.runId }),
-          createOpenClawComputerTool(options),
+          computerTool,
           createCronTool({
             ...options,
             // Use the durable runSessionKey; cleanup-retired policy keys leave cron jobs dangling.
@@ -701,21 +718,23 @@ function* createOpenClawToolsSteps(
     options?.recordToolPrepStage?.("openclaw-tools:plugin-tools");
   }
 
-  allTools = finalizeAgentToolAvailability(filterToolsByClientCaps(allTools, options?.clientCaps));
+  const assemble = (candidates: AnyAgentTool[]) => {
+    const assembled = finalizeAgentToolAvailability(
+      filterToolsByClientCaps(candidates, options?.clientCaps),
+    );
+    for (const tool of assembled) {
+      bindAssembledAgentToolActionDescriptor(tool);
+    }
+    return assembled;
+  };
+  allTools = assemble(allTools);
   options?.recordToolPrepStage?.("openclaw-tools:client-capabilities");
-  for (const tool of allTools) {
-    bindAssembledAgentToolActionDescriptor(tool);
-  }
 
   const hookAgentId = options?.requesterAgentIdOverride ?? sessionAgentId;
   const wrapGatewayCallerIdentity = createGatewayToolCallerWrapper(
     hookAgentId,
     options ? { ...options, agentAccountId: gatewayCallerAccountId } : options,
   );
-
-  if (options?.wrapBeforeToolCallHook === false) {
-    return allTools.map(wrapGatewayCallerIdentity);
-  }
   const defaultHookContext: HookContext = {
     ...(hookAgentId ? { agentId: hookAgentId } : {}),
     ...(resolvedConfig ? { config: resolvedConfig } : {}),
@@ -725,12 +744,26 @@ function* createOpenClawToolsSteps(
     loopDetection: resolveToolLoopDetectionConfig({ cfg: resolvedConfig, agentId: hookAgentId }),
   };
   const hookContext = { ...defaultHookContext, ...options?.beforeToolCallHookContext };
-  options?.recordToolPrepStage?.("openclaw-tools:tool-hooks");
-  return allTools
-    .map((tool) =>
-      isToolWrappedWithBeforeToolCallHook(tool)
-        ? tool
-        : wrapToolWithBeforeToolCallHook(tool, hookContext),
-    )
-    .map(wrapGatewayCallerIdentity);
+  const wrapAssembled = (assembled: AnyAgentTool[]) =>
+    options?.wrapBeforeToolCallHook === false
+      ? assembled.map(wrapGatewayCallerIdentity)
+      : assembled
+          .map((tool) =>
+            isToolWrappedWithBeforeToolCallHook(tool)
+              ? tool
+              : wrapToolWithBeforeToolCallHook(tool, hookContext),
+          )
+          .map(wrapGatewayCallerIdentity);
+  if (options?.wrapBeforeToolCallHook !== false) {
+    options?.recordToolPrepStage?.("openclaw-tools:tool-hooks");
+  }
+  const wrapped = wrapAssembled(allTools);
+  const computerIndex = computerTool ? allTools.indexOf(computerTool) : -1;
+  if (computerIndex >= 0) {
+    computerToolRebuilders.set(wrapped[computerIndex], (prepared) => {
+      const rebuilt = createOpenClawComputerTool({ ...options, pairedNodeComputerUse: prepared });
+      return rebuilt ? wrapAssembled(assemble([rebuilt]))[0] : undefined;
+    });
+  }
+  return wrapped;
 }

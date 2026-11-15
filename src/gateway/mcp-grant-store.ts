@@ -33,7 +33,6 @@ import type { InputProvenance } from "../sessions/input-provenance.js";
 import { resolveGlobalMap } from "../shared/global-singleton.js";
 import type { SkillLibraryAuthoringCapability } from "../skills/library/authoring.js";
 import type { CronCreatorAuthorityGrant } from "./cron-creator-authority-grant.types.js";
-import type { McpPreparedCatalog } from "./mcp-http.runtime.js";
 
 export type McpLoopbackRequestContext = {
   /** Recorded requester boundary captured by the host; never read from request headers. */
@@ -180,8 +179,6 @@ type StoredMcpLoopbackClientGrant = McpLoopbackClientGrant & {
   skillLibraryAuthoring?: SkillLibraryAuthoringCapability;
   /** Configured MCP tools owned by the minting CLI run; disposed with that run. */
   bundledTools?: readonly AnyAgentTool[];
-  /** The tool catalog this turn built while preparing; its first loopback request adopts it. */
-  preparedCatalog?: McpPreparedCatalog;
   activeCaptureKey?: string;
   /** Effective attempt authority, including plugin-owned timeout and cancellation. */
   assertCaptureCurrent?: () => void;
@@ -317,7 +314,6 @@ export function mintMcpLoopbackClientGrant(
     bindQuestionAnswerAuthority: params.bindQuestionAnswerAuthority,
     skillLibraryAuthoring: params.skillLibraryAuthoring,
     ...(params.bundledTools?.length ? { bundledTools: params.bundledTools } : {}),
-    ...(params.preparedCatalog ? { preparedCatalog: params.preparedCatalog } : {}),
     ...(params.toolAuth ? { toolAuth: structuredClone(params.toolAuth) } : {}),
   };
   clientGrantsByToken.set(grant.token, grant);
@@ -516,7 +512,6 @@ export function resolveMcpLoopbackClientGrant(params: {
       questionAnswerAuthority?: PreparedQuestionAnswerAuthority;
       skillLibraryAuthoring?: SkillLibraryAuthoringCapability;
       bundledTools?: readonly AnyAgentTool[];
-      preparedCatalog?: McpPreparedCatalog;
       isCurrent: () => boolean;
       toolAuth?: McpLoopbackToolAuth;
     }
@@ -569,7 +564,6 @@ export function resolveMcpLoopbackClientGrant(params: {
     questionAnswerAuthority,
     skillLibraryAuthoring: grant.skillLibraryAuthoring,
     ...(grant.bundledTools ? { bundledTools: grant.bundledTools } : {}),
-    ...(grant.preparedCatalog ? { preparedCatalog: grant.preparedCatalog } : {}),
     isCurrent,
 
     ...(grant.toolAuth ? { toolAuth: grant.toolAuth } : {}),

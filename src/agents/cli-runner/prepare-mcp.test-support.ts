@@ -319,39 +319,6 @@ export function registerCliMcpPreparationTests({
     );
   });
 
-  it("hands the catalog built while preparing to the turn's MCP grant", async () => {
-    const preparedCatalog = { sentinel: "prepared-catalog" } as never;
-    const resolveMcpLoopbackScopedTools = vi.fn((_scope: McpProjectionParams) => ({
-      agentId: "main",
-      tools: [],
-      preparedCatalog,
-    }));
-    const mintMcpLoopbackClientGrant = vi.fn(createTestMcpLoopbackClientGrant);
-    setCliRunnerPrepareTestDeps({
-      getActiveMcpLoopbackRuntime: vi.fn(() => ({
-        port: 31783,
-        ownerToken: "loopback-owner-token",
-        nonOwnerToken: "loopback-non-owner-token",
-      })),
-      resolveMcpLoopbackScopedTools,
-      ensureMcpLoopbackServer: vi.fn(createTestMcpLoopbackServer),
-      createMcpLoopbackServerConfig: vi.fn(createTestMcpLoopbackServerConfig),
-      mintMcpLoopbackClientGrant,
-    });
-
-    const context = await getFixture().prepare({
-      runId: "run-prepared-catalog",
-      config: createConfig(),
-    });
-    try {
-      expect(resolveMcpLoopbackScopedTools).toHaveBeenCalledTimes(1);
-      const minted = mintMcpLoopbackClientGrant.mock.calls[0]?.[0] as { preparedCatalog?: unknown };
-      expect(minted.preparedCatalog).toBe(preparedCatalog);
-    } finally {
-      await context.preparedBackend.cleanup?.();
-    }
-  });
-
   it("binds one live prepared admission to tool projection and the CLI MCP grant", async () => {
     const getActiveMcpLoopbackRuntime = vi.fn(() => ({
       port: 31783,
