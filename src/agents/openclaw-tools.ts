@@ -14,19 +14,12 @@ import {
   resolveAgentWorkspaceDir,
   resolveSessionAgentIds,
 } from "./agent-scope.js";
-import { finalizeAgentToolAvailability } from "./agent-tool-availability.js";
-import { bindAssembledAgentToolActionDescriptor } from "./agent-tool-metadata.js";
-import {
-  type HookContext,
-  isToolWrappedWithBeforeToolCallHook,
-  wrapToolWithBeforeToolCallHook,
-} from "./agent-tools.before-tool-call.js";
 import { ensureAuthProfileStoreWithoutExternalProfiles } from "./auth-profiles/store-runtime.js";
 import {
   resolveOpenClawPluginToolsForOptions,
   resolveOpenClawPluginToolsForOptionsAsync,
 } from "./openclaw-plugin-tools.js";
-import { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
+import { createOpenClawToolAssembly } from "./openclaw-tools.assembly.js";
 import { resolveCapturedOpenClawToolsFsPolicy } from "./openclaw-tools.fs-policy.js";
 import {
   createHostedConversationTools,
@@ -55,7 +48,6 @@ import {
   type PreparedToolConstruction,
   type ToolConstructionPreparationOptions,
 } from "./tool-construction-preparation.js";
-import { resolveToolLoopDetectionConfig } from "./tool-loop-detection-config.js";
 import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import { createAskUserTool } from "./tools/ask-user-tool.js";
 import type { AnyAgentTool } from "./tools/common.js";
@@ -64,7 +56,6 @@ import { createCronTool } from "./tools/cron-tool.js";
 import { createDashboardTool } from "./tools/dashboard-tool.js";
 import { createDecisionTool } from "./tools/decision-tool.js";
 import { createEmbeddedCallGateway } from "./tools/embedded-gateway-stub.js";
-import { createGatewayToolCallerWrapper } from "./tools/gateway-caller-context.js";
 import {
   createCreateGoalTool,
   createGetGoalTool,
@@ -104,6 +95,19 @@ import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
+
+/** The one construction of the ordinary computer tool, so a later rebuild matches it exactly. */
+function createOpenClawComputerTool(options?: OpenClawToolsOptions): AnyAgentTool | null {
+  return options?.modelHasVision === false || options?.computerTransport === null
+    ? null
+    : createComputerTool({
+        ...options,
+        transport: options?.computerTransport,
+        // The tool combines this run scope with the assistant turn and provider call id.
+        idempotencyScope: options?.runId,
+        contextEpoch: options?.computerContextEpoch,
+      });
+}
 export async function createOpenClawToolsAsync(
   options?: OpenClawToolsOptions,
   preparation: ToolConstructionPreparationOptions = {},
@@ -451,6 +455,7 @@ function* createOpenClawToolsSteps(
     : null;
   const transcriptsTool = resolveTranscriptsTool(resolvedConfig, sessionAgentId, options);
   const githubTools = createGitHubTools(options);
+  const computerTool = embedded ? null : createOpenClawComputerTool(options);
   const tools: AnyAgentTool[] = [
     ...createInstalledSkillTools(options?.installedSkills ?? []),
     createDashboardTool({
@@ -462,15 +467,7 @@ function* createOpenClawToolsSteps(
       : [
           nodesTool,
           createMobileUiTool({ idempotencyScope: options?.runId }),
-          options?.modelHasVision === false || options?.computerTransport === null
-            ? null
-            : createComputerTool({
-                ...options,
-                transport: options?.computerTransport,
-                // The tool combines this run scope with the assistant turn and provider call id.
-                idempotencyScope: options?.runId,
-                contextEpoch: options?.computerContextEpoch,
-              }),
+          computerTool,
           createCronTool({
             ...options,
             // Use the durable runSessionKey; cleanup-retired policy keys leave cron jobs dangling.
@@ -696,36 +693,18 @@ function* createOpenClawToolsSteps(
     options?.recordToolPrepStage?.("openclaw-tools:plugin-tools");
   }
 
-  allTools = finalizeAgentToolAvailability(filterToolsByClientCaps(allTools, options?.clientCaps));
-  options?.recordToolPrepStage?.("openclaw-tools:client-capabilities");
-  for (const tool of allTools) {
-    bindAssembledAgentToolActionDescriptor(tool);
-  }
-
   const hookAgentId = options?.requesterAgentIdOverride ?? sessionAgentId;
-  const wrapGatewayCallerIdentity = createGatewayToolCallerWrapper(
+  const { assemble, finish } = createOpenClawToolAssembly({
+    options,
     hookAgentId,
-    options ? { ...options, agentAccountId: gatewayCallerAccountId } : options,
-  );
-
-  if (options?.wrapBeforeToolCallHook === false) {
-    return allTools.map(wrapGatewayCallerIdentity);
+    gatewayCallerAccountId,
+    resolvedConfig,
+    createComputerTool: createOpenClawComputerTool,
+  });
+  allTools = assemble(allTools);
+  options?.recordToolPrepStage?.("openclaw-tools:client-capabilities");
+  if (options?.wrapBeforeToolCallHook !== false) {
+    options?.recordToolPrepStage?.("openclaw-tools:tool-hooks");
   }
-  const defaultHookContext: HookContext = {
-    ...(hookAgentId ? { agentId: hookAgentId } : {}),
-    ...(resolvedConfig ? { config: resolvedConfig } : {}),
-    ...(options?.agentSessionKey ? { sessionKey: options.agentSessionKey } : {}),
-    ...(options?.sessionId ? { sessionId: options.sessionId } : {}),
-    ...(options?.currentChannelId ? { channelId: options.currentChannelId } : {}),
-    loopDetection: resolveToolLoopDetectionConfig({ cfg: resolvedConfig, agentId: hookAgentId }),
-  };
-  const hookContext = { ...defaultHookContext, ...options?.beforeToolCallHookContext };
-  options?.recordToolPrepStage?.("openclaw-tools:tool-hooks");
-  return allTools
-    .map((tool) =>
-      isToolWrappedWithBeforeToolCallHook(tool)
-        ? tool
-        : wrapToolWithBeforeToolCallHook(tool, hookContext),
-    )
-    .map(wrapGatewayCallerIdentity);
+  return finish(allTools, computerTool);
 }

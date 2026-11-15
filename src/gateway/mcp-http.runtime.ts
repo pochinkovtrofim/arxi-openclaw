@@ -10,6 +10,7 @@ import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
 import {
   loadPairedComputerUseAvailabilityForSurface,
   type PairedComputerUseAvailability,
+  type PreparedPairedComputerUse,
 } from "../agents/computer-use-node-capabilities.js";
 import {
   isCoreCodingSurfaceToolName,
@@ -60,6 +61,11 @@ type CachedScopedTools = {
   tools: McpLoopbackTool[];
   toolSchema: McpToolSchemaEntry[];
   sessionFacts: ReturnType<typeof captureMcpCatalogSessionFacts>;
+  /**
+   * The same catalog with only the computer tool re-created for a prepared paired-node
+   * action surface; absent when policy removed or replaced computer.
+   */
+  withPairedComputerUse?: (prepared: PreparedPairedComputerUse) => CachedScopedTools | undefined;
 };
 
 type McpLoopbackScopeParams = {
@@ -209,22 +215,42 @@ function isComputerAllowedByMcpScope(
 type ResolvedNodeScope = {
   params: CapturedMcpLoopbackScope;
   policyResolved?: CachedScopedTools;
+  /** The catalog freshly built for the scope before paired availability was added. */
+  baseCatalog?: CachedScopedTools;
+  /** Paired action surface the catalog's computer tool still has to carry. */
+  preparedComputerUse?: PreparedPairedComputerUse;
 };
+
+/** The catalog this scope serves; re-creates only computer when it must carry paired actions. */
+function projectResolvedCatalog(resolved: ResolvedNodeScope): CachedScopedTools | undefined {
+  const { policyResolved, preparedComputerUse, params } = resolved;
+  // A stale catalog is rebuilt by the caller; do not create a computer only to discard it.
+  if (!policyResolved || !isMcpCatalogSessionCurrent(policyResolved, params)) {
+    return undefined;
+  }
+  return preparedComputerUse
+    ? policyResolved.withPairedComputerUse?.(preparedComputerUse)
+    : policyResolved;
+}
 
 async function resolvePairedComputerNodeScope(
   params: CapturedMcpLoopbackScope,
   mode: LoopbackToolsAllowMode,
+  knownCatalog?: CachedScopedTools,
 ): Promise<ResolvedNodeScope> {
   params.assertCurrent();
+  const adopted = mode === "exact" ? knownCatalog : undefined;
   const canReachOrdinaryComputerSurface =
     isComputerAllowedByMcpScope(params, mode) && params.context.modelHasVision !== false;
   if (!canReachOrdinaryComputerSurface) {
-    return { params };
+    return { params, policyResolved: adopted };
   }
   // Resolve the actual configured surface before contacting Gateway. Grant policy
   // alone is insufficient: profile, agent, sandbox, sender, and Gateway policy
   // can all remove computer from the final catalog.
-  const policyResolved = await resolveMcpLoopbackTools(params, mode);
+  const policyResolved = await resolveMcpLoopbackTools(params, mode, adopted);
+  // Only a catalog built now may refresh the cached one's age.
+  const freshBase = policyResolved === adopted ? undefined : policyResolved;
   params.assertCurrent();
   const computerAllowed = policyResolved.tools.some(
     (tool) => readMcpLoopbackToolName(tool) === "computer",
@@ -236,18 +262,24 @@ async function resolvePairedComputerNodeScope(
   });
   params.assertCurrent();
   if (!pairedComputerUseAvailability) {
-    return { params, policyResolved };
+    return { params, policyResolved, baseCatalog: freshBase };
   }
   const resolvedParams = {
     params: {
       ...params,
       pairedComputerUseAvailability,
     },
+    baseCatalog: freshBase,
   };
-  // Rebuild computer with the prepared host/node action projection and target status.
-  return pairedComputerUseAvailability.prepared
-    ? resolvedParams
-    : { ...resolvedParams, policyResolved };
+  if (!pairedComputerUseAvailability.prepared) {
+    return { ...resolvedParams, policyResolved };
+  }
+  // Only computer carries the prepared host/node action projection and target status.
+  return {
+    ...resolvedParams,
+    policyResolved,
+    preparedComputerUse: pairedComputerUseAvailability.prepared,
+  };
 }
 
 async function resolveMcpLoopbackTools(
@@ -361,19 +393,32 @@ async function constructMcpLoopbackTools(
   };
   const scoped = await resolveGatewayScopedTools(scopeOptions, params.assertCurrent);
   params.assertCurrent();
-  const tools =
+  const applyAllow = (candidates: typeof scoped.tools) =>
     mode === "exact"
-      ? applyGrantToolsAllow(scoped.tools, toolsAllow)
-      : applyPolicyToolsAllow(scoped.tools, toolsAllow);
+      ? applyGrantToolsAllow(candidates, toolsAllow)
+      : applyPolicyToolsAllow(candidates, toolsAllow);
+  const tools = applyAllow(scoped.tools);
   const toolSchema = buildMcpToolSchema(tools);
   scoped.captureFinalCronCreatorTools?.(new Set(toolSchema.map((tool) => tool.name)));
-  return {
+  const catalog: CachedScopedTools = {
     agentId: scoped.agentId,
     workspaceDir: scoped.workspaceDir,
     tools,
     toolSchema,
     sessionFacts,
   };
+  const { rebuildWithPairedComputerUse } = scoped;
+  if (rebuildWithPairedComputerUse) {
+    catalog.withPairedComputerUse = (prepared) => {
+      const rebuilt = rebuildWithPairedComputerUse(prepared);
+      if (!rebuilt) {
+        return undefined;
+      }
+      const rebuiltTools = applyAllow(rebuilt);
+      return { ...catalog, tools: rebuiltTools, toolSchema: buildMcpToolSchema(rebuiltTools) };
+    };
+  }
+  return catalog;
 }
 
 async function resolveMcpLoopbackCatalog(
@@ -386,7 +431,11 @@ async function resolveMcpLoopbackCatalog(
     mode,
   );
   for (;;) {
-    const tools = await resolveMcpLoopbackTools(resolved.params, mode, resolved.policyResolved);
+    const tools = await resolveMcpLoopbackTools(
+      resolved.params,
+      mode,
+      projectResolvedCatalog(resolved),
+    );
     resolved.params.assertCurrent();
     if (isMcpCatalogSessionCurrent(tools, resolved.params)) {
       return tools;
@@ -482,6 +531,8 @@ function buildMcpLoopbackToolCacheKey(params: McpLoopbackScopeParams): string {
 /** Short-lived cache for loopback tool lists keyed by session/channel context. */
 export class McpLoopbackToolCache {
   #entries = new DirectoryCache<CachedScopedTools>(TOOL_CACHE_TTL_MS, TOOL_CACHE_MAX_ENTRIES);
+  // Catalogs built before paired availability, so a request pays only for that availability.
+  #policyEntries = new DirectoryCache<CachedScopedTools>(TOOL_CACHE_TTL_MS, TOOL_CACHE_MAX_ENTRIES);
   // Revocation needs the config scopes where one grant may have cached tools.
   #grantConfigScopes = new Map<string, Set<OpenClawConfig>>();
   #epoch = 0;
@@ -508,8 +559,24 @@ export class McpLoopbackToolCache {
       }
 
       // Availability belongs to the current connection, not the schema TTL.
-      const resolved = await resolvePairedComputerNodeScope(nodeExecParams, "exact");
+      const resolved = await resolvePairedComputerNodeScope(
+        nodeExecParams,
+        "exact",
+        this.#policyEntries.get(preDiscoveryCacheKey, nodeExecParams.cfg),
+      );
       nodeExecParams.assertCurrent();
+      // Only a catalog built for this request refreshes the base entry, so it expires 30 s
+      // after it was built. A projection over an adopted base gets its own 30 s in #entries,
+      // so non-computer tools can live up to about 60 s; session facts and config are
+      // still checked on every request.
+      if (
+        resolved.baseCatalog &&
+        epoch === this.#epoch &&
+        isMcpCatalogSessionCurrent(resolved.baseCatalog, nodeExecParams)
+      ) {
+        this.#policyEntries.set(preDiscoveryCacheKey, resolved.baseCatalog, nodeExecParams.cfg);
+        this.#trackGrantScope(nodeExecParams);
+      }
       const { params } = resolved;
       const cacheKey = buildMcpLoopbackToolCacheKey(params);
       const nextEntry = await withReadyMcpSession(params, async () => {
@@ -517,20 +584,16 @@ export class McpLoopbackToolCache {
         if (cached && isMcpCatalogSessionCurrent(cached, params)) {
           return cached;
         }
+        const projected = projectResolvedCatalog(resolved);
         const next =
-          resolved.policyResolved && isMcpCatalogSessionCurrent(resolved.policyResolved, params)
-            ? resolved.policyResolved
+          projected && isMcpCatalogSessionCurrent(projected, params)
+            ? projected
             : await constructMcpLoopbackTools(params, "exact");
         params.assertCurrent();
         // Revocation may overtake discovery before a grant owns any cached rows.
         if (epoch === this.#epoch && isMcpCatalogSessionCurrent(next, params)) {
           this.#entries.set(cacheKey, next, params.cfg);
-          if (params.grantToken) {
-            const scopes =
-              this.#grantConfigScopes.get(params.grantToken) ?? new Set<OpenClawConfig>();
-            scopes.add(params.cfg);
-            this.#grantConfigScopes.set(params.grantToken, scopes);
-          }
+          this.#trackGrantScope(params);
         }
         return next;
       });
@@ -538,6 +601,14 @@ export class McpLoopbackToolCache {
       if (isMcpCatalogSessionCurrent(nextEntry, params)) {
         return nextEntry;
       }
+    }
+  }
+
+  #trackGrantScope(params: McpLoopbackScopeParams): void {
+    if (params.grantToken) {
+      const scopes = this.#grantConfigScopes.get(params.grantToken) ?? new Set<OpenClawConfig>();
+      scopes.add(params.cfg);
+      this.#grantConfigScopes.set(params.grantToken, scopes);
     }
   }
 
@@ -550,6 +621,7 @@ export class McpLoopbackToolCache {
     const cacheKeyPrefix = `${token}\u0000`;
     for (const cfg of scopes) {
       this.#entries.clearMatching((cacheKey) => cacheKey.startsWith(cacheKeyPrefix), cfg);
+      this.#policyEntries.clearMatching((cacheKey) => cacheKey.startsWith(cacheKeyPrefix), cfg);
     }
     this.#grantConfigScopes.delete(token);
     return true;
@@ -558,6 +630,7 @@ export class McpLoopbackToolCache {
   clear(): void {
     this.#epoch += 1;
     this.#entries.clear();
+    this.#policyEntries.clear();
     this.#grantConfigScopes.clear();
   }
 }

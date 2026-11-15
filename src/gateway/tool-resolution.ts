@@ -5,7 +5,6 @@ import {
   type AdmittedRunContext,
 } from "../agents/admitted-run-context.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentIds } from "../agents/agent-scope.js";
-import { applyToolAvailabilityDescriptions } from "../agents/agent-tools.deferred-followup.js";
 import { createOpenClawCodingToolsInternalAsync } from "../agents/agent-tools.js";
 import { filterToolsByMessageProvider } from "../agents/agent-tools.message-provider-policy.js";
 import { resolveEffectiveToolPolicy } from "../agents/agent-tools.policy.js";
@@ -18,7 +17,6 @@ import { applyDelegationCapability } from "../agents/delegation-capability.js";
 import { prepareExecDefaults, resolvePreparedExecDefaultsAsync } from "../agents/exec-defaults.js";
 import { createLazyExecTool, resolveExecToolConfig } from "../agents/lazy-exec-tool.js";
 import { createOpenClawToolsAsync } from "../agents/openclaw-tools.js";
-import { filterRequesterYieldTools } from "../agents/openclaw-tools.requester-yield.js";
 import {
   applySwarmCollectorToolContract,
   createSwarmCollectorWriteAuthority,
@@ -73,6 +71,7 @@ import {
   captureGatewayToolResolutionAuthority,
   resolveGatewayRequesterToolPolicies,
 } from "./tool-resolution-authority.js";
+import { createPairedComputerRebuild, finalizeScopedTools } from "./tool-resolution-computer.js";
 
 type GatewayScopedToolSurface = "http" | "loopback";
 
@@ -724,10 +723,16 @@ export async function resolveGatewayScopedTools(
     nativeCapture,
   );
 
+  const finalizeTools = (list: AnyAgentTool[]) => finalizeScopedTools(list, params.sessionKey);
   return {
     agentId: sessionAgentId,
-    tools: applyToolAvailabilityDescriptions(filterRequesterYieldTools(tools, params.sessionKey)),
+    tools: finalizeTools(tools),
     workspaceDir,
+    rebuildWithPairedComputerUse: createPairedComputerRebuild({
+      tools,
+      builtComputer: openClawTools.find((tool) => tool.name === "computer"),
+      finalizeTools,
+    }),
     // Only the MCP owner knows which tools survived its grant and schema gates.
     captureFinalCronCreatorTools: cronCreatorToolAllowlistCaptureRef
       ? (callableToolNames: ReadonlySet<string>) =>

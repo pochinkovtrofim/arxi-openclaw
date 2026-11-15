@@ -443,3 +443,141 @@ describe("MCP loopback Computer Use schema", () => {
     expect(listNodes).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("MCP loopback catalog build count", () => {
+  type PreparedComputer = Parameters<typeof createComputerTool>[0];
+  function computerScoped({
+    cfg,
+    pairedNodeComputerUse,
+  }: {
+    cfg: { tools?: { deny?: string[] } };
+    pairedNodeComputerUse?: NonNullable<PreparedComputer>["pairedNodeComputerUse"];
+  }) {
+    const computerDenied = cfg.tools?.deny?.includes("computer");
+    return {
+      agentId: "main",
+      tools: [
+        { name: "message", description: "message tool" },
+        ...(computerDenied ? [] : [createComputerTool({ pairedNodeComputerUse })]),
+      ],
+      rebuildWithPairedComputerUse: computerDenied
+        ? undefined
+        : (prepared: NonNullable<PreparedComputer>["pairedNodeComputerUse"]) => [
+            { name: "message", description: "message tool" },
+            createComputerTool({ pairedNodeComputerUse: prepared }),
+          ],
+    };
+  }
+
+  beforeEach(() => {
+    resolveGatewayScopedTools.mockImplementation(computerScoped);
+  });
+
+  // The cache keys on the config object, so one turn shares one.
+  const turnCfg = { tools: { allow: ["computer", "message"] } };
+  const ownerScope = (extra: Partial<ScopeParams["context"]> = {}, cfg?: ScopeParams["cfg"]) =>
+    scopeParams({
+      cfg: cfg ?? turnCfg,
+      sessionKey: "agent:main:main",
+      senderIsOwner: true,
+      modelHasVision: true,
+      currentMessageId: "message-1",
+      ...extra,
+    });
+
+  it("builds the catalog once when computer is allowed with a paired node", async () => {
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot", "launch_app"])]);
+
+    const resolved = await new McpLoopbackToolCache().resolve(ownerScope());
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(readComputerActions(resolved)).toEqual(
+      expect.arrayContaining(["screenshot", "launch_app"]),
+    );
+    expect(resolved.tools.map((tool) => tool.name)).toEqual(["message", "computer"]);
+  });
+
+  it("builds the catalog once when computer is allowed with no paired node", async () => {
+    listNodes.mockResolvedValue([]);
+
+    const resolved = await new McpLoopbackToolCache().resolve(ownerScope());
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(resolved.toolSchema.some((tool) => tool.name === "computer")).toBe(true);
+  });
+
+  it("builds the catalog once when policy removes computer", async () => {
+    const resolved = await new McpLoopbackToolCache().resolve(
+      ownerScope({}, { tools: { allow: ["message"], deny: ["computer"] } }),
+    );
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(resolved.toolSchema.map((tool) => tool.name)).toEqual(["message"]);
+    expect(listNodes).not.toHaveBeenCalled();
+  });
+
+  it("re-checks computer from the cached catalog on later requests of a grant", async () => {
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot", "launch_app"])]);
+    const cache = new McpLoopbackToolCache();
+    const scope = { ...ownerScope(), grantToken: "grant-a" };
+
+    const first = await cache.resolve(scope);
+    const second = await cache.resolve(scope);
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+    expect(listNodes).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-creates only computer when node availability changes", async () => {
+    const cache = new McpLoopbackToolCache();
+    const scope = { ...ownerScope(), grantToken: "grant-a" };
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot"])]);
+    expect(readComputerActions(await cache.resolve(scope))).not.toContain("launch_app");
+
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot", "launch_app"])]);
+    expect(readComputerActions(await cache.resolve(scope))).toContain("launch_app");
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+  });
+
+  it("evictGrant clears the cached pre-availability catalog too", async () => {
+    const cache = new McpLoopbackToolCache();
+    const scope = { ...ownerScope(), grantToken: "grant-a" };
+    await cache.resolve(scope);
+
+    expect(cache.evictGrant("grant-a")).toBe(true);
+    await cache.resolve(scope);
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
+  });
+  it("does not refresh the cached catalog's age from a request that only read it", async () => {
+    vi.useFakeTimers();
+    try {
+      const cache = new McpLoopbackToolCache();
+      const scope = { ...ownerScope(), grantToken: "grant-a" };
+      await cache.resolve(scope);
+      for (const seconds of [20, 40]) {
+        vi.setSystemTime(Date.now() + 20_000);
+        await cache.resolve(scope);
+        expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(seconds === 20 ? 1 : 2);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("falls back to a full build with the prepared surface when computer cannot be re-created", async () => {
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot", "launch_app"])]);
+    resolveGatewayScopedTools.mockImplementation(({ pairedNodeComputerUse }) => ({
+      agentId: "main",
+      tools: [createComputerTool({ pairedNodeComputerUse })],
+    }));
+
+    const resolved = await new McpLoopbackToolCache().resolve(ownerScope());
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
+    expect(resolveGatewayScopedTools.mock.calls[0]?.[0].pairedNodeComputerUse).toBeUndefined();
+    expect(resolveGatewayScopedTools.mock.calls[1]?.[0].pairedNodeComputerUse).toBeDefined();
+    expect(readComputerActions(resolved)).toContain("launch_app");
+  });
+});
