@@ -307,11 +307,9 @@ function completeTurn(session: ClaudeCliSession, turn: ClaudeCliTurn) {
   if (!session.capability || holdsBackgroundTasks || orphanedInput) {
     // A failed parent does not stop native background continuations. Never lend them a new turn.
     // Input written into a turn that ended unanswered is the same kind of debt.
-    session.endCause = holdsBackgroundTasks
-      ? "background-tasks"
-      : orphanedInput
-        ? "orphaned-input"
-        : "no-reuse";
+    if (holdsBackgroundTasks || orphanedInput) {
+      session.endCause = holdsBackgroundTasks ? "background-tasks" : "orphaned-input";
+    }
     session.handle.close(holdsBackgroundTasks || orphanedInput ? "abort" : "idle");
   } else {
     session.idleTimer = setTimeout(

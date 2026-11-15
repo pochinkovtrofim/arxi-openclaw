@@ -1,6 +1,6 @@
 // Verifies Claude CLI model diagnostics stay listener-gated and memory-bounded.
 import { expectDefined } from "@openclaw/normalization-core";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type DiagnosticEventPayload,
   onTrustedInternalDiagnosticEvent,
@@ -19,6 +19,12 @@ import {
   createClaudeCliModelCallDiagnostics,
 } from "./model-call-diagnostics.js";
 import type { PreparedCliRunContext } from "./types.js";
+
+const startReason = vi.hoisted(() => ({ value: undefined as string | undefined }));
+vi.mock("./cli-live-session-registry.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./cli-live-session-registry.js")>()),
+  getCliLiveSessionStartReason: () => startReason.value,
+}));
 
 const CONTENT_LIMIT_BYTES = 128 * 1024;
 
@@ -389,6 +395,27 @@ describe("Claude CLI model-call diagnostics", () => {
         stages: [{ name: CLI_PROCESS_START_STAGE, startedAt: 1_000, endedAt: 1_400 }],
       });
       expect(stages[0]?.trace?.parentSpanId).toBe(runTrace.spanId);
+    });
+
+    it("marks why the process was reused or started, at the request, with no length", async () => {
+      startReason.value = "fingerprint-system-prompt";
+      try {
+        const { diagnostics, events, at } = createStepHarness();
+        diagnostics.emitStarted();
+        at(1_300);
+        diagnostics.observeRequestSent();
+        diagnostics.emitCompleted({ text: "x" } as CliOutput);
+        await waitForDiagnosticEventsDrained();
+        const stages = events.filter((event) => event.type === "context.stages");
+        expect(stages[0]).toMatchObject({
+          stages: [
+            { name: CLI_PROCESS_START_STAGE, startedAt: 1_000, endedAt: 1_300 },
+            { name: "cli-live-fingerprint-system-prompt", startedAt: 1_300, endedAt: 1_300 },
+          ],
+        });
+      } finally {
+        startReason.value = undefined;
+      }
     });
 
     it("reports the wait for the CLI lane before the process start", async () => {

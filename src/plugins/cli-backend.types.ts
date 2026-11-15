@@ -223,11 +223,11 @@ export type CliBackendLiveSessionEndCause =
   | "evicted"
   | "background-tasks"
   | "orphaned-input"
-  | "no-reuse"
   | "aborted"
   | "cancelled"
   | "error"
-  | "mcp-capture-rotation";
+  | "mcp-capture-rotation"
+  | "unspecified";
 
 /** Plugin-owned input sink for the admitted turn; the host revalidates authority at each effect. */
 export type CliBackendMessageInjection = {

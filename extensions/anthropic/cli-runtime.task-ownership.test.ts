@@ -125,6 +125,7 @@ for await (const line of createInterface({ input: process.stdin })) {
   const first = resultDetail(await collect(context));
   expect(first.answer).toBe("parent final");
   expect(liveSession.current()).toBeUndefined();
+  expect(liveSession.endCauses).toEqual(["background-tasks"]);
   // The next turn starts a fresh process; that process's descendant still runs, too.
   const next = resultDetail(await collect({ ...context, useResume: true }));
   expect(next).toMatchObject({ answer: "parent final" });

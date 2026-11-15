@@ -13,6 +13,7 @@ import {
   buildCliLiveSessionFingerprint,
   buildCliLiveSessionFingerprintParts,
   changedCliLiveSessionFingerprintPart,
+  type CliLiveSessionFingerprintPartLabel,
   type CliLiveSessionFingerprintParts,
 } from "./live-session-fingerprint.js";
 import { cliBackendLog } from "./log.js";
@@ -73,8 +74,28 @@ const handleFingerprintParts = new WeakMap<
   CliBackendLiveSessionHandle,
   CliLiveSessionFingerprintParts
 >();
-const startReasons = new WeakMap<PreparedCliRunContext, string>();
+const startReasons = new WeakMap<PreparedCliRunContext, CliLiveSessionStartReason>();
 const evictedHandles = new WeakSet<CliBackendLiveSessionHandle>();
+// Conversations whose process ended and that have not started another; the
+// oldest is forgotten past this, so one-off and cron conversations stay bounded.
+const MAX_REMEMBERED_END_CAUSES = 256;
+
+function rememberEndCause(ownerKey: string, cause: CliBackendLiveSessionEndCause): void {
+  lastEndCause.delete(ownerKey);
+  lastEndCause.set(ownerKey, cause);
+  if (lastEndCause.size > MAX_REMEMBERED_END_CAUSES) {
+    const oldest = lastEndCause.keys().next().value;
+    if (oldest !== undefined) {
+      lastEndCause.delete(oldest);
+    }
+  }
+}
+
+export type CliLiveSessionStartReason =
+  | "reused"
+  | "new"
+  | CliBackendLiveSessionEndCause
+  | `fingerprint-${CliLiveSessionFingerprintPartLabel}`;
 
 /**
  * Why this turn's CLI process was reused or started: "reused", "new" (no
@@ -82,7 +103,9 @@ const evictedHandles = new WeakSet<CliBackendLiveSessionHandle>();
  * process ended with, or "fingerprint-<input>" when an input of the warm
  * process changed. A closed list, never content.
  */
-export function getCliLiveSessionStartReason(context: PreparedCliRunContext): string | undefined {
+export function getCliLiveSessionStartReason(
+  context: PreparedCliRunContext,
+): CliLiveSessionStartReason | undefined {
   return startReasons.get(context);
 }
 const retiredSessionCleanup = new Map<string, Promise<void>>();
@@ -346,6 +369,7 @@ export function createCliLiveSessionCapability(params: {
           : {}),
       };
       liveSessions.set(ownerKey, record);
+      lastEndCause.delete(ownerKey);
       handleFingerprintParts.set(handle, fingerprintParts);
       retainCleanup(params.context, record);
       cliBackendLog.info(
@@ -371,7 +395,7 @@ export function createCliLiveSessionCapability(params: {
       if (record?.handle !== handle) {
         return;
       }
-      lastEndCause.set(ownerKey, evictedHandles.has(handle) ? "evicted" : (cause ?? "error"));
+      rememberEndCause(ownerKey, evictedHandles.has(handle) ? "evicted" : (cause ?? "unspecified"));
       record.capture?.revoke();
       liveSessions.delete(ownerKey);
       record.approvalGrants.clear();

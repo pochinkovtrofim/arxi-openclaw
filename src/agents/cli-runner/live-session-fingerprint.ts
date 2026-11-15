@@ -31,7 +31,12 @@ const FINGERPRINT_PART_LABELS = {
   credentialFingerprint: "credential",
   skillsFingerprint: "skills",
   env: "env",
-} as const;
+} as const satisfies Record<keyof ReturnType<typeof buildCliLiveSessionFingerprintInputs>, string>;
+
+/** A fingerprint input's trace label, or "unknown" when the previous inputs are missing. */
+export type CliLiveSessionFingerprintPartLabel =
+  | (typeof FINGERPRINT_PART_LABELS)[keyof typeof FINGERPRINT_PART_LABELS]
+  | "unknown";
 
 export type CliLiveSessionFingerprintParts = Readonly<Record<string, string>>;
 
@@ -49,7 +54,7 @@ export function buildCliLiveSessionFingerprintParts(
 export function changedCliLiveSessionFingerprintPart(
   previous: CliLiveSessionFingerprintParts | undefined,
   next: CliLiveSessionFingerprintParts,
-): string {
+): CliLiveSessionFingerprintPartLabel {
   if (previous) {
     for (const [key, label] of Object.entries(FINGERPRINT_PART_LABELS)) {
       if (previous[key] !== next[key]) {
