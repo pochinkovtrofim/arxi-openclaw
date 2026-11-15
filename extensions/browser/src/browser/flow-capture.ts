@@ -61,8 +61,14 @@ export function attachFlowCapture(page: Page): void {
   captures.set(page, state);
   page.on("request", (req: Request) => {
     const type = req.resourceType();
-    const document = type === "document" && req.frame() === page.mainFrame();
-    if (!document && type !== "fetch" && type !== "xhr") {
+    let mainDocument = false;
+    try {
+      mainDocument = type === "document" && req.frame() === page.mainFrame();
+    } catch {
+      // A service worker's request has no frame and is not the page's own.
+      return;
+    }
+    if (!mainDocument && type !== "fetch" && type !== "xhr") {
       return;
     }
     const url = req.url();
@@ -75,7 +81,7 @@ export function attachFlowCapture(page: Page): void {
       id: `c${state.next}`,
       method: req.method(),
       url,
-      kind: document ? "document" : "data",
+      kind: mainDocument ? "document" : "data",
       headers: req.headers(),
       ...(postData !== undefined && postData.length <= MAX_POST_BYTES ? { postData } : {}),
     };
