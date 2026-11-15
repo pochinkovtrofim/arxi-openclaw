@@ -1,4 +1,4 @@
-import type { PreflightStep, PreflightStepMoment } from "./diagnostic-events.js";
+import type { PreflightStep } from "./diagnostic-events.js";
 
 /**
  * Collects step moments for measurement. `record` never throws, so it is safe to hand to
@@ -6,7 +6,7 @@ import type { PreflightStep, PreflightStepMoment } from "./diagnostic-events.js"
  * only its last moment.
  */
 export function createPreflightStepRecorder<S extends PreflightStep>() {
-  const steps: PreflightStepMoment[] = [];
+  const steps: Array<{ step: S; at: number }> = [];
   return {
     steps,
     record: (step: S) => {
