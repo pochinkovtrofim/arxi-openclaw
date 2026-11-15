@@ -116,7 +116,7 @@ vi.mock("../plugins/public-surface-loader.js", () => ({
   loadBundledPluginPublicArtifactModuleSync: mocks.loadBundledPluginPublicArtifactModuleSync,
 }));
 
-const { scheduleGatewayHandlerPrewarm, scheduleGatewayPrewarm } =
+const { gatewayPrewarmItems, scheduleGatewayHandlerPrewarm, scheduleGatewayPrewarm } =
   await import("./server-startup-handler-prewarm.js");
 
 beforeEach(() => {
@@ -322,6 +322,22 @@ describe("scheduleGatewayHandlerPrewarm", () => {
     } finally {
       admission.release();
       await sidecar.stop();
+    }
+  });
+
+  it("orders chat.history and the agent turn steps before the other handlers", () => {
+    const names = gatewayPrewarmItems(() => ({})).map((item) => item.name);
+    const turnSteps = names.filter((name) => name.startsWith("agent-turn."));
+    expect(turnSteps).toHaveLength(13);
+    expect(names.indexOf("chat.history")).toBeLessThan(names.indexOf("agent"));
+    const lastTurnStep = names.indexOf(expectDefined(turnSteps.at(-1), "last agent-turn step"));
+    // The golden bake waits for this exact marker (ops/guest/guest-entry wait_golden_prewarm).
+    expect(names[lastTurnStep]).toBe("agent-turn.chat-commands");
+    for (const name of ["chat.history", "agent", ...turnSteps]) {
+      expect(names.indexOf(name)).toBeLessThanOrEqual(lastTurnStep);
+    }
+    for (const name of ["chat.send", "sessions.list"]) {
+      expect(names.indexOf(name)).toBeGreaterThan(lastTurnStep);
     }
   });
 

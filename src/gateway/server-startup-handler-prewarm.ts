@@ -8,7 +8,7 @@ import type { GatewayStartupTrace } from "./server-startup-trace.js";
 
 const GATEWAY_HANDLER_PREWARM_RETRY_DELAY_MS = 250;
 
-const PREWARMED_HANDLER_METHODS = ["chat.history", "chat.send", "sessions.list"];
+const LATER_PREWARMED_HANDLER_METHODS = ["chat.send", "sessions.list"];
 
 type GatewayHandlerPrewarmItem = {
   name: string;
@@ -71,7 +71,7 @@ function agentTurnModuleItems(): GatewayHandlerPrewarmItem[] {
   ];
 }
 
-function gatewayPrewarmItems(getConfig: () => OpenClawConfig): GatewayHandlerPrewarmItem[] {
+export function gatewayPrewarmItems(getConfig: () => OpenClawConfig): GatewayHandlerPrewarmItem[] {
   return [
     {
       name: "session-history-worker",
@@ -84,11 +84,16 @@ function gatewayPrewarmItems(getConfig: () => OpenClawConfig): GatewayHandlerPre
         }
       },
     },
-    // Agent turns first: a snapshot bake suspends the Gateway soon after readiness, and a
+    // Owner turns first: a snapshot bake suspends the Gateway soon after readiness, and a
     // restored Gateway starts the first owner turn at once, so later items may never run.
+    // The apps read chat.history right after each reply, so it stays ahead of the turn modules.
+    // The bake waits for the last agent-turn step by name (ops/guest/guest-entry
+    // wait_golden_prewarm): keep `agent-turn.chat-commands` last among the agent-turn steps.
+    // A step cancelled after admission is skipped, not retried; request-time loaders cover it.
+    handlerItem("chat.history"),
     handlerItem("agent"),
     ...agentTurnModuleItems(),
-    ...PREWARMED_HANDLER_METHODS.map(handlerItem),
+    ...LATER_PREWARMED_HANDLER_METHODS.map(handlerItem),
     { name: "agent-events", load: () => import("./server-chat.js") },
     { name: "session-key", load: () => import("./server-session-key.js") },
     {
