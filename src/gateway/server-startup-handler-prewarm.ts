@@ -10,8 +10,6 @@ const GATEWAY_HANDLER_PREWARM_RETRY_DELAY_MS = 250;
 
 const PREWARMED_HANDLER_METHODS = ["chat.history", "chat.send", "sessions.list"];
 
-const PREWARMED_HANDLER_METHODS = ["chat.history", "chat.send", "sessions.list"];
-
 type GatewayHandlerPrewarmItem = {
   name: string;
   notBeforeMs?: number;
