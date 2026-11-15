@@ -320,16 +320,18 @@ async function withReadyMcpSession<T>(
     sharingRevision: object | undefined;
   };
   do {
-    receipt = await withReadySessionRows(
-      params.projection,
-      () => [{ agentId, key: sessionKey }],
-      () => {
-        params.assertCurrent();
-        return {
-          sessionFacts: captureMcpCatalogSessionFacts(params),
-          sharingRevision: params.projection?.sharingRevision,
-        };
-      },
+    receipt = await measurePrepStage("mcp-session-ready", () =>
+      withReadySessionRows(
+        params.projection,
+        () => [{ agentId, key: sessionKey }],
+        () => {
+          params.assertCurrent();
+          return {
+            sessionFacts: captureMcpCatalogSessionFacts(params),
+            sharingRevision: params.projection?.sharingRevision,
+          };
+        },
+      ),
     );
     params.assertCurrent();
   } while (
