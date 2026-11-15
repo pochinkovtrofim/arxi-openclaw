@@ -226,16 +226,33 @@ describe("browser saved flow actions", () => {
     expect(writeVerdict(flow, ok(200, "<html>login</html>")).kind).toBe("outcome_unknown");
     expect(writeVerdict(flow, { ok: false, error: "not_on_site" }).kind).toBe("write_not_sent");
     expect(
-      writeVerdict(flow, { ok: false, error: "device_failed", detail: "mac_fetch_refused: private" }).kind,
+      writeVerdict(flow, {
+        ok: false,
+        error: "device_failed",
+        detail: "mac_fetch_refused: private",
+      }).kind,
     ).toBe("write_not_sent");
-    expect(writeVerdict(flow, { ok: false, error: "relay_unanswered" }).kind).toBe("outcome_unknown");
-    client.browserFlowPageFetch.mockResolvedValue({ ok: false, error: "not_on_site", pageUrl: "about:blank" });
+    expect(writeVerdict(flow, { ok: false, error: "relay_unanswered" }).kind).toBe(
+      "outcome_unknown",
+    );
+    client.browserFlowPageFetch.mockResolvedValue({
+      ok: false,
+      error: "not_on_site",
+      pageUrl: "about:blank",
+    });
     const notSent = details(
-      await executeFlowAction("flow_run", { name: "add", params: { sku: "b2" }, allowWrite: true }, context()),
+      await executeFlowAction(
+        "flow_run",
+        { name: "add", params: { sku: "b2" }, allowWrite: true },
+        context(),
+      ),
     );
     expect(notSent).toMatchObject({ error: "write_not_sent", via: "page" });
     expect(guarded.fetchWithSsrFGuard).not.toHaveBeenCalled();
-    expect(client.browserFlowPageFetch.mock.calls[0][1]).toMatchObject({ write: true, method: "POST" });
+    expect(client.browserFlowPageFetch.mock.calls[0][1]).toMatchObject({
+      write: true,
+      method: "POST",
+    });
   });
 
   it("sends from the owner's computer only when asked", async () => {

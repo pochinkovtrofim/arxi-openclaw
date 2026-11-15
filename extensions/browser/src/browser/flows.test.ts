@@ -197,7 +197,7 @@ describe("saved flows", () => {
     const exchanges = recording();
     const auto = buildFlow({ name: "list", pageUrl: "https://www.shop.example/", exchanges });
     expect(auto.flow.request.url).toContain("/v2/search");
-    expect(auto.candidates.map((c) => c.id)).toEqual(["c3", "c2"]);
+    expect(auto.candidates.map((c) => c.id)).toEqual(["c4", "c3", "c2"]);
     const picked = buildFlow({
       name: "config",
       pageUrl: "https://www.shop.example/",
@@ -312,8 +312,22 @@ describe("saved flow review cases", () => {
       name: "search",
       pageUrl: "https://www.shop.example/s?q=lamp",
       exchanges: [
-        sanitizeExchange(exchange({ id: "c1", kind: "document", url: "https://www.shop.example/s?q=lamp", contentType: "text/html", body: page })),
-        sanitizeExchange(exchange({ id: "c2", url: "https://api.shop.example/search?q=lamp", body: JSON.stringify(products) })),
+        sanitizeExchange(
+          exchange({
+            id: "c1",
+            kind: "document",
+            url: "https://www.shop.example/s?q=lamp",
+            contentType: "text/html",
+            body: page,
+          }),
+        ),
+        sanitizeExchange(
+          exchange({
+            id: "c2",
+            url: "https://api.shop.example/search?q=lamp",
+            body: JSON.stringify(products),
+          }),
+        ),
       ],
       values: { q: "lamp" },
     });
@@ -322,11 +336,22 @@ describe("saved flow review cases", () => {
 
   it("counts opaque GraphQL operations and delete paths as writes, search bodies as reads", () => {
     const post = (url: string, postData: string) => ({ method: "POST", url, postData });
-    expect(isWrite(post("https://x.example/graphql", '{"operationName":"AddToCart","extensions":{"persistedQuery":{"sha256Hash":"a"}}}'))).toBe(true);
-    expect(isWrite(post("https://x.example/api/graphql/", "doc_id=123&variables=%7B%7D"))).toBe(true);
+    expect(
+      isWrite(
+        post(
+          "https://x.example/graphql",
+          '{"operationName":"AddToCart","extensions":{"persistedQuery":{"sha256Hash":"a"}}}',
+        ),
+      ),
+    ).toBe(true);
+    expect(isWrite(post("https://x.example/api/graphql/", "doc_id=123&variables=%7B%7D"))).toBe(
+      true,
+    );
     expect(isWrite(post("https://x.example/api/list/delete", '{"id":1}'))).toBe(true);
     expect(isWrite(post("https://x.example/graphql", '{"query":"query Q { a }"}'))).toBe(false);
-    expect(isWrite(post("https://x.example/api/search", '{"keyword":"lamp","page":1}'))).toBe(false);
+    expect(isWrite(post("https://x.example/api/search", '{"keyword":"lamp","page":1}'))).toBe(
+      false,
+    );
     expect(isWrite({ method: "GET", url: "https://x.example/account/logout" })).toBe(true);
   });
 
@@ -336,7 +361,10 @@ describe("saved flow review cases", () => {
         id: "c1",
         method: "POST",
         url: "https://x.example/api/search",
-        headers: { "content-type": "application/x-www-form-urlencoded", referer: "https://x.example/s?q=private&u=7" },
+        headers: {
+          "content-type": "application/x-www-form-urlencoded",
+          referer: "https://x.example/s?q=private&u=7",
+        },
         postData: "q=lamp&authenticity_token=SECRET&fb_dtsg=SECRET&pageToken=next",
       }),
     );
@@ -344,18 +372,42 @@ describe("saved flow review cases", () => {
     expect(form.session).toBe(true);
     expect(form.headers.referer).toBe("https://x.example/");
     const json = sanitizeExchange(
-      exchange({ id: "c2", method: "POST", url: "https://x.example/api/search", postData: '{"q":"lamp","meta":{"csrf_token":"SECRET"}}' }),
+      exchange({
+        id: "c2",
+        method: "POST",
+        url: "https://x.example/api/search",
+        postData: '{"q":"lamp","meta":{"csrf_token":"SECRET"}}',
+      }),
     );
     expect(JSON.parse(json.postData ?? "")).toEqual({ q: "lamp", meta: {} });
     for (const postData of ["user[password]=hunter2&user[email]=a", "user%5Bpassword%5D=hunter2"]) {
-      expect(sanitizeExchange(exchange({ id: "c3", method: "POST", url: "https://x.example/session", postData })).skip).toBe("login");
+      expect(
+        sanitizeExchange(
+          exchange({ id: "c3", method: "POST", url: "https://x.example/session", postData }),
+        ).skip,
+      ).toBe("login");
     }
   });
 
   it("lets flow.output name an analytics-looking request the automatic pick skips", () => {
-    const events = sanitizeExchange(exchange({ id: "c9", url: "https://x.example/api/events?city=bcn", body: JSON.stringify({ events: [{ id: 1 }] }) }));
-    expect(() => buildFlow({ name: "events", pageUrl: "https://x.example/", exchanges: [events] })).toThrow(/nothing to save/);
-    expect(buildFlow({ name: "events", pageUrl: "https://x.example/", exchanges: [events], output: "c9" }).flow.shape.items).toBe("events");
+    const events = sanitizeExchange(
+      exchange({
+        id: "c9",
+        url: "https://x.example/api/events?city=bcn",
+        body: JSON.stringify({ events: [{ id: 1 }] }),
+      }),
+    );
+    expect(() =>
+      buildFlow({ name: "events", pageUrl: "https://x.example/", exchanges: [events] }),
+    ).toThrow(/nothing to save/);
+    expect(
+      buildFlow({
+        name: "events",
+        pageUrl: "https://x.example/",
+        exchanges: [events],
+        output: "c9",
+      }).flow.shape.items,
+    ).toBe("events");
   });
 });
 

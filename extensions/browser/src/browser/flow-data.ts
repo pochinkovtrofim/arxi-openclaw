@@ -273,4 +273,3 @@ export function classifyFlowResponse(params: {
   const shape = checkShape(params.flow.shape, data);
   return shape.ok ? { kind: "ok", data } : { kind: "drift", missing: shape.missing };
 }
-

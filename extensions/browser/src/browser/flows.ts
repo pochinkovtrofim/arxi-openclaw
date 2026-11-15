@@ -185,11 +185,16 @@ function dropSecretKeys(value: Json): { value: Json; dropped: boolean } {
 }
 
 /** A JSON or form body without the fields that carry the session. */
-function withoutSecretFields(body: string, contentType: string): { text: string; dropped: boolean } {
+function withoutSecretFields(
+  body: string,
+  contentType: string,
+): { text: string; dropped: boolean } {
   const json = parseJson(body);
   if (json !== undefined) {
     const clean = dropSecretKeys(json);
-    return clean.dropped ? { text: JSON.stringify(clean.value), dropped: true } : { text: body, dropped: false };
+    return clean.dropped
+      ? { text: JSON.stringify(clean.value), dropped: true }
+      : { text: body, dropped: false };
   }
   if (/x-www-form-urlencoded/i.test(contentType)) {
     const form = new URLSearchParams(body);
@@ -241,12 +246,14 @@ export function isWrite(exchange: Pick<FlowExchange, "method" | "url" | "postDat
   const entries = Array.isArray(body) ? body : [body];
   if (entries.every((entry) => isRecord(entry) && typeof entry.query === "string")) {
     return entries.some(
-      (entry) => isRecord(entry) && typeof entry.query === "string" && /^\s*mutation\b/.test(entry.query),
+      (entry) =>
+        isRecord(entry) && typeof entry.query === "string" && /^\s*mutation\b/.test(entry.query),
     );
   }
   const opaqueOperation =
-    entries.some((entry) => isRecord(entry) && ("extensions" in entry || "operationName" in entry)) ||
-    /(^|&)doc_id=/.test(exchange.postData ?? "");
+    entries.some(
+      (entry) => isRecord(entry) && ("extensions" in entry || "operationName" in entry),
+    ) || /(^|&)doc_id=/.test(exchange.postData ?? "");
   if (opaqueOperation || GRAPHQL_PATH.test(pathname)) {
     return true;
   }
@@ -591,4 +598,3 @@ export function buildFlow(params: {
     skipped,
   };
 }
-

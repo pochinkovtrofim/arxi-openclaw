@@ -183,7 +183,10 @@ async function deviceTier(
     return {
       ok: false,
       error: text(answer.error) ?? "device_failed",
-      detail: answer.detail === undefined ? undefined : (text(answer.detail) ?? JSON.stringify(answer.detail)),
+      detail:
+        answer.detail === undefined
+          ? undefined
+          : (text(answer.detail) ?? JSON.stringify(answer.detail)),
     };
   } catch (err) {
     signal?.throwIfAborted();
@@ -318,7 +321,7 @@ type WriteVerdict =
 /** What one answer says about a write: applied, refused, never sent, or unknown. */
 export function writeVerdict(flow: SavedFlow, answer: TierAnswer): WriteVerdict {
   if (!answer.ok) {
-    const refusedBeforeSending = /_fetch_refused/.test(answer.detail ?? "");
+    const refusedBeforeSending = (answer.detail ?? "").includes("_fetch_refused");
     return WRITE_NOT_SENT.has(answer.error) || refusedBeforeSending
       ? { kind: "write_not_sent", detail: answer.error }
       : { kind: "outcome_unknown", detail: answer.error };
@@ -337,31 +340,64 @@ export function writeVerdict(flow: SavedFlow, answer: TierAnswer): WriteVerdict 
   }
   if (outcome.kind === "drift") {
     // A 2xx with JSON in another shape: the site took it and answered differently.
-    return { kind: "outcome_unknown", detail: `applied, but the answer changed shape (missing ${outcome.missing})` };
+    return {
+      kind: "outcome_unknown",
+      detail: `applied, but the answer changed shape (missing ${outcome.missing})`,
+    };
   }
   return { kind: "outcome_unknown", detail: `answered ${status} without the recorded data` };
 }
 
 const WRITE_HINT: Record<Exclude<WriteVerdict["kind"], "applied">, string> = {
-  write_not_sent: "Nothing was sent. Open the site's page (signed in) and run it again, or do it in the page.",
+  write_not_sent:
+    "Nothing was sent. Open the site's page (signed in) and run it again, or do it in the page.",
   write_rejected: "The site refused it; nothing changed. Check the params, or do it in the page.",
-  outcome_unknown: "The change may or may not have happened: check the site before running it again.",
+  outcome_unknown:
+    "The change may or may not have happened: check the site before running it again.",
 };
 
-async function runWrite(flow: SavedFlow, request: FlowRequest, input: FlowInput, context: FlowContext, timeoutMs: number, root?: string) {
-  const [tier] = flowTierOrder(flow, input.via);
+async function runWrite(
+  flow: SavedFlow,
+  request: FlowRequest,
+  input: FlowInput,
+  context: FlowContext,
+  timeoutMs: number,
+  root?: string,
+) {
+  const tier = flowTierOrder(flow, input.via)[0] ?? "http";
   const verdict = writeVerdict(flow, await sendOnTier(tier, request, context, timeoutMs));
   if (verdict.kind !== "applied") {
     if (verdict.detail.startsWith("applied")) {
-      await writeFlow({ ...flow, verified: false, drift: verdict.detail, updatedAt: new Date().toISOString() }, root).catch(() => {});
+      await writeFlow(
+        { ...flow, verified: false, drift: verdict.detail, updatedAt: new Date().toISOString() },
+        root,
+      ).catch(() => {});
     }
-    return jsonResult({ ok: false, error: verdict.kind, flow: flow.name, via: tier, detail: verdict.detail, hint: WRITE_HINT[verdict.kind] });
+    return jsonResult({
+      ok: false,
+      error: verdict.kind,
+      flow: flow.name,
+      via: tier,
+      detail: verdict.detail,
+      hint: WRITE_HINT[verdict.kind],
+    });
   }
-  await writeFlow({ ...flow, tier, verified: true, updatedAt: new Date().toISOString() }, root).catch(() => {});
+  await writeFlow(
+    { ...flow, tier, verified: true, updatedAt: new Date().toISOString() },
+    root,
+  ).catch(() => {});
   return flowResult(flow, tier, verdict.data, input, context, true);
 }
 
-function flowResult(flow: SavedFlow, tier: FlowTier, data: Json, input: FlowInput, context: FlowContext, verified: boolean, drift?: string) {
+function flowResult(
+  flow: SavedFlow,
+  tier: FlowTier,
+  data: Json,
+  input: FlowInput,
+  context: FlowContext,
+  verified: boolean,
+  drift?: string,
+) {
   const selected = selectFlowData(flow.shape, data, {
     where: input.where,
     select: input.select,
@@ -405,7 +441,10 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
   for (const tier of flowTierOrder(flow, input.via)) {
     const answer = await sendOnTier(tier, request, context, timeoutMs);
     if (!answer.ok) {
-      attempts.push({ tier, outcome: { kind: "unanswered", error: answer.error, detail: answer.detail } });
+      attempts.push({
+        tier,
+        outcome: { kind: "unanswered", error: answer.error, detail: answer.detail },
+      });
       continue;
     }
     const outcome = classifyFlowResponse({
@@ -424,7 +463,8 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
     }
   }
   const drifted = attempts.find((a) => a.outcome.kind === "drift");
-  const drift = drifted?.outcome.kind === "drift" ? `missing ${drifted.outcome.missing}` : undefined;
+  const drift =
+    drifted?.outcome.kind === "drift" ? `missing ${drifted.outcome.missing}` : undefined;
   const updated: SavedFlow = {
     ...flow,
     updatedAt: new Date().toISOString(),
@@ -441,7 +481,8 @@ async function runFlow(flow: SavedFlow, input: FlowInput, context: FlowContext, 
     const last = attempts.at(-1);
     return jsonResult({
       ok: false,
-      error: last?.outcome.kind === "unanswered" ? last.outcome.error : (last?.outcome.kind ?? "failed"),
+      error:
+        last?.outcome.kind === "unanswered" ? last.outcome.error : (last?.outcome.kind ?? "failed"),
       flow: flow.name,
       verified: updated.verified,
       tried: attempts.map(attemptSummary),
