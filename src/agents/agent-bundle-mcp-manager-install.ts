@@ -67,6 +67,9 @@ function requesterRuntimeFingerprint(
     : configFingerprint;
 }
 
+/** How long a runtime outlives its resolver failing; then the server drops as before. */
+const MCP_RESOLVER_FAILURE_KEEP_MS = 5 * 60_000;
+
 export function createSessionMcpRuntimeManagerInstall(
   lifecycle: SessionMcpRuntimeManagerLifecycle,
 ) {
@@ -235,6 +238,8 @@ export function createSessionMcpRuntimeManagerInstall(
       return existing;
     }
 
+    const failedForAMoment: string[] = [];
+    let anyUnavailable = false;
     const connectionOverrides = await resolveRequesterScopedMcpConnections({
       serverNames: params.resolverRequesterServerNames,
       requesterSenderId: params.requesterSenderId,
@@ -246,8 +251,37 @@ export function createSessionMcpRuntimeManagerInstall(
       conversationId: params.conversationId,
       runtimeGeneration: params.runtimeGeneration,
       traceId: params.traceId,
-      onUnavailable: params.onResolverUnavailable,
+      onUnavailable: (diagnostic) => {
+        if (diagnostic.reason === "error" || diagnostic.reason === "timeout") {
+          failedForAMoment.push(diagnostic.serverName);
+        } else {
+          anyUnavailable = true;
+        }
+        params.onResolverUnavailable?.(diagnostic);
+      },
     });
+    // A resolver failing for a moment (its host restarting, say) keeps the runtime
+    // installed for this requester and configuration: dropping its server would change
+    // the tool list, which resets a Claude Code session's conversation. The resolution
+    // time stays, so the next turn resolves again. Any server answering "unavailable"
+    // still revokes below, and a failure lasting past the window installs as before.
+    const now = store.scheduler.now();
+    const failingSince = meta?.failingSince ?? now;
+    if (
+      failedForAMoment.length > 0 &&
+      !anyUnavailable &&
+      now - failingSince < MCP_RESOLVER_FAILURE_KEEP_MS &&
+      existing &&
+      meta !== undefined &&
+      meta.resolutionContextKey === resolutionContextKey &&
+      store.runtimesBySessionId.get(params.runtimeKey) === existing &&
+      matchesRuntime(existing, params, scopedFingerprint)
+    ) {
+      meta.failingSince = failingSince;
+      reconcileReusableRetirement(params, existing);
+      existing.markUsed();
+      return existing;
+    }
     const activeNameSet = new Set([
       ...(requesterConnect?.authorizedServerNames ?? []),
       ...connectionOverrides.keys(),

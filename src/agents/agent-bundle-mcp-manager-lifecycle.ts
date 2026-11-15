@@ -48,7 +48,13 @@ type SessionMcpRuntimeManagerStore = {
   requiredRetirementSessionIds: Set<string>;
   connectionMetaByRuntimeKey: Map<
     string,
-    { connectionHash: string; resolutionContextKey: string; resolvedAt: number }
+    {
+      connectionHash: string;
+      resolutionContextKey: string;
+      resolvedAt: number;
+      /** When a resolver began failing while this runtime was kept; cleared by a new install. */
+      failingSince?: number;
+    }
   >;
   advertisedScopedCatalogBySessionId: Map<string, AdvertisedScopedCatalogEntry>;
   runtimeWorkChains: Map<string, Promise<unknown>>;
