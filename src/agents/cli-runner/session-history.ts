@@ -578,6 +578,8 @@ export async function loadCliSessionPromptContext(
     runId?: string;
     cliSessionBinding?: CliSessionBinding;
     userTurnTranscriptRecorder?: UserTurnTranscriptRecorder;
+    /** Names reading the stored branch apart from rendering it in the trace. */
+    markStage?: (stage: string) => void;
   },
 ) {
   const assertActive =
@@ -603,6 +605,7 @@ export async function loadCliSessionPromptContext(
   }
   assertActive?.();
   const entries = await loadCliSessionEntries(params);
+  params.markStage?.("session-entries-load");
   assertActive?.();
   const replies = classifyCliReplies(entries, params.provider);
   const sessionGapContext =

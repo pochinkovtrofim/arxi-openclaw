@@ -75,6 +75,8 @@ export async function prepareCliMcpToolProjection(
     >;
     resolvePolicyTools: ResolveMcpTools;
     resolveScopedTools: ResolveMcpTools;
+    /** Names the run admission's wait apart from building the catalog in the trace. */
+    markStage?: (stage: string) => void;
   },
 ) {
   const requestedToolsAllow =
@@ -88,6 +90,7 @@ export async function prepareCliMcpToolProjection(
       ? options.resolvePolicyTools
       : options.resolveScopedTools;
   const admittedParams = await admitCliRunParams(params, options.agentId);
+  options.markStage?.("mcp-run-admission");
   const { tools } = await resolveTools({
     ...options.scope,
     defaultMediatedToolNames: options.defaultMediatedToolNames,
