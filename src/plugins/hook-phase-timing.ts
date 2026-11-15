@@ -47,6 +47,11 @@ export function hookTimingLabel(
     : `${plugin}#${Math.max(0, Math.min(index, 99))}`;
 }
 
+/** A prompt hook's preparation stage name: its code label in the host's stage alphabet. */
+export function promptHookStageName(label: string): string {
+  return `hook-${label.toLowerCase().replace(/[^a-z0-9-]+/gu, "-")}`.slice(0, 48);
+}
+
 /** Records one handler of a gating phase for the run that dispatched it. */
 export function recordHookPhaseTiming(params: {
   runId: string;

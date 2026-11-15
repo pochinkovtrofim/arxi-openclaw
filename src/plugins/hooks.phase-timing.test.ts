@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { hookTimingLabel, takeHookPhaseTimings } from "./hook-phase-timing.js";
+import { createStageTimingTracker } from "../shared/stage-timing.js";
+import { withPrepStages } from "../infra/run-prep-stages.js";
+import {
+  hookTimingLabel,
+  promptHookStageName,
+  takeHookPhaseTimings,
+} from "./hook-phase-timing.js";
 import { createHookRunner } from "./hooks.js";
 import { createMockPluginRegistry, TEST_PLUGIN_AGENT_CTX } from "./hooks.test-fixtures.js";
 
@@ -69,6 +75,47 @@ describe("gating hook phase timing", () => {
     const timings = takeHookPhaseTimings(RUN_ID);
     expect(timings.before_agent_run).toMatchObject({ count: 1, timeouts: 0, slowest: "gate#0" });
     expect(timings.before_prompt_build).toBeUndefined();
+  });
+
+  it("times each prompt hook as a measured step of the run's preparation", async () => {
+    let clock = 0;
+    const tracker = createStageTimingTracker(() => clock);
+    const runner = createHookRunner(
+      createMockPluginRegistry([
+        {
+          hookName: "before_prompt_build",
+          pluginId: "arxi-channel",
+          registrationId: "connections",
+          priority: 10,
+          handler: async () => {
+            clock += 40;
+            return { appendContext: "setup" };
+          },
+        },
+        {
+          hookName: "before_prompt_build",
+          pluginId: "memory",
+          priority: 1,
+          handler: () => {
+            clock += 5;
+            return undefined;
+          },
+        },
+      ]),
+    );
+    await withPrepStages(tracker, () => runner.runBeforePromptBuild(promptEvent, ctx));
+
+    expect(tracker.snapshot().stages.map(({ name, durationMs }) => [name, durationMs])).toEqual([
+      ["hook-arxi-channel-connections", 40],
+      ["hook-memory-1", 5],
+    ]);
+  });
+
+  it("names a prompt hook's stage in the host's stage alphabet", () => {
+    for (const label of ["arxi-channel:group-rules", "plugin#99", "A:B.C_d"]) {
+      expect(promptHookStageName(label)).toMatch(/^[a-z0-9][a-z0-9-]{0,47}$/u);
+    }
+    expect(promptHookStageName(`x:${"y".repeat(80)}`)).toHaveLength(48);
   });
 
   it("keeps labels to plugin and registration code identifiers", () => {
