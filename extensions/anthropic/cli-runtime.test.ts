@@ -948,7 +948,7 @@ describe("Claude native stdio boundary", () => {
       expect(records.at(-1)).not.toHaveProperty("openclaw_interim_result");
       const firstPid = Number(await readFile(path.join(context.cwd, "fixture.pid"), "utf8"));
       expect(liveSession.current()).toBeUndefined();
-      expect(liveSession.endCauses).toEqual([termination === "abort" ? "aborted" : "error"]);
+      expect(liveSession.endCauses).toEqual(["background-tasks"]);
       expect(() => process.kill(firstPid, 0)).toThrow();
       const second = await collect({ ...context, useResume: true });
       expect(second.at(-1)).toMatchObject({ type: "result", ...expected });
