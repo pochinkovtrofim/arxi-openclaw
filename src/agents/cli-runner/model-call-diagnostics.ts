@@ -466,7 +466,13 @@ export function createClaudeCliModelCallDiagnostics(params: {
       trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(trace)),
       startedAt: startedAtStep,
     };
-    emitTrustedDiagnosticEvent({ type: "model.call.started", ...stepFields(step) });
+    // The step began when its request went out (the request mark or the last tool
+    // result), not when its first stream record arrived.
+    emitTrustedDiagnosticEvent({
+      type: "model.call.started",
+      ...stepFields(step),
+      startedAt: step.startedAt,
+    });
   };
 
   const baseModelContent = (): DiagnosticModelCallContent | undefined => {

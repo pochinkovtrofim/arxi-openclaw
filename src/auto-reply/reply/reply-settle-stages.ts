@@ -17,11 +17,25 @@ type ReplySettleStage = (typeof REPLY_SETTLE_STAGES)[number];
  * Content-free; outside a traced turn nothing is emitted. Every event carries its own child
  * span of the turn trace, so no two records share a span id.
  */
-export function createReplySettleStages(params: { runId?: string; sessionKey?: string }) {
+export function createReplySettleStages(params: {
+  runId?: string;
+  sessionKey?: string;
+  /** Closes the pre-run stages where the agent run begins. */
+  onRunStarting?: () => void;
+}) {
   const trace = getActiveDiagnosticTraceContext();
   let stageStartedAt: number | undefined;
   let closed = false;
+  let runStarted = false;
   return {
+    /** The agent run is about to start; the first call closes the pre-run stages. */
+    runStarting: () => {
+      if (runStarted) {
+        return;
+      }
+      runStarted = true;
+      params.onRunStarting?.();
+    },
     /** Starts the clock where the agent run returned; a later run attempt restarts it. */
     runEnded: () => {
       stageStartedAt = Date.now();

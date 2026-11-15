@@ -44,6 +44,19 @@ function assignInferenceTransportAttrs(
   }
 }
 
+/** The request's real start when it reported one at or before its started event. */
+function modelCallStartTimeMs(
+  evt: Extract<DiagnosticEventPayload, { type: "model.call.started" }>,
+): number {
+  const startedAt = evt.startedAt;
+  return typeof startedAt === "number" &&
+    Number.isSafeInteger(startedAt) &&
+    startedAt > 0 &&
+    startedAt <= evt.ts
+    ? startedAt
+    : evt.ts;
+}
+
 export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
   return {
     recordModelCallStarted(
@@ -77,7 +90,7 @@ export function createModelRecorders(runtime: DiagnosticsRecorderRuntime) {
           runtime.spanWithDuration(modelCallSpanName(evt), spanAttrs, undefined, {
             kind: SpanKind.CLIENT,
             parentContext: runtime.activeTrustedParentContext(evt, metadata),
-            startTimeMs: evt.ts,
+            startTimeMs: modelCallStartTimeMs(evt),
           }),
           "model.call",
         )
