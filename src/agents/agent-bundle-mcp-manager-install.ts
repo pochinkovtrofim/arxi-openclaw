@@ -235,6 +235,7 @@ export function createSessionMcpRuntimeManagerInstall(
       return existing;
     }
 
+    const failedForAMoment: string[] = [];
     const connectionOverrides = await resolveRequesterScopedMcpConnections({
       serverNames: params.resolverRequesterServerNames,
       requesterSenderId: params.requesterSenderId,
@@ -246,8 +247,29 @@ export function createSessionMcpRuntimeManagerInstall(
       conversationId: params.conversationId,
       runtimeGeneration: params.runtimeGeneration,
       traceId: params.traceId,
-      onUnavailable: params.onResolverUnavailable,
+      onUnavailable: (diagnostic) => {
+        if (diagnostic.reason === "error" || diagnostic.reason === "timeout") {
+          failedForAMoment.push(diagnostic.serverName);
+        }
+        params.onResolverUnavailable?.(diagnostic);
+      },
     });
+    // A resolver failing for a moment (its host restarting, say) keeps the runtime
+    // installed for this requester and configuration: dropping its server would change
+    // the tool list, which resets a Claude Code session's conversation. The resolution
+    // time stays, so the next turn resolves again; "unavailable" still revokes below.
+    if (
+      failedForAMoment.length > 0 &&
+      existing &&
+      meta !== undefined &&
+      meta.resolutionContextKey === resolutionContextKey &&
+      store.runtimesBySessionId.get(params.runtimeKey) === existing &&
+      matchesRuntime(existing, params, scopedFingerprint)
+    ) {
+      reconcileReusableRetirement(params, existing);
+      existing.markUsed();
+      return existing;
+    }
     const activeNameSet = new Set([
       ...(requesterConnect?.authorizedServerNames ?? []),
       ...connectionOverrides.keys(),

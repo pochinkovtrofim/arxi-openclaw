@@ -279,66 +279,6 @@ function registerResolvedConnectionSecrets(connection: McpServerConnectionResolv
   }
 }
 
-// A resolver that fails for a moment (a host restarting its services, say) must
-// not drop its server for one turn: the tool list is part of a Claude Code
-// session's identity, and a changed list resets the conversation. The last
-// connection a resolver returned for the same requester and session stands in
-// for a short while; a resolver that answers "unavailable" clears it.
-const LAST_RESOLVED_TTL_MS = 5 * 60_000;
-const LAST_RESOLVED_MAX_ENTRIES = 256;
-const lastResolvedConnections = new Map<
-  string,
-  { url: string; headers?: Record<string, string>; resolvedAt: number }
->();
-
-function lastResolvedKey(
-  entry: McpServerConnectionResolverEntry,
-  serverName: string,
-  ctx: McpServerConnectionResolveContext,
-): string {
-  return JSON.stringify([
-    entry.pluginId,
-    serverName,
-    ctx.requesterSenderId ?? null,
-    ctx.agentAccountId ?? null,
-    ctx.agentId ?? null,
-    ctx.sessionKey ?? null,
-    ctx.conversationId ?? null,
-    ctx.messageChannel ?? null,
-    ctx.chatType ?? null,
-  ]);
-}
-
-function rememberResolvedConnection(key: string, connection: McpServerConnectionResolved): void {
-  lastResolvedConnections.delete(key);
-  lastResolvedConnections.set(key, {
-    url: connection.url,
-    ...(connection.headers ? { headers: { ...connection.headers } } : {}),
-    resolvedAt: Date.now(),
-  });
-  if (lastResolvedConnections.size > LAST_RESOLVED_MAX_ENTRIES) {
-    const oldest = lastResolvedConnections.keys().next().value;
-    if (oldest !== undefined) {
-      lastResolvedConnections.delete(oldest);
-    }
-  }
-}
-
-function recentResolvedConnection(key: string): McpServerConnectionResolved | undefined {
-  const remembered = lastResolvedConnections.get(key);
-  if (!remembered) {
-    return undefined;
-  }
-  if (Date.now() - remembered.resolvedAt > LAST_RESOLVED_TTL_MS) {
-    lastResolvedConnections.delete(key);
-    return undefined;
-  }
-  return {
-    url: remembered.url,
-    ...(remembered.headers ? { headers: { ...remembered.headers } } : {}),
-  };
-}
-
 /**
  * Resolve requester-scoped server connections. Resolvers require a current
  * requester by default. A resolver may explicitly delegate authorization to a
@@ -455,7 +395,6 @@ export async function resolveRequesterScopedMcpConnections(params: {
           if (params.retainAuthority) {
             throw new McpConnectionAuthorityError(result === null ? "retired" : "unavailable");
           }
-          lastResolvedConnections.delete(lastResolvedKey(entry, serverName, ctx));
           params.onUnavailable?.({ serverName, reason: "unavailable" });
           return null;
         }
@@ -514,9 +453,6 @@ export async function resolveRequesterScopedMcpConnections(params: {
             return await pending;
           };
         }
-        if (!params.retainAuthority) {
-          rememberResolvedConnection(lastResolvedKey(entry, serverName, ctx), connection);
-        }
         return { serverName, connection };
       } catch (error) {
         if (params.retainAuthority) {
@@ -531,13 +467,6 @@ export async function resolveRequesterScopedMcpConnections(params: {
         // Fixed classification only — no dynamic error text (plugin-controlled / secret-bearing).
         const kind =
           error instanceof McpResolverTimeoutError ? "resolver timeout" : "resolver error";
-        const recent = recentResolvedConnection(lastResolvedKey(entry, serverName, ctx));
-        if (recent) {
-          logWarn(
-            `bundle-mcp: connection resolver for server "${serverName}" (plugin "${entry.pluginId}") failed with ${kind}; keeping its last connection`,
-          );
-          return { serverName, connection: recent };
-        }
         params.onUnavailable?.({
           serverName,
           reason: error instanceof McpResolverTimeoutError ? "timeout" : "error",
@@ -656,9 +585,6 @@ export function buildMcpRequesterRuntimeCacheKey(params: {
 }
 
 export const testing = {
-  resetLastResolvedConnectionsForTest(): void {
-    lastResolvedConnections.clear();
-  },
   setMcpServerConnectionResolversForTest(
     resolvers?: Iterable<OpenClawPluginMcpServerConnectionResolver & { pluginId?: string }> | null,
   ): void {

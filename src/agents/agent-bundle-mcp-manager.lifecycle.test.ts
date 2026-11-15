@@ -186,6 +186,55 @@ describe("MCP manager creation ownership", () => {
     ).toBeUndefined();
   });
 
+  it("keeps the installed runtime while a resolver fails for a moment, and revokes it on unavailable", async () => {
+    let answer: "ok" | "throw" | "none" = "ok";
+    let issued = 0;
+    resolverTesting.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "scoped",
+        requiresRequesterIdentity: false,
+        resolve: async () => {
+          if (answer === "throw") {
+            throw new Error("host restarting");
+          }
+          return answer === "none"
+            ? null
+            : {
+                url: "https://mcp.example.test/scoped",
+                headers: { authorization: `Bearer issued-${++issued}` },
+              };
+        },
+      },
+    ]);
+    // Every turn resolves again, as a Claude Code turn a minute after the last one does.
+    resolverTesting.setMcpConnectionRevalidateMsForTest(1);
+    try {
+      const createRuntime = vi.fn<CreateSessionMcpRuntime>(createRuntimeFixture);
+      const manager = createManager(createRuntime);
+      const acquire = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return await manager.getOrCreateRequesterScoped({
+          ...params,
+          agentId: "main",
+          cfg: { mcp: { servers: { scoped: { transport: "streamable-http" as const } } } },
+        });
+      };
+      const first = expectDefined(await acquire(), "first runtime").runtime;
+      // The resolver fails for a moment: the same runtime, so the same tools, serve the turn.
+      answer = "throw";
+      expect(expectDefined(await acquire(), "kept runtime").runtime).toBe(first);
+      expect(expectDefined(await acquire(), "kept again").runtime).toBe(first);
+      expect(first.dispose).not.toHaveBeenCalled();
+      expect(createRuntime).toHaveBeenCalledOnce();
+      // A resolver that answers "unavailable" (a disconnected account) still revokes.
+      answer = "none";
+      expect(await acquire()).toBeUndefined();
+      expect(first.dispose).toHaveBeenCalledOnce();
+    } finally {
+      resolverTesting.setMcpConnectionRevalidateMsForTest(undefined);
+    }
+  });
+
   it("replaces a healthy empty advertisement when resource and prompt capabilities change", async () => {
     resolverTesting.setMcpServerConnectionResolversForTest([
       {

@@ -150,7 +150,6 @@ async function startAuthenticatedMcpProofServer() {
 
 afterEach(() => {
   testing.setMcpServerConnectionResolversForTest(undefined);
-  testing.resetLastResolvedConnectionsForTest();
   resetPluginRuntimeStateForTest();
   clearRuntimeConfigSnapshot();
   vi.useRealTimers();
@@ -684,58 +683,6 @@ describe("mcp connection resolver helpers", () => {
       expect(logged).not.toContain("Bearer");
       expect(logged).not.toContain("Authorization");
     });
-  });
-
-  it("keeps a server's last connection through a brief resolver failure", async () => {
-    let now = 1_000_000;
-    vi.spyOn(Date, "now").mockImplementation(() => now);
-    vi.spyOn(await import("../logger.js"), "logWarn").mockImplementation(() => {});
-    let answer: "ok" | "throw" | "none" = "ok";
-    testing.setMcpServerConnectionResolversForTest([
-      {
-        pluginId: "arxi",
-        serverName: "workspace",
-        resolve: async () => {
-          if (answer === "throw") {
-            throw new Error("host restarting");
-          }
-          return answer === "none"
-            ? null
-            : { url: "https://example.test/workspace", headers: { authorization: "Bearer a" } };
-        },
-      },
-    ]);
-    const unavailable = vi.fn();
-    const resolve = (sessionKey = "agent:main:owner") =>
-      resolveRequesterScopedMcpConnections({
-        serverNames: ["workspace"],
-        requesterSenderId: "sender",
-        sessionKey,
-        onUnavailable: unavailable,
-      });
-    const connected = new Map([
-      [
-        "workspace",
-        { url: "https://example.test/workspace", headers: { authorization: "Bearer a" } },
-      ],
-    ]);
-    await expect(resolve()).resolves.toEqual(connected);
-    // A failure for a moment keeps the server and its tools; the session stays.
-    answer = "throw";
-    await expect(resolve()).resolves.toEqual(connected);
-    expect(unavailable).not.toHaveBeenCalled();
-    // Another session never borrows it.
-    await expect(resolve("agent:main:other")).resolves.toEqual(new Map());
-    // Past the stand-in window the server drops as before.
-    now += 5 * 60_000 + 1;
-    await expect(resolve()).resolves.toEqual(new Map());
-    // A resolver that says "unavailable" (a disconnected account) clears it at once.
-    answer = "ok";
-    await resolve();
-    answer = "none";
-    await expect(resolve()).resolves.toEqual(new Map());
-    answer = "throw";
-    await expect(resolve()).resolves.toEqual(new Map());
   });
 
   it("resolves stalled servers concurrently within one timeout window", async () => {
