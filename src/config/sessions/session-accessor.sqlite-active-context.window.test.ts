@@ -110,7 +110,6 @@ describe("bounded active context from the latest boundary", () => {
   it.each([
     ["a reset that keeps nothing", (): Boundary => ({ type: "reset" })],
     ["a reset that keeps a tail", (): Boundary => ({ type: "reset", keepFrom: 6 })],
-    ["a compaction that keeps a tail", (): Boundary => ({ type: "compaction", keepFrom: 7 })],
     [
       "a compaction after resets",
       (run: number): Boundary =>
@@ -121,6 +120,14 @@ describe("bounded active context from the latest boundary", () => {
 
     expect(buildSessionContext(window).messages).toEqual(buildSessionContext(whole).messages);
     expect(window.length).toBeLessThan(whole.length / 5);
+  });
+
+  it("keeps a compaction's summarized prefix readable: only a reset closes the window", async () => {
+    const { whole, window } = await readBoth(
+      windowOfRuns(20, 10, () => ({ type: "compaction", keepFrom: 7 })),
+    );
+
+    expect(window).toEqual(whole);
   });
 
   it("reads the same rows when there is no boundary", async () => {

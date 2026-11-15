@@ -330,7 +330,7 @@ async function loadCliSessionEntries({
         signal: abortSignal,
         maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
         maxEvents: MAX_CLI_SESSION_HISTORY_EVENTS,
-        // Every consumer here builds the context window; older rows only cost reading.
+        // A reset closes every look-back here; rows before it only cost reading.
         fromLatestBoundary: true,
         onTruncated: () =>
           cliBackendLog.warn(

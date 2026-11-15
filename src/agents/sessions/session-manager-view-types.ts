@@ -7,7 +7,7 @@ export type SessionManagerPersistenceTarget = SessionTranscriptTargetBinding;
 export type SessionManagerBoundedContextLimits = {
   maxBytes: number;
   maxEvents: number;
-  /** Read only the latest boundary's context window (see the bounded active-context reader). */
+  /** Read only from the latest reset's window (see the bounded active-context reader). */
   fromLatestBoundary?: boolean;
 };
 export type PreparedSessionTranscriptReload = PreparedSessionTranscriptHydration;

@@ -240,8 +240,8 @@ export function readSessionTranscriptBoundedActiveContextCore(
     maxBytes: number;
     maxEvents: number;
     /**
-     * Read only the latest boundary's context window: the rows a context build keeps,
-     * not the older eligible rows up to maxEvents that it would discard.
+     * Read only from the latest reset's window (its first kept entry, else the reset):
+     * not the older eligible rows up to maxEvents that every context build discards.
      */
     fromLatestBoundary?: boolean;
     ignoreReadFence?: boolean;
@@ -338,8 +338,12 @@ export function readSessionTranscriptBoundedActiveContextCore(
       ? undefined
       : resolveTranscriptBoundaryWindow(projection, "context", fence?.beforeRawSeq);
     const retained = window?.keptMessagePositions.slice(-(maxEvents + 1)) ?? [];
-    const contextAfter = options.fromLatestBoundary
-      ? window?.contextAfterActivePosition
+    // Only a reset closes the history the CLI's resume and gap notes look back over;
+    // a compaction's summarized prefix stays readable for them.
+    const contextAfter =
+      options.fromLatestBoundary && !covered
+      ? resolveTranscriptBoundaryWindow(projection, "history", fence?.beforeRawSeq)
+          ?.contextAfterActivePosition
       : undefined;
     const metadata = covered
       ? covered.rows
