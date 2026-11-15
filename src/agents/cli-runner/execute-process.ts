@@ -160,6 +160,9 @@ export async function executeCliProcess(params: {
           ),
         onSessionId: params.observeForkSuccessor,
         onNativeTools: context.preparedBackend.mcpClientGrantCapture?.captureNativeTools,
+        // A spawned CLI serves its prompt once it has started up and connected its
+        // tools; that startup stays in cli-process-start, out of step one.
+        onSystemInit: params.diagnostics?.observeRequestSent,
         onAssistantMessage: params.diagnostics?.observeAssistantMessage,
         onStep: params.diagnostics?.observeStep,
         onUsage: params.diagnostics?.observeUsage,
@@ -399,8 +402,6 @@ export async function executeCliProcess(params: {
           ),
         );
         managedRunPid = managedRun.pid;
-        // The prompt went in with the spawn, so the request is accepted here.
-        params.diagnostics?.observeRequestSent();
         stopForParserRefusal = () => {
           processCancelled = true;
           managedRun.cancel("manual-cancel");

@@ -113,6 +113,16 @@ describe("createCliJsonlStreamingParser", () => {
     expect(snapshots).toEqual(expected);
   });
 
+  it("reports the CLI's startup record once its init arrives", () => {
+    let inits = 0;
+    const parser = createClaudeParser({ onSystemInit: () => inits++ });
+    parser.push(JSON.stringify({ type: "system", subtype: "status" }) + "\n");
+    expect(inits).toBe(0);
+    parser.push(JSON.stringify({ type: "system", subtype: "init", tools: ["Read"] }) + "\n");
+    parser.finish();
+    expect(inits).toBe(1);
+  });
+
   it("normalizes usage while incrementally streaming CLI JSONL", () => {
     const parser = createParser();
     finishFrames(

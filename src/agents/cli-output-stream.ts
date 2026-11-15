@@ -335,6 +335,7 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
       parsed.subtype === "init" &&
       !isClaudeSubagentRecord(parsed)
     ) {
+      params.onSystemInit?.();
       try {
         params.onNativeTools?.(parsed.tools);
       } catch (error) {

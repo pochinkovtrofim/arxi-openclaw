@@ -172,6 +172,8 @@ export type CliJsonlStreamingParserOptions = {
   onSessionId?: (sessionId: string) => void;
   /** Parent initialization fact; its authority owner validates the raw tool list. */
   onNativeTools?: (tools: unknown) => void;
+  /** The CLI finished starting up (its `system`/`init` record), so it now serves the turn request. */
+  onSystemInit?: () => void;
   onAssistantMessage?: (message: unknown) => void;
   onUsage?: (usage: CliUsage, terminal: boolean) => void;
   /** API-step boundaries of the main agent, for per-request timing. */

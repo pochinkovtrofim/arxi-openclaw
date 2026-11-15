@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { EmbeddedAgentExecutionPhase } from "../agents/embedded-agent-runner/execution-phase.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { pluginInstanceInvocation } from "../plugins/plugin-instance-invocation.js";
@@ -1348,6 +1348,14 @@ export async function waitForDiagnosticEventsDrained(): Promise<void> {
   }
 }
 
+function deriveToolSpanId(traceId: string, scopeSpanId: string, toolCallId: string) {
+  const spanId = createHash("sha256")
+    .update(`${traceId}:${scopeSpanId}:${toolCallId}`)
+    .digest("hex")
+    .slice(0, 16);
+  return /^0+$/.test(spanId) ? undefined : spanId;
+}
+
 function enrichDiagnosticEvent(
   state: DiagnosticEventsGlobalState,
   event: DiagnosticDispatchInput,
@@ -1364,9 +1372,18 @@ function enrichDiagnosticEvent(
     // A tool call is its own span. Sharing the enclosing scope's span id makes the
     // start, the end and the scope's own events collide for exporters and the host,
     // so a tool event that would carry the scope's span gets a child span instead.
+    // The child is derived from the scope span and the tool call id, so the
+    // start and the terminal of one call land on the same span.
     const scope = getActiveDiagnosticTraceContext();
     if (scope?.spanId && enriched.trace?.spanId === scope.spanId) {
-      enriched.trace = freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(scope));
+      const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
+      const spanId =
+        typeof toolCallId === "string" && toolCallId.length > 0
+          ? deriveToolSpanId(scope.traceId, scope.spanId, toolCallId)
+          : undefined;
+      enriched.trace = freezeDiagnosticTraceContext(
+        createChildDiagnosticTraceContext(scope, spanId ? { spanId } : {}),
+      );
     }
   }
   state.seq += 1;

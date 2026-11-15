@@ -992,4 +992,37 @@ describe("private diagnostic data", () => {
     expect(explicit?.trace?.spanId).toBe(ownChild.spanId);
     expect(other?.trace?.spanId).toBe(scope.spanId);
   });
+
+  it("puts the start and the terminal of one guarded tool call on one span", async () => {
+    const events: DiagnosticEventPayload[] = [];
+    onTrustedInternalDiagnosticEvent((event) => events.push(event), {
+      include: ["tool.execution.started", "tool.execution.completed"],
+    });
+    const scope = createDiagnosticTraceContext();
+    runWithDiagnosticTraceContext(scope, () => {
+      for (const toolCallId of ["call-a", "call-b"]) {
+        emitTrustedDiagnosticEvent({ type: "tool.execution.started", toolName: "exec", toolCallId });
+      }
+      for (const toolCallId of ["call-a", "call-b"]) {
+        emitTrustedDiagnosticEvent({
+          type: "tool.execution.completed",
+          toolName: "exec",
+          toolCallId,
+          durationMs: 1,
+        });
+      }
+    });
+    await waitForDiagnosticEventsDrained();
+    const span = (type: string, toolCallId: string) =>
+      events.find((event) => event.type === type && event.toolCallId === toolCallId)?.trace;
+    for (const toolCallId of ["call-a", "call-b"]) {
+      const started = span("tool.execution.started", toolCallId);
+      expect(started?.parentSpanId).toBe(scope.spanId);
+      expect(started?.spanId).not.toBe(scope.spanId);
+      expect(span("tool.execution.completed", toolCallId)?.spanId).toBe(started?.spanId);
+    }
+    expect(span("tool.execution.started", "call-a")?.spanId).not.toBe(
+      span("tool.execution.started", "call-b")?.spanId,
+    );
+  });
 });
