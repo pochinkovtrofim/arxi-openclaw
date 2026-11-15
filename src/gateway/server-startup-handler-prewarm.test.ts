@@ -383,11 +383,10 @@ describe("scheduleGatewayHandlerPrewarm", () => {
 
   it("stops loading agent-turn modules once the prewarm is cancelled", async () => {
     vi.useFakeTimers();
-    let sidecar: ReturnType<typeof scheduleGatewayHandlerPrewarm> | undefined;
     mocks.agentTurnLoaders.loadAttemptExecutionRuntime.mockImplementationOnce(async () => {
-      void sidecar?.stop();
+      void sidecar.stop();
     });
-    sidecar = scheduleGatewayHandlerPrewarm({
+    const sidecar = scheduleGatewayHandlerPrewarm({
       scheduler: createTestGatewayScheduler("fake-timers"),
       getConfig: () => ({ agents: { entries: {} } }),
       log: { warn: vi.fn() },
