@@ -20,21 +20,24 @@ type GatewayHandlerPrewarmItem = {
 function handlerItem(method: string): GatewayHandlerPrewarmItem {
   return {
     name: method,
-    load: (isCancelled) =>
-      // Process-lifetime module state must not inherit this idle task's async context.
-      runInDetachedAsyncContext(async () => {
-        const [{ coreGatewayHandlers }, { prepareGatewayRequestHandler }] = await Promise.all([
-          import("./server-methods/core-handlers.js"),
-          import("./server-methods/lazy-core-handlers.js"),
-        ]);
-        if (!isCancelled()) {
-          const handler = coreGatewayHandlers[method];
-          if (!handler) {
-            throw new Error(`Gateway prewarm handler not found: ${method}`);
-          }
-          await prepareGatewayRequestHandler(handler);
+    // Module loads run detached so process-lifetime module state does not inherit this idle
+    // task's async context; isCancelled stays outside because it reads that context.
+    load: async (isCancelled) => {
+      const [{ coreGatewayHandlers }, { prepareGatewayRequestHandler }] =
+        await runInDetachedAsyncContext(() =>
+          Promise.all([
+            import("./server-methods/core-handlers.js"),
+            import("./server-methods/lazy-core-handlers.js"),
+          ]),
+        );
+      if (!isCancelled()) {
+        const handler = coreGatewayHandlers[method];
+        if (!handler) {
+          throw new Error(`Gateway prewarm handler not found: ${method}`);
         }
-      }),
+        await runInDetachedAsyncContext(() => prepareGatewayRequestHandler(handler));
+      }
+    },
   };
 }
 

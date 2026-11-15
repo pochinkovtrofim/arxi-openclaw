@@ -165,7 +165,6 @@ describe("scheduleGatewayHandlerPrewarm", () => {
         await vi.dynamicImportSettled();
       } while (vi.getTimerCount() > 0);
 
-      expect({ events: mocks.events, warns: warn.mock.calls }).toEqual({});
       expect(mocks.events[0]).toBe("session-history-worker");
       expect(mocks.events).toContain("agent-events");
       expect(mocks.events.filter((event) => event === "handlers")).toHaveLength(4);
