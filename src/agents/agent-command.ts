@@ -686,6 +686,9 @@ async function agentCommandFromIngressInternal(
     startedAt: opts.rpcReceivedAt,
   });
   if (opts.rpcReceivedAt !== undefined) {
+    for (const checkpoint of opts.rpcCheckpoints ?? []) {
+      preflightStages.markAt(checkpoint.stage, checkpoint.at);
+    }
     preflightStages.mark("gateway_rpc");
   }
   const executeIngress = () =>

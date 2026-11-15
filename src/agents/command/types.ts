@@ -10,6 +10,7 @@ import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { ChatType } from "../../channels/chat-type.js";
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.public.js";
 import type { GatewayUiCommandTarget } from "../../gateway/ui-command-target.types.js";
+import type { GatewayTurnCheckpoint } from "../../infra/diagnostic-events.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import type { NativeDeliveryPurpose } from "../../infra/outbound/prepared-batch.js";
 import type { ImageContent as LlmImageContent } from "../../llm/types.js";
@@ -72,6 +73,8 @@ export type AgentCommandOpts = {
   diagnosticTrace?: DiagnosticTraceContext;
   /** Epoch ms at which the Gateway received the request, for content-free stage timing. */
   rpcReceivedAt?: number;
+  /** When each Gateway step before the hand-off finished, in order, for the same timing. */
+  rpcCheckpoints?: ReadonlyArray<GatewayTurnCheckpoint>;
   /** User-visible transcript body; defaults to message and excludes runtime-only context. */
   transcriptMessage?: string;
   /** Durable media metadata for the user-visible transcript turn. */

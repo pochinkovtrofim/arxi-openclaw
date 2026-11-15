@@ -20,8 +20,8 @@ export function createReplyPreflightStages(params: { startedAt?: number; session
   let stageStartedAt = params.startedAt ?? Date.now();
   let memoryFlushed = false;
   let compacting = false;
-  const mark = (stage: ReplyPreflightStage) => {
-    const endedAt = Date.now();
+  const mark = (stage: ReplyPreflightStage, at?: number) => {
+    const endedAt = at ?? Date.now();
     const durationMs = Math.max(0, endedAt - stageStartedAt);
     stageStartedAt = endedAt;
     if (!trace) {
@@ -36,7 +36,17 @@ export function createReplyPreflightStages(params: { startedAt?: number; session
     });
   };
   return {
-    mark,
+    mark: (stage: ReplyPreflightStage) => mark(stage),
+    /**
+     * Closes a stage at a recorded moment. A moment before the open stage began or after
+     * now would break the contiguous timeline, so it is skipped.
+     */
+    markAt: (stage: ReplyPreflightStage, at: number) => {
+      if (!Number.isFinite(at) || at < stageStartedAt || at > Date.now()) {
+        return;
+      }
+      mark(stage, at);
+    },
     /** Wraps the memory checkpoint that the cold-cache or token compaction runs first. */
     memoryFlush: async <T>(run: () => Promise<T>): Promise<T> => {
       mark("token_estimate");

@@ -495,6 +495,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
                 ...(params.rpcReceivedAt !== undefined
                   ? { rpcReceivedAt: params.rpcReceivedAt }
                   : {}),
+                ...(params.rpcCheckpoints ? { rpcCheckpoints: params.rpcCheckpoints } : {}),
                 clientCaps,
                 gatewayUiCommandTarget,
                 approvalReviewerDeviceId: callerContext.ApprovalReviewerDeviceId,
