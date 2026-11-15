@@ -88,14 +88,19 @@ export async function prepareCliMcpToolProjection(
       ? options.resolvePolicyTools
       : options.resolveScopedTools;
   const admittedParams = await admitCliRunParams(params, options.agentId);
-  const { tools } = await resolveTools({
+  const { tools, preparedCatalog } = await resolveTools({
     ...options.scope,
     defaultMediatedToolNames: options.defaultMediatedToolNames,
     signal: admittedParams.abortSignal,
     context,
     admittedRunContext: admittedParams.admittedRunContext,
   });
-  return { params: admittedParams, tools };
+  return {
+    params: admittedParams,
+    tools,
+    // Only an exact-grant projection can serve the turn's own loopback grant.
+    ...(preparedCatalog && options.runtimeToolsAllowPolicy === undefined ? { preparedCatalog } : {}),
+  };
 }
 
 /** Resolve default coding ownership without changing exact, standalone, or node runs. */

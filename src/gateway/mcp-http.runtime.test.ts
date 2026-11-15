@@ -443,3 +443,173 @@ describe("MCP loopback Computer Use schema", () => {
     expect(listNodes).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("MCP loopback catalog is built once per turn", () => {
+  type PreparedComputer = Parameters<typeof createComputerTool>[0];
+  const grantChecks: Array<(() => boolean) | undefined> = [];
+
+  function computerScoped({
+    cfg,
+    pairedNodeComputerUse,
+    isGrantCurrent,
+  }: {
+    cfg: { tools?: { deny?: string[] } };
+    pairedNodeComputerUse?: NonNullable<PreparedComputer>["pairedNodeComputerUse"];
+    isGrantCurrent?: () => boolean;
+  }) {
+    grantChecks.push(isGrantCurrent);
+    const computerDenied = cfg.tools?.deny?.includes("computer");
+    return {
+      agentId: "main",
+      tools: [
+        { name: "message", description: "message tool" },
+        ...(computerDenied ? [] : [createComputerTool({ pairedNodeComputerUse })]),
+      ],
+      rebuildWithPairedComputerUse: computerDenied
+        ? undefined
+        : (prepared: NonNullable<PreparedComputer>["pairedNodeComputerUse"]) => [
+            { name: "message", description: "message tool" },
+            createComputerTool({ pairedNodeComputerUse: prepared }),
+          ],
+    };
+  }
+
+  beforeEach(() => {
+    grantChecks.length = 0;
+    resolveGatewayScopedTools.mockImplementation(computerScoped);
+  });
+
+  const ownerScope = (extra: Partial<ScopeParams["context"]> = {}, cfg: ScopeParams["cfg"] = {}) =>
+    scopeParams({
+      cfg: { tools: { allow: ["computer", "message"] }, ...cfg },
+      sessionKey: "agent:main:main",
+      senderIsOwner: true,
+      modelHasVision: true,
+      currentMessageId: "message-1",
+      ...extra,
+    });
+
+  it("builds the catalog once when computer is allowed with a paired node", async () => {
+    listNodes.mockResolvedValue([computerNode("windows-node", ["screenshot", "launch_app"])]);
+
+    const resolved = await new McpLoopbackToolCache().resolve(ownerScope());
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(readComputerActions(resolved)).toEqual(
+      expect.arrayContaining(["screenshot", "launch_app"]),
+    );
+    expect(resolved.tools.map((tool) => tool.name)).toEqual(["message", "computer"]);
+  });
+
+  it("builds the catalog once when computer is allowed with no paired node", async () => {
+    listNodes.mockResolvedValue([]);
+
+    const resolved = await new McpLoopbackToolCache().resolve(ownerScope());
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(resolved.toolSchema.some((tool) => tool.name === "computer")).toBe(true);
+  });
+
+  it("builds the catalog once when policy removes computer", async () => {
+    const resolved = await new McpLoopbackToolCache().resolve(
+      ownerScope({}, { tools: { deny: ["computer"] } }),
+    );
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(resolved.toolSchema.map((tool) => tool.name)).toEqual(["message"]);
+    expect(listNodes).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: "a paired node", nodes: [computerNode("windows-node", ["screenshot", "launch_app"])] },
+    { name: "no node", nodes: [] },
+  ])("prepare builds once and the first loopback request adopts it: $name", async ({ nodes }) => {
+    listNodes.mockResolvedValue(nodes);
+    const prepared = await resolveMcpLoopbackScopedTools(ownerScope());
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(prepared.preparedCatalog).toBeDefined();
+
+    const cache = new McpLoopbackToolCache();
+    const isGrantCurrent = vi.fn(() => true);
+    const first = await cache.resolve({
+      ...ownerScope(),
+      grantToken: "grant-a",
+      isGrantCurrent,
+      preparedCatalog: prepared.preparedCatalog,
+    });
+    const second = await cache.resolve({ ...ownerScope(), grantToken: "grant-a" });
+
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+    expect(second).toBe(first);
+    expect(first.tools.map((tool) => tool.name)).toEqual(["message", "computer"]);
+    if (nodes.length > 0) {
+      expect(readComputerActions(first)).toEqual(expect.arrayContaining(["launch_app"]));
+    }
+    // The prepared tools answer to the row that adopted them, not to anything earlier.
+    expect(grantChecks[0]?.()).toBe(true);
+    isGrantCurrent.mockReturnValue(false);
+    expect(grantChecks[0]?.()).toBe(false);
+  });
+
+  it("never reuses another turn's catalog or adopts twice", async () => {
+    const turnA = await resolveMcpLoopbackScopedTools(ownerScope({ currentMessageId: "m-a" }));
+    const cache = new McpLoopbackToolCache();
+
+    // A different message id is a different turn: the key differs, so the loopback builds.
+    await cache.resolve({
+      ...ownerScope({ currentMessageId: "m-b" }),
+      grantToken: "grant-b",
+      preparedCatalog: turnA.preparedCatalog,
+    });
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
+
+    // The matching grant adopts once; a second grant presenting it builds fresh.
+    await cache.resolve({
+      ...ownerScope({ currentMessageId: "m-a" }),
+      grantToken: "grant-a",
+      preparedCatalog: turnA.preparedCatalog,
+    });
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
+    await cache.resolve({
+      ...ownerScope({ currentMessageId: "m-a" }),
+      grantToken: "grant-c",
+      preparedCatalog: turnA.preparedCatalog,
+    });
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(3);
+  });
+
+  it("treats a pending native authority like an absent one and a captured list as different", async () => {
+    const prepared = await resolveMcpLoopbackScopedTools(ownerScope());
+    const cache = new McpLoopbackToolCache();
+    await cache.resolve({
+      ...ownerScope({ nativeCronCreatorToolAllowlist: null }),
+      grantToken: "grant-pending",
+      preparedCatalog: prepared.preparedCatalog,
+    });
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+
+    const other = await resolveMcpLoopbackScopedTools(ownerScope());
+    await cache.resolve({
+      ...ownerScope({ nativeCronCreatorToolAllowlist: ["read"] }),
+      grantToken: "grant-captured",
+      preparedCatalog: other.preparedCatalog,
+    });
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(3);
+  });
+
+  it("evictGrant clears the adopted catalog", async () => {
+    const prepared = await resolveMcpLoopbackScopedTools(ownerScope());
+    const cache = new McpLoopbackToolCache();
+    await cache.resolve({
+      ...ownerScope(),
+      grantToken: "grant-a",
+      preparedCatalog: prepared.preparedCatalog,
+    });
+    await cache.resolve({ ...ownerScope(), grantToken: "grant-a" });
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(1);
+
+    expect(cache.evictGrant("grant-a")).toBe(true);
+    await cache.resolve({ ...ownerScope(), grantToken: "grant-a" });
+    expect(resolveGatewayScopedTools).toHaveBeenCalledTimes(2);
+  });
+});

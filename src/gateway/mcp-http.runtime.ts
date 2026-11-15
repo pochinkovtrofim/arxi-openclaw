@@ -10,6 +10,7 @@ import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
 import {
   loadPairedComputerUseAvailabilityForSurface,
   type PairedComputerUseAvailability,
+  type PreparedPairedComputerUse,
 } from "../agents/computer-use-node-capabilities.js";
 import {
   isCoreCodingSurfaceToolName,
@@ -60,7 +61,49 @@ type CachedScopedTools = {
   tools: McpLoopbackTool[];
   toolSchema: McpToolSchemaEntry[];
   sessionFacts: ReturnType<typeof captureMcpCatalogSessionFacts>;
+  /**
+   * The same catalog with only the computer tool re-created for a prepared paired-node
+   * action surface; absent when policy removed or replaced computer.
+   */
+  withPairedComputerUse?: (prepared: PreparedPairedComputerUse) => CachedScopedTools | undefined;
 };
+
+/**
+ * The catalog a CLI turn built while preparing, handed to its loopback grant so the CLI's
+ * first request adopts it instead of building the whole catalog again inside the model
+ * window. It is bound to this turn's grant, adopted once, and only for an identical scope key.
+ */
+export class McpPreparedCatalog {
+  #adopted = false;
+  readonly #key: string;
+  readonly #catalog: CachedScopedTools;
+  readonly #grantLiveness: { current?: () => boolean };
+
+  constructor(init: {
+    key: string;
+    catalog: CachedScopedTools;
+    grantLiveness: { current?: () => boolean };
+  }) {
+    this.#key = init.key;
+    this.#catalog = init.catalog;
+    this.#grantLiveness = init.grantLiveness;
+  }
+
+  /** Hands the catalog to the first request whose scope is exactly the prepared one. */
+  adopt(params: CapturedMcpLoopbackScope): CachedScopedTools | undefined {
+    if (
+      this.#adopted ||
+      this.#key !== buildMcpLoopbackToolCacheKeyBody(params, { pendingNativeAuthority: false }) ||
+      !isMcpCatalogSessionCurrent(this.#catalog, params)
+    ) {
+      return undefined;
+    }
+    this.#adopted = true;
+    // Prepared closures answer to the grant row that first uses them, like cached ones.
+    this.#grantLiveness.current = params.isGrantCurrent;
+    return this.#catalog;
+  }
+}
 
 type McpLoopbackScopeParams = {
   admittedRunContext?: AdmittedRunContext;
@@ -88,6 +131,8 @@ type McpLoopbackScopeParams = {
   nodeExecAvailability?: Awaited<ReturnType<typeof loadNodeExecAvailability>>;
   pairedComputerUseAvailability?: PairedComputerUseAvailability;
   signal?: AbortSignal;
+  /** Catalog built while this turn was prepared; see McpPreparedCatalog. */
+  preparedCatalog?: McpPreparedCatalog;
 };
 
 type LoopbackToolsAllowMode = "exact" | "policy";
@@ -209,6 +254,8 @@ function isComputerAllowedByMcpScope(
 type ResolvedNodeScope = {
   params: CapturedMcpLoopbackScope;
   policyResolved?: CachedScopedTools;
+  /** The catalog built for the scope before paired availability was added. */
+  baseCatalog?: CachedScopedTools;
 };
 
 async function resolvePairedComputerNodeScope(
@@ -216,15 +263,16 @@ async function resolvePairedComputerNodeScope(
   mode: LoopbackToolsAllowMode,
 ): Promise<ResolvedNodeScope> {
   params.assertCurrent();
+  const adopted = mode === "exact" ? params.preparedCatalog?.adopt(params) : undefined;
   const canReachOrdinaryComputerSurface =
     isComputerAllowedByMcpScope(params, mode) && params.context.modelHasVision !== false;
   if (!canReachOrdinaryComputerSurface) {
-    return { params };
+    return { params, policyResolved: adopted };
   }
   // Resolve the actual configured surface before contacting Gateway. Grant policy
   // alone is insufficient: profile, agent, sandbox, sender, and Gateway policy
   // can all remove computer from the final catalog.
-  const policyResolved = await resolveMcpLoopbackTools(params, mode);
+  const policyResolved = await resolveMcpLoopbackTools(params, mode, adopted);
   params.assertCurrent();
   const computerAllowed = policyResolved.tools.some(
     (tool) => readMcpLoopbackToolName(tool) === "computer",
@@ -236,18 +284,23 @@ async function resolvePairedComputerNodeScope(
   });
   params.assertCurrent();
   if (!pairedComputerUseAvailability) {
-    return { params, policyResolved };
+    return { params, policyResolved, baseCatalog: policyResolved };
   }
   const resolvedParams = {
     params: {
       ...params,
       pairedComputerUseAvailability,
     },
+    baseCatalog: policyResolved,
   };
-  // Rebuild computer with the prepared host/node action projection and target status.
-  return pairedComputerUseAvailability.prepared
-    ? resolvedParams
-    : { ...resolvedParams, policyResolved };
+  if (!pairedComputerUseAvailability.prepared) {
+    return { ...resolvedParams, policyResolved };
+  }
+  // Only computer carries the prepared host/node action projection and target status.
+  const withComputer = policyResolved.withPairedComputerUse?.(
+    pairedComputerUseAvailability.prepared,
+  );
+  return withComputer ? { ...resolvedParams, policyResolved: withComputer } : resolvedParams;
 }
 
 async function resolveMcpLoopbackTools(
@@ -361,46 +414,80 @@ async function constructMcpLoopbackTools(
   };
   const scoped = await resolveGatewayScopedTools(scopeOptions, params.assertCurrent);
   params.assertCurrent();
-  const tools =
+  const applyAllow = (candidates: typeof scoped.tools) =>
     mode === "exact"
-      ? applyGrantToolsAllow(scoped.tools, toolsAllow)
-      : applyPolicyToolsAllow(scoped.tools, toolsAllow);
+      ? applyGrantToolsAllow(candidates, toolsAllow)
+      : applyPolicyToolsAllow(candidates, toolsAllow);
+  const tools = applyAllow(scoped.tools);
   const toolSchema = buildMcpToolSchema(tools);
   scoped.captureFinalCronCreatorTools?.(new Set(toolSchema.map((tool) => tool.name)));
-  return {
+  const catalog: CachedScopedTools = {
     agentId: scoped.agentId,
     workspaceDir: scoped.workspaceDir,
     tools,
     toolSchema,
     sessionFacts,
   };
+  const { rebuildWithPairedComputerUse } = scoped;
+  if (rebuildWithPairedComputerUse) {
+    catalog.withPairedComputerUse = (prepared) => {
+      const rebuilt = rebuildWithPairedComputerUse(prepared);
+      if (!rebuilt) {
+        return undefined;
+      }
+      const rebuiltTools = applyAllow(rebuilt);
+      return { ...catalog, tools: rebuiltTools, toolSchema: buildMcpToolSchema(rebuiltTools) };
+    };
+  }
+  return catalog;
 }
 
 async function resolveMcpLoopbackCatalog(
   params: McpLoopbackScopeParams,
   mode: LoopbackToolsAllowMode,
-): Promise<CachedScopedTools> {
+): Promise<CachedScopedTools & { base?: { key: string; catalog: CachedScopedTools } }> {
   using scope = await captureMcpLoopbackScope(params);
-  const resolved = await resolvePairedComputerNodeScope(
-    await resolveNodeExecScope(scope, mode),
-    mode,
-  );
+  const nodeExecParams = await resolveNodeExecScope(scope, mode);
+  const resolved = await resolvePairedComputerNodeScope(nodeExecParams, mode);
   for (;;) {
     const tools = await resolveMcpLoopbackTools(resolved.params, mode, resolved.policyResolved);
     resolved.params.assertCurrent();
     if (isMcpCatalogSessionCurrent(tools, resolved.params)) {
-      return tools;
+      const base = resolved.baseCatalog ?? tools;
+      return isMcpCatalogSessionCurrent(base, resolved.params)
+        ? {
+            ...tools,
+            base: {
+              key: buildMcpLoopbackToolCacheKeyBody(nodeExecParams, {
+                pendingNativeAuthority: false,
+              }),
+              catalog: base,
+            },
+          }
+        : tools;
     }
   }
 }
 
 /** Resolves loopback-visible tools from the exact names carried by a minted grant. */
-export function resolveMcpLoopbackScopedTools(params: McpLoopbackScopeParams): Promise<{
+export async function resolveMcpLoopbackScopedTools(params: McpLoopbackScopeParams): Promise<{
   agentId: string | undefined;
   workspaceDir?: string;
   tools: McpLoopbackTool[];
+  /** Present for a pre-grant projection; the grant hands it to its first loopback request. */
+  preparedCatalog?: McpPreparedCatalog;
 }> {
-  return resolveMcpLoopbackCatalog(params, "exact");
+  // A grant-less projection is a turn's own preparation: its catalog can serve that turn's
+  // grant. Its tools check grant liveness through the row that first adopts them.
+  const grantLiveness: { current?: () => boolean } = {};
+  const preparing = params.grantToken === undefined && params.isGrantCurrent === undefined;
+  const { base, ...catalog } = await resolveMcpLoopbackCatalog(
+    preparing ? { ...params, isGrantCurrent: () => grantLiveness.current?.() ?? true } : params,
+    "exact",
+  );
+  return preparing && base
+    ? { ...catalog, preparedCatalog: new McpPreparedCatalog({ ...base, grantLiveness }) }
+    : catalog;
 }
 
 /** Materializes runtime policy expressions against the concrete loopback catalog. */
@@ -408,7 +495,9 @@ export function resolveMcpLoopbackPolicyTools(params: McpLoopbackScopeParams): P
   agentId: string | undefined;
   tools: McpLoopbackTool[];
 }> {
-  return resolveMcpLoopbackCatalog(params, "policy");
+  return resolveMcpLoopbackCatalog(params, "policy").then(
+    ({ base: _base, ...catalog }) => catalog,
+  );
 }
 
 /**
@@ -450,10 +539,23 @@ function applyPolicyToolsAllow(
 }
 
 function buildMcpLoopbackToolCacheKey(params: McpLoopbackScopeParams): string {
-  const { context } = params;
+  return `${params.grantToken ?? ""}\u0000${buildMcpLoopbackToolCacheKeyBody(params)}`;
+}
+
+function buildMcpLoopbackToolCacheKeyBody(
+  params: McpLoopbackScopeParams,
+  options?: { pendingNativeAuthority: false },
+): string {
+  // A pending native authority (null) builds exactly what an absent one does, so the
+  // prepared-catalog match treats them alike; a captured list stays distinct.
+  const { nativeCronCreatorToolAllowlist, ...contextRest } = params.context;
+  const context =
+    options?.pendingNativeAuthority === false && nativeCronCreatorToolAllowlist === null
+      ? contextRest
+      : params.context;
   // Only the serializable grant context enters this key. Prepared credentials,
   // authoring capabilities, and callbacks stay bound to their grant lifetime.
-  return `${params.grantToken ?? ""}\u0000${stableStringify({
+  return `${stableStringify({
     context: {
       ...context,
       clientCaps: [...new Set(context.clientCaps ?? [])].toSorted(),

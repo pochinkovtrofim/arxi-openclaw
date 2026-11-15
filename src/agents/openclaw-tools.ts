@@ -104,6 +104,19 @@ import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
 
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
+
+/** The one construction of the ordinary computer tool, so a later rebuild matches it exactly. */
+export function createOpenClawComputerTool(options?: OpenClawToolsOptions): AnyAgentTool | null {
+  return options?.modelHasVision === false || options?.computerTransport === null
+    ? null
+    : createComputerTool({
+        ...options,
+        transport: options?.computerTransport,
+        // The tool combines this run scope with the assistant turn and provider call id.
+        idempotencyScope: options?.runId,
+        contextEpoch: options?.computerContextEpoch,
+      });
+}
 export async function createOpenClawToolsAsync(
   options?: OpenClawToolsOptions,
   preparation: ToolConstructionPreparationOptions = {},
@@ -462,15 +475,7 @@ function* createOpenClawToolsSteps(
       : [
           nodesTool,
           createMobileUiTool({ idempotencyScope: options?.runId }),
-          options?.modelHasVision === false || options?.computerTransport === null
-            ? null
-            : createComputerTool({
-                ...options,
-                transport: options?.computerTransport,
-                // The tool combines this run scope with the assistant turn and provider call id.
-                idempotencyScope: options?.runId,
-                contextEpoch: options?.computerContextEpoch,
-              }),
+          createOpenClawComputerTool(options),
           createCronTool({
             ...options,
             // Use the durable runSessionKey; cleanup-retired policy keys leave cron jobs dangling.
