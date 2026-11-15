@@ -114,6 +114,22 @@ describe("Claude CLI run diagnostics", () => {
     }
   });
 
+  it("ignores a turn mark left before the run started", async () => {
+    const runId = "stale-settle-run";
+    noteCliTurnEnded(runId, Date.now() - 60_000);
+    const diagnostics = captureLifecycle(runId);
+    try {
+      await runClaudeCliAgentTurnWithDiagnostics({ runId, sessionId: "stale" }, async () => ({
+        payloads: [{ text: "done" }],
+        meta: { durationMs: 1 },
+      }));
+      await flushDiagnosticEvents();
+      expect(diagnostics.events.map(({ event }) => event.type)).not.toContain("context.stages");
+    } finally {
+      diagnostics.unsubscribe();
+    }
+  });
+
   it("keeps a bounded number of unclaimed turn marks", () => {
     for (let index = 0; index < 300; index += 1) {
       noteCliTurnEnded(`abandoned-${index}`, index);

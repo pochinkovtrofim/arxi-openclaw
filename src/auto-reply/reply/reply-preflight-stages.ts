@@ -8,7 +8,8 @@ import {
   getActiveDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 
-type ReplyPreflightStage = (typeof REPLY_PREFLIGHT_STAGES)[number];
+// guest_dispatch is reported by the guest service, never marked here.
+type ReplyPreflightStage = Exclude<(typeof REPLY_PREFLIGHT_STAGES)[number], "guest_dispatch">;
 
 /**
  * Times a turn from the moment it is taken up to its agent run as consecutive stages:

@@ -24,3 +24,7 @@ export function takeCliTurnEnd(runId: string): number | undefined {
   turnEnds.delete(runId);
   return at;
 }
+
+export function clearCliTurnEnd(runId: string): void {
+  turnEnds.delete(runId);
+}

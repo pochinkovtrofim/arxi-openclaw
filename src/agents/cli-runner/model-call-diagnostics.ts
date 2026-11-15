@@ -28,7 +28,7 @@ import {
 } from "../../infra/diagnostic-trace-context.js";
 import type { CliOutput, CliStepEvent, CliUsage } from "../cli-output-contracts.js";
 import { isFailoverError } from "../failover-error.js";
-import { noteCliTurnEnded } from "./turn-end-marks.js";
+import { clearCliTurnEnd, noteCliTurnEnded } from "./turn-end-marks.js";
 import type { PreparedCliRunContext } from "./types.js";
 
 const MAX_CAPTURED_CONTENT_BYTES = 128 * 1024;
@@ -602,6 +602,8 @@ export function createClaudeCliModelCallDiagnostics(params: {
       }
       started = true;
       startedAt = now();
+      // A new model turn: an earlier attempt's end no longer marks where the run settles.
+      clearCliTurnEnd(params.context.params.runId);
       emitTrustedDiagnosticEventWithPrivateData(
         {
           type: "model.call.started",
@@ -675,6 +677,7 @@ export function createClaudeCliModelCallDiagnostics(params: {
       }
       closeStep({ error });
       terminalEmitted = true;
+      clearCliTurnEnd(params.context.params.runId);
       const failureKind =
         isFailoverError(error) && error.reason === "timeout"
           ? "timeout"
