@@ -194,7 +194,9 @@ async function resolveNodeExecScope(
   if (!shouldResolveExec) {
     return params;
   }
-  const nodeExecAvailability = await loadNodeExecAvailability(params.signal);
+  const nodeExecAvailability = await measurePrepStage("mcp-node-exec", () =>
+    loadNodeExecAvailability(params.signal),
+  );
   params.assertCurrent();
   return { ...params, nodeExecAvailability };
 }
@@ -249,18 +251,22 @@ async function resolvePairedComputerNodeScope(
   // Resolve the actual configured surface before contacting Gateway. Grant policy
   // alone is insufficient: profile, agent, sandbox, sender, and Gateway policy
   // can all remove computer from the final catalog.
-  const policyResolved = await resolveMcpLoopbackTools(params, mode, adopted);
+  const policyResolved = await measurePrepStage("mcp-computer-catalog", () =>
+    resolveMcpLoopbackTools(params, mode, adopted),
+  );
   // Only a catalog built now may refresh the cached one's age.
   const freshBase = policyResolved === adopted ? undefined : policyResolved;
   params.assertCurrent();
   const computerAllowed = policyResolved.tools.some(
     (tool) => readMcpLoopbackToolName(tool) === "computer",
   );
-  const pairedComputerUseAvailability = await loadPairedComputerUseAvailabilityForSurface({
-    computerAllowed,
-    modelHasVision: params.context.modelHasVision,
-    signal: params.signal,
-  });
+  const pairedComputerUseAvailability = await measurePrepStage("mcp-paired-computer", () =>
+    loadPairedComputerUseAvailabilityForSurface({
+      computerAllowed,
+      modelHasVision: params.context.modelHasVision,
+      signal: params.signal,
+    }),
+  );
   params.assertCurrent();
   if (!pairedComputerUseAvailability) {
     return { params, policyResolved, baseCatalog: freshBase };
@@ -301,7 +307,8 @@ async function withReadyMcpSession<T>(
 ): Promise<T> {
   params.assertCurrent();
   const { sessionKey, sessionId, senderIsOwner } = params.context;
-  if (!params.projection || !sessionId || senderIsOwner !== false) {
+  const { projection } = params;
+  if (!projection || !sessionId || senderIsOwner !== false) {
     return consume();
   }
   const { sessionAgentId: agentId } = resolveSessionAgentIds({
@@ -314,21 +321,23 @@ async function withReadyMcpSession<T>(
     sharingRevision: object | undefined;
   };
   do {
-    receipt = await withReadySessionRows(
-      params.projection,
-      () => [{ agentId, key: sessionKey }],
-      () => {
-        params.assertCurrent();
-        return {
-          sessionFacts: captureMcpCatalogSessionFacts(params),
-          sharingRevision: params.projection?.sharingRevision,
-        };
-      },
+    receipt = await measurePrepStage("mcp-session-ready", () =>
+      withReadySessionRows(
+        projection,
+        () => [{ agentId, key: sessionKey }],
+        () => {
+          params.assertCurrent();
+          return {
+            sessionFacts: captureMcpCatalogSessionFacts(params),
+            sharingRevision: params.projection?.sharingRevision,
+          };
+        },
+      ),
     );
     params.assertCurrent();
   } while (
     receipt.sharingRevision === undefined ||
-    receipt.sharingRevision !== params.projection.sharingRevision ||
+    receipt.sharingRevision !== projection.sharingRevision ||
     !isMcpCatalogSessionCurrent(receipt, params)
   );
   return consume();
