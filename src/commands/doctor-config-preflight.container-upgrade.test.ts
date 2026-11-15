@@ -405,6 +405,63 @@ describe("container image replacement Doctor repair and startup readiness", () =
     });
   });
 
+  it("a member outside the state directory does not pin an expired startup-migration group", async () => {
+    await withContainerState(async (stateDir) => {
+      const databasePath = seedSchema19Agent(stateDir);
+      await withAgentDatabaseStartupAdmission(async () => {
+        await repairContainerState();
+      });
+      await cleanupSessionStateForTest();
+      const env = { ...process.env, OPENCLAW_STATE_DIR: stateDir };
+      // Ro's Doctor also backs up the leased credential database, which lives on its own drive
+      // and changes every wake, so the run never records completion.
+      const [manifestPath] = listSessionSqliteMigrationManifestPaths(env);
+      const manifest = readSessionSqliteMigrationManifest(manifestPath!)!;
+      delete manifest.completedAt;
+      const credentialPath = path.join(
+        path.dirname(stateDir),
+        "auth-agent",
+        "openclaw-agent.sqlite",
+      );
+      const member = structuredClone(manifest.targets[0]!);
+      const suffix = member.completedMoves[0]!.archivePath.slice(member.sqlitePath.length);
+      const move = {
+        ...member.completedMoves[0]!,
+        sourcePath: credentialPath,
+        archivePath: `${credentialPath}${suffix}`,
+      };
+      manifest.targets.push({
+        ...member,
+        storePath: credentialPath,
+        sqlitePath: credentialPath,
+        plannedMoves: [move],
+        completedMoves: [move],
+      });
+      writeSessionSqliteMigrationManifest({ manifest, manifestPath: manifestPath! });
+      const expiredBefore = Date.parse(manifest.startedAt) + 1;
+      const preview = inspectSessionSqliteRecovery({ cfg: {}, env, expiredBefore });
+      expect(preview.artifacts.map((item) => [item.outcome, item.reason])).toEqual([
+        ["candidate", "expired-recovery-original"],
+        ["candidate", "expired-recovery-original"],
+        ["protected", "unsupported-target-ownership"],
+      ]);
+      const retired = await retireSessionSqliteRecovery({
+        env,
+        expiredBefore,
+        preview,
+        readConfig: async () => ({}),
+        confirm: async () => true,
+      });
+      expect(retired.totals.removedFiles).toBe(2);
+      expect(
+        fs
+          .readdirSync(path.dirname(databasePath))
+          .filter((name) => name.includes(".pre-startup-migration-")),
+      ).toEqual([]);
+      expect(fs.existsSync(databasePath)).toBe(true);
+    });
+  });
+
   it("leaves legacy workspace and audit state untouched until Doctor repairs them", async () => {
     await withContainerState(async (stateDir, workspace) => {
       closeOpenClawStateDatabaseForTest();
