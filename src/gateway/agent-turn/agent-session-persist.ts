@@ -24,7 +24,6 @@ import { buildSessionCreationStamp } from "../../config/sessions/session-entry-p
 import { createSessionResetBoundaryId } from "../../config/sessions/session-reset-boundary-event.js";
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { SessionWriteStep } from "../../infra/diagnostic-events.js";
 import {
   normalizeCronScheduledMcpToolBindings,
   normalizeCronScheduledToolCallerOrigin,
@@ -34,6 +33,7 @@ import {
   restoreCronPinnedExecGrant,
 } from "../../cron/scheduled-tool-policy.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
+import type { SessionWriteStep } from "../../infra/diagnostic-events.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { recordSessionCreated } from "../../sessions/session-created.js";

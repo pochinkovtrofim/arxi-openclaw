@@ -9,9 +9,9 @@ import {
 import { formatCliCommand } from "../../cli/command-format.js";
 import type { InternalSessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { CommandPrepareStep } from "../../infra/diagnostic-events.js";
 import { createAbortError } from "../../infra/abort-signal.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
+import type { CommandPrepareStep } from "../../infra/diagnostic-events.js";
 import { resolveAgentExplicitRecipientSession } from "../../infra/outbound/agent-delivery.js";
 import { buildOutboundSessionContext } from "../../infra/outbound/session-context.js";
 import { labelRuntimeContextText } from "../../llm/types.js";
