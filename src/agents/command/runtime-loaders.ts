@@ -34,7 +34,7 @@ export const loadAgentRunnerMemoryRuntime = createLazyPromise(
 export const loadTranscriptAppendRuntime = createLazyPromise(
   () => import("../../config/sessions/transcript.runtime.js"),
 );
-const loadCliDepsRuntime = createLazyPromise(() => import("../../cli/deps.js"));
+export const loadCliDepsRuntime = createLazyPromise(() => import("../../cli/deps.js"));
 export const loadExecDefaultsRuntime = createLazyPromise(() => import("../exec-defaults.js"));
 export const loadSkillsRuntime = createLazyPromise(async () => {
   const [remote, sessionSnapshot] = await Promise.all([

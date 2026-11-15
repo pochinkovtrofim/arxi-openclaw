@@ -27,7 +27,7 @@ function gatewayPrewarmItems(getConfig: () => OpenClawConfig): GatewayHandlerPre
         }
       },
     },
-    ...["chat.history", "chat.send", "sessions.list"].map((method): GatewayHandlerPrewarmItem => ({
+    ...["chat.history", "chat.send", "sessions.list", "agent", "agent.wait"].map((method): GatewayHandlerPrewarmItem => ({
       name: method,
       load: async (isCancelled) => {
         const [{ coreGatewayHandlers }, { prepareGatewayRequestHandler }] = await Promise.all([
@@ -43,6 +43,35 @@ function gatewayPrewarmItems(getConfig: () => OpenClawConfig): GatewayHandlerPre
         }
       },
     })),
+    {
+      name: "agent-turn-modules",
+      load: async (isCancelled) => {
+        // Module loads only: no loader here reads sessions, spawns, reaches the network or
+        // memoizes auth, PATH or version probes (a golden snapshot predates the boot PATH link).
+        const loaders = await import("../agents/command/runtime-loaders.js");
+        const steps: Array<() => Promise<unknown>> = [
+          loaders.loadAttemptExecutionRuntime,
+          loaders.loadDeliveryRuntime,
+          loaders.loadSessionStoreRuntime,
+          loaders.loadAcpManagerRuntime,
+          loaders.loadCliCompactionRuntime,
+          loaders.loadSkillsRuntime,
+          loaders.loadExecDefaultsRuntime,
+          loaders.loadCliDepsRuntime,
+          () => import("../agents/cli-runner/prepare.runtime.js"),
+          () => import("../agents/cli-runner/execute.runtime.js"),
+          () => import("../agents/acp-workspace-provisioning.js"),
+          () => import("../agents/model-catalog.runtime.js"),
+          () => import("../skills/discovery/chat-commands.runtime.js"),
+        ];
+        for (const step of steps) {
+          if (isCancelled()) {
+            return;
+          }
+          await step();
+        }
+      },
+    },
     { name: "agent-events", load: () => import("./server-chat.js") },
     { name: "session-key", load: () => import("./server-session-key.js") },
     {
