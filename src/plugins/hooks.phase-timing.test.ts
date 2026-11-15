@@ -111,7 +111,8 @@ describe("gating hook phase timing", () => {
     for (const label of ["arxi-channel:group-rules", "plugin#99", "A:B.C_d"]) {
       expect(promptHookStageName(label)).toMatch(/^[a-z0-9][a-z0-9-]{0,47}$/u);
     }
-    expect(promptHookStageName(`x:${"y".repeat(80)}`)).toHaveLength(48);
+    expect(promptHookStageName(`${"p".repeat(47)}:connections`)).toMatch(/^hook-p+-connections$/u);
+    expect(promptHookStageName(`${"p".repeat(47)}:connections`).length).toBeLessThanOrEqual(48);
   });
 
   it("keeps labels to plugin and registration code identifiers", () => {
