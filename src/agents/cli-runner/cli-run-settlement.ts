@@ -33,6 +33,7 @@ import { resolveReplyExpectation } from "../reply-completion.js";
 import { recordAgentCleanupFailure } from "../run-cleanup-timeout.js";
 import { CliAuthProfilePreparationError } from "./auth-profile-preparation-error.js";
 import { runCliCleanup } from "./cleanup.js";
+import { noteCliSettleStep } from "./turn-end-marks.js";
 import { resolveCliSessionId } from "./cli-run-recovery.js";
 import { projectCliMessagingDeliveryEvidence } from "./delivery-evidence.js";
 import { hashCliReseedPrompt } from "./reseed-envelope.js";
@@ -287,6 +288,7 @@ export async function settlePreparedCliRun(params: {
     }
     outcome = completed ? { result: completed } : { error };
   }
+  noteCliSettleStep(runParams.runId, "resolve");
   let cleanupError: Error | undefined;
   const recordCleanupError = (error: unknown) => {
     recordAgentCleanupFailure();
@@ -299,6 +301,7 @@ export async function settlePreparedCliRun(params: {
   } catch (error) {
     recordCleanupError(error);
   }
+  noteCliSettleStep(runParams.runId, "backend-release");
   if (runParams.cleanupCliLiveSessionOnRunEnd === true) {
     try {
       const { closeCliLiveSession } = await import("./cli-live-session-registry.js");
@@ -306,12 +309,14 @@ export async function settlePreparedCliRun(params: {
     } catch (error) {
       recordCleanupError(error);
     }
+    noteCliSettleStep(runParams.runId, "live-close");
   }
   try {
     await retireCliRunMcpRuntime(runParams, recordCleanupError);
   } catch (error) {
     recordCleanupError(error);
   }
+  noteCliSettleStep(runParams.runId, "mcp-retire");
   const delivered = "result" in outcome && hasCompletedSourceReplyDeliveryEvidence(outcome.result);
   if (cleanupError) {
     if (completed || "error" in outcome || delivered) {
@@ -356,6 +361,7 @@ export async function settlePreparedCliRun(params: {
     }
     warnAfterCommit(error);
   }
+  noteCliSettleStep(runParams.runId, "auth-profile");
   if ("error" in outcome) {
     throw outcome.error instanceof Error
       ? outcome.error
