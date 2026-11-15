@@ -12,7 +12,7 @@ import { transcriptEventContextEligibility } from "./session-transcript-projecti
 import { isCanonicalSessionTranscriptEntry } from "./transcript-tree.js";
 
 type Bounded = Extract<PreparedSessionTranscriptHydration, { kind: "bounded" }>;
-type Limits = { maxBytes: number; maxEvents: number };
+type Limits = { maxBytes: number; maxEvents: number; fromLatestBoundary?: boolean };
 
 /** A projection owned and evicted by ReplicaCell, never a separate transcript authority. */
 export type SessionActorTranscriptReplica = {
@@ -240,7 +240,8 @@ export function readSessionActorTranscriptContext(
     retained.sessionId !== hot.entry?.sessionId ||
     !sameSessionActorTranscriptVersion(retained.version, hot.transcript.version) ||
     context.limits.maxBytes !== limits.maxBytes ||
-    context.limits.maxEvents !== limits.maxEvents
+    context.limits.maxEvents !== limits.maxEvents ||
+    (context.limits.fromLatestBoundary === true) !== (limits.fromLatestBoundary === true)
   ) {
     return undefined;
   }

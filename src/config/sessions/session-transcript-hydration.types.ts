@@ -82,7 +82,7 @@ export type SessionTranscriptHydrationWorkerInput = {
   expectedIdentity?: DatabaseFileIdentity;
   afterSeq?: number;
   includeEventJson?: boolean;
-  limits?: { maxBytes: number; maxEvents: number };
+  limits?: { maxBytes: number; maxEvents: number; fromLatestBoundary?: boolean };
   transcript?: SessionEntryCohortRequest["transcript"];
   preparedEntry?: SessionTranscriptAnchorEntry;
   admission?: UserTurnTranscriptAdmissionReceipt;

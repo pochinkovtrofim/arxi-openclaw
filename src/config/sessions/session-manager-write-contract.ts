@@ -37,7 +37,12 @@ import type {
 import type { InternalSessionEntry } from "./types.js";
 
 type MetadataTarget = Omit<SessionTranscriptWriteScope, "env"> & SessionTranscriptRuntimeTarget;
-type SessionManagerBoundedContextLimits = { maxBytes: number; maxEvents: number };
+type SessionManagerBoundedContextLimits = {
+  maxBytes: number;
+  maxEvents: number;
+  /** May skip rows before the latest reset's window; callers accept the full set too. */
+  fromLatestBoundary?: boolean;
+};
 
 /** Host metadata capability; SDK-visible admissions do not expose the actor's other domains. */
 export type SessionManagerIncognitoDatabase = {
