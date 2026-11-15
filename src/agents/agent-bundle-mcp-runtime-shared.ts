@@ -52,6 +52,8 @@ export type CreateSessionMcpRuntime = (params: {
   excludeServerNames?: ReadonlySet<string>;
   safeServerNamesByServer?: ReadonlyMap<string, string>;
   connectionOverrides?: ReadonlyMap<string, McpServerConnectionResolved>;
+  /** The resolution context the connections were resolved for ("" when not trace-bound). */
+  resolutionContextKey?: string;
   redactConnectionServerNames?: ReadonlySet<string>;
   requesterScope?: SessionMcpRequesterScope;
   requesterConnect?: RequesterMcpConnect;
