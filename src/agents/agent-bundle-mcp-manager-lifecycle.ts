@@ -54,6 +54,8 @@ type SessionMcpRuntimeManagerStore = {
       resolvedAt: number;
       /** When a resolver began failing while this runtime was kept; cleared by a new install. */
       failingSince?: number;
+      /** A re-resolution queued behind the turn that served this runtime past its window. */
+      revalidating?: boolean;
     }
   >;
   advertisedScopedCatalogBySessionId: Map<string, AdvertisedScopedCatalogEntry>;

@@ -31,6 +31,8 @@ type RuntimeEntryParams = Omit<Parameters<CreateSessionMcpRuntime>[0], "configFi
 };
 
 type RequesterRuntimeParams = RuntimeEntryParams & {
+  /** Resolve in this call rather than serving the installed runtime and resolving after it. */
+  revalidateNow?: boolean;
   oauthRequesterNameSet: ReadonlySet<string>;
   mcpServers: Record<string, BundleMcpServerConfig>;
   resolverRequesterServerNames: readonly string[];
@@ -235,6 +237,43 @@ export function createSessionMcpRuntimeManagerInstall(
       meta.resolutionContextKey === resolutionContextKey &&
       store.scheduler.now() - meta.resolvedAt < resolveMcpConnectionRevalidateMs();
     if (withinRevalidateWindow && existing && matchesRuntime(existing, params, scopedFingerprint)) {
+      reconcileReusableRetirement(params, existing);
+      existing.markUsed();
+      return existing;
+    }
+    // Past the window, the installed runtime serves this turn at once and the
+    // re-resolution runs right after it, on this runtime key's queue: a turn never
+    // waits on a resolver's round trip (about 0.4 s for a host bearer). A revocation
+    // the re-resolution finds applies from the next turn on; calls already renew
+    // their credential before each request and fail once it is revoked.
+    if (
+      !params.revalidateNow &&
+      meta !== undefined &&
+      meta.resolutionContextKey === resolutionContextKey &&
+      existing &&
+      store.runtimesBySessionId.get(params.runtimeKey) === existing &&
+      matchesRuntime(existing, params, scopedFingerprint)
+    ) {
+      if (!meta.revalidating) {
+        meta.revalidating = true;
+        void lifecycle
+          .runExclusiveOnRuntimeKeys([params.runtimeKey], async () => {
+            store.scheduler.signal.throwIfAborted();
+            await resolveAndInstallRequesterRuntime({
+              ...params,
+              revalidateNow: true,
+            });
+          })
+          .catch((error: unknown) => {
+            logWarn(`bundle-mcp: background connection revalidation failed: ${String(error)}`);
+          })
+          .finally(() => {
+            const current = store.connectionMetaByRuntimeKey.get(params.runtimeKey);
+            if (current) {
+              current.revalidating = false;
+            }
+          });
+      }
       reconcileReusableRetirement(params, existing);
       existing.markUsed();
       return existing;

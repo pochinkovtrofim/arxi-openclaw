@@ -186,14 +186,20 @@ describe("MCP manager creation ownership", () => {
     ).toBeUndefined();
   });
 
-  it("keeps the installed runtime while a resolver fails for a moment, then drops it", async () => {
-    let answer: "ok" | "throw" | "none" = "ok";
+  it("serves the installed runtime at once past the window and re-resolves after the turn", async () => {
+    let answer: "ok" | "throw" | "none" | "hold" = "ok";
     let issued = 0;
+    let releaseHeld: (() => void) | undefined;
     resolverTesting.setMcpServerConnectionResolversForTest([
       {
         serverName: "scoped",
         requiresRequesterIdentity: false,
         resolve: async () => {
+          if (answer === "hold") {
+            await new Promise<void>((resolve) => {
+              releaseHeld = resolve;
+            });
+          }
           if (answer === "throw") {
             throw new Error("host restarting");
           }
@@ -223,27 +229,61 @@ describe("MCP manager creation ownership", () => {
       });
     };
     const first = expectDefined(await acquire(), "first runtime").runtime;
-    // The resolver fails for a moment: the same runtime, so the same tools, serve the turn.
+    // A slow resolver never holds the turn: the installed runtime answers at once.
+    answer = "hold";
+    expect(expectDefined(await acquire(), "served at once").runtime).toBe(first);
+    answer = "ok";
+    await vi.waitFor(() => expect(releaseHeld).toBeDefined());
+    expectDefined(releaseHeld, "background resolution started")();
+    // The resolver fails for a moment: the same runtime keeps serving (#238).
     answer = "throw";
     expect(expectDefined(await acquire(), "kept runtime").runtime).toBe(first);
     expect(expectDefined(await acquire(), "kept again").runtime).toBe(first);
     expect(first.dispose).not.toHaveBeenCalled();
-    expect(createRuntime).toHaveBeenCalledOnce();
-    // Back to normal, then a resolver that answers "unavailable" still revokes at once.
-    answer = "ok";
-    const healthy = expectDefined(await acquire(), "healthy runtime").runtime;
+    // A revocation applies from the next turn on.
     answer = "none";
+    expect(await acquire()).toBeDefined();
     expect(await acquire()).toBeUndefined();
-    expect(healthy.dispose).toHaveBeenCalledOnce();
-    // A failure lasting past the keep window drops the server as before.
-    answer = "ok";
-    const later = expectDefined(await acquire(), "later runtime").runtime;
+  });
+
+  it("drops a failing server once its failure outlasts the keep window", async () => {
+    let answer: "ok" | "throw" = "ok";
+    resolverTesting.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "scoped",
+        requiresRequesterIdentity: false,
+        resolve: async () => {
+          if (answer === "throw") {
+            throw new Error("host restarting");
+          }
+          return { url: "https://mcp.example.test/scoped" };
+        },
+      },
+    ]);
+    const gatewayClock = createGatewaySchedulerClock(1_000_000);
+    const manager = createSessionMcpRuntimeManager({
+      createRuntime: vi.fn<CreateSessionMcpRuntime>(createRuntimeFixture),
+      scheduler: createTestGatewayScheduler(gatewayClock.clock),
+    });
+    managers.push(manager);
+    const acquire = async () => {
+      await gatewayClock.advanceBy(61_000);
+      return await manager.getOrCreateRequesterScoped({
+        ...params,
+        agentId: "main",
+        cfg: { mcp: { servers: { scoped: { transport: "streamable-http" as const } } } },
+      });
+    };
+    const first = expectDefined(await acquire(), "first runtime").runtime;
     answer = "throw";
-    for (let turn = 0; turn < 5; turn += 1) {
-      expect(expectDefined(await acquire(), "kept within the window").runtime).toBe(later);
+    let turns = 0;
+    while ((await acquire()) !== undefined) {
+      turns += 1;
+      expect(turns).toBeLessThan(10);
     }
-    expect(await acquire()).toBeUndefined();
-    expect(later.dispose).toHaveBeenCalledOnce();
+    // Kept past the first failure, dropped after the 5-minute window (61 s per turn).
+    expect(turns).toBeGreaterThanOrEqual(5);
+    expect(first.dispose).toHaveBeenCalledOnce();
   });
 
   it("revokes instead of keeping when a sibling server answers unavailable during a failure", async () => {
@@ -285,6 +325,8 @@ describe("MCP manager creation ownership", () => {
     };
     const first = expectDefined(await acquire(), "first runtime").runtime;
     siblingGone = true;
+    // The turn that finds the revocation is served; the next one sees it.
+    expect(await acquire()).toBeDefined();
     expect(await acquire()).toBeUndefined();
     expect(first.dispose).toHaveBeenCalledOnce();
   });
