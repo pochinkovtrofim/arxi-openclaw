@@ -307,7 +307,8 @@ async function withReadyMcpSession<T>(
 ): Promise<T> {
   params.assertCurrent();
   const { sessionKey, sessionId, senderIsOwner } = params.context;
-  if (!params.projection || !sessionId || senderIsOwner !== false) {
+  const { projection } = params;
+  if (!projection || !sessionId || senderIsOwner !== false) {
     return consume();
   }
   const { sessionAgentId: agentId } = resolveSessionAgentIds({
@@ -322,7 +323,7 @@ async function withReadyMcpSession<T>(
   do {
     receipt = await measurePrepStage("mcp-session-ready", () =>
       withReadySessionRows(
-        params.projection,
+        projection,
         () => [{ agentId, key: sessionKey }],
         () => {
           params.assertCurrent();
