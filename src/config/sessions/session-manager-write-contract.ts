@@ -40,7 +40,7 @@ type MetadataTarget = Omit<SessionTranscriptWriteScope, "env"> & SessionTranscri
 type SessionManagerBoundedContextLimits = {
   maxBytes: number;
   maxEvents: number;
-  /** Read only from the latest reset's window (see the bounded active-context reader). */
+  /** May skip rows before the latest reset's window; callers accept the full set too. */
   fromLatestBoundary?: boolean;
 };
 

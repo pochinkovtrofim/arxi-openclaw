@@ -240,8 +240,8 @@ export function readSessionTranscriptBoundedActiveContextCore(
     maxBytes: number;
     maxEvents: number;
     /**
-     * Read only from the latest reset's window (its first kept entry, else the reset):
-     * not the older eligible rows up to maxEvents that every context build discards.
+     * May skip eligible rows before the latest reset's window (its first kept entry, else
+     * the reset), which every context build discards; callers must accept the full set.
      */
     fromLatestBoundary?: boolean;
     ignoreReadFence?: boolean;
