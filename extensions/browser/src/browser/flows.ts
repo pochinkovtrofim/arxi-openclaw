@@ -223,6 +223,9 @@ function urlWithoutQuery(raw: string): string {
 
 const READ_PATH = /(^|\/)(search|query|find|list|lookup|suggest|autocomplete)(\/|$)/i;
 const GRAPHQL_PATH = /(^|\/)graphql(\/|$)/i;
+const GRAPHQL_TEXT = /^\s*(#[^\n]*\n\s*)*(\{|query\b|mutation\b|subscription\b|fragment\b)/;
+// A mutation operation anywhere in the document, comments removed.
+const GRAPHQL_MUTATION = /(^|\})\s*mutation\b/;
 
 /**
  * Whether sending the request changes something on the site. A GraphQL
@@ -244,10 +247,16 @@ export function isWrite(exchange: Pick<FlowExchange, "method" | "url" | "postDat
   }
   const body = parseJson(exchange.postData);
   const entries = Array.isArray(body) ? body : [body];
-  if (entries.every((entry) => isRecord(entry) && typeof entry.query === "string")) {
+  // GraphQL text: on a /graphql path, or a document that starts like one. A
+  // REST body with a "query" field (a search term) is not.
+  const graphql = (text: unknown): text is string =>
+    typeof text === "string" && (GRAPHQL_PATH.test(pathname) || GRAPHQL_TEXT.test(text));
+  if (entries.every((entry) => isRecord(entry) && graphql(entry.query))) {
     return entries.some(
       (entry) =>
-        isRecord(entry) && typeof entry.query === "string" && /^\s*mutation\b/.test(entry.query),
+        isRecord(entry) &&
+        graphql(entry.query) &&
+        GRAPHQL_MUTATION.test(entry.query.replace(/#[^\n]*/g, "")),
     );
   }
   const opaqueOperation =

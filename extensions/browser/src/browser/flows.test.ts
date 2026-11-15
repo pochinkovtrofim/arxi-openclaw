@@ -353,6 +353,11 @@ describe("saved flow review cases", () => {
       false,
     );
     expect(isWrite({ method: "GET", url: "https://x.example/account/logout" })).toBe(true);
+    expect(isWrite(post("https://x.example/api/items", '{"query":"lamp"}'))).toBe(true);
+    expect(isWrite(post("https://x.example/api/search", '{"query":"lamp"}'))).toBe(false);
+    expect(
+      isWrite(post("https://x.example/gql", '{"query":"# add\\nfragment F on Cart { id }\\nmutation Add { add { ...F } }"}')),
+    ).toBe(true);
   });
 
   it("keeps no session fields from bodies, no Rails login, and only the referer's origin", () => {

@@ -383,7 +383,7 @@ async function runWrite(
     });
   }
   await writeFlow(
-    { ...flow, tier, verified: true, updatedAt: new Date().toISOString() },
+    { ...flow, tier, verified: true, drift: undefined, updatedAt: new Date().toISOString() },
     root,
   ).catch(() => {});
   return flowResult(flow, tier, verdict.data, input, context, true);
