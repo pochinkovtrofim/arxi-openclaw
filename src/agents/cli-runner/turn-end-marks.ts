@@ -25,6 +25,7 @@ export function takeCliTurnEnd(runId: string): number | undefined {
   return at;
 }
 
+/** Forgets a run's turn mark and its settlement steps. */
 export function clearCliTurnEnd(runId: string): void {
   turnEnds.delete(runId);
   settleSteps.delete(runId);
@@ -40,6 +41,10 @@ export function noteCliSettleStep(
   startedAt: number,
   endedAt: number,
 ): void {
+  // Only a run whose model turn has ended settles; earlier steps are never reported.
+  if (!turnEnds.has(runId)) {
+    return;
+  }
   let steps = settleSteps.get(runId);
   if (!steps) {
     steps = [];

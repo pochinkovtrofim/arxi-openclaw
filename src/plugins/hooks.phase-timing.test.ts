@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createStageTimingTracker } from "../shared/stage-timing.js";
 import { withPrepStages } from "../infra/run-prep-stages.js";
-import {
-  hookTimingLabel,
-  promptHookStageName,
-  takeHookPhaseTimings,
-} from "./hook-phase-timing.js";
+import { createStageTimingTracker } from "../shared/stage-timing.js";
+import { hookTimingLabel, promptHookStageName, takeHookPhaseTimings } from "./hook-phase-timing.js";
 import { createHookRunner } from "./hooks.js";
 import { createMockPluginRegistry, TEST_PLUGIN_AGENT_CTX } from "./hooks.test-fixtures.js";
 

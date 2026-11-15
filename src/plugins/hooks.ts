@@ -15,6 +15,7 @@ import { recordRuntimeActionDecision } from "../audit/runtime-action-decision.js
 import { finalizeGroupThreadToolReply } from "../auto-reply/group-thread-context.js";
 import { formatHookErrorForLog } from "../hooks/fire-and-forget.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 import { projectModelContextMessages } from "../shared/model-context-message.js";
 import { concatOptionalTextSegments } from "../shared/text/join-segments.js";
 import {
@@ -34,7 +35,6 @@ import {
   isHookDecision,
 } from "./hook-decision-types.js";
 import { cloneHookIsolationValue, HookIsolationError } from "./hook-isolation.js";
-import { measurePrepStage } from "../infra/run-prep-stages.js";
 import {
   hookTimingLabel,
   isTimedHookPhase,
@@ -750,7 +750,10 @@ export function createHookRunner(
           // names the one the first model request waited for.
           handlerResult =
             hookName === "before_prompt_build"
-              ? await measurePrepStage(promptHookStageName(hookTimingLabel(hook, hookIndex)), invoke)
+              ? await measurePrepStage(
+                  promptHookStageName(hookTimingLabel(hook, hookIndex)),
+                  invoke,
+                )
               : await invoke();
         } catch (err) {
           timedOut = err instanceof HookTimeoutError;
