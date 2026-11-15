@@ -174,9 +174,7 @@ describe("scheduleGatewayHandlerPrewarm", () => {
       expect(warn).not.toHaveBeenCalled();
       // Owner turns first: the turn modules load before the other helpers.
       expect(mocks.events.indexOf("cli-prepare")).toBeGreaterThan(-1);
-      expect(mocks.events.indexOf("cli-prepare")).toBeLessThan(
-        mocks.events.indexOf("cli-execute"),
-      );
+      expect(mocks.events.indexOf("cli-prepare")).toBeLessThan(mocks.events.indexOf("cli-execute"));
       expect(mocks.events.indexOf("cli-execute")).toBeLessThan(
         mocks.events.indexOf("agent-events"),
       );
