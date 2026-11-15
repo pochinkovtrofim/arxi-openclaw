@@ -3,8 +3,8 @@ import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
-import { recordHookPhaseTiming, takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
 import { measurePrepStage } from "../../infra/run-prep-stages.js";
+import { recordHookPhaseTiming, takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
 import { CLI_PREP_HANDOFF_STAGE, createCliPrepStages } from "./prep-stages.js";
 import type { PreparedCliRunContext } from "./types.js";
 
@@ -39,7 +39,6 @@ afterEach(() => {
 });
 
 describe("CLI turn preparation stages", () => {
-
   it("reports the steps the preparation times deep inside a checkpoint", async () => {
     let nowMs = 10_000;
     vi.spyOn(Date, "now").mockImplementation(() => nowMs);

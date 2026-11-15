@@ -1,9 +1,9 @@
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 import type { BundleMcpServerConfig } from "../plugins/bundle-mcp.types.js";
 import type {
   SessionMcpConfigPublication,
   SessionMcpRuntimeManagerLifecycle,
 } from "./agent-bundle-mcp-manager-lifecycle.js";
-import { measurePrepStage } from "../infra/run-prep-stages.js";
 import { createRequesterMcpConnect } from "./agent-bundle-mcp-requester-connect.js";
 import { loadSessionMcpConfig } from "./agent-bundle-mcp-runtime-config.js";
 import { sessionMcpRuntimeOwners } from "./agent-bundle-mcp-runtime-owner.js";
