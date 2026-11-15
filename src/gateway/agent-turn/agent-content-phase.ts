@@ -8,6 +8,7 @@ import {
   resolveExplicitAgentSessionKey,
 } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { ContentStep } from "../../infra/diagnostic-events.js";
 import {
   loadVoiceWakeRoutingConfig,
   resolveVoiceWakeRouteByTrigger,
@@ -36,7 +37,6 @@ import { tryResolveSessionCompatibilityOwnerAgentId } from "../session-request-a
 import { resolveSessionStoreIdentity } from "../session-store-key.js";
 import { resolveGatewayModelSupportsImages, resolveSessionModelRef } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
-import type { ContentStep } from "../../infra/diagnostic-events.js";
 import { applyAgentAudioUnderstanding } from "./agent-audio-understanding.js";
 import { AgentRequestReservationEndedError } from "./agent-dedupe.js";
 import type { AgentTurnContext } from "./types.js";

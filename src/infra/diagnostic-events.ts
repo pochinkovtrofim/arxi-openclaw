@@ -179,11 +179,7 @@ export const RUN_ADMISSION_STEPS = [
   "attempt_handoff",
 ] as const;
 export type RunAdmissionStep = (typeof RUN_ADMISSION_STEPS)[number];
-export type PreflightStep =
-  | CommandPrepareStep
-  | SessionWriteStep
-  | ContentStep
-  | RunAdmissionStep;
+export type PreflightStep = CommandPrepareStep | SessionWriteStep | ContentStep | RunAdmissionStep;
 
 /** What a sub-stage step name may look like; the host and guest accept the same pattern. */
 export const REPLY_PREFLIGHT_STEP_PATTERN = /^[a-z0-9_]{1,40}$/;
