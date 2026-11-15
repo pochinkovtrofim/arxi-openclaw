@@ -368,6 +368,22 @@ export async function runCliTurnCompactionLifecycle(
   if (!storePath || !contextTokenBudget) {
     return input.sessionEntry;
   }
+  const cliBackendId = input.cliBackendId?.trim() || input.provider;
+  const resolvedBackend = resolveCliBackendConfig(cliBackendId, input.cfg);
+  const nativeSessionEntry = isNativeHarnessCompactionSession(input.sessionEntry, input.provider)
+    ? input.sessionEntry
+    : undefined;
+  const lockedHarnessRuntime = normalizeOptionalAgentRuntimeId(input.sessionEntry?.agentHarnessId);
+  const lockedOutsideOpenClaw =
+    input.sessionEntry?.modelSelectionLocked === true &&
+    lockedHarnessRuntime !== OPENCLAW_AGENT_RUNTIME_ID &&
+    !nativeSessionEntry;
+  // A backend that compacts its own context leaves nothing for this path to do.
+  // Decide that before reading the session: on a long chat the read and the token
+  // estimate cost seconds, and they stood between every reply and its delivery.
+  if (resolvedBackend?.ownsNativeCompaction && !nativeSessionEntry && !lockedOutsideOpenClaw) {
+    return input.sessionEntry;
+  }
 
   return await runWithAsyncWorkResources(async (onAcquired) => {
     const sourceAuthority = host.sourceAuthority;
@@ -453,27 +469,8 @@ export async function runCliTurnCompactionLifecycle(
       return params.sessionEntry;
     }
 
-    const cliBackendId = params.cliBackendId?.trim() || params.provider;
-    const resolvedBackend = resolveCliBackendConfig(cliBackendId, params.cfg);
-    const nativeSessionEntry = isNativeHarnessCompactionSession(
-      params.sessionEntry,
-      params.provider,
-    )
-      ? params.sessionEntry
-      : undefined;
-    const lockedHarnessRuntime = normalizeOptionalAgentRuntimeId(
-      params.sessionEntry?.agentHarnessId,
-    );
-    if (
-      params.sessionEntry?.modelSelectionLocked === true &&
-      lockedHarnessRuntime !== OPENCLAW_AGENT_RUNTIME_ID &&
-      !nativeSessionEntry
-    ) {
+    if (lockedOutsideOpenClaw) {
       throw new Error("CLI compaction cannot replace a model-locked native harness runtime");
-    }
-    if (resolvedBackend?.ownsNativeCompaction && !nativeSessionEntry) {
-      log.info(`CLI backend "${cliBackendId}" owns native compaction — deferring to backend`);
-      return params.sessionEntry;
     }
 
     let compactionKind: EmbeddedAgentCompactResult["compactionKind"];

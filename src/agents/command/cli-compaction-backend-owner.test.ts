@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { closeOpenClawAgentDatabasesAsync } from "../../state/openclaw-agent-db.js";
+import { SessionManager } from "../sessions/session-manager.js";
 import {
   createPreparedRuntimeLease,
   prepareCompactionScenario,
@@ -47,13 +48,38 @@ describe("runCliTurnCompactionLifecycle backend ownership", () => {
       },
       deps: { resolveCliBackendConfig: resolveBackend },
     });
+    const openSession = vi.spyOn(SessionManager, "openAsync");
     const updatedEntry = await scenario.run({ cliBackendId: "claude-cli" });
 
     expect(resolveBackend).toHaveBeenCalledWith("claude-cli", expect.anything());
+    // The backend compacts its own context, so the transcript is never loaded.
+    expect(openSession).not.toHaveBeenCalled();
     expect(scenario.compactCalls).toHaveLength(0);
     expect(scenario.recordCliCompactionInStore).not.toHaveBeenCalled();
     expect(updatedEntry).toBe(scenario.sessionEntry);
     expect(updatedEntry?.cliSessionBindings?.["claude-cli"]?.sessionId).toBe("native-session");
+  });
+
+  it("still refuses to compact a model-locked session even when the backend owns compaction", async () => {
+    const resolveBackend = vi.fn(() => ({
+      id: "claude-cli",
+      config: { command: "claude" },
+      bundleMcp: true,
+      ownsNativeCompaction: true,
+    }));
+    const scenario = await prepareCompactionScenario({
+      suffix: "owner-backend-locked-session",
+      tmpDir,
+      provider: "anthropic",
+      model: "claude-opus-5-5",
+      sessionEntry: { modelSelectionLocked: true },
+      deps: { resolveCliBackendConfig: resolveBackend },
+    });
+
+    await expect(scenario.run({ cliBackendId: "claude-cli" })).rejects.toThrow(
+      "CLI compaction cannot replace a model-locked native harness runtime",
+    );
+    expect(scenario.compactCalls).toHaveLength(0);
   });
 
   it("keeps embedded compaction when no CLI backend ran the turn", async () => {
