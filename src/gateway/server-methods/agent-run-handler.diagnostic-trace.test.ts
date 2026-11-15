@@ -6,6 +6,7 @@ import {
 import {
   markGatewayFrameStep,
   runWithGatewayFrameReceipt,
+  takeGatewayFrameReceipt,
 } from "../server/ws-connection/frame-receipt.js";
 import { agentRunHandler } from "./agent-run-handler.js";
 
@@ -79,17 +80,17 @@ describe("agentRunHandler diagnostic trace ownership", () => {
 
   it("starts the turn's clock when its frame was read off the socket", async () => {
     const receivedAt = Date.now() - 900;
-    await runWithGatewayFrameReceipt(receivedAt, async () => {
-      markGatewayFrameStep("frame_admission");
-      markGatewayFrameStep("request_authorize");
-      await agentRunHandler({
-        params: {},
-        respond: vi.fn(),
-        context: {},
-        client: null,
-        isWebchatConnect: () => false,
-      } as never);
-    });
+    const frameReceipt = runWithGatewayFrameReceipt(receivedAt, takeGatewayFrameReceipt);
+    markGatewayFrameStep(frameReceipt, "frame_admission");
+    markGatewayFrameStep(frameReceipt, "request_authorize");
+    await agentRunHandler({
+      params: {},
+      respond: vi.fn(),
+      context: {},
+      client: null,
+      isWebchatConnect: () => false,
+      frameReceipt,
+    } as never);
     const { rpcReceivedAt, receiptSteps } = (
       startTurn.mock.calls[0] as unknown as [
         { rpcReceivedAt: number; receiptSteps: Array<{ step: string; at: number }> },
@@ -102,5 +103,26 @@ describe("agentRunHandler diagnostic trace ownership", () => {
       "handler_entry",
     ]);
     expect(receiptSteps.every(({ at }) => at >= receivedAt && at <= Date.now())).toBe(true);
+  });
+
+  it("gives a request dispatched in-process during a frame its own clock", async () => {
+    // A subagent run started from a tool is an in-process request under its parent's
+    // frame: it carries no receipt, so its stages start at its own handler.
+    const before = Date.now();
+    await runWithGatewayFrameReceipt(before - 60_000, () =>
+      agentRunHandler({
+        params: {},
+        respond: vi.fn(),
+        context: {},
+        client: null,
+        isWebchatConnect: () => false,
+      } as never),
+    );
+    expect(startTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rpcReceivedAt: expect.toSatisfy((at: number) => at >= before),
+        receiptSteps: [],
+      }),
+    );
   });
 });

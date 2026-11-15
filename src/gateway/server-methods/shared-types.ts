@@ -500,6 +500,8 @@ export type GatewayRequestOptions = {
   signal?: AbortSignal;
   /** Live transport authority; in-process only and never derived from request data. */
   hasCurrentClientAuthority?: () => boolean;
+  /** When this request's frame was read off its socket; absent for in-process requests. */
+  frameReceipt?: import("../server/ws-connection/frame-receipt.js").GatewayFrameReceipt;
 };
 
 /** Commit-time guard captured by the pre-dispatch session participation check. */

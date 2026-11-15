@@ -14,7 +14,6 @@ import { createAgentTurnIo } from "../agent-turn/io.js";
 import { captureAgentTurnPrincipal, resolveAgentTurnRunObserver } from "../agent-turn/principal.js";
 import { SessionMutationAuthorizationChangedError } from "../session-mutation-authorization-error.js";
 import { captureGatewayClientUploadCommitGuard } from "../upload-policy.js";
-import { readGatewayFrameReceipt } from "../server/ws-connection/frame-receipt.js";
 import type { AgentRunRequest } from "./agent-request-types.js";
 import { createAgentRuntimeAuthorityGuard } from "./agent-runtime-authority.js";
 import type { GatewayRequestHandlers } from "./types.js";
@@ -28,11 +27,11 @@ export const agentRunHandler: GatewayRequestHandlers["agent"] = async ({
   isWebchatConnect,
   hasCurrentClientAuthority,
   sessionMutationCommitGuard,
+  frameReceipt: frame,
 }) => {
   // A request read off a socket starts the turn's clock there: frame admission and
   // authorization ran before this handler did.
   const handlerEnteredAt = Date.now();
-  const frame = readGatewayFrameReceipt();
   const rpcReceivedAt =
     frame && frame.receivedAt <= handlerEnteredAt ? frame.receivedAt : handlerEnteredAt;
   const receiptSteps: PreflightStepMoment[] = frame

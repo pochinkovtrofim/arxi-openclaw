@@ -45,6 +45,7 @@ import {
 } from "../ws-policy-close.js";
 import type { GatewayWsClient } from "../ws-types.js";
 import type { GatewayWsMessageHandlerParams } from "./message-handler-types.js";
+import { takeGatewayFrameReceipt } from "./frame-receipt.js";
 import { createGatewayRpcDiagnostics } from "./request-diagnostics.js";
 import { GatewayRequestStartTimeoutError, scheduleGatewayRequestStart } from "./request-start.js";
 
@@ -155,6 +156,8 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
     );
     const remoteIngress = client.remoteControlUiIngress;
     const hasCurrentIngress = () => {
+    // This frame's own receipt, captured before any await; it rides with the request.
+    const frameReceipt = takeGatewayFrameReceipt();
       if (hasCurrentRemoteControlUiIngress(remoteIngress)) {
         return true;
       }
@@ -504,6 +507,7 @@ export function createGatewayAuthenticatedRequestDispatcher(params: {
                   ...(admission ? { admission } : {}),
                   requestEntry: entry,
                   ...(signal ? { signal } : {}),
+                  ...(frameReceipt ? { frameReceipt } : {}),
                 },
                 client,
                 getRequiredSharedGatewaySessionGeneration,

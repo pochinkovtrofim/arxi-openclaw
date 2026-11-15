@@ -7,27 +7,30 @@ export type GatewayFrameStep = Extract<
   "frame_admission" | "request_authorize" | "handler_prepare"
 >;
 
-type GatewayFrameReceipt = { receivedAt: number; steps: PreflightStepMoment[] };
-
-const activeFrameReceipt = new AsyncLocalStorage<GatewayFrameReceipt>();
-
 /**
- * Runs a request frame's handling with the moment it was read off the socket, so a
- * traced turn's clock can start there rather than at its handler (epoch ms).
+ * When one request frame was read off its socket (epoch ms) and the steps of its
+ * dispatch finished so far. It travels with that request's options only, so work the
+ * handler starts, in-process requests included, never inherits it.
  */
+export type GatewayFrameReceipt = { readonly receivedAt: number; steps: PreflightStepMoment[] };
+
+const frameReceivedAt = new AsyncLocalStorage<number>();
+
+/** Runs a frame's handling with the moment it was read off the socket. */
 export function runWithGatewayFrameReceipt<T>(receivedAt: number, run: () => T): T {
-  return activeFrameReceipt.run({ receivedAt, steps: [] }, run);
+  return frameReceivedAt.run(receivedAt, run);
 }
 
-/** Records that the current frame finished a step; outside a frame nothing happens. */
-export function markGatewayFrameStep(step: GatewayFrameStep): void {
-  activeFrameReceipt.getStore()?.steps.push({ step, at: Date.now() });
+/** The receipt of the frame whose request is being dispatched now, for its options. */
+export function takeGatewayFrameReceipt(): GatewayFrameReceipt | undefined {
+  const receivedAt = frameReceivedAt.getStore();
+  return receivedAt === undefined ? undefined : { receivedAt, steps: [] };
 }
 
-/** The current frame's receipt and the steps it finished so far, or undefined outside one. */
-export function readGatewayFrameReceipt():
-  | { receivedAt: number; steps: ReadonlyArray<PreflightStepMoment> }
-  | undefined {
-  const receipt = activeFrameReceipt.getStore();
-  return receipt ? { receivedAt: receipt.receivedAt, steps: [...receipt.steps] } : undefined;
+/** Records that a frame's request finished a step; a request without a frame records nothing. */
+export function markGatewayFrameStep(
+  receipt: GatewayFrameReceipt | undefined,
+  step: GatewayFrameStep,
+): void {
+  receipt?.steps.push({ step, at: Date.now() });
 }

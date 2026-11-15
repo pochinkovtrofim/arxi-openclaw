@@ -278,7 +278,7 @@ export async function handleGatewayRequest(
   let observationResponded = false;
   let respondCancelled = opts.respond;
   const dispatch = async (retainRoot?: () => void) => {
-    markGatewayFrameStep("frame_admission");
+    markGatewayFrameStep(opts.frameReceipt, "frame_admission");
     const observationSignal = observation ? getAsyncWorkSignal() : undefined;
     using chatSendDiagnostics =
       req.method === "chat.send" ? startChatSendDiagnostics(context.logGateway) : undefined;
@@ -374,7 +374,7 @@ export async function handleGatewayRequest(
           requestMutationAuthority.assertPreparationCurrent();
         },
       });
-      markGatewayFrameStep("request_authorize");
+      markGatewayFrameStep(opts.frameReceipt, "request_authorize");
       sessionAccessAuthority = authorization.sessionAccessAuthority;
       releaseSessionMutation = authorization.sessionMutationAuthorization?.release;
       entry?.assertOpen();
@@ -465,7 +465,7 @@ export async function handleGatewayRequest(
         subscribeDiagnostics?.mark("handlerPreparation");
         chatSendPhase?.mark("preparation");
         const preparedHandler = await prepareGatewayRequestHandler(handler, entry, opts);
-        markGatewayFrameStep("handler_prepare");
+        markGatewayFrameStep(opts.frameReceipt, "handler_prepare");
         // Lazy preparation may yield across a hot config change. Keep the router fence
         // unless the canonical owner reconciles accepted input before new admission.
         const uploadError = gatewayRouterUploadPolicyError(requestFacts, methodRegistry);
@@ -488,6 +488,7 @@ export async function handleGatewayRequest(
             sessionMutationCommitGuard,
             sessionMutationAuthorization,
             withSessionTurnAuthority,
+            ...(opts.frameReceipt ? { frameReceipt: opts.frameReceipt } : {}),
             markSessionSubscribePhase: subscribeDiagnostics?.mark,
             ...(authorization.sessionAccessAuthority
               ? { sessionAccessAuthority: authorization.sessionAccessAuthority }
