@@ -83,7 +83,10 @@ describe("Claude CLI run diagnostics", () => {
       await runClaudeCliAgentTurnWithDiagnostics(
         { runId, sessionId: "settle-session" },
         async () => {
-          noteCliTurnEnded(runId, Date.now() - 180);
+          noteCliTurnEnded(runId, Date.now());
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 30);
+          });
           return { payloads: [{ text: "done" }], meta: { durationMs: 1 } };
         },
       );
@@ -105,7 +108,7 @@ describe("Claude CLI run diagnostics", () => {
         stage as { stages: Array<{ name: string; startedAt: number; endedAt: number }> }
       ).stages;
       expect(settle?.name).toBe(CLI_RUN_SETTLE_STAGE);
-      expect(settle!.endedAt - settle!.startedAt).toBeGreaterThanOrEqual(180);
+      expect(settle!.endedAt - settle!.startedAt).toBeGreaterThanOrEqual(25);
       expect(stage?.trace?.parentSpanId).toBe(run?.trace?.spanId);
       // The mark is taken once.
       expect(takeCliTurnEnd(runId)).toBeUndefined();
