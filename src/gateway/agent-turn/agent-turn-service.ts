@@ -19,6 +19,7 @@ import type {
   GatewayTurnCheckpoint,
   GatewayTurnStage,
   PreflightStepMoment,
+  ContentStep,
   SessionWriteStep,
 } from "../../infra/diagnostic-events.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
@@ -212,6 +213,7 @@ export function createAgentTurnService(
       });
       try {
         assertAdmissionCurrent?.();
+        const contentSteps = createPreflightStepRecorder<ContentStep>();
         const content = await prepareAgentContentPhase({
           ...preflight,
           ...routing,
@@ -220,8 +222,9 @@ export function createAgentTurnService(
           respond,
           requestedSessionKey,
           agentId,
+          onStep: contentSteps.record,
         }).catch(dedupeLifecycle.handlePreparationFailure(assertAdmissionCurrent));
-        checkpoint("gateway_content");
+        checkpoint("gateway_content", contentSteps.steps);
         if (!content) {
           return;
         }
