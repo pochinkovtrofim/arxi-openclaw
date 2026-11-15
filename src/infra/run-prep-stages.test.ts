@@ -7,7 +7,12 @@ import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
 } from "./diagnostic-trace-context.js";
-import { createRunPrepStageReporter, measurePrepStage, withPrepStages } from "./run-prep-stages.js";
+import {
+  createRunPrepStageReporter,
+  measurePrepStage,
+  outsidePrepStages,
+  withPrepStages,
+} from "./run-prep-stages.js";
 
 const emitted = vi.hoisted(() => ({ events: [] as unknown[] }));
 vi.mock("./diagnostic-events.js", async (importOriginal) => ({
@@ -148,6 +153,18 @@ describe("measured preparation steps", () => {
     );
     expect(names.length).toBeGreaterThanOrEqual(7);
     expect(names.filter((name) => !/^[a-z0-9][a-z0-9-]{0,47}$/u.test(name ?? ""))).toEqual([]);
+  });
+
+  it("does not time work the preparation starts but does not wait for", async () => {
+    const tracker = createStageTimingTracker(() => 0);
+    let background: Promise<number> | undefined;
+    await withPrepStages(tracker, async () => {
+      background = outsidePrepStages(() =>
+        Promise.resolve().then(() => measurePrepStage("mcp-requester-resolve", async () => 7)),
+      );
+    });
+    await expect(background).resolves.toBe(7);
+    expect(tracker.snapshot().stages).toEqual([]);
   });
 
   it("only runs a step outside any preparation", async () => {

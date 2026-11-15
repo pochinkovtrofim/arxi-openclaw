@@ -1,4 +1,4 @@
-import { measurePrepStage } from "../infra/run-prep-stages.js";
+import { measurePrepStage, outsidePrepStages } from "../infra/run-prep-stages.js";
 import { logWarn } from "../logger.js";
 import type { BundleMcpServerConfig } from "../plugins/bundle-mcp.types.js";
 import type {
@@ -268,8 +268,9 @@ export function createSessionMcpRuntimeManagerInstall(
     ) {
       if (!meta.revalidating) {
         meta.revalidating = true;
-        void lifecycle
-          .runExclusiveOnRuntimeKeys([params.runtimeKey], async () => {
+        // The turn does not wait for it, so it is not one of the turn's preparation stages.
+        const revalidation = outsidePrepStages(() =>
+          lifecycle.runExclusiveOnRuntimeKeys([params.runtimeKey], async () => {
             store.scheduler.signal.throwIfAborted();
             // Only the runtime this turn was served still needs it: a disposal,
             // retirement or config publication queued meanwhile wins, and the next
@@ -285,7 +286,9 @@ export function createSessionMcpRuntimeManagerInstall(
             // The turn's own diagnostics sink has been read by now.
             const { onResolverUnavailable: _turnSink, ...current } = params;
             await resolveAndInstallRequesterRuntime({ ...current, background: true });
-          })
+          }),
+        );
+        void revalidation
           .catch((error: unknown) => {
             logWarn(`bundle-mcp: background connection revalidation failed: ${String(error)}`);
           })

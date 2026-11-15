@@ -87,6 +87,11 @@ export function withPrepStages<T>(tracker: PrepStageMeasure, run: () => T): T {
   return activePrepStages.run(tracker, run);
 }
 
+/** Work a preparation starts but does not wait for (a re-resolution after the turn) is not its stage. */
+export function outsidePrepStages<T>(run: () => T): T {
+  return activePrepStages.exit(run);
+}
+
 /**
  * Times one step inside the current checkpoint as a measured stage of the
  * run's preparation. Outside a preparation (a later tool call, a background
