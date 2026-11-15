@@ -9,7 +9,12 @@ function recordStart(event: { ts: number; startedAt?: number }) {
     getTrackedInternalOrTrustedSpan: () => undefined,
     addRunAttrs: () => undefined,
     activeTrustedParentContext: () => undefined,
-    spanWithDuration: (_name: string, _attrs: unknown, _duration: unknown, options: { startTimeMs?: number }) => {
+    spanWithDuration: (
+      _name: string,
+      _attrs: unknown,
+      _duration: unknown,
+      options: { startTimeMs?: number },
+    ) => {
       starts.push(options.startTimeMs);
       return span;
     },
@@ -36,4 +41,6 @@ test("a model call span starts when its request began, not when its started even
   // A start after the event, or not a time at all, is not believed.
   expect(recordStart({ ts: 6_833, startedAt: 7_000 })).toBe(6_833);
   expect(recordStart({ ts: 6_833, startedAt: 0 })).toBe(6_833);
+  // Nor is one more than a day before the event.
+  expect(recordStart({ ts: 90_000_000, startedAt: 1_000 })).toBe(90_000_000);
 });

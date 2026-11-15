@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { recordHookPhaseTiming, takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
 import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
+import { recordHookPhaseTiming, takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
 import { CLI_PREP_HANDOFF_STAGE, createCliPrepStages } from "./prep-stages.js";
 import type { PreparedCliRunContext } from "./types.js";
 

@@ -52,7 +52,8 @@ function modelCallStartTimeMs(
   return typeof startedAt === "number" &&
     Number.isSafeInteger(startedAt) &&
     startedAt > 0 &&
-    startedAt <= evt.ts
+    startedAt <= evt.ts &&
+    evt.ts - startedAt <= 86_400_000
     ? startedAt
     : evt.ts;
 }
