@@ -204,6 +204,7 @@ export type UserTurnPersistPhase =
   | "user-turn-message-resolve"
   | "user-turn-target-resolve"
   | "user-turn-write"
+  | "user-turn-media-write"
   | "user-turn-admission";
 
 type UserTurnPersistenceOptions = {
