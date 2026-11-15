@@ -1,7 +1,5 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { resolveStateDir } from "openclaw/plugin-sdk/state-paths";
 import type { CapturedExchange } from "./flow-capture.js";
+import { isRecord, parseJson, responseData, shapeOf, type Json } from "./flow-data.js";
 
 /**
  * Saved flows: a data request the agent's task made once, kept as a template
@@ -72,7 +70,12 @@ const DROPPED_HEADER =
   /^(host|content-length|connection|keep-alive|transfer-encoding|accept-encoding|upgrade|te|trailer|:.*)$/i;
 const CREDENTIAL_QUERY =
   /^(token|access_token|id_token|refresh_token|auth|authorization|csrf|xsrf|_csrf|api[_-]?key|apikey|key|sig|signature|password|passwd|pass|session|sid|secret)$/i;
-const LOGIN_BODY = /["']?(password|passwd|pwd|one-time-code|otp)["']?\s*[:=]/i;
+// A password field also as Rails names it: user[password]= or user%5Bpassword%5D=.
+const LOGIN_BODY = /["']?(password|passwd|pwd|one-time-code|otp)(["'\]]|%5D)?\s*[:=]/i;
+// Body fields that carry the session rather than the task: dropped like credential headers.
+// Pagination cursors such as pageToken stay.
+const SECRET_BODY_KEY =
+  /(^|_)(csrf|xsrf)|authenticity_token|^fb_dtsg$|^lsd$|^jazoest$|session_?id|^sid$|^(access|id|refresh|auth)_?token$|^token$|nonce|signature|^sig$|secret|api_?key/i;
 const ANALYTICS_PATH =
   /(^|[/._-])(collect|analytics|telemetry|beacon|track(ing)?|metrics|pixel|events?|log(s|ging)?|rum|stats|ping|heartbeat)([/._?-]|$)/i;
 const WRITE_SEGMENT = /(^|\/)(logout|signout|sign-out|unsubscribe|delete|remove)(\/|$)/i;
@@ -110,7 +113,7 @@ export function sanitizeExchange(exchange: CapturedExchange): FlowExchange {
       session = true;
       continue;
     }
-    headers[name] = value;
+    headers[name] = name === "referer" ? originOf(value) : value;
   }
   const out: FlowExchange = {
     id: exchange.id,
@@ -136,7 +139,9 @@ export function sanitizeExchange(exchange: CapturedExchange): FlowExchange {
     if (LOGIN_BODY.test(exchange.postData)) {
       out.skip ??= "login";
     } else {
-      out.postData = exchange.postData;
+      const body = withoutSecretFields(exchange.postData, headers["content-type"] ?? "");
+      out.postData = body.text;
+      out.session ||= body.dropped;
     }
   }
   if (out.skip) {
@@ -147,6 +152,57 @@ export function sanitizeExchange(exchange: CapturedExchange): FlowExchange {
     out.body = exchange.body;
   }
   return out;
+}
+
+function originOf(raw: string): string {
+  try {
+    return `${new URL(raw).origin}/`;
+  } catch {
+    return "";
+  }
+}
+
+function dropSecretKeys(value: Json): { value: Json; dropped: boolean } {
+  let dropped = false;
+  const walk = (entry: Json): Json => {
+    if (Array.isArray(entry)) {
+      return entry.map(walk);
+    }
+    if (!isRecord(entry)) {
+      return entry;
+    }
+    const out: { [key: string]: Json } = {};
+    for (const [key, child] of Object.entries(entry)) {
+      if (SECRET_BODY_KEY.test(key)) {
+        dropped = true;
+      } else {
+        out[key] = walk(child);
+      }
+    }
+    return out;
+  };
+  return { value: walk(value), dropped };
+}
+
+/** A JSON or form body without the fields that carry the session. */
+function withoutSecretFields(body: string, contentType: string): { text: string; dropped: boolean } {
+  const json = parseJson(body);
+  if (json !== undefined) {
+    const clean = dropSecretKeys(json);
+    return clean.dropped ? { text: JSON.stringify(clean.value), dropped: true } : { text: body, dropped: false };
+  }
+  if (/x-www-form-urlencoded/i.test(contentType)) {
+    const form = new URLSearchParams(body);
+    const secret = Array.from(form.keys()).filter((key) => SECRET_BODY_KEY.test(key));
+    if (secret.length === 0) {
+      return { text: body, dropped: false };
+    }
+    for (const key of secret) {
+      form.delete(key);
+    }
+    return { text: form.toString(), dropped: true };
+  }
+  return { text: body, dropped: false };
 }
 
 function urlWithoutQuery(raw: string): string {
@@ -160,167 +216,41 @@ function urlWithoutQuery(raw: string): string {
   }
 }
 
-type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+const READ_PATH = /(^|\/)(search|query|find|list|lookup|suggest|autocomplete)(\/|$)/i;
+const GRAPHQL_PATH = /(^|\/)graphql(\/|$)/i;
 
-function parseJson(text: string | undefined): Json | undefined {
-  if (text === undefined) {
-    return undefined;
-  }
-  const trimmed = text.replace(/^\)\]\}',?\s*/, "").trim();
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
-    return undefined;
-  }
-  try {
-    return JSON.parse(trimmed) as Json;
-  } catch {
-    return undefined;
-  }
-}
-
-/** JSON a server-rendered page embeds: Next.js data first, then JSON-LD blocks. */
-export function extractEmbeddedJson(html: string): Json | undefined {
-  const next = /<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i.exec(html);
-  const nextData = next ? parseJson(next[1]) : undefined;
-  if (nextData !== undefined) {
-    return nextData;
-  }
-  const blocks: Json[] = [];
-  const ld = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  for (let match = ld.exec(html); match; match = ld.exec(html)) {
-    const parsed = parseJson(match[1]);
-    if (parsed !== undefined) {
-      blocks.push(parsed);
-    }
-  }
-  if (blocks.length === 0) {
-    return undefined;
-  }
-  return blocks.length === 1 ? blocks[0] : blocks;
-}
-
-/** The data a response carries for a flow request of this kind. */
-export function responseData(kind: FlowRequest["kind"], body: string): Json | undefined {
-  return kind === "html" ? extractEmbeddedJson(body) : parseJson(body);
-}
-
-function isRecord(value: Json | undefined): value is { [key: string]: Json } {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-export function getPath(value: Json | undefined, dotted: string): Json | undefined {
-  if (dotted === "") {
-    return value;
-  }
-  let current: Json | undefined = value;
-  for (const part of dotted.split(".")) {
-    if (Array.isArray(current) && /^\d+$/.test(part)) {
-      current = current[Number(part)];
-    } else if (isRecord(current)) {
-      current = current[part];
-    } else {
-      return undefined;
-    }
-  }
-  return current;
-}
-
-function findItems(
-  value: Json,
-  prefix: string,
-  depth: number,
-): { path: string; size: number } | undefined {
-  let best: { path: string; size: number } | undefined;
-  if (Array.isArray(value)) {
-    if (value.length > 0 && value.every(isRecord)) {
-      best = { path: prefix, size: value.length };
-    }
-    return best;
-  }
-  if (!isRecord(value) || depth >= 5) {
-    return undefined;
-  }
-  for (const [key, child] of Object.entries(value)) {
-    const found = findItems(child, prefix ? `${prefix}.${key}` : key, depth + 1);
-    if (found && (!best || found.size > best.size)) {
-      best = found;
-    }
-  }
-  return best;
-}
-
-export function shapeOf(data: Json): FlowShape {
-  const keys = isRecord(data) ? Object.keys(data).sort().slice(0, 40) : [];
-  const found = findItems(data, "", 0);
-  if (!found) {
-    return { keys };
-  }
-  const list = getPath(data, found.path);
-  const itemKeys = new Set<string>();
-  for (const item of (Array.isArray(list) ? list : []).slice(0, 5)) {
-    if (isRecord(item)) {
-      for (const key of Object.keys(item)) {
-        itemKeys.add(key);
-      }
-    }
-  }
-  return { keys, items: found.path, itemKeys: [...itemKeys].sort().slice(0, 40) };
-}
-
-/** Whether a response still has the recorded shape; names the first thing missing. */
-export function checkShape(
-  shape: FlowShape,
-  data: Json | undefined,
-): { ok: true } | { ok: false; missing: string } {
-  if (data === undefined) {
-    return { ok: false, missing: "data" };
-  }
-  for (const key of shape.keys) {
-    if (!isRecord(data) || !(key in data)) {
-      return { ok: false, missing: key };
-    }
-  }
-  if (shape.items !== undefined) {
-    const list = getPath(data, shape.items);
-    if (!Array.isArray(list)) {
-      return { ok: false, missing: shape.items || "list" };
-    }
-    const first = list.find(isRecord);
-    if (first && shape.itemKeys && shape.itemKeys.length > 0) {
-      const present = shape.itemKeys.filter((key) => key in first).length;
-      if (present * 2 < shape.itemKeys.length) {
-        const missing = shape.itemKeys.find((key) => !(key in first)) ?? "item";
-        return { ok: false, missing: `${shape.items ? `${shape.items}.` : ""}[].${missing}` };
-      }
-    }
-  }
-  return { ok: true };
-}
-
-function isWrite(exchange: FlowExchange): boolean {
+/**
+ * Whether sending the request changes something on the site. A GraphQL
+ * request reads only when its query text is there and is not a mutation; a
+ * persisted query or a doc_id names an operation this cannot see, so it
+ * counts as a write. Other POSTs read only on a search-like path.
+ */
+export function isWrite(exchange: Pick<FlowExchange, "method" | "url" | "postData">): boolean {
   const method = exchange.method;
   let pathname = "";
   try {
     pathname = new URL(exchange.url).pathname;
   } catch {}
+  if (WRITE_SEGMENT.test(pathname)) {
+    return true;
+  }
   if (method === "GET" || method === "HEAD") {
-    return WRITE_SEGMENT.test(pathname);
-  }
-  // A GraphQL query sent by POST reads; a mutation writes.
-  const body = parseJson(exchange.postData);
-  const queries = Array.isArray(body) ? body : [body];
-  const graphql = queries.every((entry) => isRecord(entry) && typeof entry.query === "string");
-  if (graphql) {
-    return queries.some((entry) =>
-      /^\s*mutation\b/.test(String((entry as { query: string }).query)),
-    );
-  }
-  if (
-    method === "POST" &&
-    /(^|\/)(search|query|graphql|find|list|lookup|suggest|autocomplete)(\/|$|\?)/i.test(pathname)
-  ) {
     return false;
   }
-  return true;
+  const body = parseJson(exchange.postData);
+  const entries = Array.isArray(body) ? body : [body];
+  if (entries.every((entry) => isRecord(entry) && typeof entry.query === "string")) {
+    return entries.some(
+      (entry) => isRecord(entry) && typeof entry.query === "string" && /^\s*mutation\b/.test(entry.query),
+    );
+  }
+  const opaqueOperation =
+    entries.some((entry) => isRecord(entry) && ("extensions" in entry || "operationName" in entry)) ||
+    /(^|&)doc_id=/.test(exchange.postData ?? "");
+  if (opaqueOperation || GRAPHQL_PATH.test(pathname)) {
+    return true;
+  }
+  return !(method === "POST" && READ_PATH.test(pathname));
 }
 
 type Placeholder = { name: string; value: string };
@@ -337,25 +267,25 @@ function placeholderToken(name: string): string {
 function templateUrl(raw: string, params: Placeholder[], found: Set<string>): string {
   const url = new URL(raw);
   for (const { name, value } of params) {
-    for (const [key, current] of [...url.searchParams.entries()]) {
+    for (const [key, current] of Array.from(url.searchParams.entries())) {
       if (current === value) {
         url.searchParams.set(key, placeholderToken(name));
         found.add(name);
       }
     }
-    const segments = url.pathname.split("/");
     let changed = false;
-    for (let i = 0; i < segments.length; i += 1) {
-      let decoded = segments[i];
+    const segments = url.pathname.split("/").map((segment) => {
+      let decoded = segment;
       try {
-        decoded = decodeURIComponent(segments[i]);
+        decoded = decodeURIComponent(segment);
       } catch {}
-      if (decoded === value && value !== "") {
-        segments[i] = placeholderToken(`${name}_path`);
-        changed = true;
-        found.add(name);
+      if (decoded !== value || value === "") {
+        return segment;
       }
-    }
+      changed = true;
+      found.add(name);
+      return placeholderToken(`${name}_path`);
+    });
     if (changed) {
       url.pathname = segments.join("/");
     }
@@ -409,7 +339,7 @@ function templateBody(
   if (/x-www-form-urlencoded/i.test(contentType)) {
     const form = new URLSearchParams(body);
     for (const { name, value } of params) {
-      for (const [key, current] of [...form.entries()]) {
+      for (const [key, current] of Array.from(form.entries())) {
         if (current === value) {
           form.set(key, placeholderToken(name));
           found.add(name);
@@ -538,7 +468,8 @@ export function buildFlow(params: {
   const skip = (reason: string) => {
     skipped[reason] = (skipped[reason] ?? 0) + 1;
   };
-  const eligible: Array<{ exchange: FlowExchange; data: Json }> = [];
+  type Eligible = { exchange: FlowExchange; data: Json; size: number; analytics: boolean };
+  const eligible: Eligible[] = [];
   for (const exchange of params.exchanges) {
     if (siteOf(exchange.url) !== site) {
       skip("other_site");
@@ -557,14 +488,6 @@ export function buildFlow(params: {
       skip("not_answered");
       continue;
     }
-    let pathname = "";
-    try {
-      pathname = new URL(exchange.url).pathname;
-    } catch {}
-    if (exchange.kind === "data" && ANALYTICS_PATH.test(pathname)) {
-      skip("analytics");
-      continue;
-    }
     if (exchange.body === undefined) {
       skip("no_body");
       continue;
@@ -574,25 +497,36 @@ export function buildFlow(params: {
       skip(exchange.kind === "document" ? "no_embedded_data" : "not_json");
       continue;
     }
-    eligible.push({ exchange, data });
+    let pathname = "";
+    try {
+      pathname = new URL(exchange.url).pathname;
+    } catch {}
+    // Analytics never wins an automatic pick, but flow.output may still name one
+    // (an events list or a stats API looks the same).
+    const analytics = exchange.kind === "data" && ANALYTICS_PATH.test(pathname);
+    if (analytics) {
+      skip("analytics");
+    }
+    eligible.push({ exchange, data, size: JSON.stringify(data).length, analytics });
   }
   const valueList = Object.values(values);
-  let pool = eligible;
+  const automatic = eligible.filter((entry) => !entry.analytics);
+  let pool: Eligible[];
   if (valueList.length > 0) {
     // The request that sent the most of the typed values; a value it did not
     // send is reported back as not a param.
-    const counts = eligible.map(({ exchange }) => containedCount(exchange, valueList));
+    const counts = automatic.map(({ exchange }) => containedCount(exchange, valueList));
     const best = Math.max(0, ...counts);
-    pool = best > 0 ? eligible.filter((_, i) => counts[i] === best) : [];
+    pool = best > 0 ? automatic.filter((_, i) => counts[i] === best) : [];
   } else {
-    const lastNavigation = eligible.map(({ exchange }) => exchange.kind).lastIndexOf("document");
-    pool = lastNavigation >= 0 ? eligible.slice(lastNavigation) : eligible;
+    const lastNavigation = automatic.map(({ exchange }) => exchange.kind).lastIndexOf("document");
+    pool = lastNavigation >= 0 ? automatic.slice(lastNavigation) : automatic;
   }
   const candidates = eligible
     .slice(-12)
     .map(({ exchange, data }) => candidateOf(exchange, data))
-    .reverse();
-  let chosen: { exchange: FlowExchange; data: Json } | undefined;
+    .toReversed();
+  let chosen: Eligible | undefined;
   if (params.output) {
     chosen = eligible.find(({ exchange }) => exchange.id === params.output);
     if (!chosen) {
@@ -601,11 +535,12 @@ export function buildFlow(params: {
       );
     }
   } else {
+    // A data response over the page's embedded data, a read over a write, then
+    // the most data: a page's whole HTML says nothing about how much it holds.
     const reads = pool.filter(({ exchange }) => !isWrite(exchange));
-    const ranked = (reads.length > 0 ? reads : pool).toSorted(
-      (a, b) => (b.exchange.body?.length ?? 0) - (a.exchange.body?.length ?? 0),
-    );
-    chosen = ranked[0];
+    const readable = reads.length > 0 ? reads : pool;
+    const apis = readable.filter(({ exchange }) => exchange.kind === "data");
+    chosen = (apis.length > 0 ? apis : readable).toSorted((a, b) => b.size - a.size)[0];
   }
   if (!chosen) {
     const why =
@@ -634,7 +569,7 @@ export function buildFlow(params: {
     params: placeholders
       .map((p) => p.name)
       .filter((p) => found.has(p))
-      .sort(),
+      .toSorted(),
     request: {
       method: exchange.method,
       url,
@@ -657,267 +592,3 @@ export function buildFlow(params: {
   };
 }
 
-export type FlowSelection = {
-  where?: Record<string, string>;
-  select?: string[];
-  limit?: number;
-};
-
-function matches(item: Json, where: Record<string, string>): boolean {
-  return Object.entries(where).every(([field, wanted]) => {
-    const value = getPath(item, field);
-    const test = (entry: Json | undefined): boolean => {
-      if (typeof entry === "string") {
-        return entry.toLowerCase().includes(wanted.toLowerCase());
-      }
-      if (typeof entry === "number" || typeof entry === "boolean") {
-        return String(entry) === wanted;
-      }
-      return Array.isArray(entry) ? entry.some(test) : false;
-    };
-    return test(value);
-  });
-}
-
-function pick(item: Json, fields: string[]): Json {
-  if (fields.length === 0) {
-    return item;
-  }
-  const out: { [key: string]: Json } = {};
-  for (const field of fields) {
-    const value = getPath(item, field);
-    if (value !== undefined) {
-      out[field] = value;
-    }
-  }
-  return out;
-}
-
-const MAX_RESULT_CHARS = 12_000;
-
-/** Only the records and fields asked for, within the result budget. */
-export function selectFlowData(
-  shape: FlowShape,
-  data: Json,
-  selection: FlowSelection,
-): {
-  data: Json;
-  total?: number;
-  matched?: number;
-  returned?: number;
-  truncated: boolean;
-} {
-  const fields = selection.select ?? [];
-  if (shape.items === undefined) {
-    const value = pick(data, fields);
-    const text = JSON.stringify(value);
-    return text.length > MAX_RESULT_CHARS
-      ? { data: text.slice(0, MAX_RESULT_CHARS), truncated: true }
-      : { data: value, truncated: false };
-  }
-  const list = getPath(data, shape.items);
-  const all = Array.isArray(list) ? list : [];
-  const filtered =
-    selection.where && Object.keys(selection.where).length > 0
-      ? all.filter((item) => matches(item, selection.where!))
-      : all;
-  const limit = Math.max(1, Math.min(selection.limit ?? 10, 100));
-  let items = filtered.slice(0, limit).map((item) => pick(item, fields));
-  let truncated = false;
-  while (items.length > 1 && JSON.stringify(items).length > MAX_RESULT_CHARS) {
-    items = items.slice(0, Math.max(1, Math.floor(items.length / 2)));
-    truncated = true;
-  }
-  const text = JSON.stringify(items);
-  if (text.length > MAX_RESULT_CHARS) {
-    return {
-      data: text.slice(0, MAX_RESULT_CHARS),
-      total: all.length,
-      matched: filtered.length,
-      returned: 1,
-      truncated: true,
-    };
-  }
-  return {
-    data: items,
-    total: all.length,
-    matched: filtered.length,
-    returned: items.length,
-    truncated,
-  };
-}
-
-export type FlowOutcome =
-  | { kind: "ok"; data: Json }
-  | { kind: "drift"; missing: string }
-  | { kind: "rate_limited"; retryAfter?: string }
-  | { kind: "auth" | "blocked" | "server_error" | "not_json" | "rejected"; status: number };
-
-const CHALLENGE =
-  /cf-chl|challenge-platform|captcha|just a moment|attention required|access denied|are you a robot|px-captcha/i;
-const LOGIN_PAGE = /<input[^>]+type=["']?password/i;
-
-/** What one tier's answer means for the flow. */
-export function classifyFlowResponse(params: {
-  flow: SavedFlow;
-  status: number;
-  contentType?: string;
-  body: string;
-  retryAfter?: string;
-}): FlowOutcome {
-  const { status, body } = params;
-  if (status === 429) {
-    return {
-      kind: "rate_limited",
-      ...(params.retryAfter ? { retryAfter: params.retryAfter } : {}),
-    };
-  }
-  if ((status === 403 || status === 503) && CHALLENGE.test(body.slice(0, 20_000))) {
-    return { kind: "blocked", status };
-  }
-  if (status === 401 || status === 403) {
-    return { kind: "auth", status };
-  }
-  if (status >= 500) {
-    return { kind: "server_error", status };
-  }
-  if (status < 200 || status >= 300) {
-    return { kind: "rejected", status };
-  }
-  const data = responseData(params.flow.request.kind, body);
-  if (data === undefined) {
-    if (CHALLENGE.test(body.slice(0, 20_000))) {
-      return { kind: "blocked", status };
-    }
-    return LOGIN_PAGE.test(body) ? { kind: "auth", status } : { kind: "not_json", status };
-  }
-  const shape = checkShape(params.flow.shape, data);
-  return shape.ok ? { kind: "ok", data } : { kind: "drift", missing: shape.missing };
-}
-
-// Storage: one JSON file per flow under the principal's state directory, so
-// flows belong to the same owner or group as the browser profile and survive
-// sleep and runtime replacement.
-
-export function flowsRoot(env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(path.resolve(resolveStateDir(env)), "browser", "flows");
-}
-
-function flowPath(root: string, site: string, name: string): string {
-  if (!/^[a-z0-9.-]+$/.test(site) || site.startsWith(".") || !FLOW_NAME_PATTERN.test(name)) {
-    throw new Error("invalid flow site or name");
-  }
-  return path.join(root, site, `${name}.json`);
-}
-
-const FLOW_KEYS = new Set([
-  "version",
-  "name",
-  "description",
-  "site",
-  "startUrl",
-  "params",
-  "request",
-  "shape",
-  "tier",
-  "verified",
-  "drift",
-  "createdAt",
-  "updatedAt",
-]);
-
-function parseFlow(text: string): SavedFlow | undefined {
-  try {
-    const value = JSON.parse(text) as SavedFlow;
-    if (value.version !== FLOW_VERSION || !Object.keys(value).every((key) => FLOW_KEYS.has(key))) {
-      return undefined;
-    }
-    return value;
-  } catch {
-    return undefined;
-  }
-}
-
-export async function writeFlow(flow: SavedFlow, root = flowsRoot()): Promise<string> {
-  const file = flowPath(root, flow.site, flow.name);
-  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fs.writeFile(temp, `${JSON.stringify(flow, null, 2)}\n`, { mode: 0o600 });
-  await fs.rename(temp, file);
-  return file;
-}
-
-export async function readFlow(
-  name: string,
-  site: string | undefined,
-  root = flowsRoot(),
-): Promise<SavedFlow | undefined> {
-  if (site) {
-    try {
-      return parseFlow(await fs.readFile(flowPath(root, site, name), "utf8"));
-    } catch {
-      return undefined;
-    }
-  }
-  const matches = (await listFlows(undefined, root)).filter((flow) => flow.name === name);
-  if (matches.length > 1) {
-    throw new Error(
-      `several sites have a flow named ${name}: ${matches.map((f) => f.site).join(", ")}; pass flow.site`,
-    );
-  }
-  return matches[0];
-}
-
-export async function listFlows(
-  site: string | undefined,
-  root = flowsRoot(),
-): Promise<SavedFlow[]> {
-  let sites: string[];
-  try {
-    sites = site ? [site] : await fs.readdir(root);
-  } catch {
-    return [];
-  }
-  const flows: SavedFlow[] = [];
-  for (const entry of sites) {
-    if (!/^[a-z0-9.-]+$/.test(entry)) {
-      continue;
-    }
-    let files: string[];
-    try {
-      files = await fs.readdir(path.join(root, entry));
-    } catch {
-      continue;
-    }
-    for (const file of files.filter((f) => f.endsWith(".json")).sort()) {
-      try {
-        const flow = parseFlow(await fs.readFile(path.join(root, entry, file), "utf8"));
-        if (flow) {
-          flows.push(flow);
-        }
-      } catch {}
-    }
-  }
-  return flows;
-}
-
-export async function deleteFlow(name: string, site: string, root = flowsRoot()): Promise<boolean> {
-  try {
-    await fs.unlink(flowPath(root, site, name));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** A short line per flow, for the agent to find them when it opens the site. */
-export function describeFlows(flows: SavedFlow[]): string {
-  return flows
-    .map((flow) => {
-      const params = flow.params.length > 0 ? `(${flow.params.join(", ")})` : "()";
-      const state = flow.verified ? "" : " [unverified]";
-      const write = flow.request.write ? " [write]" : "";
-      return `${flow.name}${params}${write}${state}${flow.description ? ` — ${flow.description}` : ""}`;
-    })
-    .join("; ");
-}

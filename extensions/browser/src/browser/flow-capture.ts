@@ -23,7 +23,7 @@ export type CapturedExchange = {
 const MAX_EXCHANGES = 60;
 const MAX_BODY_BYTES = 256 * 1024;
 const MAX_POST_BYTES = 64 * 1024;
-const MAX_PAGE_BODY_BYTES = 8 * 1024 * 1024;
+const MAX_PAGE_BODY_BYTES = 2 * 1024 * 1024;
 
 type CaptureState = {
   exchanges: CapturedExchange[];
@@ -43,8 +43,7 @@ function keptBody(contentType: string | undefined, kind: CapturedExchange["kind"
 
 function trimBodies(state: CaptureState): void {
   let total = 0;
-  for (let i = state.exchanges.length - 1; i >= 0; i -= 1) {
-    const exchange = state.exchanges[i];
+  for (const exchange of state.exchanges.toReversed()) {
     total += exchange.body?.length ?? 0;
     if (total > MAX_PAGE_BODY_BYTES) {
       exchange.body = undefined;

@@ -18,7 +18,7 @@ vi.mock("./browser/client-actions.js", async (importOriginal) => ({
 
 const { executeFlowAction, savedFlowsHint, DEVICE_FETCH_URL } =
   await import("./browser-tool.flows.js");
-const { readFlow } = await import("./browser/flows.js");
+const { readFlow } = await import("./browser/flow-store.js");
 
 const products = {
   results: [
@@ -36,7 +36,7 @@ function answer(status: number, body: unknown, contentType = "application/json")
   };
 }
 
-function text(result: { content: Array<{ type: string; text?: string }> }) {
+function resultText(result: { content: Array<{ type: string; text?: string }> }) {
   return result.content.map((part) => part.text ?? "").join("\n");
 }
 
@@ -110,8 +110,8 @@ describe("browser saved flow actions", () => {
       "https://api.shop.example/search?q=blue",
     );
     expect(details(result)).toMatchObject({ flow: "search", via: "http", verified: true });
-    expect(text(result)).toContain('"id": 2');
-    expect(text(result)).not.toContain("Red runner");
+    expect(resultText(result)).toContain('"id": 2');
+    expect(resultText(result)).not.toContain("Red runner");
     expect(client.browserFlowPageFetch).not.toHaveBeenCalled();
   });
 
@@ -192,6 +192,52 @@ describe("browser saved flow actions", () => {
     expect(client.browserFlowPageFetch).not.toHaveBeenCalled();
   });
 
+  it("says what each answer means for a write, and sends a signed-in write from the page", async () => {
+    client.browserFlowCapture.mockResolvedValue({
+      ok: true,
+      targetId: "tab-1",
+      pageUrl: "https://www.shop.example/cart",
+      exchanges: [
+        {
+          id: "c1",
+          method: "POST",
+          url: "https://www.shop.example/cart/add",
+          kind: "data",
+          headers: { "content-type": "application/json" },
+          session: true,
+          postData: '{"sku":"a1"}',
+          status: 200,
+          contentType: "application/json",
+          body: '{"cart":{"items":1}}',
+        },
+      ],
+    });
+    await executeFlowAction("flow_save", { name: "add", params: { sku: "a1" } }, context());
+    const flow = await readFlow("add", "shop.example", root);
+    if (!flow) {
+      throw new Error("the flow was not saved");
+    }
+    const ok = (status: number, body = "") => ({ ok: true as const, status, body });
+    expect(writeVerdict(flow, ok(200, '{"cart":{"items":2}}')).kind).toBe("applied");
+    expect(writeVerdict(flow, ok(302)).kind).toBe("outcome_unknown");
+    expect(writeVerdict(flow, ok(0)).kind).toBe("outcome_unknown");
+    expect(writeVerdict(flow, ok(403)).kind).toBe("write_rejected");
+    expect(writeVerdict(flow, ok(429)).kind).toBe("write_rejected");
+    expect(writeVerdict(flow, ok(200, "<html>login</html>")).kind).toBe("outcome_unknown");
+    expect(writeVerdict(flow, { ok: false, error: "not_on_site" }).kind).toBe("write_not_sent");
+    expect(
+      writeVerdict(flow, { ok: false, error: "device_failed", detail: "mac_fetch_refused: private" }).kind,
+    ).toBe("write_not_sent");
+    expect(writeVerdict(flow, { ok: false, error: "relay_unanswered" }).kind).toBe("outcome_unknown");
+    client.browserFlowPageFetch.mockResolvedValue({ ok: false, error: "not_on_site", pageUrl: "about:blank" });
+    const notSent = details(
+      await executeFlowAction("flow_run", { name: "add", params: { sku: "b2" }, allowWrite: true }, context()),
+    );
+    expect(notSent).toMatchObject({ error: "write_not_sent", via: "page" });
+    expect(guarded.fetchWithSsrFGuard).not.toHaveBeenCalled();
+    expect(client.browserFlowPageFetch.mock.calls[0][1]).toMatchObject({ write: true, method: "POST" });
+  });
+
   it("sends from the owner's computer only when asked", async () => {
     await executeFlowAction("flow_save", { name: "search", params: { query: "red" } }, context());
     const relay = vi.fn(
@@ -213,7 +259,7 @@ describe("browser saved flow actions", () => {
     );
     expect(details(result)).toMatchObject({ via: "device" });
     expect(relay.mock.calls[0][0]).toBe(DEVICE_FETCH_URL);
-    expect(JSON.parse(String((relay.mock.calls[0][1] as RequestInit).body))).toMatchObject({
+    expect(JSON.parse((relay.mock.calls[0][1] as { body: string }).body)).toMatchObject({
       url: "https://api.shop.example/search?q=z",
       method: "GET",
       write: false,

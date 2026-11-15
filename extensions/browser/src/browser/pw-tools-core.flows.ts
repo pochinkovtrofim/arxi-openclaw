@@ -26,6 +26,7 @@ export async function flowPageFetchViaPlaywright(opts: {
   method: string;
   headers: Record<string, string>;
   body?: string;
+  write?: boolean;
   timeoutMs?: number;
 }): Promise<
   | {
@@ -45,18 +46,22 @@ export async function flowPageFetchViaPlaywright(opts: {
     return { ok: false, error: "not_on_site", pageUrl };
   }
   const result = await page.evaluate(
-    async ({ url, method, headers, body, timeoutMs, maxChars }) => {
+    async ({ url, method, headers, body, write, timeoutMs, maxChars }) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const response = await fetch(url, {
+        const init: RequestInit = {
           method,
           headers,
-          body: body ?? undefined,
           credentials: "include",
-          redirect: "follow",
+          // A write never follows a redirect: a 307 would send it again, maybe elsewhere.
+          redirect: write ? "manual" : "follow",
           signal: controller.signal,
-        });
+        };
+        if (body !== null) {
+          init.body = body;
+        }
+        const response = await fetch(url, init);
         const text = await response.text();
         return {
           ok: true as const,
@@ -82,6 +87,7 @@ export async function flowPageFetchViaPlaywright(opts: {
         ),
       ),
       body: opts.body ?? null,
+      write: opts.write === true,
       timeoutMs: Math.max(1_000, Math.min(opts.timeoutMs ?? 20_000, 60_000)),
       maxChars: PAGE_FETCH_MAX_CHARS,
     },
@@ -89,7 +95,8 @@ export async function flowPageFetchViaPlaywright(opts: {
   if (!result.ok) {
     return { ok: false, error: "network", detail: result.detail, pageUrl };
   }
-  if (siteOf(result.finalUrl) !== site) {
+  // status 0 is a write's redirect, not followed: where it led is unknown.
+  if (result.status !== 0 && siteOf(result.finalUrl) !== site) {
     // A redirect left the site: report it as not answered rather than pass on another site's body.
     return { ok: false, error: "network", detail: "redirected off the site", pageUrl };
   }

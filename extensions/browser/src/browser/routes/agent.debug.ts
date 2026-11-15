@@ -76,9 +76,19 @@ export function registerBrowserAgentDebugRoutes(
         }
       }
       const body = typeof input.body === "string" ? input.body : undefined;
+      const write = input.write === true;
       const timeoutMs = readRoutePositiveInteger(input.timeoutMs, "timeoutMs");
       return (pw, { cdpUrl, targetId }) =>
-        pw.flowPageFetchViaPlaywright({ cdpUrl, targetId, url, method, headers, body, timeoutMs });
+        pw.flowPageFetchViaPlaywright({
+          cdpUrl,
+          targetId,
+          url,
+          method,
+          headers,
+          body,
+          write,
+          timeoutMs,
+        });
     },
     EXISTING_SESSION_LIMITS.flows,
   );

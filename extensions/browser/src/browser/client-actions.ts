@@ -256,6 +256,7 @@ export async function browserFlowPageFetch(
     method: string;
     headers: Record<string, string>;
     body?: string;
+    write?: boolean;
   },
 ): Promise<BrowserFlowPageFetchResult & { targetId?: string }> {
   const timeoutMs = opts.timeoutMs ?? 20_000;
@@ -267,6 +268,7 @@ export async function browserFlowPageFetch(
       method: opts.method,
       headers: opts.headers,
       ...(opts.body !== undefined ? { body: opts.body } : {}),
+      write: opts.write === true,
       targetId: opts.targetId,
       timeoutMs,
     },

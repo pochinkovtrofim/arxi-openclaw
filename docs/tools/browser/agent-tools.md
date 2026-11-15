@@ -9,7 +9,7 @@ read_when:
 
 The agent gets **one tool** for browser automation:
 
-- `browser` - doctor/status/start/stop/tabs/open/focus/close/snapshot/screenshot/navigate/act/requests/errors/text/emulate
+- `browser` - doctor/status/start/stop/tabs/open/focus/close/snapshot/screenshot/navigate/act/requests/errors/text/emulate/flow_save/flow_run/flow_list/flow_delete
 
 How it maps:
 
@@ -23,6 +23,7 @@ How it maps:
 - `browser snapshot` returns a stable UI tree (AI or ARIA).
 - Snapshot `query` keeps lines containing **all** whitespace-separated query tokens, ignoring case. Matching lines retain element refs; the result reports the match count and respects `maxChars`. It searches the returned snapshot, so increase the snapshot scope if the source was truncated.
 - `browser requests` reads the collected network log. Optional `filter` matches a substring in the URL or resource type; `limit` keeps the most recent entries (default 50). Results report `total` matching collected requests and `returned` entries; the output budget may reduce that count further. `clear=true` clears the entire collected log after reading, including entries omitted by filtering or limits.
+- Saved flows replay a site's data request without driving the page. `browser flow_save` with `flow={name, params, description}` reads the tab's recent first-party fetch, XHR and main-document exchanges on a managed profile and keeps one: the request that sent the values named in `params` (each becomes a placeholder), or else the largest data response since the last navigation; `flow.output` picks another candidate id from the result. Cookies, credential headers and login bodies are never kept, and a request with a credential in its URL is not saved. `browser flow_run` with `flow={name, params, where, select}` and `limit` sends it directly (public addresses only), then from a tab already on that site with the page's cookies, and returns only matching records and fields as untrusted browser content. A response whose recorded shape changed marks the flow unverified. A request that changes something on the site runs only with `flow.allowWrite=true`, on one path, once. `open` and `navigate` list the site's flows; `flow_list` and `flow_delete` manage them. Flows live under the state directory in `browser/flows/<site>/<name>.json`.
 - `browser errors` reads collected page errors. `limit` keeps the most recent entries (default 50). Results report `total` collected errors and `returned` entries; the output budget may reduce that count further. `clear=true` clears the entire collected log after reading, including entries omitted by limits. Page errors remain untrusted external content.
 - `browser text` extracts visible prose using the first explicit `selector` match, otherwise the first `article`, `main`, or `body`. `maxChars` must be positive; it defaults to and cannot exceed 40,000 characters. The tool's output budget may truncate further. Page text remains untrusted external content.
 - `browser emulate` applies one or more of `device` (a Playwright device name), `colorScheme` (`dark`, `light`, `no-preference`, or `none` to clear), `timezoneId`, and `locale`. Settings apply in that order and return an `applied` list; they are not atomic. These four actions support local and node targets but not Chrome MCP existing-session profiles.

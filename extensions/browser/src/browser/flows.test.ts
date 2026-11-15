@@ -4,19 +4,19 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CapturedExchange } from "./flow-capture.js";
 import {
-  buildFlow,
   checkShape,
   classifyFlowResponse,
-  deleteFlow,
   extractEmbeddedJson,
-  listFlows,
-  readFlow,
-  renderFlowRequest,
-  sanitizeExchange,
   selectFlowData,
   shapeOf,
+} from "./flow-data.js";
+import { deleteFlow, listFlows, readFlow, writeFlow } from "./flow-store.js";
+import {
+  buildFlow,
+  isWrite,
+  renderFlowRequest,
+  sanitizeExchange,
   siteOf,
-  writeFlow,
   type FlowExchange,
 } from "./flows.js";
 
@@ -302,6 +302,60 @@ describe("saved flows", () => {
     expect(classify(200, "<html>hello</html>")).toBe("not_json");
     expect(classify(502, "")).toBe("server_error");
     expect(classify(404, "")).toBe("rejected");
+  });
+});
+
+describe("saved flow review cases", () => {
+  it("prefers the data request over a large page that embeds a little JSON-LD", () => {
+    const page = `<html>${"x".repeat(200_000)}<script type="application/ld+json">{"@type":"BreadcrumbList","itemListElement":[{"name":"Home"}]}</script></html>`;
+    const { flow } = buildFlow({
+      name: "search",
+      pageUrl: "https://www.shop.example/s?q=lamp",
+      exchanges: [
+        sanitizeExchange(exchange({ id: "c1", kind: "document", url: "https://www.shop.example/s?q=lamp", contentType: "text/html", body: page })),
+        sanitizeExchange(exchange({ id: "c2", url: "https://api.shop.example/search?q=lamp", body: JSON.stringify(products) })),
+      ],
+      values: { q: "lamp" },
+    });
+    expect(flow.request.url).toContain("api.shop.example/search");
+  });
+
+  it("counts opaque GraphQL operations and delete paths as writes, search bodies as reads", () => {
+    const post = (url: string, postData: string) => ({ method: "POST", url, postData });
+    expect(isWrite(post("https://x.example/graphql", '{"operationName":"AddToCart","extensions":{"persistedQuery":{"sha256Hash":"a"}}}'))).toBe(true);
+    expect(isWrite(post("https://x.example/api/graphql/", "doc_id=123&variables=%7B%7D"))).toBe(true);
+    expect(isWrite(post("https://x.example/api/list/delete", '{"id":1}'))).toBe(true);
+    expect(isWrite(post("https://x.example/graphql", '{"query":"query Q { a }"}'))).toBe(false);
+    expect(isWrite(post("https://x.example/api/search", '{"keyword":"lamp","page":1}'))).toBe(false);
+    expect(isWrite({ method: "GET", url: "https://x.example/account/logout" })).toBe(true);
+  });
+
+  it("keeps no session fields from bodies, no Rails login, and only the referer's origin", () => {
+    const form = sanitizeExchange(
+      exchange({
+        id: "c1",
+        method: "POST",
+        url: "https://x.example/api/search",
+        headers: { "content-type": "application/x-www-form-urlencoded", referer: "https://x.example/s?q=private&u=7" },
+        postData: "q=lamp&authenticity_token=SECRET&fb_dtsg=SECRET&pageToken=next",
+      }),
+    );
+    expect(form.postData).toBe("q=lamp&pageToken=next");
+    expect(form.session).toBe(true);
+    expect(form.headers.referer).toBe("https://x.example/");
+    const json = sanitizeExchange(
+      exchange({ id: "c2", method: "POST", url: "https://x.example/api/search", postData: '{"q":"lamp","meta":{"csrf_token":"SECRET"}}' }),
+    );
+    expect(JSON.parse(json.postData ?? "")).toEqual({ q: "lamp", meta: {} });
+    for (const postData of ["user[password]=hunter2&user[email]=a", "user%5Bpassword%5D=hunter2"]) {
+      expect(sanitizeExchange(exchange({ id: "c3", method: "POST", url: "https://x.example/session", postData })).skip).toBe("login");
+    }
+  });
+
+  it("lets flow.output name an analytics-looking request the automatic pick skips", () => {
+    const events = sanitizeExchange(exchange({ id: "c9", url: "https://x.example/api/events?city=bcn", body: JSON.stringify({ events: [{ id: 1 }] }) }));
+    expect(() => buildFlow({ name: "events", pageUrl: "https://x.example/", exchanges: [events] })).toThrow(/nothing to save/);
+    expect(buildFlow({ name: "events", pageUrl: "https://x.example/", exchanges: [events], output: "c9" }).flow.shape.items).toBe("events");
   });
 });
 
