@@ -159,26 +159,26 @@ it("emits sub-stages contiguous inside a closed stage's window, one child span e
     stages.subStages(
       "gateway_storage",
       [
-        { step: "open_store", at: 49_300 },
-        { step: "too_early", at: 49_200 }, // before the cursor
-        { step: "read_rows", at: 49_700 },
-        { step: "after_window", at: 49_950 },
-        { step: "not_finite", at: Number.NaN },
-        { step: "Bad-Name", at: 49_800 }, // outside the closed step pattern
-        { step: "tail", at: 49_900 },
+        { step: "runtime_config", at: 49_300 },
+        { step: "plugin_metadata", at: 49_200 }, // before the cursor
+        { step: "session_resolve", at: 49_700 },
+        { step: "workspace_ensure", at: 49_950 },
+        { step: "skill_commands", at: Number.NaN },
+        { step: "Bad-Name" as never, at: 49_800 }, // outside the closed step pattern
+        { step: "worktree_lease", at: 49_900 },
       ],
       window,
     );
-    stages.subStages("gateway_storage", [{ step: "x", at: 49_500 }], undefined);
+    stages.subStages("gateway_storage", [{ step: "command_entry", at: 49_500 }], undefined);
     stages.mark("gateway_rpc");
   });
   const events = emitTrustedDiagnosticEvent.mock.calls.map(([event]) => event);
   expect(events.map((event) => [event.stage, event.startedAt, event.durationMs])).toEqual([
     ["gateway_routing", 49_000, 100],
     ["gateway_storage", 49_100, 800],
-    ["gateway_storage.open_store", 49_100, 200],
-    ["gateway_storage.read_rows", 49_300, 400],
-    ["gateway_storage.tail", 49_700, 200],
+    ["gateway_storage.runtime_config", 49_100, 200],
+    ["gateway_storage.session_resolve", 49_300, 400],
+    ["gateway_storage.worktree_lease", 49_700, 200],
     ["gateway_rpc", 49_900, 100],
   ]);
   expect(new Set(events.map((event) => event.trace.spanId)).size).toBe(6);
@@ -187,12 +187,17 @@ it("emits sub-stages contiguous inside a closed stage's window, one child span e
   }
 });
 
+it("pins the step pattern", async () => {
+  const { REPLY_PREFLIGHT_STEP_PATTERN } = await import("../../infra/diagnostic-events.js");
+  expect(REPLY_PREFLIGHT_STEP_PATTERN.source).toBe("^[a-z0-9_]{1,40}$");
+});
+
 it("emits no sub-stages outside a traced reply", () => {
   runWithDiagnosticTraceContext(undefined, () => {
     const stages = createReplyPreflightStages({ startedAt: Date.now() - 100 });
     stages.subStages(
       "command_prepare",
-      [{ step: "a", at: Date.now() - 50 }],
+      [{ step: "command_entry", at: Date.now() - 50 }],
       stages.mark("prepare"),
     );
   });

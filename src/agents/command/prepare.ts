@@ -9,6 +9,7 @@ import {
 import { formatCliCommand } from "../../cli/command-format.js";
 import type { InternalSessionEntry } from "../../config/sessions/types.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { CommandPrepareStep } from "../../infra/diagnostic-events.js";
 import { createAbortError } from "../../infra/abort-signal.js";
 import { assertAgentRunLifecycleGenerationCurrent } from "../../infra/agent-events.js";
 import { resolveAgentExplicitRecipientSession } from "../../infra/outbound/agent-delivery.js";
@@ -65,21 +66,7 @@ export type PreparedAgentCommandRuntimeContext = Readonly<{
   pluginGeneration: PreparedModelRuntimePluginGeneration;
 }>;
 
-/** Awaited steps of command preparation, named by what they do; code constants, never data. */
-export type PrepareAgentCommandPhase =
-  | "runtime_config"
-  | "database_admission"
-  | "recipient_session"
-  | "session_resolve"
-  | "acp_runtime_load"
-  | "acp_session_resolve"
-  | "plugin_metadata"
-  | "stable_reply_mode"
-  | "worktree_resolve"
-  | "worktree_lease"
-  | "workspace_provisioning"
-  | "workspace_ensure"
-  | "skill_commands";
+export type PrepareAgentCommandPhase = CommandPrepareStep;
 
 export async function prepareAgentCommandExecution(
   opts: AgentCommandOpts,
@@ -97,6 +84,7 @@ export async function prepareAgentCommandExecution(
     operatorAuthority,
     lifecycleGeneration: preparationLifecycleGeneration,
   } = opts;
+  onPhase?.("command_entry");
   const isRawModelRun = opts.modelRun === true || opts.promptMode === "none";
   const message = opts.message ?? "";
   if (!message.trim()) {
@@ -392,8 +380,8 @@ export async function prepareAgentCommandExecution(
   const runLease = worktreeSource
     ? await acquireWorktreeRunLease(worktreeSource.record.id, { source: worktreeSource })
     : undefined;
-  onPhase?.("worktree_lease");
   try {
+    onPhase?.("worktree_lease");
     const { resolveAcpAgentWorkspaceProvisioningForTurn } =
       await import("../acp-workspace-provisioning.js");
     const workspaceProvisioning = await resolveAcpAgentWorkspaceProvisioningForTurn({

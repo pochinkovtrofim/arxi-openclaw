@@ -23,6 +23,7 @@ import {
   captureAgentRunLifecycleGeneration,
   withAgentRunLifecycleGeneration,
 } from "../infra/agent-events.js";
+import type { CommandPrepareStep } from "../infra/diagnostic-events.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { createPreflightStepRecorder } from "../infra/preflight-step-recorder.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -708,7 +709,7 @@ async function agentCommandFromIngressInternal(
           senderIsOwner: opts.senderIsOwner === true,
         },
         prepare: async (preparedOpts) => {
-          const phases = createPreflightStepRecorder();
+          const phases = createPreflightStepRecorder<CommandPrepareStep>();
           const prepared = await prepareAgentCommandExecution(
             preparedOpts,
             ingressRuntime,

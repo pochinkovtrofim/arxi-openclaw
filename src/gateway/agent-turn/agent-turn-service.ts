@@ -19,6 +19,7 @@ import type {
   GatewayTurnCheckpoint,
   GatewayTurnStage,
   PreflightStepMoment,
+  SessionWriteStep,
 } from "../../infra/diagnostic-events.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { createPreflightStepRecorder } from "../../infra/preflight-step-recorder.js";
@@ -449,7 +450,7 @@ export function createAgentTurnService(
           if (admissionController.respondToOutcome()) {
             return;
           }
-          const sessionWriteSteps = createPreflightStepRecorder();
+          const sessionWriteSteps = createPreflightStepRecorder<SessionWriteStep>();
           const creation = await prepareSkillLibrarySessionCreation(
             principal,
             () => context.getRuntimeConfig(),

@@ -1,6 +1,7 @@
 import {
   emitTrustedDiagnosticEvent,
   type PreflightStepMoment,
+  REPLY_PREFLIGHT_STEP_PATTERN,
   type REPLY_PREFLIGHT_STAGES,
   type ReplyPreflightSubStage,
 } from "../../infra/diagnostic-events.js";
@@ -15,8 +16,6 @@ type ReplyPreflightStage = Exclude<(typeof REPLY_PREFLIGHT_STAGES)[number], "gue
 
 /** The span a closed stage covered (epoch ms). */
 export type ReplyPreflightWindow = { startedAt: number; endedAt: number };
-
-const SUB_STAGE_STEP = /^[a-z0-9_]{1,40}$/;
 
 /**
  * Times a turn from the moment it is taken up to its agent run as consecutive stages:
@@ -86,7 +85,7 @@ export function createReplyPreflightStages(params: { startedAt?: number; session
       let cursor = window.startedAt;
       for (const { step, at } of steps) {
         if (
-          !SUB_STAGE_STEP.test(step) ||
+          !REPLY_PREFLIGHT_STEP_PATTERN.test(step) ||
           !Number.isFinite(at) ||
           at < cursor ||
           at > window.endedAt

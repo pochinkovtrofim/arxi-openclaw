@@ -22,7 +22,9 @@ vi.mock("./command/prepare.js", () => ({
     _context: unknown,
     onPhase?: (step: string) => void,
   ) => {
-    mocks.clock.tick(100);
+    mocks.clock.tick(10);
+    onPhase?.("command_entry");
+    mocks.clock.tick(90);
     onPhase?.("runtime_config");
     mocks.clock.tick(30);
     onPhase?.("session_resolve");
@@ -78,11 +80,12 @@ it("emits command_prepare.* inside the command_prepare window, after it", async 
   await run({});
   expect(stages()).toEqual([
     ["command_prepare", 10_000, 150],
-    ["command_prepare.runtime_config", 10_000, 100],
+    ["command_prepare.command_entry", 10_000, 10],
+    ["command_prepare.runtime_config", 10_010, 90],
     ["command_prepare.session_resolve", 10_100, 30],
   ]);
   const spans = mocks.emitTrustedDiagnosticEvent.mock.calls.map(([event]) => event.trace.spanId);
-  expect(new Set(spans).size).toBe(3);
+  expect(new Set(spans).size).toBe(4);
 });
 
 it("replays the Gateway's step moments as sub-stages of the stage they sit in", async () => {

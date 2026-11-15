@@ -24,6 +24,7 @@ import { buildSessionCreationStamp } from "../../config/sessions/session-entry-p
 import { createSessionResetBoundaryId } from "../../config/sessions/session-reset-boundary-event.js";
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { SessionWriteStep } from "../../infra/diagnostic-events.js";
 import {
   normalizeCronScheduledMcpToolBindings,
   normalizeCronScheduledToolCallerOrigin,
@@ -89,11 +90,7 @@ export type AgentSessionPersistResult = {
   restoredCronContinuation?: RestoredCronContinuation;
 };
 
-/** Awaited steps of the session write, named by what they do; code constants, never data. */
-export type AgentSessionPersistStep =
-  | "session_patch_build"
-  | "session_store_commit"
-  | "session_created_record";
+export type AgentSessionPersistStep = Exclude<SessionWriteStep, "skill_library_selection">;
 
 export async function persistAgentSessionPhase(params: {
   freshChild?: boolean;
