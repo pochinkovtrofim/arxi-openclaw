@@ -60,7 +60,6 @@ import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { resolveEventSessionRoutingPolicy } from "../infra/event-session-routing.js";
 import { loadExecApprovalsReadOnlyAsync } from "../infra/exec-approvals-store.js";
 import { resolveExactExecModeFromPolicy } from "../infra/exec-approvals.js";
-import { measurePrepStage } from "../infra/run-prep-stages.js";
 import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
 import {
@@ -446,9 +445,7 @@ export async function resolveGatewayScopedTools(
     inheritedToolPolicySource: requesterPolicies.inheritedToolPolicySource,
     delegatedToolPolicyUnavailable: Boolean(requesterPolicies.delegatedToolPolicy),
   };
-  const openClawTools = await measurePrepStage("mcp-openclaw-tools", () =>
-    createOpenClawToolsAsync(openClawToolOptions, { assertCurrent }),
-  );
+  const openClawTools = await createOpenClawToolsAsync(openClawToolOptions, { assertCurrent });
   assertCurrent();
   const execDefaults =
     nodeExecSurface || mediatedToolNames.size > 0
