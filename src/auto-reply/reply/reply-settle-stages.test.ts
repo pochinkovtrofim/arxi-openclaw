@@ -129,3 +129,13 @@ it("binds the stages for the code that runs inside the turn", async () => {
     expect(getReplySettleStages()).toBe(stages);
   });
 });
+
+it("closes the pre-run stages once, where the first run attempt starts", () => {
+  const onRunStarting = vi.fn();
+  const stages = createReplySettleStages({ runId: "run-1", onRunStarting });
+  stages.runStarting();
+  stages.runEnded();
+  // A retried attempt starts again; the pre-run window was already closed.
+  stages.runStarting();
+  expect(onRunStarting).toHaveBeenCalledTimes(1);
+});

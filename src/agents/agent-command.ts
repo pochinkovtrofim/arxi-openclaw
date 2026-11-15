@@ -103,6 +103,7 @@ async function agentCommandInternal(
   const settleStages = createReplySettleStages({
     runId: prepared.runId,
     sessionKey: prepared.sessionKey,
+    onRunStarting: () => preflightStages.mark("run_admission"),
   });
   const sessionSource = prepared.sessionKey
     ? captureSessionActorStorageOwner(

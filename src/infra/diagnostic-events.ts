@@ -743,6 +743,11 @@ type DiagnosticModelCallBaseEvent = DiagnosticSessionEvent & {
 
 type DiagnosticModelCallStartedEvent = DiagnosticModelCallBaseEvent & {
   type: "model.call.started";
+  /**
+   * When the request began (epoch ms), if before this event: a request whose start
+   * is only known once its first stream record arrives reports its real start here.
+   */
+  startedAt?: number;
 };
 
 /**

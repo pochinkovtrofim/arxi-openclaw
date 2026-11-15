@@ -563,6 +563,7 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
                   },
                 }
               : undefined;
+          getReplySettleStages()?.runStarting();
           result = await runCliAgent({
             ...buildCommonRunParams(),
             diagnosticOwner,
@@ -806,6 +807,7 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
     embeddedRunParams,
     readChannelSourceTurnSameThreadRequired(params.runContext),
   );
+  getReplySettleStages()?.runStarting();
   const embeddedResult = await runEmbeddedAgent(embeddedRunParams);
   getReplySettleStages()?.runEnded();
   return embeddedResult;

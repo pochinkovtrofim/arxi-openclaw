@@ -6,6 +6,7 @@ import {
   createChildDiagnosticTraceContext,
   createDiagnosticTraceContextFromActiveScope,
   freezeDiagnosticTraceContext,
+  getActiveDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
 import { createRunPrepStageReporter } from "../../infra/run-prep-stages.js";
 import { takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
@@ -38,7 +39,10 @@ export function createCliPrepStages(params: {
   sessionId?: string;
 }): CliPrepStages {
   const tracker = createStageTimingTracker();
-  const runTrace = freezeDiagnosticTraceContext(createDiagnosticTraceContextFromActiveScope());
+  // The run's own span: the exporter binds stage spans only beneath a span it knows.
+  const runTrace = freezeDiagnosticTraceContext(
+    getActiveDiagnosticTraceContext() ?? createDiagnosticTraceContextFromActiveScope(),
+  );
   const report = createRunPrepStageReporter({
     tracker,
     runId: params.runId,

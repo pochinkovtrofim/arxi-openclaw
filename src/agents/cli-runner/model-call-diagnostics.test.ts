@@ -352,6 +352,10 @@ describe("Claude CLI model-call diagnostics", () => {
         expect(step).not.toHaveProperty("promptStats");
       }
       const [start1, done1, start2, done2] = steps;
+      // The started events carry when each request began, though they are sent when
+      // its first stream record arrives (1500 and 2700).
+      expect(start1).toMatchObject({ startedAt: 1_400 });
+      expect(start2).toMatchObject({ startedAt: 2_600 });
       expect(start1?.trace?.spanId).toBe(done1?.trace?.spanId);
       expect(start2?.trace?.spanId).toBe(done2?.trace?.spanId);
       expect(start1?.trace?.spanId).not.toBe(start2?.trace?.spanId);
