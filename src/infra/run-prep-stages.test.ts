@@ -140,6 +140,16 @@ describe("measured preparation steps", () => {
     ]);
   });
 
+  it("names every measured step in a form the host keeps", () => {
+    const names = sourceFiles("src").flatMap((file) =>
+      [...readFileSync(path.join(root, file), "utf8").matchAll(/measurePrepStage\(\s*"([^"]*)"/gu)].map(
+        (match) => match[1],
+      ),
+    );
+    expect(names.length).toBeGreaterThanOrEqual(7);
+    expect(names.filter((name) => !/^[a-z0-9][a-z0-9-]{0,47}$/u.test(name ?? ""))).toEqual([]);
+  });
+
   it("only runs a step outside any preparation", async () => {
     const tracker = createStageTimingTracker(() => 0);
     await withPrepStages(tracker, async () => {});
