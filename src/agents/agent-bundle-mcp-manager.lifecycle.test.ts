@@ -186,7 +186,7 @@ describe("MCP manager creation ownership", () => {
     ).toBeUndefined();
   });
 
-  it("keeps the installed runtime while a resolver fails for a moment, and revokes it on unavailable", async () => {
+  it("keeps the installed runtime while a resolver fails for a moment, then drops it", async () => {
     let answer: "ok" | "throw" | "none" = "ok";
     let issued = 0;
     resolverTesting.setMcpServerConnectionResolversForTest([
@@ -206,33 +206,87 @@ describe("MCP manager creation ownership", () => {
         },
       },
     ]);
-    // Every turn resolves again, as a Claude Code turn a minute after the last one does.
-    resolverTesting.setMcpConnectionRevalidateMsForTest(1);
-    try {
-      const createRuntime = vi.fn<CreateSessionMcpRuntime>(createRuntimeFixture);
-      const manager = createManager(createRuntime);
-      const acquire = async () => {
-        await new Promise((resolve) => setTimeout(resolve, 5));
-        return await manager.getOrCreateRequesterScoped({
-          ...params,
-          agentId: "main",
-          cfg: { mcp: { servers: { scoped: { transport: "streamable-http" as const } } } },
-        });
-      };
-      const first = expectDefined(await acquire(), "first runtime").runtime;
-      // The resolver fails for a moment: the same runtime, so the same tools, serve the turn.
-      answer = "throw";
-      expect(expectDefined(await acquire(), "kept runtime").runtime).toBe(first);
-      expect(expectDefined(await acquire(), "kept again").runtime).toBe(first);
-      expect(first.dispose).not.toHaveBeenCalled();
-      expect(createRuntime).toHaveBeenCalledOnce();
-      // A resolver that answers "unavailable" (a disconnected account) still revokes.
-      answer = "none";
-      expect(await acquire()).toBeUndefined();
-      expect(first.dispose).toHaveBeenCalledOnce();
-    } finally {
-      resolverTesting.setMcpConnectionRevalidateMsForTest(undefined);
+    const gatewayClock = createGatewaySchedulerClock(1_000_000);
+    const createRuntime = vi.fn<CreateSessionMcpRuntime>(createRuntimeFixture);
+    const manager = createSessionMcpRuntimeManager({
+      createRuntime,
+      scheduler: createTestGatewayScheduler(gatewayClock.clock),
+    });
+    managers.push(manager);
+    // Each turn comes past the revalidation window, as a Claude Code turn a minute later does.
+    const acquire = async () => {
+      await gatewayClock.advanceBy(61_000);
+      return await manager.getOrCreateRequesterScoped({
+        ...params,
+        agentId: "main",
+        cfg: { mcp: { servers: { scoped: { transport: "streamable-http" as const } } } },
+      });
+    };
+    const first = expectDefined(await acquire(), "first runtime").runtime;
+    // The resolver fails for a moment: the same runtime, so the same tools, serve the turn.
+    answer = "throw";
+    expect(expectDefined(await acquire(), "kept runtime").runtime).toBe(first);
+    expect(expectDefined(await acquire(), "kept again").runtime).toBe(first);
+    expect(first.dispose).not.toHaveBeenCalled();
+    expect(createRuntime).toHaveBeenCalledOnce();
+    // Back to normal, then a resolver that answers "unavailable" still revokes at once.
+    answer = "ok";
+    const healthy = expectDefined(await acquire(), "healthy runtime").runtime;
+    answer = "none";
+    expect(await acquire()).toBeUndefined();
+    expect(healthy.dispose).toHaveBeenCalledOnce();
+    // A failure lasting past the keep window drops the server as before.
+    answer = "ok";
+    const later = expectDefined(await acquire(), "later runtime").runtime;
+    answer = "throw";
+    for (let turn = 0; turn < 5; turn += 1) {
+      expect(expectDefined(await acquire(), "kept within the window").runtime).toBe(later);
     }
+    expect(await acquire()).toBeUndefined();
+    expect(later.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("revokes instead of keeping when a sibling server answers unavailable during a failure", async () => {
+    let siblingGone = false;
+    resolverTesting.setMcpServerConnectionResolversForTest([
+      {
+        serverName: "flaky",
+        requiresRequesterIdentity: false,
+        resolve: async () => {
+          if (siblingGone) {
+            throw new Error("host restarting");
+          }
+          return { url: "https://mcp.example.test/flaky" };
+        },
+      },
+      {
+        serverName: "revoked",
+        requiresRequesterIdentity: false,
+        resolve: async () => (siblingGone ? null : { url: "https://mcp.example.test/revoked" }),
+      },
+    ]);
+    const gatewayClock = createGatewaySchedulerClock(1_000_000);
+    const manager = createSessionMcpRuntimeManager({
+      createRuntime: vi.fn<CreateSessionMcpRuntime>(createRuntimeFixture),
+      scheduler: createTestGatewayScheduler(gatewayClock.clock),
+    });
+    managers.push(manager);
+    const servers = {
+      flaky: { transport: "streamable-http" as const },
+      revoked: { transport: "streamable-http" as const },
+    };
+    const acquire = async () => {
+      await gatewayClock.advanceBy(61_000);
+      return await manager.getOrCreateRequesterScoped({
+        ...params,
+        agentId: "main",
+        cfg: { mcp: { servers } },
+      });
+    };
+    const first = expectDefined(await acquire(), "first runtime").runtime;
+    siblingGone = true;
+    expect(await acquire()).toBeUndefined();
+    expect(first.dispose).toHaveBeenCalledOnce();
   });
 
   it("replaces a healthy empty advertisement when resource and prompt capabilities change", async () => {
