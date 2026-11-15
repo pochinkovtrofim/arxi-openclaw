@@ -223,7 +223,8 @@ function urlWithoutQuery(raw: string): string {
 
 const READ_PATH = /(^|\/)(search|query|find|list|lookup|suggest|autocomplete)(\/|$)/i;
 const GRAPHQL_PATH = /(^|\/)graphql(\/|$)/i;
-const GRAPHQL_TEXT = /^\s*(#[^\n]*\n\s*)*(\{|query\b|mutation\b|subscription\b|fragment\b)[\s\S]*\{/;
+const GRAPHQL_TEXT =
+  /^\s*(#[^\n]*\n\s*)*(\{|query\b|mutation\b|subscription\b|fragment\b)[\s\S]*\{/;
 // A mutation operation anywhere in the document, line comments removed.
 const GRAPHQL_MUTATION = /(^|\})[\s,]*mutation\b/;
 
