@@ -99,6 +99,15 @@ type DiagnosticSessionEvent = DiagnosticBaseEvent &
 
 /** Stages between taking up a turn and its agent run, in order; fixed code labels only. */
 export const REPLY_PREFLIGHT_STAGES = [
+  "gateway_preflight",
+  "gateway_routing",
+  "gateway_storage",
+  "gateway_content",
+  "gateway_session",
+  "gateway_admission",
+  "gateway_session_write",
+  "gateway_delivery",
+  "gateway_dispatch",
   "gateway_rpc",
   "command_prepare",
   "admission",
@@ -110,11 +119,22 @@ export const REPLY_PREFLIGHT_STAGES = [
   "run_admission",
 ] as const;
 
+/** Gateway stages a turn's checkpoints can close; `gateway_rpc` is the hand-off that follows them. */
+export type GatewayTurnStage = Exclude<
+  Extract<(typeof REPLY_PREFLIGHT_STAGES)[number], `gateway_${string}`>,
+  "gateway_rpc"
+>;
+
+/** The moment a Gateway turn step finished, closing `stage`. No content. */
+export type GatewayTurnCheckpoint = { stage: GatewayTurnStage; at: number };
+
 /** One finished stage of a reply before its agent run starts. No content. */
 type DiagnosticReplyPreflightStageEvent = DiagnosticSessionEvent & {
   type: "reply.preflight.stage";
   stage: (typeof REPLY_PREFLIGHT_STAGES)[number];
   durationMs: number;
+  /** When the stage began (epoch ms): a stage closed at a recorded moment is emitted later. */
+  startedAt?: number;
 };
 
 /** Stages between the end of an agent run and the reply's hand-off to the channel, in order. */

@@ -2,6 +2,7 @@ import type { AgentRunTerminalOutcome } from "../../agents/agent-run-terminal-ou
 import type { MainSessionRecoveryOwnerLease } from "../../agents/main-session-recovery/main-session-recovery-store.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { GatewayTurnCheckpoint } from "../../infra/diagnostic-events.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import type { MediaFact } from "../../media/media-facts.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
@@ -16,6 +17,7 @@ import type { AgentTurnContext, AgentTurnIo, AgentTurnPrincipal } from "./types.
 export type StartAgentRunExecutionParams = {
   diagnosticTrace?: DiagnosticTraceContext;
   rpcReceivedAt?: number;
+  rpcCheckpoints?: ReadonlyArray<GatewayTurnCheckpoint>;
   assertContextCurrent?: () => void;
   prepared: PreparedAgentRunDispatch;
   mainRestartRecoveryOwnerLease?: MainSessionRecoveryOwnerLease;

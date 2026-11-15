@@ -15,6 +15,7 @@ import {
 import { composeSessionSourceAssertion } from "../../config/sessions/session-source-authority.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { getAgentEventLifecycleGeneration } from "../../infra/agent-events.js";
+import type { GatewayTurnCheckpoint, GatewayTurnStage } from "../../infra/diagnostic-events.js";
 import type { DiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
 import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import { discardPreparedInboundMedia, type OffloadedRef } from "../chat-attachments.js";
@@ -126,6 +127,15 @@ export function createAgentTurnService(
       context,
       io,
     });
+    // Content-free moments each step below finished, so the Gateway's time before the
+    // agent command is timed per step rather than as one block.
+    // The handler's validation and request preflight ran before this turn started.
+    const rpcCheckpoints: GatewayTurnCheckpoint[] = [
+      { stage: "gateway_preflight", at: promptedAt },
+    ];
+    const checkpoint = (stage: GatewayTurnStage) => {
+      rpcCheckpoints.push({ stage, at: Date.now() });
+    };
     const routing = await prepareAgentRequestRouting({
       ...preflight,
       context,
@@ -139,6 +149,7 @@ export function createAgentTurnService(
         assertInputCommitAllowed,
       ]),
     });
+    checkpoint("gateway_routing");
     if (!routing) {
       return;
     }
@@ -160,6 +171,7 @@ export function createAgentTurnService(
       dedupeLifecycle.clearUnaccepted();
       throw error;
     });
+    checkpoint("gateway_storage");
     const releaseSessionStorage = async () => {
       if (!storageActive) {
         return;
@@ -203,6 +215,7 @@ export function createAgentTurnService(
           requestedSessionKey,
           agentId,
         }).catch(dedupeLifecycle.handlePreparationFailure(assertAdmissionCurrent));
+        checkpoint("gateway_content");
         if (!content) {
           return;
         }
@@ -416,6 +429,7 @@ export function createAgentTurnService(
           session.admittedSessionId = session.resolvedSessionId ?? runId;
           resolvedSessionKey = canonicalSessionKey;
           resolvedSessionAgentId = sessionAgentId;
+          checkpoint("gateway_session");
           try {
             await admissionController.acquire(storePath ?? `agent:${sessionAgentId}`);
           } catch (err) {
@@ -426,6 +440,7 @@ export function createAgentTurnService(
             ]);
             return;
           }
+          checkpoint("gateway_admission");
           if (admissionController.respondToOutcome()) {
             return;
           }
@@ -481,6 +496,7 @@ export function createAgentTurnService(
             },
             respond,
           });
+          checkpoint("gateway_session_write");
           if (!persistedSession) {
             return;
           }
@@ -503,6 +519,7 @@ export function createAgentTurnService(
           isWebchatConnect,
           onRunObserved,
         });
+        checkpoint("gateway_delivery");
         if (!delivery) {
           return;
         }
@@ -555,6 +572,7 @@ export function createAgentTurnService(
           markAgentRunAccepted: dedupeLifecycle.markAccepted,
           getOwnedAgentDedupeKeys: dedupeLifecycle.ownedReservationKeys,
         });
+        checkpoint("gateway_dispatch");
         if (!preparedDispatch) {
           return;
         }
@@ -580,6 +598,7 @@ export function createAgentTurnService(
                 effectiveBootstrapContextRunKind,
                 diagnosticTrace,
                 rpcReceivedAt,
+                rpcCheckpoints,
                 releaseCronContinuationClaimWithRecovery: cronContinuation.releaseWithRecovery,
               }),
             );
