@@ -337,7 +337,7 @@ async function withReadyMcpSession<T>(
     params.assertCurrent();
   } while (
     receipt.sharingRevision === undefined ||
-    receipt.sharingRevision !== params.projection.sharingRevision ||
+    receipt.sharingRevision !== projection.sharingRevision ||
     !isMcpCatalogSessionCurrent(receipt, params)
   );
   return consume();
