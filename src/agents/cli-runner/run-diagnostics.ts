@@ -1,3 +1,4 @@
+import { getReplySettleStages } from "../../auto-reply/reply/reply-settle-stages.js";
 import { getRuntimeConfigSnapshot } from "../../config/config.js";
 import { truncateDiagnosticContent } from "../../infra/diagnostic-content.js";
 /** Trusted run hierarchy for Claude Code CLI-backed agent turns. */
@@ -189,6 +190,9 @@ export async function runClaudeCliAgentTurnWithDiagnostics(
     type: "run.started",
     ...runBase,
   });
+  // A run the embedded runner handed to this backend closes the turn's pre-run stages
+  // here; a direct CLI turn closed them before the CLI run began.
+  getReplySettleStages()?.runStarting([], params.runId);
 
   try {
     // A mark left by an earlier run with this id never belongs to this one.

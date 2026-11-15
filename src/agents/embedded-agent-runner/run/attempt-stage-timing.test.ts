@@ -1,6 +1,9 @@
 // Coverage for embedded attempt startup stage timing diagnostics.
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { isMainThread, threadId } from "node:worker_threads";
 import { describe, expect, it, vi } from "vitest";
+import { RUN_ADMISSION_STEPS } from "../../../infra/diagnostic-events.js";
 import { createDiagnosticTraceContext } from "../../../infra/diagnostic-trace-context.js";
 import {
   createRunPrepStageReporter as createFirstModelRequestStageReporter,
@@ -11,6 +14,7 @@ import {
   EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE,
   formatEmbeddedRunStageSummary,
   shouldWarnEmbeddedRunStageSummary,
+  startupStageMoments,
 } from "./attempt-stage-timing.js";
 
 const emitted = vi.hoisted(() => ({ events: [] as unknown[] }));
@@ -158,5 +162,48 @@ describe("embedded run stage timing", () => {
       ],
       trace: { traceId: runTrace.traceId, parentSpanId: runTrace.spanId },
     });
+  });
+});
+
+describe("startup checkpoints as run_admission steps", () => {
+  it("places each closed checkpoint on the wall clock and leaves measured spans out", () => {
+    let clock = 0;
+    const tracker = createStageTimingTracker(() => clock);
+    clock = 30;
+    tracker.mark("workspace");
+    clock = 50;
+    tracker.mark("harness-selection");
+    clock = 90;
+    void tracker.measureSync("bundle-tools", () => {});
+    tracker.mark("prepared-runtime");
+    clock = 100;
+    // Wall clock 1_100 at snapshot: the tracker began at 1_000.
+    expect(startupStageMoments(tracker, 1_100)).toEqual([
+      { step: "session_admission", at: 1_000 },
+      { step: "workspace", at: 1_030 },
+      { step: "harness_selection", at: 1_050 },
+      { step: "prepared_runtime", at: 1_090 },
+    ]);
+  });
+
+  // A checkpoint outside the closed step list would silently fold into the next step,
+  // so every name the embedded startup marks must have its step.
+  it("has a step for every startup checkpoint the runner marks", () => {
+    const root = path.resolve(import.meta.dirname, "../../../..");
+    const sources = [
+      "src/agents/embedded-agent-runner/run-orchestrator.ts",
+      "src/agents/embedded-agent-runner/run-loop.ts",
+      "src/agents/embedded-agent-runner/run/runtime-preparation.ts",
+    ].map((file) => readFileSync(path.join(root, file), "utf8"));
+    const marked = sources.flatMap((source) =>
+      [...source.matchAll(/(?:startupStages\.mark|markStartupStage)\("([a-z-]+)"\)/gu)].map(
+        (match) => match[1],
+      ),
+    );
+    expect(marked.length).toBeGreaterThan(5);
+    const names = [...marked, ...Object.values(EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE)];
+    for (const name of names) {
+      expect(RUN_ADMISSION_STEPS).toContain(name.replaceAll("-", "_"));
+    }
   });
 });

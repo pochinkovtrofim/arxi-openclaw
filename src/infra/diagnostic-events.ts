@@ -149,7 +149,31 @@ export type SessionWriteStep =
   | "session_patch_build"
   | "session_store_commit"
   | "session_created_record";
-export type PreflightStep = CommandPrepareStep | SessionWriteStep;
+/**
+ * The embedded runner's startup checkpoints (its slow-start log names, `-` as `_`), after
+ * the command hands the run over and the session's admission (placement, maintenance,
+ * lanes) ends: they split `run_admission`, which closes where the attempt is dispatched.
+ */
+export const RUN_ADMISSION_STEPS = [
+  "run_params",
+  "session_admission",
+  "workspace",
+  "harness_selection",
+  "prepared_runtime",
+  "runtime_context",
+  "runtime_plugins",
+  "hooks",
+  "model_resolution",
+  "auth",
+  "context_engine",
+  "attempt_workspace",
+  "attempt_prompt",
+  "attempt_runtime_plan",
+  "attempt_dispatch",
+  "attempt_handoff",
+] as const;
+export type RunAdmissionStep = (typeof RUN_ADMISSION_STEPS)[number];
+export type PreflightStep = CommandPrepareStep | SessionWriteStep | RunAdmissionStep;
 
 /** What a sub-stage step name may look like; the host and guest accept the same pattern. */
 export const REPLY_PREFLIGHT_STEP_PATTERN = /^[a-z0-9_]{1,40}$/;

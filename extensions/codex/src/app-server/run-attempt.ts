@@ -33,6 +33,7 @@ export async function runCodexAppServerAttempt(
     throw new Error("Codex required-root execution requires an enabled host-mediated tool surface");
   }
   const preparation = createCodexAttemptPreparationTiming(params);
+  const settle: { current?: ReturnType<typeof preparation.turnSettle> } = {};
   const connection = await preparation.measure("connection", () =>
     prepareCodexAttemptConnection({
       params: params.continuation
@@ -122,6 +123,11 @@ export async function runCodexAppServerAttempt(
             let finalizedResult: EmbeddedRunAttemptResult | undefined;
             try {
               try {
+                // The tail is timed from the native turn's completion (interrupted turns
+                // complete too); registered before finalize awaits it, so it starts first.
+                void turnRuntime.completion.then(() => {
+                  settle.current = preparation.turnSettle();
+                });
                 await activeTurn.ready;
                 finalizedResult = await finalizeCodexAttempt(
                   resources,
@@ -131,6 +137,7 @@ export async function runCodexAppServerAttempt(
                   turnRequest,
                   activeTurn,
                 );
+                settle.current?.mark("native-turn-finalize");
               } finally {
                 await cleanupCodexAttempt(
                   resources,
@@ -139,6 +146,7 @@ export async function runCodexAppServerAttempt(
                   turnRequest,
                   activeTurn,
                 );
+                settle.current?.mark("native-turn-cleanup");
               }
             } catch (error) {
               // Rejected cleanup admission must not hide the model permission loss
@@ -197,6 +205,7 @@ export async function runCodexAppServerAttempt(
       connection.releaseSandboxContext();
     } finally {
       connection.releaseBindingAuthority();
+      settle.current?.done();
     }
   }
 }
