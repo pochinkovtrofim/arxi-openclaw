@@ -136,6 +136,12 @@ const CHAT_ATTACHMENT_MEDIA_PROBE_BUDGET_MS = 3000;
 async function enrichOffloadedMediaMetadata(refs: OffloadedRef[]): Promise<void> {
   const candidates = refs.flatMap((ref) => {
     const kind = kindFromMime(ref.mimeType);
+    // Audio probing yields only the duration. When the channel already declared
+    // one (a Telegram voice note does), ffprobe would only compete with
+    // transcription for the same vCPUs.
+    if (kind === "audio" && ref.durationMs !== undefined && ref.durationMs > 0) {
+      return [];
+    }
     return kind === "audio" || kind === "video" ? [{ kind, ref }] : [];
   });
   const metadata = await probeMediaFilesWithinBudget(
