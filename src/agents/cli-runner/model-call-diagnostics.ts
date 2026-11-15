@@ -28,6 +28,7 @@ import {
 } from "../../infra/diagnostic-trace-context.js";
 import type { CliOutput, CliStepEvent, CliUsage } from "../cli-output-contracts.js";
 import { isFailoverError } from "../failover-error.js";
+import { noteCliTurnEnded } from "./turn-end-marks.js";
 import type { PreparedCliRunContext } from "./types.js";
 
 const MAX_CAPTURED_CONTENT_BYTES = 128 * 1024;
@@ -654,6 +655,7 @@ export function createClaudeCliModelCallDiagnostics(params: {
       }
       closeStep();
       terminalEmitted = true;
+      noteCliTurnEnded(params.context.params.runId, now());
       emitTrustedDiagnosticEventWithPrivateData(
         {
           type: "model.call.completed",

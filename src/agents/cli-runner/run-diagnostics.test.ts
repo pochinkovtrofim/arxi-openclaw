@@ -16,7 +16,8 @@ import {
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
-import { runClaudeCliAgentTurnWithDiagnostics } from "./run-diagnostics.js";
+import { CLI_RUN_SETTLE_STAGE, runClaudeCliAgentTurnWithDiagnostics } from "./run-diagnostics.js";
+import { noteCliTurnEnded, takeCliTurnEnd } from "./turn-end-marks.js";
 
 const parentTrace: DiagnosticTraceContext = {
   traceId: "11111111111111111111111111111111",
@@ -73,6 +74,45 @@ describe("Claude CLI run diagnostics", () => {
     } finally {
       diagnostics.unsubscribe();
     }
+  });
+
+  it("reports the run's time after its model turn ended as its own stage under the run span", async () => {
+    const runId = "settle-run";
+    const diagnostics = captureLifecycle(runId);
+    try {
+      await runClaudeCliAgentTurnWithDiagnostics({ runId, sessionId: "settle-session" }, async () => {
+        noteCliTurnEnded(runId, Date.now() - 180);
+        return { payloads: [{ text: "done" }], meta: { durationMs: 1 } };
+      });
+      await flushDiagnosticEvents();
+      const types = diagnostics.events.map(({ event }) => event.type);
+      expect(types).toEqual([
+        "harness.run.started",
+        "run.started",
+        "context.stages",
+        "run.completed",
+        "harness.run.completed",
+      ]);
+      const run = diagnostics.events.find(({ event }) => event.type === "run.started")?.event;
+      const stage = diagnostics.events.find(({ event }) => event.type === "context.stages")?.event;
+      const [settle] = (stage as { stages: Array<{ name: string; startedAt: number; endedAt: number }> })
+        .stages;
+      expect(settle?.name).toBe(CLI_RUN_SETTLE_STAGE);
+      expect(settle!.endedAt - settle!.startedAt).toBeGreaterThanOrEqual(180);
+      expect(stage?.trace?.parentSpanId).toBe(run?.trace?.spanId);
+      // The mark is taken once.
+      expect(takeCliTurnEnd(runId)).toBeUndefined();
+    } finally {
+      diagnostics.unsubscribe();
+    }
+  });
+
+  it("keeps a bounded number of unclaimed turn marks", () => {
+    for (let index = 0; index < 300; index += 1) {
+      noteCliTurnEnded(`abandoned-${index}`, index);
+    }
+    expect(takeCliTurnEnd("abandoned-0")).toBeUndefined();
+    expect(takeCliTurnEnd("abandoned-299")).toBe(299);
   });
 
   it("nests model calls beneath synthetic run and harness spans", async () => {

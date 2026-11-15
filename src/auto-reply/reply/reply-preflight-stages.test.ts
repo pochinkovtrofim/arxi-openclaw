@@ -71,6 +71,7 @@ it("closes the pre-run compaction step with the part that ran last", () => {
 it("pins the closed stage list", async () => {
   const { REPLY_PREFLIGHT_STAGES } = await import("../../infra/diagnostic-events.js");
   expect([...REPLY_PREFLIGHT_STAGES]).toEqual([
+    "guest_dispatch",
     "gateway_preflight",
     "gateway_routing",
     "gateway_storage",

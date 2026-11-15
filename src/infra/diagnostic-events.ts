@@ -99,6 +99,9 @@ type DiagnosticSessionEvent = DiagnosticBaseEvent &
 
 /** Stages between taking up a turn and its agent run, in order; fixed code labels only. */
 export const REPLY_PREFLIGHT_STAGES = [
+  // Reported by the guest service, not this process: its receipt of the dispatch
+  // until it calls the Gateway (connect, handshake, context projection).
+  "guest_dispatch",
   "gateway_preflight",
   "gateway_routing",
   "gateway_storage",
