@@ -1,9 +1,9 @@
 /** Unit tests for requester-scoped MCP connection resolver helpers. */
 import { randomUUID } from "node:crypto";
 import http from "node:http";
-import { expectDefined } from "@openclaw/normalization-core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { expectDefined } from "@openclaw/normalization-core";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../config/io.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
@@ -18,7 +18,10 @@ import { withPluginRuntimeRegistryScope } from "../plugins/runtime/gateway-reque
 import { createTestGatewayScheduler } from "../test-utils/gateway-scheduler-clock.js";
 import { setSessionMcpRuntimeScheduler } from "./agent-bundle-mcp-manager-api.js";
 import { getOrCreateSessionMcpRuntime } from "./agent-bundle-mcp-manager.test-support.js";
+import { sessionMcpRuntimeOwners } from "./agent-bundle-mcp-runtime-owner.js";
+import { createSessionMcpRuntime } from "./agent-bundle-mcp-runtime.js";
 import { disposeAllSessionMcpRuntimes, peekSessionMcpRuntime } from "./agent-bundle-mcp-tools.js";
+import type { SessionMcpRuntime } from "./agent-bundle-mcp-types.js";
 import {
   testing,
   applyMcpConnectionOverride,
@@ -30,9 +33,6 @@ import {
   resolveRequesterScopedMcpConnections,
 } from "./mcp-connection-resolver.js";
 import { createMcpProofPluginRegistry } from "./mcp-connection-resolver.test-fixtures.js";
-import { createSessionMcpRuntime } from "./agent-bundle-mcp-runtime.js";
-import { sessionMcpRuntimeOwners } from "./agent-bundle-mcp-runtime-owner.js";
-import type { SessionMcpRuntime } from "./agent-bundle-mcp-types.js";
 import { resolveMcpTransportConfig } from "./mcp-transport-config.js";
 import { resetPreparedModelRuntimeSnapshotsForTest } from "./prepared-model-runtime.test-support.js";
 
@@ -277,7 +277,10 @@ describe("mcp connection resolver helpers", () => {
       cfg: {
         mcp: {
           servers: {
-            "user-mail": { transport: "streamable-http" as const, url: "https://placeholder.invalid" },
+            "user-mail": {
+              transport: "streamable-http" as const,
+              url: "https://placeholder.invalid",
+            },
           },
         },
       },
@@ -285,7 +288,10 @@ describe("mcp connection resolver helpers", () => {
     const runtime = createSessionMcpRuntime({
       ...base,
       connectionOverrides: new Map([
-        ["user-mail", { url: proof.mail.url, headers: { Authorization: proof.mail.authorization } }],
+        [
+          "user-mail",
+          { url: proof.mail.url, headers: { Authorization: proof.mail.authorization } },
+        ],
       ]),
     });
     let replacement: SessionMcpRuntime | undefined;
