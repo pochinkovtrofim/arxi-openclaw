@@ -277,7 +277,10 @@ describe("mcp connection resolver helpers", () => {
       cfg: {
         mcp: {
           servers: {
-            "user-mail": { transport: "streamable-http" as const, url: "https://placeholder.invalid" },
+            "user-mail": {
+              transport: "streamable-http" as const,
+              url: "https://placeholder.invalid",
+            },
           },
         },
       },
