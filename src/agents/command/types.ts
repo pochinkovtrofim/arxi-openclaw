@@ -70,6 +70,8 @@ export type AgentCommandOpts = {
   message: string;
   /** Trusted ingress trace retained across detached Gateway dispatch. */
   diagnosticTrace?: DiagnosticTraceContext;
+  /** Epoch ms at which the Gateway received the request, for content-free stage timing. */
+  rpcReceivedAt?: number;
   /** User-visible transcript body; defaults to message and excludes runtime-only context. */
   transcriptMessage?: string;
   /** Durable media metadata for the user-visible transcript turn. */

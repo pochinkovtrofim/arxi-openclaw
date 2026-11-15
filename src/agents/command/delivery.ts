@@ -20,6 +20,7 @@ import {
   hasEnabledDeliveryOperation,
   resolveMessagingToolPayloadDedupe,
 } from "../../auto-reply/reply/reply-payloads-dedupe.js";
+import { getReplySettleStages } from "../../auto-reply/reply/reply-settle-stages.js";
 import { resolveResponsePrefixTemplate } from "../../auto-reply/reply/response-prefix-template.js";
 import { createChannelReplyTransform } from "../../channels/message/reply-transform.js";
 import { sendDurableMessageBatchCore } from "../../channels/message/runtime.js";
@@ -731,6 +732,8 @@ export async function deliverAgentCommandResult(
         restartAbort.dispose();
         await assertPlatformSendCurrent.release();
       }
+      // The reply is with the channel: the last stage between run end and hand-off ends here.
+      getReplySettleStages()?.mark("send");
       if (restartAbort.signal?.aborted && send.status === "failed") {
         throw restartAbort.signal.reason;
       }

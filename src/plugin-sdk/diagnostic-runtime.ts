@@ -55,6 +55,7 @@ export {
   waitForDiagnosticEventsDrained,
 } from "../infra/diagnostic-events.js";
 export { resolveDiagnosticModelContentCapturePolicy } from "../infra/diagnostic-llm-content.js";
+export { createRunPrepStageReporter } from "../infra/run-prep-stages.js";
 export { resolveDiagnosticExecClass } from "../infra/diagnostic-exec-class.js";
 export type { DiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
 export {

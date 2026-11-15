@@ -132,6 +132,19 @@ export type CliToolResultDelta = {
   result?: unknown;
 };
 
+/**
+ * Content-free API-step boundaries of one Claude turn, read from the main
+ * agent's stream records. Subagent records never produce one.
+ */
+export type CliStepEvent =
+  | { kind: "message_start"; messageId?: string; usage?: CliUsage }
+  /** The first content block (text, thinking or tool call) of the current message. */
+  | { kind: "content" }
+  | { kind: "message_delta"; usage?: CliUsage }
+  | { kind: "message_stop" }
+  /** A tool result went back to the model, so the next step's request is being sent. */
+  | { kind: "tool_result" };
+
 export type CliJsonlStreamingParserOptions = {
   backend: CliBackendConfig;
   providerId: string;
@@ -159,8 +172,12 @@ export type CliJsonlStreamingParserOptions = {
   onSessionId?: (sessionId: string) => void;
   /** Parent initialization fact; its authority owner validates the raw tool list. */
   onNativeTools?: (tools: unknown) => void;
+  /** The CLI finished starting up (its `system`/`init` record), so it now serves the turn request. */
+  onSystemInit?: () => void;
   onAssistantMessage?: (message: unknown) => void;
   onUsage?: (usage: CliUsage, terminal: boolean) => void;
+  /** API-step boundaries of the main agent, for per-request timing. */
+  onStep?: (event: CliStepEvent) => void;
   /** Semantic subagent work for an active parent Agent call. Not a parent-lane event. */
   onAttributedSubagentProgress?: (parentToolUseId: string) => void;
 };

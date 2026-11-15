@@ -2,12 +2,14 @@
 import { isMainThread, threadId } from "node:worker_threads";
 import { describe, expect, it, vi } from "vitest";
 import { createDiagnosticTraceContext } from "../../../infra/diagnostic-trace-context.js";
+import {
+  createRunPrepStageReporter as createFirstModelRequestStageReporter,
+  placeStageTimings,
+} from "../../../infra/run-prep-stages.js";
 import { createStageTimingTracker } from "../../../shared/stage-timing.js";
 import {
-  createFirstModelRequestStageReporter,
   EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE,
   formatEmbeddedRunStageSummary,
-  placeStageTimings,
   shouldWarnEmbeddedRunStageSummary,
 } from "./attempt-stage-timing.js";
 

@@ -10,6 +10,7 @@ import {
 import { hasInternalDiagnosticEventListeners } from "../../infra/diagnostic-event-listener-presence.js";
 import {
   areDiagnosticsEnabledForProcess,
+  emitTrustedDiagnosticEvent,
   emitTrustedDiagnosticEventWithPrivateData,
   type DiagnosticEventPrivateData,
   type DiagnosticModelCallContent,
@@ -19,10 +20,13 @@ import {
   resolveDiagnosticModelContentCapturePolicy,
 } from "../../infra/diagnostic-llm-content.js";
 import {
+  createChildDiagnosticTraceContext,
   createDiagnosticTraceContextFromActiveScope,
   freezeDiagnosticTraceContext,
+  getActiveDiagnosticTraceContext,
+  type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
-import type { CliOutput, CliUsage } from "../cli-output-contracts.js";
+import type { CliOutput, CliStepEvent, CliUsage } from "../cli-output-contracts.js";
 import { isFailoverError } from "../failover-error.js";
 import type { PreparedCliRunContext } from "./types.js";
 
@@ -279,6 +283,47 @@ function usageField(usage: CliUsage | undefined): { usage?: CliUsage } {
   return usage ? { usage } : {};
 }
 
+/** Fixed label of the stage between taking the turn and the CLI accepting its request. */
+export const CLI_PROCESS_START_STAGE = "cli-process-start";
+/** Fixed label of the wait from the prepared prompt to the turn taking its CLI lane. */
+export const CLI_LANE_QUEUE_STAGE = "cli-lane-queue";
+
+type CliStepState = {
+  callId: string;
+  trace: DiagnosticTraceContext;
+  startedAt: number;
+  firstContentAt?: number;
+  startUsage?: CliUsage;
+  deltaUsage?: CliUsage;
+};
+
+function addTokens(...values: (number | undefined)[]): number | undefined {
+  const present = values.filter((value): value is number => typeof value === "number");
+  return present.length > 0 ? present.reduce((sum, value) => sum + value, 0) : undefined;
+}
+
+/**
+ * One API request's usage: the input side is fixed at `message_start`, the
+ * output grows through `message_delta`, and a later report wins per field.
+ */
+function mergeStepUsage(start?: CliUsage, delta?: CliUsage): CliUsage | undefined {
+  if (!start && !delta) {
+    return undefined;
+  }
+  const input = delta?.input ?? start?.input;
+  const output = delta?.output ?? start?.output;
+  const cacheRead = delta?.cacheRead ?? start?.cacheRead;
+  const cacheWrite = delta?.cacheWrite ?? start?.cacheWrite;
+  const total = addTokens(input, output, cacheRead, cacheWrite);
+  return {
+    ...(input !== undefined ? { input } : {}),
+    ...(output !== undefined ? { output } : {}),
+    ...(cacheRead !== undefined ? { cacheRead } : {}),
+    ...(cacheWrite !== undefined ? { cacheWrite } : {}),
+    ...(total !== undefined ? { total } : {}),
+  };
+}
+
 /** Creates one exactly-once Claude CLI model-call lifecycle for a prepared turn. */
 export function createClaudeCliModelCallDiagnostics(params: {
   context: PreparedCliRunContext;
@@ -298,10 +343,15 @@ export function createClaudeCliModelCallDiagnostics(params: {
   }
 
   const now = params.now ?? (() => Date.now());
+  // The prompt is prepared when this lifecycle is created; the turn may then
+  // wait for its CLI lane before it starts.
+  const preparedAt = now();
   const capture = resolveDiagnosticModelContentCapturePolicy(
     params.context.params.config ?? params.context.contextEngineConfig,
   );
   const contextWindow = params.context.contextWindowInfo;
+  // The run span encloses the turn; the turn encloses its API steps and their tools.
+  const runTrace = getActiveDiagnosticTraceContext();
   const trace = freezeDiagnosticTraceContext(createDiagnosticTraceContextFromActiveScope());
   const baseFields = {
     runId: params.context.params.runId,
@@ -356,6 +406,68 @@ export function createClaudeCliModelCallDiagnostics(params: {
   let firstCliOutputAt: number | undefined;
   let observedUsage: CliUsage | undefined;
   let observedTerminalUsage: CliUsage | undefined;
+  let requestSentAt: number | undefined;
+  let step: CliStepState | undefined;
+  let stepsSeen = false;
+  // When the next step's request went out: the turn request for step 1, then the
+  // last tool result before the next message. Unset means "when it starts".
+  let nextStepStartAt: number | undefined;
+
+  const stepFields = (current: CliStepState) => {
+    const { promptStats: _promptStats, ...turnFields } = baseFields;
+    return {
+      ...turnFields,
+      callId: current.callId,
+      observationUnit: "request" as const,
+      trace: current.trace,
+    };
+  };
+  const closeStep = (failure?: { error: unknown }): void => {
+    const current = step;
+    if (!current) {
+      return;
+    }
+    step = undefined;
+    const usage = mergeStepUsage(current.startUsage, current.deltaUsage);
+    const ended = {
+      ...stepFields(current),
+      durationMs: Math.max(0, now() - current.startedAt),
+      ...(current.firstContentAt !== undefined
+        ? { timeToFirstByteMs: Math.max(0, current.firstContentAt - current.startedAt) }
+        : {}),
+      ...usageField(usage),
+    };
+    if (!failure) {
+      emitTrustedDiagnosticEvent({ type: "model.call.completed", ...ended });
+      return;
+    }
+    const failureKind =
+      isFailoverError(failure.error) && failure.error.reason === "timeout"
+        ? "timeout"
+        : (diagnosticErrorFailureKind(failure.error) ??
+          (params.context.params.abortSignal?.aborted ? "aborted" : undefined));
+    emitTrustedDiagnosticEvent({
+      type: "model.call.error",
+      ...ended,
+      errorCategory:
+        (isFailoverError(failure.error) ? failure.error.reason : undefined) ??
+        failureKind ??
+        diagnosticErrorCategory(failure.error),
+      ...(failureKind ? { failureKind } : {}),
+    });
+  };
+  const openStep = (): void => {
+    closeStep();
+    stepsSeen = true;
+    const startedAtStep = nextStepStartAt ?? now();
+    nextStepStartAt = undefined;
+    step = {
+      callId: `${params.context.params.runId}:claude-cli:${crypto.randomUUID()}`,
+      trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(trace)),
+      startedAt: startedAtStep,
+    };
+    emitTrustedDiagnosticEvent({ type: "model.call.started", ...stepFields(step) });
+  };
 
   const baseModelContent = (): DiagnosticModelCallContent | undefined => {
     if (!capture.anyModelContent) {
@@ -418,6 +530,67 @@ export function createClaudeCliModelCallDiagnostics(params: {
   });
 
   return {
+    /** Parent of a tool call that starts now: the open API step, else the run. */
+    currentParentTrace: (): DiagnosticTraceContext | undefined => step?.trace ?? runTrace,
+    /**
+     * The CLI accepted the turn's request (the process is up, or the warm one
+     * was reused). Spawn time is reported as its own stage, not as step time.
+     */
+    observeRequestSent: (): void => {
+      if (!started || terminalEmitted || stepsSeen || requestSentAt !== undefined) {
+        return;
+      }
+      requestSentAt = now();
+      nextStepStartAt = requestSentAt;
+      emitTrustedDiagnosticEvent({
+        type: "context.stages",
+        runId: params.context.params.runId,
+        ...(params.context.params.sessionKey
+          ? { sessionKey: params.context.params.sessionKey }
+          : {}),
+        sessionId: params.context.params.sessionId,
+        stages: [
+          ...(startedAt > preparedAt
+            ? [{ name: CLI_LANE_QUEUE_STAGE, startedAt: preparedAt, endedAt: startedAt }]
+            : []),
+          { name: CLI_PROCESS_START_STAGE, startedAt, endedAt: requestSentAt },
+        ],
+        trace: freezeDiagnosticTraceContext(
+          createChildDiagnosticTraceContext(runTrace ?? trace),
+        ),
+      });
+    },
+    observeStep: (event: CliStepEvent): void => {
+      if (!started || terminalEmitted) {
+        return;
+      }
+      switch (event.kind) {
+        case "message_start":
+          openStep();
+          if (step && event.usage) {
+            step.startUsage = event.usage;
+          }
+          break;
+        case "content":
+          if (step) {
+            step.firstContentAt ??= now();
+          }
+          break;
+        case "message_delta":
+          if (step && event.usage) {
+            step.deltaUsage = event.usage;
+          }
+          break;
+        case "message_stop":
+          closeStep();
+          break;
+        case "tool_result":
+          if (!step) {
+            nextStepStartAt = now();
+          }
+          break;
+      }
+    },
     emitStarted: (): void => {
       if (started) {
         return;
@@ -475,6 +648,7 @@ export function createClaudeCliModelCallDiagnostics(params: {
       if (!started || terminalEmitted) {
         return;
       }
+      closeStep();
       terminalEmitted = true;
       emitTrustedDiagnosticEventWithPrivateData(
         {
@@ -493,6 +667,7 @@ export function createClaudeCliModelCallDiagnostics(params: {
       if (!started || terminalEmitted) {
         return;
       }
+      closeStep({ error });
       terminalEmitted = true;
       const failureKind =
         isFailoverError(error) && error.reason === "timeout"

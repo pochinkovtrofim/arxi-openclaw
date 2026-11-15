@@ -160,7 +160,11 @@ export async function executeCliProcess(params: {
           ),
         onSessionId: params.observeForkSuccessor,
         onNativeTools: context.preparedBackend.mcpClientGrantCapture?.captureNativeTools,
+        // A spawned CLI serves its prompt once it has started up and connected its
+        // tools; that startup stays in cli-process-start, out of step one.
+        onSystemInit: params.diagnostics?.observeRequestSent,
         onAssistantMessage: params.diagnostics?.observeAssistantMessage,
+        onStep: params.diagnostics?.observeStep,
         onUsage: params.diagnostics?.observeUsage,
         onAttributedSubagentProgress: (parentToolUseId) => {
           if (!params.events.isActiveForegroundAgentTool(parentToolUseId)) {
@@ -282,6 +286,7 @@ export async function executeCliProcess(params: {
           params.cliSessionIdToUse === undefined && context.openClawHistoryPrompt !== undefined,
         sessionId: params.resolvedSessionId,
         noOutputTimeoutMs: params.noOutputTimeoutMs,
+        onRequestSent: params.diagnostics?.observeRequestSent,
         consumeStdout: (chunk) => {
           consumeStdout(chunk);
           const errorText = streamingParser?.getErrorText();

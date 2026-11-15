@@ -1,0 +1,62 @@
+import type { createStageTimingTracker, StageTimingSummary } from "../shared/stage-timing.js";
+import { emitTrustedDiagnosticEvent, type DiagnosticContextStage } from "./diagnostic-events.js";
+import {
+  createChildDiagnosticTraceContext,
+  freezeDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+} from "./diagnostic-trace-context.js";
+
+/**
+ * Places each recorded stage on the wall clock. A summary measures from its
+ * tracker's start, so that start is the summary's end minus its total.
+ */
+export function placeStageTimings(
+  summary: StageTimingSummary,
+  endedAt: number,
+): DiagnosticContextStage[] {
+  const trackerStartedAt = endedAt - summary.totalMs;
+  return summary.stages.map((stage) => ({
+    name: stage.name,
+    startedAt: trackerStartedAt + stage.elapsedMs - stage.durationMs,
+    endedAt: trackerStartedAt + stage.elapsedMs,
+  }));
+}
+
+/**
+ * Reports a run's preparation stages once, when its runtime hands the first
+ * request to the model, so the work trace shows where the time before the
+ * model went. Every runner (embedded, CLI, Codex app-server) reports through
+ * this one implementation, and a test pins that each one does. Each attempt of
+ * a run (a retry, a fallback) reports its own. Checkpoint stages are contiguous;
+ * a measured stage (bundle-tools, tool-catalog) lies inside the checkpoint after
+ * it (tool-preparation), so a sum must skip measured stages. `finalStage` names
+ * the last checkpoint, from the previous one to the hand-off.
+ */
+export function createRunPrepStageReporter(options: {
+  tracker: Pick<ReturnType<typeof createStageTimingTracker>, "mark" | "snapshot">;
+  runId: string;
+  sessionKey?: string;
+  sessionId?: string;
+  runTrace: DiagnosticTraceContext;
+  finalStage?: string;
+  now?: () => number;
+}): () => void {
+  let reported = false;
+  const now = options.now ?? Date.now;
+  return () => {
+    if (reported) {
+      return;
+    }
+    reported = true;
+    options.tracker.mark(options.finalStage ?? "model-request");
+    const stages = placeStageTimings(options.tracker.snapshot(), now());
+    emitTrustedDiagnosticEvent({
+      type: "context.stages",
+      runId: options.runId,
+      ...(options.sessionKey ? { sessionKey: options.sessionKey } : {}),
+      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      stages,
+      trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(options.runTrace)),
+    });
+  };
+}

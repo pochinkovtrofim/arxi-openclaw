@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { EmbeddedAgentExecutionPhase } from "../agents/embedded-agent-runner/execution-phase.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { pluginInstanceInvocation } from "../plugins/plugin-instance-invocation.js";
@@ -50,6 +50,8 @@ import {
   type DiagnosticToolExecutionLiveness,
 } from "./diagnostic-tool-execution-liveness.js";
 import {
+  createChildDiagnosticTraceContext,
+  freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
@@ -97,6 +99,8 @@ type DiagnosticSessionEvent = DiagnosticBaseEvent &
 
 /** Stages between taking up a turn and its agent run, in order; fixed code labels only. */
 export const REPLY_PREFLIGHT_STAGES = [
+  "gateway_rpc",
+  "command_prepare",
   "admission",
   "prepare",
   "token_estimate",
@@ -111,6 +115,25 @@ type DiagnosticReplyPreflightStageEvent = DiagnosticSessionEvent & {
   type: "reply.preflight.stage";
   stage: (typeof REPLY_PREFLIGHT_STAGES)[number];
   durationMs: number;
+};
+
+/** Stages between the end of an agent run and the reply's hand-off to the channel, in order. */
+export const REPLY_SETTLE_STAGES = [
+  "binding",
+  "session_store",
+  "transcript",
+  "delivery_marker",
+  "compaction",
+  "before_delivery",
+  "send",
+] as const;
+
+/** One finished stage of a reply after its agent run ended. No content. */
+type DiagnosticReplySettleStageEvent = DiagnosticSessionEvent & {
+  type: "reply.settle.stage";
+  stage: (typeof REPLY_SETTLE_STAGES)[number];
+  durationMs: number;
+  runId?: string;
 };
 
 type DiagnosticGatewayRpcEvent = DiagnosticBaseEvent & DiagnosticGatewayRpcFields;
@@ -878,6 +901,7 @@ type DiagnosticTelemetryExporterEvent = DiagnosticBaseEvent & {
 
 export type DiagnosticEventPayload =
   | DiagnosticReplyPreflightStageEvent
+  | DiagnosticReplySettleStageEvent
   | DiagnosticGatewayRpcEvent
   | DiagnosticMemorySearchCompletedEvent
   | (DiagnosticBaseEvent & DiagnosticRuntimeMeasurementFields)
@@ -1071,6 +1095,7 @@ const MAX_ASYNC_DIAGNOSTIC_EVENTS_PER_TURN = 100;
 const DIAGNOSTIC_EVENTS_STATE_KEY = Symbol.for("openclaw.diagnosticEvents.state.v1");
 const ASYNC_DIAGNOSTIC_EVENT_TYPES = new Set<DiagnosticEventPayload["type"]>([
   "reply.preflight.stage",
+  "reply.settle.stage",
   "worker.request",
   "diagnostic.gc",
   "gateway.event_loop.sample",
@@ -1323,6 +1348,14 @@ export async function waitForDiagnosticEventsDrained(): Promise<void> {
   }
 }
 
+function deriveToolSpanId(traceId: string, scopeSpanId: string, toolCallId: string) {
+  const spanId = createHash("sha256")
+    .update(`${traceId}:${scopeSpanId}:${toolCallId}`)
+    .digest("hex")
+    .slice(0, 16);
+  return /^0+$/.test(spanId) ? undefined : spanId;
+}
+
 function enrichDiagnosticEvent(
   state: DiagnosticEventsGlobalState,
   event: DiagnosticDispatchInput,
@@ -1335,6 +1368,24 @@ function enrichDiagnosticEvent(
     enriched[key] = value;
   }
   enriched.trace ??= getActiveDiagnosticTraceContext();
+  if (isToolExecutionEventInput(event)) {
+    // A tool call is its own span. Sharing the enclosing scope's span id makes the
+    // start, the end and the scope's own events collide for exporters and the host,
+    // so a tool event that would carry the scope's span gets a child span instead.
+    // The child is derived from the scope span and the tool call id, so the
+    // start and the terminal of one call land on the same span.
+    const scope = getActiveDiagnosticTraceContext();
+    if (scope?.spanId && enriched.trace?.spanId === scope.spanId) {
+      const toolCallId = (event as { toolCallId?: unknown }).toolCallId;
+      const spanId =
+        typeof toolCallId === "string" && toolCallId.length > 0
+          ? deriveToolSpanId(scope.traceId, scope.spanId, toolCallId)
+          : undefined;
+      enriched.trace = freezeDiagnosticTraceContext(
+        createChildDiagnosticTraceContext(scope, spanId ? { spanId } : {}),
+      );
+    }
+  }
   state.seq += 1;
   enriched.seq = state.seq;
   enriched.ts = Date.now();

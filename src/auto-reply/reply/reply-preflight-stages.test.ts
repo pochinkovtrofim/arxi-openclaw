@@ -67,3 +67,44 @@ it("closes the pre-run compaction step with the part that ran last", () => {
     ["compaction", 30_000],
   ]);
 });
+
+it("pins the closed stage list", async () => {
+  const { REPLY_PREFLIGHT_STAGES } = await import("../../infra/diagnostic-events.js");
+  expect([...REPLY_PREFLIGHT_STAGES]).toEqual([
+    "gateway_rpc",
+    "command_prepare",
+    "admission",
+    "prepare",
+    "token_estimate",
+    "memory_flush",
+    "replan",
+    "compaction",
+    "run_admission",
+  ]);
+});
+
+it("covers the Gateway's receipt through admission without a gap, one child span each", () => {
+  vi.useFakeTimers({ now: 50_000 });
+  const trace = createDiagnosticTraceContext();
+  runWithDiagnosticTraceContext(trace, () => {
+    const stages = createReplyPreflightStages({ startedAt: 49_000 });
+    vi.advanceTimersByTime(300);
+    stages.mark("gateway_rpc");
+    vi.advanceTimersByTime(40);
+    stages.mark("command_prepare");
+    vi.advanceTimersByTime(5);
+    stages.mark("admission");
+  });
+  const events = emitTrustedDiagnosticEvent.mock.calls.map(([event]) => event);
+  expect(events.map((event) => [event.stage, event.durationMs])).toEqual([
+    ["gateway_rpc", 1_300],
+    ["command_prepare", 40],
+    ["admission", 5],
+  ]);
+  const spans = events.map((event) => event.trace.spanId);
+  expect(new Set(spans).size).toBe(3);
+  expect(spans).not.toContain(trace.spanId);
+  for (const event of events) {
+    expect(event.trace).toMatchObject({ traceId: trace.traceId, parentSpanId: trace.spanId });
+  }
+});

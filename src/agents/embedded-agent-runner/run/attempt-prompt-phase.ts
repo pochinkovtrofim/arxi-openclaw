@@ -1,4 +1,5 @@
 import { formatErrorMessage } from "../../../infra/errors.js";
+import { createRunPrepStageReporter } from "../../../infra/run-prep-stages.js";
 import {
   mergeAgentRunAttemptTerminal,
   projectAgentRunAttemptTerminal,
@@ -38,7 +39,6 @@ import {
   submitEmbeddedAttemptPrompt,
 } from "./attempt-prompt-submit.js";
 import { observeEmbeddedAttemptPrompt } from "./attempt-prompt-support.js";
-import { createFirstModelRequestStageReporter } from "./attempt-stage-timing.js";
 import type { PreparedStreamRuntime } from "./attempt-stream-runtime.types.js";
 import { removeTrailingMidTurnPrecheckAssistantError } from "./attempt-transcript-helpers.js";
 import {
@@ -189,7 +189,7 @@ export async function runEmbeddedAttemptPromptPhase(
   // Contiguous checkpoints up to the attempt's primary model request, reported
   // with it. A pre-prompt compaction request is not the primary one.
   const markStage = (name: string) => input.setup.prepStages.mark(name);
-  const reportPreparationStages = createFirstModelRequestStageReporter({
+  const reportPreparationStages = createRunPrepStageReporter({
     tracker: input.setup.prepStages,
     runId: attempt.runId,
     ...(attempt.sessionKey ? { sessionKey: attempt.sessionKey } : {}),

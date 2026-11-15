@@ -253,6 +253,8 @@ export type CliBackendExecuteContext = {
   toolAvailability?: CliBackendToolAvailability;
   /** Exact host-owned reusable process lifecycle and current-turn admission. */
   liveSession?: CliBackendLiveSessionCapability;
+  /** Called once the backend process has accepted this turn's request, for timing only. */
+  onRequestSent?: () => void;
   /** Offers same-turn input for this run; the host drops it when the run closes. */
   registerMessageInjection?: (injection: CliBackendMessageInjection) => void;
   /** Closure-bound approval capability; retained copies fail after the run closes. */

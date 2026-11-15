@@ -492,6 +492,9 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
                 threadId: prepared.resolvedThreadId,
                 runContext,
                 ...(gatewayMessage.trace ? { diagnosticTrace: gatewayMessage.trace } : {}),
+                ...(params.rpcReceivedAt !== undefined
+                  ? { rpcReceivedAt: params.rpcReceivedAt }
+                  : {}),
                 clientCaps,
                 gatewayUiCommandTarget,
                 approvalReviewerDeviceId: callerContext.ApprovalReviewerDeviceId,

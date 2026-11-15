@@ -2,14 +2,38 @@ import {
   embeddedAgentLog,
   type EmbeddedRunAttemptParamsV2,
 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  createDiagnosticTraceContextFromActiveScope,
+  createRunPrepStageReporter,
+  freezeDiagnosticTraceContext,
+} from "openclaw/plugin-sdk/diagnostic-runtime";
 import { createStageTimingTracker, formatStageTimings } from "openclaw/plugin-sdk/time-runtime";
 import { isCodexAppServerProfilerEnabled } from "./profiler-flag.js";
 
 /** Records startup before the native turn owns inference and tool execution. */
 export function createCodexAttemptPreparationTiming(
-  params: Pick<EmbeddedRunAttemptParamsV2, "runId" | "sessionId" | "sessionKey" | "config">,
+  params: Pick<
+    EmbeddedRunAttemptParamsV2,
+    "runId" | "sessionId" | "sessionKey" | "config" | "diagnosticTrace"
+  >,
 ) {
   const tracker = createStageTimingTracker();
+  const runTrace = freezeDiagnosticTraceContext(
+    params.diagnosticTrace ?? createDiagnosticTraceContextFromActiveScope(),
+  );
+  const stageIdentity = {
+    runId: params.runId,
+    ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),
+    ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+    runTrace,
+  };
+  // The work trace gets the same contiguous stages the slow-start log prints:
+  // run preparation up to the native turn, then the native turn/start request.
+  const reportPreparationStages = createRunPrepStageReporter({
+    tracker,
+    ...stageIdentity,
+    finalStage: "native-turn-handoff",
+  });
   const profilerEnabled = isCodexAppServerProfilerEnabled(params.config);
   const totalWarnMs = profilerEnabled ? 1_000 : 10_000;
   const stageWarnMs = profilerEnabled ? 500 : 5_000;
@@ -49,7 +73,28 @@ export function createCodexAttemptPreparationTiming(
       }
     },
     ready() {
+      reportPreparationStages();
       log("native-turn-handoff", "ready");
+    },
+    /**
+     * Times the native turn/start request, which runs from the model call's
+     * start to the point the native runtime has accepted the turn. The first
+     * request reports its own stage; a retry would only stretch it.
+     */
+    timeNativeTurnStart<T>(start: () => Promise<T>): () => Promise<T> {
+      const turnStartTracker = createStageTimingTracker();
+      const reportTurnStart = createRunPrepStageReporter({
+        tracker: turnStartTracker,
+        ...stageIdentity,
+        finalStage: "native-turn-start",
+      });
+      return async () => {
+        try {
+          return await start();
+        } finally {
+          reportTurnStart();
+        }
+      };
     },
   };
 }

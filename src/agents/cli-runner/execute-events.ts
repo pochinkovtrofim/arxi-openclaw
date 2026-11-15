@@ -2,6 +2,12 @@ import { projectAgentToolActivity } from "../../infra/agent-activity-events.js";
 import { emitAgentEvent, type AgentEventStream } from "../../infra/agent-events.js";
 import { emitTrustedDiagnosticEvent } from "../../infra/diagnostic-events.js";
 import { markToolExecutionLivenessDiagnosticEvent } from "../../infra/diagnostic-tool-execution-liveness.js";
+import {
+  createChildDiagnosticTraceContext,
+  type DiagnosticTraceContext,
+  freezeDiagnosticTraceContext,
+  getActiveDiagnosticTraceContext,
+} from "../../infra/diagnostic-trace-context.js";
 import { projectProgressCardChannelUpdate } from "../../session-cards/progress-card-channel-summary.js";
 import { isAgentPlanProgressToolName } from "../../session-cards/progress-card-input.js";
 import { registerListener } from "../../shared/listeners.js";
@@ -34,7 +40,18 @@ export function createCliEventHandlers(params: {
   context: PreparedCliRunContext;
   toolTracking: CliToolTracking;
   getRunState: () => { failed: boolean; error: unknown };
+  /** The open model step's trace; tool spans nest under it, else under the run. */
+  getStepTrace?: () => DiagnosticTraceContext | undefined;
 }) {
+  // The run's trace, captured while its scope is active: later callbacks can run
+  // outside that scope, and a tool span must never reuse the run's own span id.
+  const runTrace = getActiveDiagnosticTraceContext();
+  const newToolTrace = (): DiagnosticTraceContext | undefined => {
+    const parent = params.getStepTrace?.() ?? runTrace;
+    return parent
+      ? freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(parent))
+      : undefined;
+  };
   const context = params.context;
   const runParams = context.params;
   const emitLiveEvents = runParams.executionMode !== "side-question";
@@ -103,7 +120,12 @@ export function createCliEventHandlers(params: {
   const toolSummaryNames = new Set<string>();
   const activeParsedTools = new Map<
     string,
-    { startedAt: number; toolName: string; kind: CliToolUseStartDelta["kind"] }
+    {
+      startedAt: number;
+      toolName: string;
+      kind: CliToolUseStartDelta["kind"];
+      trace?: DiagnosticTraceContext;
+    }
   >();
   const recordToolSummary = (event: { toolCallId: string; name: string }, failed: boolean) => {
     let current = toolSummaryById.get(event.toolCallId);
@@ -236,10 +258,12 @@ export function createCliEventHandlers(params: {
   };
   const emitParsedToolUseStart = (event: CliToolUseStartDelta) => {
     const startedAt = Date.now();
+    const trace = newToolTrace();
     activeParsedTools.set(event.toolCallId, {
       startedAt,
       toolName: event.name,
       kind: event.kind,
+      ...(trace ? { trace } : {}),
     });
     const diagnosticEvent = {
       type: "tool.execution.started",
@@ -251,6 +275,7 @@ export function createCliEventHandlers(params: {
       toolSource: resolveCliToolSource(event.name, event.kind),
       toolOwner: "cli-runner",
       toolCallId: event.toolCallId,
+      ...(trace ? { trace } : {}),
     } as const;
     // Claude enforces this MCP response timeout. Keep recovery behind that
     // deadline while the request is still in the CLI's own tool runtime.
@@ -296,7 +321,11 @@ export function createCliEventHandlers(params: {
       runState.failed &&
       activeTool !== undefined &&
       activeTool.kind !== "server_tool_use";
+    // A terminal without its start (a result the parser never saw start) still
+    // gets a span of its own rather than the run's.
+    const trace = activeTool?.trace ?? newToolTrace();
     const diagnosticBase = {
+      ...(trace ? { trace } : {}),
       runId: runParams.runId,
       sessionId: runParams.sessionId,
       ...(runParams.sessionKey ? { sessionKey: runParams.sessionKey } : {}),

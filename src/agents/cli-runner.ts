@@ -59,6 +59,7 @@ import {
 } from "./cli-runner/delivery-evidence.js";
 import { createCliFailoverError } from "./cli-runner/exit-error.js";
 import { cliBackendLog } from "./cli-runner/log.js";
+import { createCliPrepStages, type CliPrepStages } from "./cli-runner/prep-stages.js";
 import {
   runClaudeCliAgentTurnWithDiagnostics,
   type ClaudeCliRunDiagnosticLifecycle,
@@ -138,6 +139,7 @@ async function runCliAgentInternal(
   params: RunCliAgentParams,
   diagnosticLifecycle?: ClaudeCliRunDiagnosticLifecycle,
 ): Promise<EmbeddedAgentRunResult> {
+  const prepStages = createCliPrepStages(params);
   assertAgentRunLifecycleGenerationCurrent(params.lifecycleGeneration!);
   // The hook gate must fire before prepareCliRunContext — that call allocates
   // backend resources released only by runPreparedCliAgent's try…finally.
@@ -168,6 +170,7 @@ async function runCliAgentInternal(
             (reason) => generationAbortController.abort(reason),
           )
         : undefined;
+    prepStages.mark("run-admission");
     const hookResult = await runCliBeforeAgentReply(params, assertCurrent);
     if (hookResult) {
       return hookResult;
@@ -177,6 +180,7 @@ async function runCliAgentInternal(
       params.requesterModel,
       params.mapOperatorAuthorizationError,
     );
+    prepStages.mark("before-agent-reply-hook");
     const abortSignals = [
       params.abortSignal,
       modelExecution?.signal,
@@ -193,7 +197,7 @@ async function runCliAgentInternal(
     const { prepareCliRunContext } = await import("./cli-runner/prepare.runtime.js");
     let context: PreparedCliRunContext;
     try {
-      context = await prepareCliRunContext(runParams);
+      context = await prepareCliRunContext(runParams, { markStage: prepStages.mark });
     } catch (error) {
       await settleCliPreparationError(error, runParams);
       throw error;
@@ -209,7 +213,7 @@ async function runCliAgentInternal(
     // Settlement owns post-commit tolerance: an authority loss after the final
     // reply commits records a warning and stays successful (#170757); authority
     // checks live at the protected effect boundaries in the run params instead.
-    return await runPreparedCliAgent(context, diagnosticLifecycle);
+    return await runPreparedCliAgent(context, diagnosticLifecycle, prepStages);
   } finally {
     generation?.release();
     modelExecution?.release();
@@ -219,13 +223,14 @@ async function runCliAgentInternal(
 export async function runPreparedCliAgent(
   context: PreparedCliRunContext,
   diagnosticLifecycle?: ClaudeCliRunDiagnosticLifecycle,
+  prepStages?: CliPrepStages,
 ): Promise<EmbeddedAgentRunResult> {
   return await settlePreparedCliRun({
     context,
     diagnosticLifecycle,
     run: (complete) =>
       runWithCliHistoryWriter(context.cliHistoryWriter, () =>
-        runPreparedCliAgentOwned(context, complete, diagnosticLifecycle),
+        runPreparedCliAgentOwned(context, complete, diagnosticLifecycle, prepStages),
       ),
   });
 }
@@ -234,6 +239,7 @@ async function runPreparedCliAgentOwned(
   context: PreparedCliRunContext,
   complete: (result: EmbeddedAgentRunResult) => void,
   diagnosticLifecycle?: ClaudeCliRunDiagnosticLifecycle,
+  prepStages?: CliPrepStages,
 ): Promise<EmbeddedAgentRunResult> {
   let executePreparedCliRun: typeof import("./cli-runner/execute.runtime.js").executePreparedCliRun;
   const { params } = context;
@@ -406,11 +412,14 @@ async function runPreparedCliAgentOwned(
     const output = await executePreparedCliRun(
       attemptContext,
       cliSessionIdToUse,
-      diagnosticLifecycle
+      diagnosticLifecycle || prepStages
         ? {
-            onPhase: diagnosticLifecycle.setPhase,
-            onPromptPrepared: (prompt) =>
-              diagnosticLifecycle.publishCapturedContent({ userPrompt: prompt }),
+            ...(diagnosticLifecycle ? { onPhase: diagnosticLifecycle.setPhase } : {}),
+            onPromptPrepared: (prompt) => {
+              diagnosticLifecycle?.publishCapturedContent({ userPrompt: prompt });
+              // The request is composed and about to queue for the CLI process.
+              prepStages?.handOff({ context, historyMessages });
+            },
           }
         : undefined,
     );
@@ -511,7 +520,9 @@ async function runPreparedCliAgentOwned(
 
   const executeRun = async (): Promise<EmbeddedAgentRunResult> => {
     ({ executePreparedCliRun } = await import("./cli-runner/execute.runtime.js"));
+    prepStages?.mark("execution-runtime-load");
     historyMessages = needsHookHistory ? await loadCliSessionHistoryMessages(params) : [];
+    prepStages?.mark("hook-history");
     const llmInputEvent = {
       runId: params.runId,
       sessionId: params.sessionId,
@@ -563,9 +574,11 @@ async function runPreparedCliAgentOwned(
       modelId: context.modelId,
       warn: (message) => log.warn(message),
     });
+    prepStages?.mark("context-engine-bootstrap");
     const contextEngineHistoryMessages = context.contextEngine
       ? await loadCliSessionContextEngineMessages(params)
       : [];
+    prepStages?.mark("context-engine-history");
     const finishCliAttempt = async (
       result: Awaited<ReturnType<typeof executeCliAttempt>>,
       fallbackCliSessionId?: string,
@@ -666,6 +679,7 @@ async function runPreparedCliAgentOwned(
       },
       buildAgentHookContext(hookContext),
     );
+    prepStages?.mark("before-agent-run-hooks");
     if (block) {
       return finishBlockedRun(block.message, block.blockedBy, block.heldReason);
     }
@@ -676,6 +690,7 @@ async function runPreparedCliAgentOwned(
       ctx: hookContext,
       hookRunner,
     });
+    prepStages?.mark("user-turn-record");
     return await runCliRecovery({
       context,
       executeAttempt: executeCliAttempt,

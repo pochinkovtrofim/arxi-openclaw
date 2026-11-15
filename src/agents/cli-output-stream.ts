@@ -44,6 +44,7 @@ import {
   supportsCliJsonlToolEvents,
 } from "./cli-output-records.js";
 import { appendCliResultText, recordItemText, withCliRawFinalText } from "./cli-output-results.js";
+import { createClaudeStepObserver } from "./cli-output-steps.js";
 import {
   CLI_STREAM_JSON_OUTPUT_LIMITS,
   frameBoundedCliJsonlChunk,
@@ -98,6 +99,8 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
     Boolean(params.onCommentaryText) && supportsCliJsonlToolEvents(params);
   const thinkingTracker = createThinkingTracker();
   const claudeStreamJson = isClaudeStreamJsonDialect(params);
+  const observeClaudeStep =
+    claudeStreamJson && params.onStep ? createClaudeStepObserver(params.onStep) : undefined;
   let taggedReasoningRouter = createLeadingTaggedReasoningRouter();
   let currentTaggedReasoningText = "";
 
@@ -323,12 +326,16 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
     if (attributedParentToolUseId) {
       params.onAttributedSubagentProgress?.(attributedParentToolUseId);
     }
+    if (observeClaudeStep && !isClaudeSubagentRecord(parsed)) {
+      observeClaudeStep(parsed);
+    }
     if (
       claudeStreamJson &&
       parsed.type === "system" &&
       parsed.subtype === "init" &&
       !isClaudeSubagentRecord(parsed)
     ) {
+      params.onSystemInit?.();
       try {
         params.onNativeTools?.(parsed.tools);
       } catch (error) {

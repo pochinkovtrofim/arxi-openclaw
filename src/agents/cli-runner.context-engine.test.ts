@@ -214,7 +214,9 @@ describe("runPreparedCliAgent context engine lifecycle", () => {
     prepareMock.mockResolvedValue(context);
 
     expect((await runCliAgent(context.params)).payloads).toBeUndefined();
-    expect(executeMock).toHaveBeenCalledWith(context, undefined, undefined);
+    expect(executeMock).toHaveBeenCalledWith(context, undefined, {
+      onPromptPrepared: expect.any(Function),
+    });
     expect(beforeReplyMock).not.toHaveBeenCalled();
     expect(hookRunnerMock).not.toHaveBeenCalled();
     expect(hookHistoryMock).not.toHaveBeenCalled();
@@ -262,7 +264,9 @@ describe("runPreparedCliAgent context engine lifecycle", () => {
 
     expect(beforeReplyMock).not.toHaveBeenCalled();
     expect(result.meta.agentMeta?.sessionId).toBe("existing-external-cli-session");
-    expect(executeMock).toHaveBeenCalledWith(context, "existing-external-cli-session", undefined);
+    expect(executeMock).toHaveBeenCalledWith(context, "existing-external-cli-session", {
+      onPromptPrepared: expect.any(Function),
+    });
     expect(hookRunnerMock).not.toHaveBeenCalled();
     expect(hookHistoryMock).not.toHaveBeenCalled();
     expect(historyMock).not.toHaveBeenCalled();
