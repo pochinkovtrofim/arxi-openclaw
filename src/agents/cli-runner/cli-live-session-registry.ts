@@ -1,4 +1,5 @@
 import { sha256Hex } from "../../infra/crypto-digest.js";
+import { isSubagentSessionKey } from "../../sessions/session-key-utils.js";
 import type {
   CliBackendLiveSessionCapability,
   CliBackendLiveSessionCloseReason,
@@ -17,6 +18,22 @@ const MAX_LIVE_SESSIONS = 16;
 // process fits. Background, cron and completion sessions keep the backend's own
 // shorter default, since there can be many of them.
 export const PERSON_TURN_LIVE_SESSION_IDLE_MS = 60 * 60 * 1_000;
+
+// A person's own turn, or a background turn that continues their conversation.
+// Delegated runs keep user provenance (Gateway `agent` calls carry
+// trigger "user") but are not that conversation, and their processes are many.
+function isPersonConversationRun(params: PreparedCliRunContext["params"]): boolean {
+  if (params.trigger !== "user" && params.continuesConversation !== true) {
+    return false;
+  }
+  return (
+    !isSubagentSessionKey(params.sessionKey) &&
+    !params.spawnedBy &&
+    !params.trustedInternalHandoff &&
+    params.inputProvenance?.kind !== "inter_session" &&
+    params.inputProvenance?.kind !== "internal_system"
+  );
+}
 
 type CliLiveSessionOwner = {
   backendId: string;
@@ -230,7 +247,7 @@ export function createCliLiveSessionCapability(params: {
 
   return Object.freeze({
     fingerprint,
-    ...(params.context.params.trigger === "user"
+    ...(isPersonConversationRun(params.context.params)
       ? { idleTimeoutMs: PERSON_TURN_LIVE_SESSION_IDLE_MS }
       : {}),
     current: () => {

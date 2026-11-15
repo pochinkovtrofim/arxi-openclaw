@@ -4,6 +4,7 @@ import type {
   CliBackendLiveSessionCapability,
   CliBackendLiveSessionHandle,
 } from "../../plugins/cli-backend.types.js";
+import type { InputProvenance } from "../../sessions/input-provenance.js";
 import { formatSkillsForPromptCore } from "../../skills/loading/skill-contract.js";
 import { materializeSkill } from "../../skills/loading/skill-materializer.js";
 import type { SkillSnapshot } from "../../skills/types.js";
@@ -42,12 +43,15 @@ async function createOwner(
     skillsSnapshot?: SkillSnapshot;
     capture?: { token: string; key: string };
     requiredGeneration?: string;
-    trigger?: "user" | "cron";
+    trigger?: "user" | "cron" | "heartbeat";
+    continuesConversation?: boolean;
+    sessionKey?: string;
+    inputProvenance?: InputProvenance;
   } = {},
 ) {
   const index = ++nextOwnerId;
   const sessionId = options.sessionId ?? `registry-session-${index}`;
-  const sessionKey = `agent:main:${sessionId}`;
+  const sessionKey = options.sessionKey ?? `agent:main:${sessionId}`;
   const context = buildPreparedCliRunContext({
     provider: "claude-cli",
     agentId: "main",
@@ -65,6 +69,10 @@ async function createOwner(
   context.params.skillsSnapshot = options.skillsSnapshot;
   if (options.trigger) {
     context.params.trigger = options.trigger;
+  }
+  context.params.continuesConversation = options.continuesConversation;
+  if (options.inputProvenance) {
+    context.params.inputProvenance = options.inputProvenance;
   }
   context.params.agentAccountId = options.agentAccountId;
   context.effectiveAuthProfileId = options.authProfileId;
@@ -189,11 +197,19 @@ describe("generic plugin-owned live session registry", () => {
 
   it("keeps a person's conversation process an hour between turns and leaves background runs to the backend", async () => {
     const person = await createOwner({ trigger: "user" });
+    const continued = await createOwner({ trigger: "heartbeat", continuesConversation: true });
     const background = await createOwner({ trigger: "cron" });
+    const subagent = await createOwner({
+      trigger: "user",
+      sessionKey: "agent:main:subagent:registry-child",
+    });
+    const sent = await createOwner({ trigger: "user", inputProvenance: { kind: "inter_session" } });
 
     expect(person.capability.idleTimeoutMs).toBe(PERSON_TURN_LIVE_SESSION_IDLE_MS);
-    expect(PERSON_TURN_LIVE_SESSION_IDLE_MS).toBe(60 * 60 * 1_000);
+    expect(continued.capability.idleTimeoutMs).toBe(PERSON_TURN_LIVE_SESSION_IDLE_MS);
     expect(background.capability.idleTimeoutMs).toBeUndefined();
+    expect(subagent.capability.idleTimeoutMs).toBeUndefined();
+    expect(sent.capability.idleTimeoutMs).toBeUndefined();
   });
 
   it("keeps owner identity deterministic and isolated across sessions", () => {
