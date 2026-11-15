@@ -60,6 +60,28 @@ describe("runCliTurnCompactionLifecycle backend ownership", () => {
     expect(updatedEntry?.cliSessionBindings?.["claude-cli"]?.sessionId).toBe("native-session");
   });
 
+  it("still refuses to compact a model-locked session even when the backend owns compaction", async () => {
+    const resolveBackend = vi.fn(() => ({
+      id: "claude-cli",
+      config: { command: "claude" },
+      bundleMcp: true,
+      ownsNativeCompaction: true,
+    }));
+    const scenario = await prepareCompactionScenario({
+      suffix: "owner-backend-locked-session",
+      tmpDir,
+      provider: "anthropic",
+      model: "claude-opus-5-5",
+      sessionEntry: { modelSelectionLocked: true },
+      deps: { resolveCliBackendConfig: resolveBackend },
+    });
+
+    await expect(scenario.run({ cliBackendId: "claude-cli" })).rejects.toThrow(
+      "CLI compaction cannot replace a model-locked native harness runtime",
+    );
+    expect(scenario.compactCalls).toHaveLength(0);
+  });
+
   it("keeps embedded compaction when no CLI backend ran the turn", async () => {
     const resolveBackend = vi.fn(() => null);
     const scenario = await prepareCompactionScenario({
