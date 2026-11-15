@@ -5,6 +5,7 @@ import { createDeferredCore, type Deferred } from "../../../shared/deferred.js";
 import { GatewayClientRegistry } from "../client-registry.js";
 import type { GatewayWsClient } from "../ws-types.js";
 import { createGatewayAuthenticatedRequestDispatcher } from "./authenticated-request-dispatch.js";
+import type { GatewayFrameReceipt } from "./frame-receipt.js";
 import type { GatewayWsMessageHandlerParams } from "./message-handler-types.js";
 
 export type GatewayTestResponseFrame = {
@@ -107,8 +108,15 @@ export function createDispatchTestHarness(
     awaitResponseFrame,
     close,
     dispatcher: {
-      dispatch: (frame: unknown, client: GatewayWsClient) =>
-        dispatcher.dispatch(frame, client, Buffer.byteLength(JSON.stringify(frame))),
+      dispatch: (frame: unknown, client: GatewayWsClient, frameReceipt?: GatewayFrameReceipt) =>
+        dispatcher.dispatch(
+          frame,
+          client,
+          Buffer.byteLength(JSON.stringify(frame)),
+          undefined,
+          undefined,
+          frameReceipt,
+        ),
     },
     logGateway,
     send,

@@ -61,7 +61,7 @@ import { authenticateGatewayConnect } from "./connect-auth.js";
 import { authorizeGatewayConnectDevice } from "./connect-device-pairing.js";
 import { publishConnectModelCatalog } from "./connect-model-catalog.js";
 import { attachAuthenticatedGatewayConnect } from "./connect-session.js";
-import { runWithGatewayFrameReceipt } from "./frame-receipt.js";
+import { runWithGatewayFrameReceipt, takeGatewayFrameReceipt } from "./frame-receipt.js";
 import { resolveHandshakeBrowserSecurityContext } from "./handshake-auth-helpers.js";
 import type {
   GatewayConnectPhaseContext,
@@ -411,6 +411,8 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
         client,
         rawDataByteLength(data),
         admission,
+        undefined,
+        takeGatewayFrameReceipt(),
       );
     } catch (err) {
       await releasePendingNodePairingCleanup();
