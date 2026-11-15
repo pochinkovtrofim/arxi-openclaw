@@ -1,5 +1,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { GatewayPreflightStep, PreflightStepMoment } from "../../../infra/diagnostic-events.js";
+import type {
+  GatewayPreflightStep,
+  PreflightStepMoment,
+} from "../../../infra/diagnostic-events.js";
 
 /** Steps between a request frame's receipt and its handler, each named by where it ends. */
 export type GatewayFrameStep = Extract<
