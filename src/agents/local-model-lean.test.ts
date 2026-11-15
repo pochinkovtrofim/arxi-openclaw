@@ -89,7 +89,7 @@ describe("local model lean tool filtering", () => {
     };
     expect(
       filterLocalModelLeanTools({
-        tools: tools(["read", "image_generate", "video_generate", "browser"]),
+        tools: tools(["read", "image_generate", "video_generate", "browser", "browser_flow"]),
         config: cfg,
         preserveToolNames: ["image_*", "*"],
       }).map((tool) => tool.name),

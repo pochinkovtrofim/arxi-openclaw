@@ -50,6 +50,8 @@ export const EXISTING_SESSION_LIMITS = {
   responseBody: "response body is not supported for existing-session profiles yet.",
   errors:
     "errors is not supported for existing-session profiles; use a managed browser profile to collect page errors, or snapshot to inspect the current page.",
+  flows:
+    "saved flows record only in a managed browser profile; switch to a managed profile to save a flow or run it from the page.",
   requests:
     "requests is not supported for existing-session profiles; use a managed browser profile to collect network requests, or snapshot to inspect the current page.",
   text: "text is not supported for existing-session profiles; use snapshot to read the page, or switch to a managed browser profile for text extraction.",

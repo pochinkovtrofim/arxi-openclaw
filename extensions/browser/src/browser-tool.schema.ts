@@ -53,6 +53,10 @@ const BROWSER_TOOL_ACTIONS = [
   "upload",
   "dialog",
   "act",
+  "flow_save",
+  "flow_run",
+  "flow_list",
+  "flow_delete",
 ] as const;
 
 const BROWSER_TARGETS = ["sandbox", "host", "node"] as const;
@@ -105,7 +109,8 @@ export function resolveBrowserToolCapabilities(params?: {
     actions: actions.filter(
       (action) =>
         (profileCapabilities?.supportsPdf !== false || action !== "pdf") &&
-        (profileCapabilities?.supportsRequests !== false || action !== "requests") &&
+        (profileCapabilities?.supportsRequests !== false ||
+          (action !== "requests" && action !== "flow_save")) &&
         (profileCapabilities?.supportsErrors !== false || action !== "errors") &&
         (profileCapabilities?.supportsPageText !== false || action !== "text") &&
         (profileCapabilities?.supportsEmulation !== false || action !== "emulate") &&
@@ -201,7 +206,9 @@ export function createBrowserToolSchema(capabilities: BrowserToolCapabilities) {
     { description: "act" },
   );
   return Type.Object({
-    action: stringEnum(capabilities.actions),
+    // Saved flows are called through the browser_flow tool, which keeps their
+    // parameters out of this schema.
+    action: stringEnum(capabilities.actions.filter((action) => !action.startsWith("flow_"))),
     target: optionalStringEnum(BROWSER_TARGETS),
     ...(!capabilities.tabBound
       ? {

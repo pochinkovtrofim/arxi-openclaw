@@ -114,6 +114,9 @@ function describeBrowserTool(opts: {
     actions.has("requests")
       ? "Use requests for the recent network log; filter matches URL/type, limit defaults to 50, and clear=true clears the collected log after reading."
       : undefined,
+    actions.has("flow_run")
+      ? "For a task you will repeat on a site, or when open or navigate list a saved flow that fits, use the browser_flow tool instead of driving the page."
+      : undefined,
     actions.has("errors")
       ? "Use errors for page errors; limit defaults to 50, clear=true clears after reading."
       : undefined,

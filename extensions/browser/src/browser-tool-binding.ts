@@ -64,6 +64,10 @@ export const BROWSER_TAB_BOUND_ACTIONS = [
   "tabs",
   "upload",
   "waitfordownload",
+  "flow_save",
+  "flow_run",
+  "flow_list",
+  "flow_delete",
 ] as const;
 
 function bindTargetId(record: Record<string, unknown>, targetId: string): Record<string, unknown> {

@@ -15,6 +15,7 @@ import { AUTOMATIONS_TOOL_NAME } from "./tools/automations-tool-name.js";
 
 const LOCAL_MODEL_LEAN_DENY_TOOL_NAMES = new Set([
   "browser",
+  "browser_flow",
   AUTOMATIONS_TOOL_NAME,
   "image_generate",
   "message",
