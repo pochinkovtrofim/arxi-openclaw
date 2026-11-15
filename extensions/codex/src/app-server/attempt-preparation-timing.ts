@@ -68,6 +68,23 @@ export function createCodexAttemptPreparationTiming(
       log("native-turn-handoff", "ready");
     },
     /**
+     * Times the run's tail once the native turn completed: finalizing its result, the
+     * turn cleanup, then releasing the attempt's tools and leases. `done` reports the
+     * stages, so the seconds between the last model response and the run's end show.
+     */
+    turnSettle() {
+      const settleTracker = createStageTimingTracker();
+      const done = createRunPrepStageReporter({
+        tracker: settleTracker,
+        ...stageIdentity,
+        finalStage: "native-turn-release",
+      });
+      return {
+        mark: (stage: "native-turn-finalize" | "native-turn-cleanup") => settleTracker.mark(stage),
+        done,
+      };
+    },
+    /**
      * Times the native turn/start request, which runs from the model call's
      * start to the point the native runtime has accepted the turn. The first
      * request reports its own stage; a retry would only stretch it.

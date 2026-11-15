@@ -139,3 +139,36 @@ it("closes the pre-run stages once, where the first run attempt starts", () => {
   stages.runStarting();
   expect(onRunStarting).toHaveBeenCalledTimes(1);
 });
+
+it("hands the run's start the steps recorded on the way, then the given ones, once", () => {
+  vi.useFakeTimers({ now: 1_000 });
+  const onRunStarting = vi.fn();
+  const stages = createReplySettleStages({ runId: "run-1", onRunStarting });
+  vi.advanceTimersByTime(5);
+  stages.runStep("run_params");
+  vi.advanceTimersByTime(40);
+  stages.runStep("session_admission");
+  stages.runStarting([{ step: "attempt_dispatch", at: 1_100 }]);
+  stages.runStarting();
+  stages.runStep("auth");
+  expect(onRunStarting).toHaveBeenCalledTimes(1);
+  expect(onRunStarting).toHaveBeenCalledWith([
+    { step: "run_params", at: 1_005 },
+    { step: "session_admission", at: 1_045 },
+    { step: "attempt_dispatch", at: 1_100 },
+  ]);
+});
+
+it("closes nothing for another run inside the turn, then closes for its own run", () => {
+  vi.useFakeTimers({ now: 2_000 });
+  const onRunStarting = vi.fn();
+  const stages = createReplySettleStages({ runId: "run-1", onRunStarting });
+  stages.runStep("run_params");
+  vi.advanceTimersByTime(10);
+  stages.runStep("run_params");
+  // The pre-run memory flush is an embedded run of its own inside the turn's scope.
+  stages.runStarting([{ step: "attempt_dispatch", at: 2_005 }], "flush-run");
+  expect(onRunStarting).not.toHaveBeenCalled();
+  stages.runStarting([], "run-1");
+  expect(onRunStarting).toHaveBeenCalledWith([{ step: "run_params", at: 2_010 }]);
+});

@@ -1,7 +1,9 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import {
   emitTrustedDiagnosticEvent,
+  type PreflightStepMoment,
   type REPLY_SETTLE_STAGES,
+  type RunAdmissionStep,
 } from "../../infra/diagnostic-events.js";
 import {
   createChildDiagnosticTraceContext,
@@ -20,21 +22,39 @@ type ReplySettleStage = (typeof REPLY_SETTLE_STAGES)[number];
 export function createReplySettleStages(params: {
   runId?: string;
   sessionKey?: string;
-  /** Closes the pre-run stages where the agent run begins. */
-  onRunStarting?: () => void;
+  /** Closes the pre-run stages where the agent run begins, with the steps that led there. */
+  onRunStarting?: (steps: ReadonlyArray<PreflightStepMoment>) => void;
 }) {
   const trace = getActiveDiagnosticTraceContext();
   let stageStartedAt: number | undefined;
   let closed = false;
   let runStarted = false;
+  const runSteps: PreflightStepMoment[] = [];
   return {
-    /** The agent run is about to start; the first call closes the pre-run stages. */
-    runStarting: () => {
-      if (runStarted) {
+    /** Records that a step on the way to the agent run finished now; a repeat replaces it. */
+    runStep: (step: RunAdmissionStep) => {
+      if (!runStarted) {
+        const index = runSteps.findIndex((recorded) => recorded.step === step);
+        if (index >= 0) {
+          runSteps.splice(index, 1);
+        }
+        runSteps.push({ step, at: Date.now() });
+      }
+    },
+    /**
+     * The agent run is about to start; the first call closes the pre-run stages with the
+     * steps recorded so far, then `steps` (moments recorded elsewhere, in order). A run with
+     * another id inside the turn (the pre-run memory flush) closes nothing.
+     */
+    runStarting: (steps: ReadonlyArray<PreflightStepMoment> = [], runId?: string) => {
+      if (
+        runStarted ||
+        (runId !== undefined && params.runId !== undefined && runId !== params.runId)
+      ) {
         return;
       }
       runStarted = true;
-      params.onRunStarting?.();
+      params.onRunStarting?.([...runSteps, ...steps]);
     },
     /** Starts the clock where the agent run returned; a later run attempt restarts it. */
     runEnded: () => {

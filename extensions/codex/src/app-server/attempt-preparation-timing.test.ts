@@ -10,6 +10,38 @@ afterEach(() => {
 });
 
 describe("Codex attempt preparation timing", () => {
+  it("reports the run's tail after the native turn, contiguous, on the run's span", async () => {
+    let nowMs = 5_000;
+    vi.spyOn(Date, "now").mockImplementation(() => nowMs);
+    vi.spyOn(diagnostics, "areDiagnosticsEnabledForProcess").mockReturnValue(true);
+    const reported: Extract<diagnostics.DiagnosticEventPayload, { type: "context.stages" }>[] = [];
+    const unsubscribe = diagnostics.onInternalDiagnosticEvent((event) => {
+      if (event.type === "context.stages") {
+        reported.push(event);
+      }
+    });
+    const runTrace = diagnostics.createDiagnosticTraceContext();
+    const settle = runWithDiagnosticTraceContext(runTrace, () =>
+      createCodexAttemptPreparationTiming({ runId: "run-1" }).turnSettle(),
+    );
+    nowMs += 70;
+    settle.mark("native-turn-finalize");
+    nowMs += 25;
+    settle.mark("native-turn-cleanup");
+    nowMs += 10;
+    settle.done();
+    settle.done();
+    await diagnostics.waitForDiagnosticEventsDrained();
+    unsubscribe();
+    expect(reported).toHaveLength(1);
+    expect(reported[0]?.stages).toEqual([
+      { name: "native-turn-finalize", startedAt: 5_000, endedAt: 5_070 },
+      { name: "native-turn-cleanup", startedAt: 5_070, endedAt: 5_095 },
+      { name: "native-turn-release", startedAt: 5_095, endedAt: 5_105 },
+    ]);
+    expect(reported[0]?.trace?.parentSpanId).toBe(runTrace.spanId);
+  });
+
   it.each([
     { flags: [], stageMs: 5_000, totalMs: 11_000 },
     { flags: ["codex.profiler"], stageMs: 500, totalMs: 1_100 },

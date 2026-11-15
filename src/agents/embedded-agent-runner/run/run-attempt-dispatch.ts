@@ -28,7 +28,7 @@ import { withPreparedEmbeddedGatewayTools } from "./attempt-gateway-tools.js";
 import { logAttemptImageMaterialization } from "./attempt-image-diagnostics.js";
 import { resolveEmbeddedAttemptMemoryAudience } from "./attempt-memory-audience.js";
 import { applyResolvedToolPromptFinalizer } from "./attempt-prompt-support.js";
-import { EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE } from "./attempt-stage-timing.js";
+import { closeRunAdmission, EMBEDDED_RUN_ATTEMPT_DISPATCH_STAGE } from "./attempt-stage-timing.js";
 import { prepareAttemptSystemPromptAdditions } from "./attempt-system-prompt-additions.js";
 import { resolveAttemptDispatchApiKey } from "./auth-store.js";
 import { runEmbeddedAttemptWithBackend } from "./backend.js";
@@ -685,6 +685,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
   const rawAttempt = await withPreparedEmbeddedGatewayTools(attemptParams, () => {
     assertActiveRun();
     placement?.assertCurrent();
+    closeRunAdmission(startupStages, params.runId);
     return runEmbeddedAttemptWithBackend(attemptParams, nativeSessionRuntime, params.media);
   })
     .catch((err: unknown): never => {
