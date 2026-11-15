@@ -1,10 +1,10 @@
 import { sha256Hex } from "../../infra/crypto-digest.js";
-import { isSubagentSessionKey } from "../../sessions/session-key-utils.js";
 import type {
   CliBackendLiveSessionCapability,
   CliBackendLiveSessionCloseReason,
   CliBackendLiveSessionHandle,
 } from "../../plugins/cli-backend.types.js";
+import { isSubagentSessionKey } from "../../sessions/session-key-utils.js";
 import { runCliCleanup } from "./cleanup.js";
 import { createCliRunCurrentAssertion } from "./execution-target.js";
 import { createCliFailoverError } from "./exit-error.js";
