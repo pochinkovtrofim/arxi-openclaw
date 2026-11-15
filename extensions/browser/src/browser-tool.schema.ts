@@ -281,50 +281,10 @@ export function createBrowserToolSchema(capabilities: BrowserToolCapabilities) {
           promptText: Type.Optional(Type.String()),
         }
       : {}),
+    // Saved-flow fields ride in one open object, described in the tool text:
+    // a typed object would cost the provider schema budget for every action.
     ...(capabilities.actions.includes("flow_run")
-      ? {
-          flow: Type.Optional(
-            Type.Object(
-              {
-                name: Type.Optional(Type.String({ description: "Flow name: a-z, 0-9, - or _." })),
-                site: Type.Optional(
-                  Type.String({ description: "Site, when two sites share a name." }),
-                ),
-                description: Type.Optional(Type.String()),
-                params: Type.Optional(
-                  Type.Object(
-                    {},
-                    {
-                      additionalProperties: true,
-                      description:
-                        "flow_save: each value you typed or picked, by param name. flow_run: the new values.",
-                    },
-                  ),
-                ),
-                where: Type.Optional(
-                  Type.Object(
-                    {},
-                    {
-                      additionalProperties: true,
-                      description: "Keep records whose field (dotted) contains the value.",
-                    },
-                  ),
-                ),
-                select: Type.Optional(
-                  Type.Array(Type.String(), { description: "Return only these fields (dotted)." }),
-                ),
-                output: Type.Optional(
-                  Type.String({ description: "flow_save: candidate id to save." }),
-                ),
-                via: optionalStringEnum(["auto", "device"] as const, {
-                  description: "device: send from the owner's computer.",
-                }),
-                allowWrite: Type.Optional(Type.Boolean()),
-              },
-              { description: "Saved flow." },
-            ),
-          ),
-        }
+      ? { flow: Type.Optional(Type.Object({}, { additionalProperties: true })) }
       : {}),
     // Legacy flattened act params (preferred: request={...})
     kind: Type.Optional(stringEnum(capabilities.actKinds, { description: actKindDescription })),

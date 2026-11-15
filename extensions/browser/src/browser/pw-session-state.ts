@@ -162,7 +162,6 @@ export function ensurePageState(page: Page): PageState {
     dialogAbortControllers: new Set(),
   };
   pageStates.set(page, state);
-  attachFlowCapture(page);
 
   page.on("console", (msg: ConsoleMessage) => {
     const location = msg.location();
@@ -277,6 +276,9 @@ export function ensurePageState(page: Page): PageState {
     state.pendingDialogs = [];
     pageStates.delete(page);
   });
+
+  // After the page's own listeners: saved flows only read what the page sends.
+  attachFlowCapture(page);
 
   return state;
 }
