@@ -35,7 +35,15 @@ function windowOfRuns(runs: number, perRun: number, boundary: (run: number) => B
       events.push(
         type === "reset"
           ? { type, id, parentId, timestamp: at, reason: "daily", firstKeptEntryId }
-          : { type, id, parentId, timestamp: at, summary: `summary ${run}`, tokensBefore: 10, firstKeptEntryId },
+          : {
+              type,
+              id,
+              parentId,
+              timestamp: at,
+              summary: `summary ${run}`,
+              tokensBefore: 10,
+              firstKeptEntryId,
+            },
       );
       parentId = id;
     }
@@ -105,7 +113,8 @@ describe("bounded active context from the latest boundary", () => {
     ["a compaction that keeps a tail", (): Boundary => ({ type: "compaction", keepFrom: 7 })],
     [
       "a compaction after resets",
-      (run: number): Boundary => (run === 19 ? { type: "compaction", keepFrom: 5 } : { type: "reset" }),
+      (run: number): Boundary =>
+        run === 19 ? { type: "compaction", keepFrom: 5 } : { type: "reset" },
     ],
   ])("builds the same context from far fewer rows after %s", async (_name, boundary) => {
     const { whole, window } = await readBoth(windowOfRuns(20, 10, boundary));

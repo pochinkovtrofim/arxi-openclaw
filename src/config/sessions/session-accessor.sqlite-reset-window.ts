@@ -54,8 +54,8 @@ type ResetMessageWindow = {
   postBoundaryMessagePosition: number;
   boundaryActivePosition: number;
   /**
-   * Context rows lie after this active position: a compaction keeps its whole tail
-   * from its first kept entry; a reset keeps only paired messages (keptMessagePositions).
+   * Context rows lie after this active position: from the boundary's first kept entry
+   * when it names one (the context build selects a reset's kept pairs), else the boundary.
    */
   contextAfterActivePosition: number;
 };
@@ -344,9 +344,7 @@ function findLatestResetMessageWindow(
     }
     const firstKept = unindexedFirstKept ?? indexedFirstKept;
     if (firstKept && firstKept.active_position < latestBoundary.active_position) {
-      if (latestBoundary.event_type === "compaction") {
-        contextAfterActivePosition = firstKept.active_position - 1;
-      }
+      contextAfterActivePosition = firstKept.active_position - 1;
       const candidateRows = iterateSqliteQuerySync(
         projection.database.db,
         db
