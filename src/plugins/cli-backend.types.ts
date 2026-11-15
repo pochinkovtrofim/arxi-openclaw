@@ -201,6 +201,11 @@ export type CliBackendLiveSessionHandle = {
 /** Closure-bound host capability for one admitted reusable-runtime turn. */
 export type CliBackendLiveSessionCapability = {
   fingerprint: string;
+  /**
+   * How long the host wants this process kept between turns. Unset, the backend
+   * keeps its own default.
+   */
+  idleTimeoutMs?: number;
   current(): CliBackendLiveSessionHandle | undefined;
   /** Retires the current process and awaits host-owned cleanup before replacement. */
   restart(): Promise<void>;

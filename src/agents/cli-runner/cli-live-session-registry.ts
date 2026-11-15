@@ -12,6 +12,11 @@ import { cliBackendLog } from "./log.js";
 import type { PreparedCliRunContext } from "./types.js";
 
 const MAX_LIVE_SESSIONS = 16;
+// A person's conversation keeps its process an hour between turns: a respawn
+// costs every first reply after a pause more than a second, and one idle
+// process fits. Background, cron and completion sessions keep the backend's own
+// shorter default, since there can be many of them.
+export const PERSON_TURN_LIVE_SESSION_IDLE_MS = 60 * 60 * 1_000;
 
 type CliLiveSessionOwner = {
   backendId: string;
@@ -225,6 +230,9 @@ export function createCliLiveSessionCapability(params: {
 
   return Object.freeze({
     fingerprint,
+    ...(params.context.params.trigger === "user"
+      ? { idleTimeoutMs: PERSON_TURN_LIVE_SESSION_IDLE_MS }
+      : {}),
     current: () => {
       assertActive();
       const handle = liveSessions.get(ownerKey)?.handle;

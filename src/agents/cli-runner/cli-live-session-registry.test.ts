@@ -19,6 +19,7 @@ import {
   getCliLiveSessionApprovalGrants,
   getCliLiveSessionGeneration,
   hasCliLiveSession,
+  PERSON_TURN_LIVE_SESSION_IDLE_MS,
   restartCliLiveSession,
 } from "./cli-live-session-registry.js";
 import { settlePreparedCliRun } from "./cli-run-settlement.js";
@@ -41,6 +42,7 @@ async function createOwner(
     skillsSnapshot?: SkillSnapshot;
     capture?: { token: string; key: string };
     requiredGeneration?: string;
+    trigger?: "user" | "cron";
   } = {},
 ) {
   const index = ++nextOwnerId;
@@ -61,6 +63,9 @@ async function createOwner(
     "registry-test",
   );
   context.params.skillsSnapshot = options.skillsSnapshot;
+  if (options.trigger) {
+    context.params.trigger = options.trigger;
+  }
   context.params.agentAccountId = options.agentAccountId;
   context.effectiveAuthProfileId = options.authProfileId;
   admissions.push(admission);
@@ -181,6 +186,15 @@ describe("generic plugin-owned live session registry", () => {
       expect(original.close).toHaveBeenCalledOnce();
     },
   );
+
+  it("keeps a person's conversation process an hour between turns and leaves background runs to the backend", async () => {
+    const person = await createOwner({ trigger: "user" });
+    const background = await createOwner({ trigger: "cron" });
+
+    expect(person.capability.idleTimeoutMs).toBe(PERSON_TURN_LIVE_SESSION_IDLE_MS);
+    expect(PERSON_TURN_LIVE_SESSION_IDLE_MS).toBe(60 * 60 * 1_000);
+    expect(background.capability.idleTimeoutMs).toBeUndefined();
+  });
 
   it("keeps owner identity deterministic and isolated across sessions", () => {
     const owner = {
