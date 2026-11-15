@@ -1,6 +1,6 @@
 import { applyToolAvailabilityDescriptions } from "../agents/agent-tools.deferred-followup.js";
 import type { PreparedPairedComputerUse } from "../agents/computer-use-node-capabilities.js";
-import { rebuildOpenClawComputerTool } from "../agents/openclaw-tools.js";
+import { rebuildOpenClawComputerTool } from "../agents/openclaw-tools.assembly.js";
 import { filterRequesterYieldTools } from "../agents/openclaw-tools.requester-yield.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 
