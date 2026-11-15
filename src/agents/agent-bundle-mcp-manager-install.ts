@@ -1,4 +1,5 @@
 import { measurePrepStage } from "../infra/run-prep-stages.js";
+import { logWarn } from "../logger.js";
 import type { BundleMcpServerConfig } from "../plugins/bundle-mcp.types.js";
 import type {
   SessionMcpConfigPublication,
