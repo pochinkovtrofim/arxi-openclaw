@@ -1,7 +1,17 @@
+import { applyToolAvailabilityDescriptions } from "../agents/agent-tools.deferred-followup.js";
 import type { PreparedPairedComputerUse } from "../agents/computer-use-node-capabilities.js";
 import { createOpenClawComputerTool } from "../agents/openclaw-tools.js";
+import { filterRequesterYieldTools } from "../agents/openclaw-tools.requester-yield.js";
 import type { OpenClawToolsOptions } from "../agents/openclaw-tools.types.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
+
+/** Final catalog steps shared by a full build and a computer-only rebuild. */
+export function finalizeScopedTools(
+  tools: AnyAgentTool[],
+  sessionKey: string | undefined,
+): AnyAgentTool[] {
+  return applyToolAvailabilityDescriptions(filterRequesterYieldTools(tools, sessionKey));
+}
 
 /**
  * Re-creates only the computer tool with a prepared paired-node action surface and returns
