@@ -3,6 +3,7 @@ import * as session from "./pw-session.js";
 import { withPageScopedCdpClient } from "./pw-session.page-cdp.js";
 import * as activity from "./pw-tools-core.activity.js";
 import * as downloads from "./pw-tools-core.downloads.js";
+import * as flows from "./pw-tools-core.flows.js";
 import * as interactions from "./pw-tools-core.interactions.js";
 import * as responses from "./pw-tools-core.responses.js";
 import * as snapshot from "./pw-tools-core.snapshot.js";
@@ -38,7 +39,9 @@ export const pwAi = {
   downloadViaPlaywright: downloads.downloadViaPlaywright,
   emulateMediaViaPlaywright: state.emulateMediaViaPlaywright,
   executeActViaPlaywright: interactions.executeActViaPlaywright,
+  flowPageFetchViaPlaywright: flows.flowPageFetchViaPlaywright,
   getConsoleMessagesViaPlaywright: activity.getConsoleMessagesViaPlaywright,
+  getFlowCaptureViaPlaywright: flows.getFlowCaptureViaPlaywright,
   getNetworkRequestsViaPlaywright: activity.getNetworkRequestsViaPlaywright,
   getPageErrorsViaPlaywright: activity.getPageErrorsViaPlaywright,
   getPageTextViaPlaywright: activity.getPageTextViaPlaywright,

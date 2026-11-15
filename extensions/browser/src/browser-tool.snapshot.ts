@@ -41,6 +41,7 @@ const BROWSER_EXTERNAL_JSON_TRUNCATION_MARKERS = {
   tabs: "\n[truncated — retry with action=snapshot and a specific targetId]",
   act: "\n[truncated — inspect the affected targetId with action=snapshot]",
   download: "\n[truncated — retry with a specific targetId and download ref]",
+  flow: "\n[truncated — retry with flow.select, flow.where or a smaller limit]",
 };
 
 type BrowserExternalJsonKind = keyof typeof BROWSER_EXTERNAL_JSON_TRUNCATION_MARKERS;

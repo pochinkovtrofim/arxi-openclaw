@@ -114,6 +114,9 @@ function describeBrowserTool(opts: {
     actions.has("requests")
       ? "Use requests for the recent network log; filter matches URL/type, limit defaults to 50, and clear=true clears the collected log after reading."
       : undefined,
+    actions.has("flow_run")
+      ? `Saved flows replay a site's data request without the page: open and navigate list the site's flows; if one fits, use action=flow_run with flow={name, params, where, select} and limit instead of driving the page.${actions.has("flow_save") ? " After a task you will repeat (a search, a list, a lookup), save it: action=flow_save with flow={name, params:{param:<value you typed or picked>}, description} on the same tab." : ""} A run sends no cookies directly, falls back to the tab's page when that tab is on the site, and refuses writes unless flow.allowWrite=true. via=device sends it from the owner's computer when this server is refused. A drifted or unverified flow means the site changed: use the page and save again.`
+      : undefined,
     actions.has("errors")
       ? "Use errors for page errors; limit defaults to 50, clear=true clears after reading."
       : undefined,

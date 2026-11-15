@@ -560,6 +560,8 @@ export function createBrowserTool(
         "console",
         "emulate",
         "act",
+        "flow_save",
+        "flow_run",
       ].includes(action)
         ? withBrowserTabDetails(result, tabIdentity)
         : result;

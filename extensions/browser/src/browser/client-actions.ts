@@ -27,6 +27,7 @@ import {
   DEFAULT_BROWSER_SCREENSHOT_TIMEOUT_MS,
 } from "./constants.js";
 import type { BrowserDownloadResult } from "./download-types.js";
+import type { FlowExchange } from "./flows.js";
 import type {
   BrowserConsoleMessage,
   BrowserNetworkRequest,
@@ -214,6 +215,50 @@ export async function browserRequests(
     "/requests",
     opts,
     buildQuery({ filter: opts.filter, clear: opts.clear, targetId: opts.targetId }),
+  );
+}
+
+/** The tab's recent data exchanges, credentials already removed by the browser server. */
+export async function browserFlowCapture(
+  baseUrl: BrowserClientTarget,
+  opts: BrowserActionOptions = {},
+): Promise<{ ok: true; exchanges: FlowExchange[]; pageUrl: string; targetId: string; url?: string }> {
+  return await readBrowserPageJson(
+    baseUrl,
+    "/flows/capture",
+    opts,
+    buildQuery({ targetId: opts.targetId }),
+  );
+}
+
+export type BrowserFlowPageFetchResult =
+  | { ok: true; status: number; contentType?: string; retryAfter?: string; body: string; finalUrl: string }
+  | { ok: false; error: "not_on_site" | "network"; detail?: string; pageUrl: string };
+
+/** Send one saved-flow request from the tab's own page, with its cookies. */
+export async function browserFlowPageFetch(
+  baseUrl: BrowserClientTarget,
+  opts: BrowserTimedActionOptions & {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body?: string;
+  },
+): Promise<BrowserFlowPageFetchResult & { targetId?: string }> {
+  const timeoutMs = opts.timeoutMs ?? 20_000;
+  return await postBrowserJson(
+    baseUrl,
+    "/flows/page-fetch",
+    {
+      url: opts.url,
+      method: opts.method,
+      headers: opts.headers,
+      ...(opts.body !== undefined ? { body: opts.body } : {}),
+      targetId: opts.targetId,
+      timeoutMs,
+    },
+    resolveBrowserOperationRequestTimeoutMs(timeoutMs),
+    opts,
   );
 }
 

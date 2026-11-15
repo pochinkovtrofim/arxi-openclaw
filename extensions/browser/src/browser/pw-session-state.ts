@@ -3,6 +3,7 @@ import { resolveExpiresAtMsFromDurationMs } from "openclaw/plugin-sdk/number-run
 import { normalizeOptionalString } from "openclaw/plugin-sdk/string-coerce-runtime";
 import { truncateUtf16Safe } from "openclaw/plugin-sdk/text-utility-runtime";
 import type { ConsoleMessage, Dialog, Frame, Page, Request, Response } from "playwright-core";
+import { attachFlowCapture } from "./flow-capture.js";
 import { saveBrowserDownload, type BrowserDownloadCaptureOptions } from "./pw-download-capture.js";
 import {
   MAX_CONSOLE_MESSAGES,
@@ -161,6 +162,7 @@ export function ensurePageState(page: Page): PageState {
     dialogAbortControllers: new Set(),
   };
   pageStates.set(page, state);
+  attachFlowCapture(page);
 
   page.on("console", (msg: ConsoleMessage) => {
     const location = msg.location();

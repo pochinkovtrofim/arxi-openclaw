@@ -26,6 +26,7 @@ import {
   executeTabsAction,
   formatBrowserExternalToolResult,
 } from "./browser-tool.actions.js";
+import { appendSavedFlowsHint, executeFlowAction } from "./browser-tool.flows.js";
 import type { BrowserToolCapabilities } from "./browser-tool.schema.js";
 import {
   executeScreenshotAction,
@@ -163,10 +164,13 @@ export async function executeBrowserTabAction(context: {
         readStringValue(asNullableRecord(opened)?.targetId),
         readStringValue(asNullableRecord(opened)?.resolvedProfile),
       );
-      return formatBrowserExternalToolResult({
-        kind: "tabs",
-        payload: stripBrowserOpenInternalMetadata(opened),
-      });
+      return await appendSavedFlowsHint(
+        formatBrowserExternalToolResult({
+          kind: "tabs",
+          payload: stripBrowserOpenInternalMetadata(opened),
+        }),
+        targetUrl,
+      );
     }
     case "focus": {
       const targetId = readStringParam(params, "targetId", {
@@ -216,13 +220,37 @@ export async function executeBrowserTabAction(context: {
       if (asNullableRecord(result)?.download) {
         return formatted;
       }
-      return await appendNavigatedPageState({
-        result: formatted,
-        targetId: navigatedTargetId,
+      return await appendSavedFlowsHint(
+        await appendNavigatedPageState({
+          result: formatted,
+          targetId: navigatedTargetId,
+          target,
+          profile,
+          signal,
+        }),
+        readStringValue(asNullableRecord(result)?.url) ?? targetUrl,
+      );
+    }
+    case "flow_save":
+    case "flow_run":
+    case "flow_list":
+    case "flow_delete": {
+      const targetId = normalizeOptionalString(params.targetId) ?? context.boundTargetId;
+      const limit = readPositiveIntegerParam(params, "limit", {
+        message: "limit must be a positive integer.",
+      });
+      const result = await executeFlowAction(action, params.flow, {
         target,
         profile,
         signal,
+        targetId,
+        timeoutMs: requestedTimeoutMs,
+        limit,
       });
+      if (action === "flow_save" || action === "flow_run") {
+        await touchTab(readStringValue(asNullableRecord(result.details)?.targetId) ?? targetId);
+      }
+      return result;
     }
     case "console": {
       const result = await executeConsoleAction(actionOptions);
