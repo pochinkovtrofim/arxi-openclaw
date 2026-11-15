@@ -813,6 +813,8 @@ const config = {
     "src/gateway/board-view-ticket.ts": ["exports"],
     // Focused startup tests consume this explicit seam; production imports only the bootstrap.
     "src/gateway/server-startup-bootstrap.ts": ["exports"],
+    // The ordering test reads the item list directly; production calls scheduleGatewayPrewarm.
+    "src/gateway/server-startup-handler-prewarm.ts": ["exports"],
     // Focused lifecycle tests call the terminal kernel directly; production reaches it
     // through the Workboard service while the full-tree scan audits those test consumers.
     "extensions/workboard/src/lifecycle-sync.ts": ["exports"],

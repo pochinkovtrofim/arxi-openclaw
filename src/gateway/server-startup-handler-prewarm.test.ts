@@ -36,6 +36,16 @@ const mocks = vi.hoisted(() => ({
       store: {},
     };
   }),
+  agentTurnLoaders: {
+    loadAttemptExecutionRuntime: vi.fn(async () => {}),
+    loadDeliveryRuntime: vi.fn(async () => {}),
+    loadSessionStoreRuntime: vi.fn(async () => {}),
+    loadAcpManagerRuntime: vi.fn(async () => {}),
+    loadCliCompactionRuntime: vi.fn(async () => {}),
+    loadSkillsRuntime: vi.fn(async () => {}),
+    loadExecDefaultsRuntime: vi.fn(async () => {}),
+    loadCliDepsRuntime: vi.fn(async () => {}),
+  },
   listManagedPlugins: vi.fn(async () => {
     mocks.events.push("plugins");
     return { plugins: [] };
@@ -59,6 +69,19 @@ vi.mock("../plugins/management-service.js", () => ({
   listManagedPlugins: mocks.listManagedPlugins,
 }));
 
+vi.mock("../agents/command/runtime-loaders.js", () => mocks.agentTurnLoaders);
+vi.mock("../agents/cli-runner/prepare.runtime.js", () => {
+  mocks.events.push("cli-prepare");
+  return {};
+});
+vi.mock("../agents/cli-runner/execute.runtime.js", () => {
+  mocks.events.push("cli-execute");
+  return {};
+});
+vi.mock("../agents/acp-workspace-provisioning.js", () => ({}));
+vi.mock("../agents/model-catalog.runtime.js", () => ({}));
+vi.mock("../skills/discovery/chat-commands.runtime.js", () => ({}));
+
 vi.mock("./server-chat.js", () => {
   mocks.events.push("agent-events");
   return { createAgentEventHandler: mocks.executeRequest };
@@ -68,13 +91,14 @@ vi.mock("./server-methods/core-handlers.js", async () => {
   const { createLazyCoreHandlers } = await import("./server-methods/lazy-core-handlers.js");
   return {
     coreGatewayHandlers: createLazyCoreHandlers({
-      methods: ["chat.history", "chat.send", "sessions.list"],
+      methods: ["chat.history", "chat.send", "sessions.list", "agent"],
       loadHandlers: async () => {
         mocks.events.push("handlers");
         return {
           "chat.history": mocks.executeRequest,
           "chat.send": mocks.executeRequest,
           "sessions.list": mocks.executeRequest,
+          agent: mocks.executeRequest,
         };
       },
     }),
@@ -92,7 +116,7 @@ vi.mock("../plugins/public-surface-loader.js", () => ({
   loadBundledPluginPublicArtifactModuleSync: mocks.loadBundledPluginPublicArtifactModuleSync,
 }));
 
-const { scheduleGatewayHandlerPrewarm, scheduleGatewayPrewarm } =
+const { gatewayPrewarmItems, scheduleGatewayHandlerPrewarm, scheduleGatewayPrewarm } =
   await import("./server-startup-handler-prewarm.js");
 
 beforeEach(() => {
@@ -103,6 +127,10 @@ beforeEach(() => {
   mocks.prewarmContextWindowCacheAfterReady.mockClear();
   mocks.loadCombinedSessionStoreForGatewayCore.mockClear();
   mocks.listManagedPlugins.mockClear();
+  for (const loader of Object.values(mocks.agentTurnLoaders)) {
+    loader.mockReset();
+    loader.mockResolvedValue(undefined);
+  }
   mocks.getMemoryCapabilityRegistration.mockReset();
   mocks.prewarmMemorySearchWorker.mockClear();
   mocks.loadBundledPluginPublicArtifactModuleSync.mockClear();
@@ -122,10 +150,11 @@ describe("scheduleGatewayHandlerPrewarm", () => {
     mocks.getMemoryCapabilityRegistration.mockReturnValue({ pluginId: "memory-core" });
     const cfg: OpenClawConfig = { agents: { entries: {} } };
 
+    const warn = vi.fn();
     const sidecar = scheduleGatewayHandlerPrewarm({
       scheduler: createTestGatewayScheduler("fake-timers"),
       getConfig: () => cfg,
-      log: { warn: vi.fn() },
+      log: { warn },
     });
 
     try {
@@ -138,7 +167,17 @@ describe("scheduleGatewayHandlerPrewarm", () => {
 
       expect(mocks.events[0]).toBe("session-history-worker");
       expect(mocks.events).toContain("agent-events");
-      expect(mocks.events.filter((event) => event === "handlers")).toHaveLength(3);
+      expect(mocks.events.filter((event) => event === "handlers")).toHaveLength(4);
+      for (const loader of Object.values(mocks.agentTurnLoaders)) {
+        expect(loader).toHaveBeenCalledOnce();
+      }
+      expect(warn).not.toHaveBeenCalled();
+      // Owner turns first: the turn modules load before the other helpers.
+      expect(mocks.events.indexOf("cli-prepare")).toBeGreaterThan(-1);
+      expect(mocks.events.indexOf("cli-prepare")).toBeLessThan(mocks.events.indexOf("cli-execute"));
+      expect(mocks.events.indexOf("cli-execute")).toBeLessThan(
+        mocks.events.indexOf("agent-events"),
+      );
       expect(mocks.executeRequest).not.toHaveBeenCalled();
       expect(mocks.prewarmGatewaySessionHistory).toHaveBeenCalledExactlyOnceWith(cfg, {
         isCancelled: expect.any(Function),
@@ -286,6 +325,22 @@ describe("scheduleGatewayHandlerPrewarm", () => {
     }
   });
 
+  it("orders chat.history and the agent turn steps before the other handlers", () => {
+    const names = gatewayPrewarmItems(() => ({})).map((item) => item.name);
+    const turnSteps = names.filter((name) => name.startsWith("agent-turn."));
+    expect(turnSteps).toHaveLength(13);
+    expect(names.indexOf("chat.history")).toBeLessThan(names.indexOf("agent"));
+    const lastTurnStep = names.indexOf(expectDefined(turnSteps.at(-1), "last agent-turn step"));
+    // The golden bake waits for this exact marker (ops/guest/guest-entry wait_golden_prewarm).
+    expect(names[lastTurnStep]).toBe("agent-turn.chat-commands");
+    for (const name of ["chat.history", "agent", ...turnSteps]) {
+      expect(names.indexOf(name)).toBeLessThanOrEqual(lastTurnStep);
+    }
+    for (const name of ["chat.send", "sessions.list"]) {
+      expect(names.indexOf(name)).toBeGreaterThan(lastTurnStep);
+    }
+  });
+
   it("logs failures and continues without changing later request behavior", async () => {
     vi.useFakeTimers();
     const warn = vi.fn();
@@ -316,6 +371,49 @@ describe("scheduleGatewayHandlerPrewarm", () => {
     expect(requestLoad).toHaveBeenCalledOnce();
     expect(laterPrewarm).toHaveBeenCalledOnce();
     await expect(requestLoad()).resolves.toBe("request result");
+  });
+
+  it("logs an agent-turn module load failure and keeps preparing later items", async () => {
+    vi.useFakeTimers();
+    const warn = vi.fn();
+    mocks.agentTurnLoaders.loadDeliveryRuntime.mockRejectedValueOnce(new Error("load failed"));
+    const sidecar = scheduleGatewayHandlerPrewarm({
+      scheduler: createTestGatewayScheduler("fake-timers"),
+      getConfig: () => ({ agents: { entries: {} } }),
+      log: { warn },
+    });
+    try {
+      do {
+        await vi.runAllTimersAsync();
+        await vi.dynamicImportSettled();
+      } while (vi.getTimerCount() > 0);
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        "post-ready gateway data prewarm failed for agent-turn.delivery: Error: load failed",
+      );
+      expect(mocks.agentTurnLoaders.loadSessionStoreRuntime).toHaveBeenCalledOnce();
+      expect(mocks.listManagedPlugins).toHaveBeenCalledOnce();
+    } finally {
+      await sidecar.stop();
+    }
+  });
+
+  it("stops loading agent-turn modules once the prewarm is cancelled", async () => {
+    vi.useFakeTimers();
+    mocks.agentTurnLoaders.loadAttemptExecutionRuntime.mockImplementationOnce(async () => {
+      void sidecar.stop();
+    });
+    const sidecar = scheduleGatewayHandlerPrewarm({
+      scheduler: createTestGatewayScheduler("fake-timers"),
+      getConfig: () => ({ agents: { entries: {} } }),
+      log: { warn: vi.fn() },
+    });
+    do {
+      await vi.runAllTimersAsync();
+      await vi.dynamicImportSettled();
+    } while (vi.getTimerCount() > 0);
+    expect(mocks.agentTurnLoaders.loadAttemptExecutionRuntime).toHaveBeenCalledOnce();
+    expect(mocks.agentTurnLoaders.loadDeliveryRuntime).not.toHaveBeenCalled();
+    expect(mocks.listManagedPlugins).not.toHaveBeenCalled();
   });
 
   it("stops before scheduling another event-loop turn", async () => {
