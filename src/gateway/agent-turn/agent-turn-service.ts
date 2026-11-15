@@ -70,6 +70,8 @@ type AgentTurnStartRequest = {
   diagnosticTrace?: DiagnosticTraceContext;
   /** Epoch ms of the Gateway's receipt of the request. */
   rpcReceivedAt?: number;
+  /** Moments the Gateway's steps from that receipt to this turn finished, in order. */
+  receiptSteps?: ReadonlyArray<PreflightStepMoment>;
 };
 
 export function createAgentTurnService(
@@ -89,6 +91,7 @@ export function createAgentTurnService(
     onRunObserved,
     diagnosticTrace,
     rpcReceivedAt,
+    receiptSteps,
   }: AgentTurnStartRequest): Promise<void> => {
     const promptedAt = Date.now();
     assertAdmissionCurrent?.();
@@ -136,9 +139,14 @@ export function createAgentTurnService(
     });
     // Content-free moments each step below finished, so the Gateway's time before the
     // agent command is timed per step rather than as one block.
-    // The handler's validation and request preflight ran before this turn started.
+    // Frame admission, authorization, the handler's validation and the request
+    // preflight ran before this turn started.
     const rpcCheckpoints: GatewayTurnCheckpoint[] = [
-      { stage: "gateway_preflight", at: promptedAt },
+      {
+        stage: "gateway_preflight",
+        at: promptedAt,
+        steps: [...(receiptSteps ?? []), { step: "request_preflight", at: promptedAt }],
+      },
     ];
     const checkpoint = (stage: GatewayTurnStage, steps?: ReadonlyArray<PreflightStepMoment>) => {
       rpcCheckpoints.push({ stage, at: Date.now(), ...(steps?.length ? { steps } : {}) });

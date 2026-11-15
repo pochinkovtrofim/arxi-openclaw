@@ -61,6 +61,7 @@ import { authenticateGatewayConnect } from "./connect-auth.js";
 import { authorizeGatewayConnectDevice } from "./connect-device-pairing.js";
 import { publishConnectModelCatalog } from "./connect-model-catalog.js";
 import { attachAuthenticatedGatewayConnect } from "./connect-session.js";
+import { runWithGatewayFrameReceipt } from "./frame-receipt.js";
 import { resolveHandshakeBrowserSecurityContext } from "./handshake-auth-helpers.js";
 import type {
   GatewayConnectPhaseContext,
@@ -544,10 +545,13 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
       onSettled?.();
       return;
     }
+    const receivedAt = Date.now();
     void params.connectionWork
       .track(() =>
-        runWithDiagnosticTraceContext(createDiagnosticTraceContext(), () =>
-          runWithMainThreadTask("gateway:ws:frame", () => handleIncomingMessage(data, admission)),
+        runWithGatewayFrameReceipt(receivedAt, () =>
+          runWithDiagnosticTraceContext(createDiagnosticTraceContext(), () =>
+            runWithMainThreadTask("gateway:ws:frame", () => handleIncomingMessage(data, admission)),
+          ),
         ),
       )
       .catch((error: unknown) => {

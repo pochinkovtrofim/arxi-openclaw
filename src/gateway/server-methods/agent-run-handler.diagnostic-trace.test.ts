@@ -3,6 +3,10 @@ import {
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
+import {
+  markGatewayFrameStep,
+  runWithGatewayFrameReceipt,
+} from "../server/ws-connection/frame-receipt.js";
 import { agentRunHandler } from "./agent-run-handler.js";
 
 const startTurn = vi.hoisted(() => vi.fn(async () => {}));
@@ -68,7 +72,35 @@ describe("agentRunHandler diagnostic trace ownership", () => {
     expect(startTurn).toHaveBeenCalledWith(
       expect.objectContaining({
         rpcReceivedAt: expect.toSatisfy((at: number) => at >= before && at <= Date.now()),
+        receiptSteps: [],
       }),
     );
+  });
+
+  it("starts the turn's clock when its frame was read off the socket", async () => {
+    const receivedAt = Date.now() - 900;
+    await runWithGatewayFrameReceipt(receivedAt, async () => {
+      markGatewayFrameStep("frame_admission");
+      markGatewayFrameStep("request_authorize");
+      await agentRunHandler({
+        params: {},
+        respond: vi.fn(),
+        context: {},
+        client: null,
+        isWebchatConnect: () => false,
+      } as never);
+    });
+    const { rpcReceivedAt, receiptSteps } = (
+      startTurn.mock.calls[0] as unknown as [
+        { rpcReceivedAt: number; receiptSteps: Array<{ step: string; at: number }> },
+      ]
+    )[0];
+    expect(rpcReceivedAt).toBe(receivedAt);
+    expect(receiptSteps.map(({ step }) => step)).toEqual([
+      "frame_admission",
+      "request_authorize",
+      "handler_entry",
+    ]);
+    expect(receiptSteps.every(({ at }) => at >= receivedAt && at <= Date.now())).toBe(true);
   });
 });

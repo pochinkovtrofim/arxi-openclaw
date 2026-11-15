@@ -152,6 +152,7 @@ function start() {
     principal: null,
     io: { emitAcceptance: vi.fn() },
     rpcReceivedAt: 1_000,
+    receiptSteps: [{ step: "frame_admission", at: 1_000 }],
   } as never);
 }
 
@@ -184,11 +185,24 @@ it("carries the session write's step moments with its checkpoint, and no other",
   await start();
   await vi.waitFor(() => expect(startExecution).toHaveBeenCalledOnce());
   const params = startExecution.mock.calls[0]?.[0] as {
-    rpcCheckpoints: Array<{ stage: string; steps?: Array<{ step: string; at: number }> }>;
+    rpcCheckpoints: Array<{
+      stage: string;
+      at: number;
+      steps?: Array<{ step: string; at: number }>;
+    }>;
   };
+  const prompted = params.rpcCheckpoints[0]?.at;
   expect(
     params.rpcCheckpoints.filter((checkpoint) => checkpoint.steps).map((c) => [c.stage, c.steps]),
   ).toEqual([
+    // The frame's steps before the handler, then the request preflight up to the turn.
+    [
+      "gateway_preflight",
+      [
+        { step: "frame_admission", at: 1_000 },
+        { step: "request_preflight", at: prompted },
+      ],
+    ],
     [
       "gateway_session_write",
       [
