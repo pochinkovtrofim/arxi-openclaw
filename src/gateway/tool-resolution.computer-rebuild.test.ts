@@ -1,10 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getAgentToolActionDescriptor } from "../agents/agent-tool-metadata.js";
 import type { PreparedPairedComputerUse } from "../agents/computer-use-node-capabilities.js";
-import {
-  getGatewayToolCallerIdentity,
-  type GatewayToolCallerIdentity,
-} from "../agents/tools/gateway-caller-context.js";
+import { getGatewayToolCallerIdentity } from "../agents/tools/gateway-caller-context.js";
 import * as gatewayTools from "../agents/tools/gateway.js";
 import { setRuntimeConfigSnapshot } from "../config/io.js";
 import { resolveGatewayScopedTools } from "./tool-resolution.js";
@@ -31,7 +28,7 @@ function resolve(overrides: Partial<Parameters<typeof resolveGatewayScopedTools>
 
 /** What a node.list issued by the computer tool sees as its calling identity. */
 async function observeCallerIdentity(tool: { execute: (...args: never[]) => unknown }) {
-  let identity: GatewayToolCallerIdentity | undefined;
+  let identity: ReturnType<typeof getGatewayToolCallerIdentity>;
   vi.spyOn(gatewayTools, "callGatewayTool").mockImplementation(async (method: string) => {
     identity ??= getGatewayToolCallerIdentity();
     if (method === "node.list") {
