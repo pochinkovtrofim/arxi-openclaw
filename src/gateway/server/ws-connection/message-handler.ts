@@ -547,6 +547,7 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
       onSettled?.();
       return;
     }
+    // A frame queued during the handshake is stamped here, at its replay.
     const receivedAt = Date.now();
     void params.connectionWork
       .track(() =>
