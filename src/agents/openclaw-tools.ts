@@ -93,6 +93,7 @@ import { createTtsTool } from "./tools/tts-tool.js";
 import { createVideoGenerateTool } from "./tools/video-generate-tool.js";
 import { createWebFetchTool, createWebSearchTool } from "./tools/web-tools.js";
 import { resolveWorkspaceRoot } from "./workspace-dir.js";
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 
 export { filterToolsByClientCaps } from "./openclaw-tools.client-caps.js";
 
@@ -137,7 +138,7 @@ export async function createOpenClawToolsWithPreparation(
     mediaTools,
     progressCardAvailable,
     personalInstructionsEnabled,
-  } = await prepareOpenClawTools(options, shared);
+  } = await measurePrepStage("mcp-tools-prepare", () => prepareOpenClawTools(options, shared));
   shared.assertCurrent();
   captured.assertInvocationCurrent?.();
   const steps = createOpenClawToolsSteps(
@@ -150,10 +151,13 @@ export async function createOpenClawToolsWithPreparation(
   );
   let next = steps.next();
   while (!next.done) {
+    const step = next.value;
     const tools =
-      "message" in next.value
-        ? [await createMessageToolAsync(next.value.message)]
-        : await resolveOpenClawPluginToolsForOptionsAsync(next.value.plugins);
+      "message" in step
+        ? [await measurePrepStage("mcp-message-tool", () => createMessageToolAsync(step.message))]
+        : await measurePrepStage("mcp-plugin-tools", () =>
+            resolveOpenClawPluginToolsForOptionsAsync(step.plugins),
+          );
     shared.assertCurrent();
     captured.assertInvocationCurrent?.();
     next = steps.next(tools);
