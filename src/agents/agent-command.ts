@@ -9,7 +9,6 @@ import {
   runWithReplySettleStages,
 } from "../auto-reply/reply/reply-settle-stages.js";
 import type { VerboseLevel } from "../auto-reply/thinking.js";
-import { createPreflightStepRecorder } from "../infra/preflight-step-recorder.js";
 import type { CliDeps } from "../cli/deps.types.js";
 import { createSessionWorkStartChangedError } from "../config/sessions/lifecycle.js";
 import type { RestartRecoveryTerminalDeliveryEvidenceResult } from "../config/sessions/restart-recovery-types.js";
@@ -25,6 +24,7 @@ import {
   withAgentRunLifecycleGeneration,
 } from "../infra/agent-events.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import { createPreflightStepRecorder } from "../infra/preflight-step-recorder.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { withPluginRuntimeGenerationScope } from "../plugins/runtime/generation-scope.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";

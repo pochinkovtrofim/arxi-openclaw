@@ -190,7 +190,11 @@ it("emits sub-stages contiguous inside a closed stage's window, one child span e
 it("emits no sub-stages outside a traced reply", () => {
   runWithDiagnosticTraceContext(undefined, () => {
     const stages = createReplyPreflightStages({ startedAt: Date.now() - 100 });
-    stages.subStages("command_prepare", [{ step: "a", at: Date.now() - 50 }], stages.mark("prepare"));
+    stages.subStages(
+      "command_prepare",
+      [{ step: "a", at: Date.now() - 50 }],
+      stages.mark("prepare"),
+    );
   });
   expect(emitTrustedDiagnosticEvent).not.toHaveBeenCalled();
 });

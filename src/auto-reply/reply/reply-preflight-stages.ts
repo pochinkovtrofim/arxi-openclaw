@@ -28,7 +28,11 @@ export function createReplyPreflightStages(params: { startedAt?: number; session
   let stageStartedAt = params.startedAt ?? Date.now();
   let memoryFlushed = false;
   let compacting = false;
-  const emit = (stage: ReplyPreflightStage | ReplyPreflightSubStage, startedAt: number, endedAt: number) => {
+  const emit = (
+    stage: ReplyPreflightStage | ReplyPreflightSubStage,
+    startedAt: number,
+    endedAt: number,
+  ) => {
     if (!trace) {
       return;
     }
