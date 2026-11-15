@@ -109,6 +109,7 @@ async function runPreflight(
   }
   const respond = vi.fn();
   const context = {
+    chatAbortControllers: new Map(),
     getRuntimeConfig: () =>
       options?.requesterOnlyEnabled
         ? {
