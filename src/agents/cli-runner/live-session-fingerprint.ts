@@ -127,34 +127,34 @@ function buildCliLiveSessionFingerprintInputs(params: CliLiveSessionFingerprintP
   }
 
   return {
-      argv,
-      argv0: params.argv0,
-      workspaceDirHash: sha256Hex(context.workspaceDir),
-      cwdHash: context.cwdHash ?? sha256Hex(context.cwd ?? context.workspaceDir),
-      provider: context.params.provider,
-      model: context.normalizedModel,
-      // A warm process fixes its prompt at initialization; changed bytes require restart.
-      systemPromptHash: sha256Hex(context.systemPrompt),
-      agentAccountId: context.params.agentAccountId,
-      authProfileIdHash: context.effectiveAuthProfileId
-        ? sha256Hex(context.effectiveAuthProfileId)
-        : undefined,
-      authEpochHash: context.authEpoch ? sha256Hex(context.authEpoch) : undefined,
-      extraSystemPromptHash: context.extraSystemPromptHash,
-      promptToolNamesHash: context.promptToolNamesHash,
-      mcpResumeHash: context.preparedBackend.mcpResumeHash ?? context.preparedBackend.mcpConfigHash,
-      credentialFingerprint: context.preparedBackend.secretInput?.fingerprint,
-      skillsFingerprint,
-      env: Object.keys(params.env)
-        .toSorted()
-        .filter((key) => key !== "OPENCLAW_MCP_CLI_CAPTURE_KEY")
-        .map((key) => [
-          key,
-          key === "OPENCLAW_MCP_TOKEN" && normalizeGrantToken
-            ? "<managed-mcp-grant>"
-            : params.env[key]
-              ? sha256Hex(params.env[key])
-              : "",
-        ]),
+    argv,
+    argv0: params.argv0,
+    workspaceDirHash: sha256Hex(context.workspaceDir),
+    cwdHash: context.cwdHash ?? sha256Hex(context.cwd ?? context.workspaceDir),
+    provider: context.params.provider,
+    model: context.normalizedModel,
+    // A warm process fixes its prompt at initialization; changed bytes require restart.
+    systemPromptHash: sha256Hex(context.systemPrompt),
+    agentAccountId: context.params.agentAccountId,
+    authProfileIdHash: context.effectiveAuthProfileId
+      ? sha256Hex(context.effectiveAuthProfileId)
+      : undefined,
+    authEpochHash: context.authEpoch ? sha256Hex(context.authEpoch) : undefined,
+    extraSystemPromptHash: context.extraSystemPromptHash,
+    promptToolNamesHash: context.promptToolNamesHash,
+    mcpResumeHash: context.preparedBackend.mcpResumeHash ?? context.preparedBackend.mcpConfigHash,
+    credentialFingerprint: context.preparedBackend.secretInput?.fingerprint,
+    skillsFingerprint,
+    env: Object.keys(params.env)
+      .toSorted()
+      .filter((key) => key !== "OPENCLAW_MCP_CLI_CAPTURE_KEY")
+      .map((key) => [
+        key,
+        key === "OPENCLAW_MCP_TOKEN" && normalizeGrantToken
+          ? "<managed-mcp-grant>"
+          : params.env[key]
+            ? sha256Hex(params.env[key])
+            : "",
+      ]),
   };
 }

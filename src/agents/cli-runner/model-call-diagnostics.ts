@@ -565,7 +565,13 @@ export function createClaudeCliModelCallDiagnostics(params: {
           { name: CLI_PROCESS_START_STAGE, startedAt, endedAt: requestSentAt },
           // Why the process was reused or started: a zero-length mark.
           ...(liveStartReason
-            ? [{ name: `cli-live-${liveStartReason}`, startedAt: requestSentAt, endedAt: requestSentAt }]
+            ? [
+                {
+                  name: `cli-live-${liveStartReason}`,
+                  startedAt: requestSentAt,
+                  endedAt: requestSentAt,
+                },
+              ]
             : []),
         ],
         trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(runTrace ?? trace)),
