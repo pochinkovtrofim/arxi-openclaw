@@ -8,7 +8,11 @@ import { createAgentLifecycleTerminalBackstop } from "./agent-lifecycle-terminal
 
 const { emitAgentEvent } = vi.hoisted(() => ({ emitAgentEvent: vi.fn() }));
 
-vi.mock("../../infra/agent-events.js", () => ({ emitAgentEvent }));
+// Partial mock: modules this test loads indirectly use other exports at import time.
+vi.mock("../../infra/agent-events.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../infra/agent-events.js")>()),
+  emitAgentEvent,
+}));
 
 describe("createAgentLifecycleTerminalBackstop", () => {
   it("publishes a preparation failure once instead of its cancellation side effect", async () => {
