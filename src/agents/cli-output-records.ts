@@ -161,12 +161,19 @@ export function readClaudeStreamEventUsage(event: Record<string, unknown>): CliU
     return undefined;
   }
   const count = (value: unknown): number | undefined =>
-    typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : undefined;
+    typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? Math.trunc(value)
+      : undefined;
   const input = count(raw.input_tokens);
   const output = count(raw.output_tokens);
   const cacheRead = count(raw.cache_read_input_tokens);
   const cacheWrite = count(raw.cache_creation_input_tokens);
-  if (input === undefined && output === undefined && cacheRead === undefined && cacheWrite === undefined) {
+  if (
+    input === undefined &&
+    output === undefined &&
+    cacheRead === undefined &&
+    cacheWrite === undefined
+  ) {
     return undefined;
   }
   return {
