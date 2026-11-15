@@ -17,7 +17,7 @@ import { resolveCoreToolFactoryFamily } from "../agents/core-tool-factory-descri
 import { applyDelegationCapability } from "../agents/delegation-capability.js";
 import { prepareExecDefaults, resolvePreparedExecDefaultsAsync } from "../agents/exec-defaults.js";
 import { createLazyExecTool, resolveExecToolConfig } from "../agents/lazy-exec-tool.js";
-import { createOpenClawComputerTool, createOpenClawToolsAsync } from "../agents/openclaw-tools.js";
+import { createOpenClawToolsAsync } from "../agents/openclaw-tools.js";
 import { filterRequesterYieldTools } from "../agents/openclaw-tools.requester-yield.js";
 import {
   applySwarmCollectorToolContract,
@@ -73,6 +73,7 @@ import {
   captureGatewayToolResolutionAuthority,
   resolveGatewayRequesterToolPolicies,
 } from "./tool-resolution-authority.js";
+import { createPairedComputerRebuild } from "./tool-resolution-computer.js";
 
 type GatewayScopedToolSurface = "http" | "loopback";
 
@@ -726,30 +727,16 @@ export async function resolveGatewayScopedTools(
 
   const finalizeTools = (list: AnyAgentTool[]) =>
     applyToolAvailabilityDescriptions(filterRequesterYieldTools(list, params.sessionKey));
-  const constructedComputer = openClawTools.find((tool) => tool.name === "computer");
-  const computerIndex = constructedComputer ? tools.indexOf(constructedComputer) : -1;
   return {
     agentId: sessionAgentId,
     tools: finalizeTools(tools),
     workspaceDir,
-    // Re-creates only the computer tool with the prepared paired-node action surface and
-    // returns the same final tool list; undefined when policy replaced or removed computer.
-    rebuildWithPairedComputerUse:
-      computerIndex >= 0
-        ? (
-            prepared: NonNullable<typeof params.pairedNodeComputerUse>,
-          ): AnyAgentTool[] | undefined => {
-            const computer = createOpenClawComputerTool({
-              ...openClawToolOptions,
-              pairedNodeComputerUse: prepared,
-            });
-            return computer
-              ? finalizeTools(
-                  tools.map((tool, index) => (index === computerIndex ? computer : tool)),
-                )
-              : undefined;
-          }
-        : undefined,
+    rebuildWithPairedComputerUse: createPairedComputerRebuild({
+      tools,
+      constructedComputer: openClawTools.find((tool) => tool.name === "computer"),
+      options: openClawToolOptions,
+      finalizeTools,
+    }),
     // Only the MCP owner knows which tools survived its grant and schema gates.
     captureFinalCronCreatorTools: cronCreatorToolAllowlistCaptureRef
       ? (callableToolNames: ReadonlySet<string>) =>

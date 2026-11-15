@@ -570,7 +570,7 @@ function buildMcpLoopbackToolCacheKeyBody(
       : params.context;
   // Only the serializable grant context enters this key. Prepared credentials,
   // authoring capabilities, and callbacks stay bound to their grant lifetime.
-  return `${stableStringify({
+  return stableStringify({
     context: {
       ...context,
       clientCaps: [...new Set(context.clientCaps ?? [])].toSorted(),
@@ -593,7 +593,7 @@ function buildMcpLoopbackToolCacheKeyBody(
     yieldContextCacheKey: params.yieldContextCacheKey,
     nodeExecAvailability: params.nodeExecAvailability?.cacheKey,
     pairedComputerUseAvailability: params.pairedComputerUseAvailability?.cacheKey,
-  })}`;
+  });
 }
 
 /** Short-lived cache for loopback tool lists keyed by session/channel context. */
