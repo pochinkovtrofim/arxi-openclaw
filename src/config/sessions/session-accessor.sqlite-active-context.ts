@@ -342,9 +342,9 @@ export function readSessionTranscriptBoundedActiveContextCore(
     // a compaction's summarized prefix stays readable for them.
     const contextAfter =
       options.fromLatestBoundary && !covered
-      ? resolveTranscriptBoundaryWindow(projection, "history", fence?.beforeRawSeq)
-          ?.contextAfterActivePosition
-      : undefined;
+        ? resolveTranscriptBoundaryWindow(projection, "history", fence?.beforeRawSeq)
+            ?.contextAfterActivePosition
+        : undefined;
     const metadata = covered
       ? covered.rows
           .filter((row) => !fence || row.event_seq < fence.beforeRawSeq)
