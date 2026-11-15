@@ -269,6 +269,73 @@ describe("mcp connection resolver helpers", () => {
     ).resolves.toEqual(new Map());
   });
 
+  it("keeps a server runtime across a renewing credential's fresh value", async () => {
+    const proof = await startAuthenticatedMcpProofServer();
+    const base = {
+      sessionId: "renewing-credential-runtime",
+      workspaceDir: "/workspace",
+      cfg: {
+        mcp: {
+          servers: {
+            "user-mail": {
+              transport: "streamable-http" as const,
+              url: "https://placeholder.invalid",
+            },
+          },
+        },
+      },
+    };
+    const renewing = (issued: string, resolutionContextKey = "") => ({
+      ...base,
+      resolutionContextKey,
+      connectionOverrides: new Map([
+        [
+          "user-mail",
+          {
+            url: proof.mail.url,
+            headers: { Authorization: issued },
+            refreshHeaders: async () => ({ Authorization: proof.mail.authorization }),
+          },
+        ],
+      ]),
+    });
+    const runtime = createSessionMcpRuntime(renewing(proof.mail.authorization));
+    const replacements: SessionMcpRuntime[] = [];
+    try {
+      expect((await runtime.getCatalog()).tools.map((tool) => tool.toolName)).toEqual([
+        "owner_probe",
+      ]);
+      const listed = proof.mail.requests;
+      // A resolver's next bearer for the same connection: no reconnect, no second listing.
+      const renewed = expectDefined(sessionMcpRuntimeOwners.get(runtime), "owner").replace(
+        renewing("Bearer issued-next"),
+      );
+      replacements.push(renewed);
+      expect((await renewed.getCatalog()).tools.map((tool) => tool.toolName)).toEqual([
+        "owner_probe",
+      ]);
+      expect(proof.mail.requests).toBe(listed);
+      // The kept transport still authenticates: it renews its headers before each request.
+      await expect(renewed.callTool("user-mail", "owner_probe", {})).resolves.toMatchObject({
+        content: [{ type: "text", text: "mail" }],
+      });
+      // Another resolution context (a trace-bound bearer) is another connection.
+      const retraced = expectDefined(sessionMcpRuntimeOwners.get(renewed), "owner").replace(
+        renewing("Bearer issued-next", "trace-b"),
+      );
+      replacements.push(retraced);
+      const beforeRetrace = proof.mail.requests;
+      await retraced.getCatalog();
+      expect(proof.mail.requests).toBeGreaterThan(beforeRetrace);
+    } finally {
+      for (const replacement of replacements.reverse()) {
+        await replacement.dispose();
+      }
+      await runtime.dispose();
+      await proof.close();
+    }
+  });
+
   it("keeps a server's tools when a rotated credential's first listing fails", async () => {
     const proof = await startAuthenticatedMcpProofServer();
     const base = {

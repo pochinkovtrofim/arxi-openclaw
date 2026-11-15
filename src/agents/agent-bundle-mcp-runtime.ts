@@ -153,7 +153,23 @@ export function createSessionMcpRuntime(
     });
     const baseFingerprint = serverConfig.fingerprint;
     if (connection) {
-      serverConfig.fingerprint += `:${hashMcpResolvedConnections(new Map([[serverName, connection]]))}`;
+      // A connection that renews its own headers before each request (refreshHeaders)
+      // is the same connection under a fresh value: a resolver's new bearer keeps the
+      // server runtime, its session and its listed tools, instead of reconnecting and
+      // listing again on every re-resolution. Its url, header names and resolution
+      // context still identify it; a static header's value does too.
+      const identity = connection.refreshHeaders
+        ? {
+            url: connection.url,
+            headers: Object.fromEntries(
+              Object.keys(connection.headers ?? {}).map((name) => [
+                name,
+                `renewed:${nextParams.resolutionContextKey ?? ""}`,
+              ]),
+            ),
+          }
+        : connection;
+      serverConfig.fingerprint += `:${hashMcpResolvedConnections(new Map([[serverName, identity]]))}`;
     }
     return Object.assign(serverConfig, { baseFingerprint });
   };
