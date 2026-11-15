@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { createStageTimingTracker, StageTimingSummary } from "../shared/stage-timing.js";
 import { emitTrustedDiagnosticEvent, type DiagnosticContextStage } from "./diagnostic-events.js";
 import {
@@ -71,4 +72,27 @@ export function createRunPrepStageReporter(options: {
       trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(runTrace)),
     });
   };
+}
+
+type PrepStageMeasure = Pick<ReturnType<typeof createStageTimingTracker>, "measure">;
+
+const activePrepStages = new AsyncLocalStorage<PrepStageMeasure>();
+
+/**
+ * Runs a runner's preparation with its stage tracker in scope, so code deep in
+ * that preparation (the MCP catalog, a requester's MCP runtime) can time its
+ * own steps with measurePrepStage without the tracker threaded through.
+ */
+export function withPrepStages<T>(tracker: PrepStageMeasure, run: () => T): T {
+  return activePrepStages.run(tracker, run);
+}
+
+/**
+ * Times one step inside the current checkpoint as a measured stage of the
+ * run's preparation. Outside a preparation (a later tool call, a background
+ * refresh) it only runs the step.
+ */
+export function measurePrepStage<T>(name: string, run: () => Promise<T>): Promise<T> {
+  const tracker = activePrepStages.getStore();
+  return tracker ? tracker.measure(name, run) : run();
 }

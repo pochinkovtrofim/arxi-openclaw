@@ -1,3 +1,4 @@
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 import type { BundleMcpServerConfig } from "../plugins/bundle-mcp.types.js";
 import type {
   SessionMcpConfigPublication,
@@ -199,14 +200,16 @@ export function createSessionMcpRuntimeManagerInstall(
   const resolveAndInstallRequesterRuntime = async (
     params: RequesterRuntimeParams,
   ): Promise<SessionMcpRuntime | undefined> => {
-    const requesterConnect = await createRequesterMcpConnect({
-      serverNames: params.oauthRequesterNameSet,
-      mcpServers: params.mcpServers,
-      safeServerNamesByServer: params.safeServerNamesByServer,
-      requesterScope: params.requesterScope,
-      cfg: params.cfg,
-      configFingerprint: params.fullScopedFingerprint,
-    });
+    const requesterConnect = await measurePrepStage("mcp-requester-connect", () =>
+      createRequesterMcpConnect({
+        serverNames: params.oauthRequesterNameSet,
+        mcpServers: params.mcpServers,
+        safeServerNamesByServer: params.safeServerNamesByServer,
+        requesterScope: params.requesterScope,
+        cfg: params.cfg,
+        configFingerprint: params.fullScopedFingerprint,
+      }),
+    );
     const expectedLiveNameSet = new Set([
       ...(requesterConnect?.authorizedServerNames ?? []),
       ...params.resolverRequesterServerNames,
@@ -239,26 +242,28 @@ export function createSessionMcpRuntimeManagerInstall(
 
     const failedForAMoment: string[] = [];
     let anyUnavailable = false;
-    const connectionOverrides = await resolveRequesterScopedMcpConnections({
-      serverNames: params.resolverRequesterServerNames,
-      requesterSenderId: params.requesterSenderId,
-      agentAccountId: params.agentAccountId,
-      messageChannel: params.messageChannel,
-      agentId: params.agentId,
-      sessionKey: params.sessionKey,
-      chatType: params.chatType,
-      conversationId: params.conversationId,
-      runtimeGeneration: params.runtimeGeneration,
-      traceId: params.traceId,
-      onUnavailable: (diagnostic) => {
-        if (diagnostic.reason === "error" || diagnostic.reason === "timeout") {
-          failedForAMoment.push(diagnostic.serverName);
-        } else {
-          anyUnavailable = true;
-        }
-        params.onResolverUnavailable?.(diagnostic);
-      },
-    });
+    const connectionOverrides = await measurePrepStage("mcp-requester-resolve", () =>
+      resolveRequesterScopedMcpConnections({
+        serverNames: params.resolverRequesterServerNames,
+        requesterSenderId: params.requesterSenderId,
+        agentAccountId: params.agentAccountId,
+        messageChannel: params.messageChannel,
+        agentId: params.agentId,
+        sessionKey: params.sessionKey,
+        chatType: params.chatType,
+        conversationId: params.conversationId,
+        runtimeGeneration: params.runtimeGeneration,
+        traceId: params.traceId,
+        onUnavailable: (diagnostic) => {
+          if (diagnostic.reason === "error" || diagnostic.reason === "timeout") {
+            failedForAMoment.push(diagnostic.serverName);
+          } else {
+            anyUnavailable = true;
+          }
+          params.onResolverUnavailable?.(diagnostic);
+        },
+      }),
+    );
     // A resolver failing for a moment (its host restarting, say) keeps the runtime
     // installed for this requester and configuration: dropping its server would change
     // the tool list, which resets a Claude Code session's conversation. The resolution
@@ -293,26 +298,28 @@ export function createSessionMcpRuntimeManagerInstall(
       }
       return undefined;
     }
-    return await installRequesterRuntime({
-      runtimeKey: params.runtimeKey,
-      configReloadAtAdmission: params.configReloadAtAdmission,
-      sessionId: params.sessionId,
-      sessionKey: params.sessionKey,
-      agentId: params.agentId,
-      workspaceDir: params.workspaceDir,
-      agentDir: params.agentDir,
-      cfg: params.cfg,
-      manifestRegistry: params.manifestRegistry,
-      safeServerNamesByServer: params.safeServerNamesByServer,
-      includeServerNames: activeNameSet,
-      requesterConnect,
-      connectionOverrides,
-      redactConnectionServerNames: new Set(params.resolverRequesterServerNames),
-      requesterScope: params.requesterScope,
-      resolutionContextKey,
-      toolOverrides: params.toolOverrides,
-      toolDenylist: params.toolDenylist,
-    });
+    return await measurePrepStage("mcp-requester-install", () =>
+      installRequesterRuntime({
+        runtimeKey: params.runtimeKey,
+        configReloadAtAdmission: params.configReloadAtAdmission,
+        sessionId: params.sessionId,
+        sessionKey: params.sessionKey,
+        agentId: params.agentId,
+        workspaceDir: params.workspaceDir,
+        agentDir: params.agentDir,
+        cfg: params.cfg,
+        manifestRegistry: params.manifestRegistry,
+        safeServerNamesByServer: params.safeServerNamesByServer,
+        includeServerNames: activeNameSet,
+        requesterConnect,
+        connectionOverrides,
+        redactConnectionServerNames: new Set(params.resolverRequesterServerNames),
+        requesterScope: params.requesterScope,
+        resolutionContextKey,
+        toolOverrides: params.toolOverrides,
+        toolDenylist: params.toolDenylist,
+      }),
+    );
   };
 
   return {

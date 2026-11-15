@@ -4,6 +4,7 @@ import { createShowWidgetTool, hasRegisteredShowWidgetKinds } from "../canvas/wi
 import { getRuntimeConfig, selectApplicableRuntimeConfig } from "../config/config.js";
 import { resolveControlUiSessionLinkBase } from "../config/control-ui-link-base.js";
 import { isEmbeddedMode } from "../infra/embedded-mode.js";
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 import { getActiveSecretsRuntimeConfigSnapshot } from "../secrets/runtime-state.js";
 import { getActiveRuntimeWebToolsMetadataFromState } from "../secrets/runtime-web-tools-state.js";
 import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
@@ -137,7 +138,7 @@ export async function createOpenClawToolsWithPreparation(
     mediaTools,
     progressCardAvailable,
     personalInstructionsEnabled,
-  } = await prepareOpenClawTools(options, shared);
+  } = await measurePrepStage("mcp-tools-prepare", () => prepareOpenClawTools(options, shared));
   shared.assertCurrent();
   captured.assertInvocationCurrent?.();
   const steps = createOpenClawToolsSteps(
@@ -150,10 +151,13 @@ export async function createOpenClawToolsWithPreparation(
   );
   let next = steps.next();
   while (!next.done) {
+    const step = next.value;
     const tools =
-      "message" in next.value
-        ? [await createMessageToolAsync(next.value.message)]
-        : await resolveOpenClawPluginToolsForOptionsAsync(next.value.plugins);
+      "message" in step
+        ? [await measurePrepStage("mcp-message-tool", () => createMessageToolAsync(step.message))]
+        : await measurePrepStage("mcp-plugin-tools", () =>
+            resolveOpenClawPluginToolsForOptionsAsync(step.plugins),
+          );
     shared.assertCurrent();
     captured.assertInvocationCurrent?.();
     next = steps.next(tools);

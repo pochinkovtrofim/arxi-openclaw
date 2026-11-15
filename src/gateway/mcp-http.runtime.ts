@@ -27,6 +27,7 @@ import { hasSessionControlAuthority } from "../agents/tools/sessions-operator-au
 import type { SessionEventSourcePolicy } from "../auto-reply/reply/session-event-contract.js";
 import type { OpenClawConfig } from "../config/types.openclaw.js";
 import { DirectoryCache } from "../infra/outbound/directory-cache.js";
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 import { getPluginToolMeta } from "../plugins/tool-metadata.js";
 import type { SkillLibraryAuthoringCapability } from "../skills/library/authoring.js";
 import type { McpLoopbackRequestContext } from "./mcp-grant-store.js";
@@ -391,7 +392,9 @@ async function constructMcpLoopbackTools(
     nodeExecAvailable: params.nodeExecAvailability?.isAvailable,
     pairedNodeComputerUse: params.pairedComputerUseAvailability?.prepared,
   };
-  const scoped = await resolveGatewayScopedTools(scopeOptions, params.assertCurrent);
+  const scoped = await measurePrepStage("mcp-scoped-tools", () =>
+    resolveGatewayScopedTools(scopeOptions, params.assertCurrent),
+  );
   params.assertCurrent();
   const applyAllow = (candidates: typeof scoped.tools) =>
     mode === "exact"
@@ -425,16 +428,13 @@ async function resolveMcpLoopbackCatalog(
   params: McpLoopbackScopeParams,
   mode: LoopbackToolsAllowMode,
 ): Promise<CachedScopedTools> {
-  using scope = await captureMcpLoopbackScope(params);
-  const resolved = await resolvePairedComputerNodeScope(
-    await resolveNodeExecScope(scope, mode),
-    mode,
+  using scope = await measurePrepStage("mcp-scope-capture", () => captureMcpLoopbackScope(params));
+  const resolved = await measurePrepStage("mcp-node-scope", async () =>
+    resolvePairedComputerNodeScope(await resolveNodeExecScope(scope, mode), mode),
   );
   for (;;) {
-    const tools = await resolveMcpLoopbackTools(
-      resolved.params,
-      mode,
-      projectResolvedCatalog(resolved),
+    const tools = await measurePrepStage("mcp-catalog", () =>
+      resolveMcpLoopbackTools(resolved.params, mode, projectResolvedCatalog(resolved)),
     );
     resolved.params.assertCurrent();
     if (isMcpCatalogSessionCurrent(tools, resolved.params)) {

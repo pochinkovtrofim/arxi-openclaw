@@ -3,6 +3,7 @@ import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
 } from "../../infra/diagnostic-trace-context.js";
+import { measurePrepStage } from "../../infra/run-prep-stages.js";
 import { recordHookPhaseTiming, takeHookPhaseTimings } from "../../plugins/hook-phase-timing.js";
 import { CLI_PREP_HANDOFF_STAGE, createCliPrepStages } from "./prep-stages.js";
 import type { PreparedCliRunContext } from "./types.js";
@@ -38,6 +39,27 @@ afterEach(() => {
 });
 
 describe("CLI turn preparation stages", () => {
+  it("reports the steps the preparation times deep inside a checkpoint", async () => {
+    let nowMs = 10_000;
+    vi.spyOn(Date, "now").mockImplementation(() => nowMs);
+    const stages = createCliPrepStages({ runId: "run-steps", sessionId: "session-1" });
+    await stages.within(async () => {
+      nowMs += 5;
+      stages.mark("mcp-run-admission");
+      await measurePrepStage("mcp-requester-resolve", async () => {
+        nowMs += 420;
+      });
+      nowMs += 50;
+      stages.mark("mcp-tool-projection");
+    });
+    stages.handOff({ context: preparedContext("run-steps"), historyMessages: [] });
+    const reported = emitted.events.find((event) => event.type === "context.stages") as {
+      stages: Array<{ name: string; startedAt: number; endedAt: number }>;
+    };
+    const step = reported.stages.find((stage) => stage.name === "mcp-requester-resolve");
+    expect(step).toEqual({ name: "mcp-requester-resolve", startedAt: 10_005, endedAt: 10_425 });
+    expect(reported.stages.every((stage) => STAGE_NAME.test(stage.name))).toBe(true);
+  });
   it("reports contiguous stages up to the hand-off with the hook timings, once", () => {
     let nowMs = 10_000;
     vi.spyOn(Date, "now").mockImplementation(() => nowMs);
