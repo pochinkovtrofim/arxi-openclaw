@@ -109,7 +109,9 @@ it.each([
       removeChatRun: vi.fn(() => undefined),
     };
     const respond = vi.fn();
+    const steps: string[] = [];
     const result = await prepareAgentContentPhase({
+      onStep: (step) => steps.push(step),
       request: {
         message: "Inspect this synthetic pixel",
         agentId,
@@ -135,6 +137,13 @@ it.each([
       ],
     });
     expect(respond).not.toHaveBeenCalled();
+    // The trace splits the content stage at each step, in order.
+    expect(steps).toEqual([
+      "model_capabilities",
+      "voice_wake_routing",
+      "attachment_parse",
+      "audio_understanding",
+    ]);
     expect(result).toMatchObject({
       agentId,
       requestedSessionKey: "global",

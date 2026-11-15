@@ -8,6 +8,7 @@ import {
   resolveExplicitAgentSessionKey,
 } from "../../config/sessions.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { ContentStep } from "../../infra/diagnostic-events.js";
 import {
   loadVoiceWakeRoutingConfig,
   resolveVoiceWakeRouteByTrigger,
@@ -65,6 +66,8 @@ export async function prepareAgentContentPhase(params: {
   explicitRecipientSession?: ExplicitRecipientSession;
   knownAgents: string[];
   assertAdmissionCurrent?: () => void;
+  /** Marks the end of each step for the trace; never throws. */
+  onStep?: (step: ContentStep) => void;
 }) {
   const transcriptInputText = params.request.message.trim();
   let effectiveTranscriptInputText = transcriptInputText;
@@ -143,6 +146,7 @@ export async function prepareAgentContentPhase(params: {
           model: params.modelOverride || baseModel,
         });
   }
+  params.onStep?.("model_capabilities");
 
   const voiceWakeTrigger = normalizeOptionalString(params.request.voiceWakeTrigger) ?? "";
   const replyTo = normalizeOptionalString(params.request.replyTo) ?? "";
@@ -216,6 +220,7 @@ export async function prepareAgentContentPhase(params: {
     }
   }
 
+  params.onStep?.("voice_wake_routing");
   if (params.normalizedAttachments.length > 0) {
     params.assertAdmissionCurrent?.();
     try {
@@ -247,6 +252,7 @@ export async function prepareAgentContentPhase(params: {
       return undefined;
     }
   }
+  params.onStep?.("attachment_parse");
 
   if (content.media.length > 0) {
     try {
@@ -268,6 +274,7 @@ export async function prepareAgentContentPhase(params: {
       );
     }
   }
+  params.onStep?.("audio_understanding");
 
   return {
     agentId,

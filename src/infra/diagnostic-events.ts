@@ -149,6 +149,12 @@ export type SessionWriteStep =
   | "session_patch_build"
   | "session_store_commit"
   | "session_created_record";
+/** Steps of the Gateway's content stage: attachments are read and voice notes transcribed. */
+export type ContentStep =
+  | "model_capabilities"
+  | "voice_wake_routing"
+  | "attachment_parse"
+  | "audio_understanding";
 /**
  * The embedded runner's startup checkpoints (its slow-start log names, `-` as `_`), after
  * the command hands the run over and the session's admission (placement, maintenance,
@@ -173,7 +179,7 @@ export const RUN_ADMISSION_STEPS = [
   "attempt_handoff",
 ] as const;
 export type RunAdmissionStep = (typeof RUN_ADMISSION_STEPS)[number];
-export type PreflightStep = CommandPrepareStep | SessionWriteStep | RunAdmissionStep;
+export type PreflightStep = CommandPrepareStep | SessionWriteStep | ContentStep | RunAdmissionStep;
 
 /** What a sub-stage step name may look like; the host and guest accept the same pattern. */
 export const REPLY_PREFLIGHT_STEP_PATTERN = /^[a-z0-9_]{1,40}$/;
