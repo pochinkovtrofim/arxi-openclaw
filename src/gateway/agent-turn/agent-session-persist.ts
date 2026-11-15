@@ -191,6 +191,7 @@ export async function persistAgentSessionPhase(params: {
       throw new Error(message);
     }
     const buildEntry = async (freshEntry: SessionEntry | undefined) => {
+      params.onStep?.("session_writer_wait");
       assertAgentRunLifecycleGenerationCurrent(params.lifecycleGeneration);
       assertExpectedExistingSession({
         constraint: params.expectedSession,

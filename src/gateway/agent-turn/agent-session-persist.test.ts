@@ -41,8 +41,10 @@ describe("persistAgentSessionPhase", () => {
           entry.sessionId,
         );
       });
+      const steps: string[] = [];
       const result = await persistAgentSessionPhase({
         onSessionCommitted: committed,
+        onStep: (step) => steps.push(step),
         request: { message: "sandboxed", idempotencyKey: runId },
         cfg: {
           gateway: {
@@ -91,6 +93,12 @@ describe("persistAgentSessionPhase", () => {
       }).finally(sql.restore);
 
       expect(sql.queries.filter(isSessionEntryDataSql)).toEqual([]);
+      // The wait for the store's writer is its own step, ahead of building the patch.
+      expect(steps.slice(0, 3)).toEqual([
+        "session_writer_wait",
+        "session_patch_build",
+        "session_store_commit",
+      ]);
       expect(result?.sessionEntry).toMatchObject({
         createdVia: "run",
         createdActor: { type: "human", id: profile.id },
