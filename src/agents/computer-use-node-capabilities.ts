@@ -1,6 +1,5 @@
 import { stableStringify } from "@openclaw/normalization-core/stable-stringify";
 import type { GatewayRequestContext } from "../gateway/server-methods/types.js";
-import { getInProcessGatewayRequestContext } from "../plugins/runtime/gateway-request-scope.js";
 import { measurePrepStage } from "../infra/run-prep-stages.js";
 import type {
   ComputerUseCapabilityDescriptor,
@@ -10,6 +9,7 @@ import {
   COMPUTER_USE_V1_ACTION_NAMES,
   COMPUTER_USE_V2_ACTION_NAMES,
 } from "../plugins/computer-use-contract.js";
+import { getInProcessGatewayRequestContext } from "../plugins/runtime/gateway-request-scope.js";
 import {
   loadGatewayComputerStatus,
   type GatewayComputerStatus,
