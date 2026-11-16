@@ -115,13 +115,13 @@ async function prepareStartupReadAgents(
   return [...new Set([...agents, ...targets.flatMap(({ agentId }) => agentId ?? [])])];
 }
 
-/** Applies the router-owned authorization fence before any transport or typed dispatch. */
 /** Steps inside request_authorize; whatever follows the last one stays request_authorize. */
 export type RequestAuthorizeStep =
   | "authorize_projection"
   | "authorize_profile"
   | "authorize_startup_wait";
 
+/** Applies the router-owned authorization fence before any transport or typed dispatch. */
 export async function authorizeGatewayRequestPreDispatch(params: {
   method: string;
   requestParams: unknown;
