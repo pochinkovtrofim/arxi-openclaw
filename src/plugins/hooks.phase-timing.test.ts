@@ -106,7 +106,9 @@ describe("gating hook phase timing", () => {
     const run = withPrepStages(tracker, () => runner.runBeforePromptBuild(promptEvent, ctx));
     clock = 5;
     memory.resolve();
-    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
     clock = 40;
     connections.resolve();
     await run;
