@@ -381,10 +381,7 @@ export function readSessionTranscriptBoundedActiveContextCore(
     const contextAfter =
       keepFrom === undefined || !window
         ? resetAfter
-        : Math.max(
-            resetAfter ?? -1,
-            Math.min(window.contextAfterActivePosition, keepFrom - 1),
-          );
+        : Math.max(resetAfter ?? -1, Math.min(window.contextAfterActivePosition, keepFrom - 1));
     const metadata = covered
       ? covered.rows
           .filter((row) => !fence || row.event_seq < fence.beforeRawSeq)
