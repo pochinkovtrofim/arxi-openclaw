@@ -17,6 +17,7 @@ import {
   type ComputerToolTransport,
   SCREEN_SNAPSHOT_COMMAND,
 } from "./tools/computer-tool-shared.js";
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 import { getGatewayToolCallerIdentity } from "./tools/gateway-caller-context.js";
 import { shouldUseInProcessGatewayTool } from "./tools/gateway.js";
 import { listNodes, type NodeListNode } from "./tools/nodes-utils.js";
@@ -82,21 +83,26 @@ export async function loadPairedComputerUseAvailabilityForSurface(params: {
     ? getGatewayToolCallerIdentity()?.gatewayContextResolver?.()
     : undefined;
   // Hosted discovery consumes its owners' prepared facts; execution still admits live authority.
+  // In-process reads and Gateway calls are timed apart: a call costs a connection.
   const [nodes, gateway] = await Promise.all([
-    (inProcess ? readLocalComputerNodes(context) : listNodes({}, signal)).catch(() => {
+    (inProcess
+      ? measurePrepStage("mcp-paired-nodes", () => readLocalComputerNodes(context))
+      : measurePrepStage("mcp-paired-nodes-call", () => listNodes({}, signal))
+    ).catch(() => {
       signal?.throwIfAborted();
       return [];
     }),
-    (inProcess ? readLocalComputerStatus(context) : loadGatewayComputerStatus({}, signal)).catch(
-      (error: unknown): GatewayComputerStatus => {
-        signal?.throwIfAborted();
-        return {
-          configured: true,
-          available: false,
-          error: error instanceof Error ? error.message : "Gateway computer discovery failed",
-        };
-      },
-    ),
+    (inProcess
+      ? measurePrepStage("mcp-paired-status", () => readLocalComputerStatus(context))
+      : measurePrepStage("mcp-paired-status-call", () => loadGatewayComputerStatus({}, signal))
+    ).catch((error: unknown): GatewayComputerStatus => {
+      signal?.throwIfAborted();
+      return {
+        configured: true,
+        available: false,
+        error: error instanceof Error ? error.message : "Gateway computer discovery failed",
+      };
+    }),
   ]);
   signal?.throwIfAborted();
   const eligible = nodes.filter(isEligibleComputerNode);
