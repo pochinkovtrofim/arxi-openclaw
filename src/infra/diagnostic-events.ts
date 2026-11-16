@@ -146,6 +146,12 @@ export type CommandPrepareStep =
   | "skill_commands";
 export type SessionWriteStep =
   | "skill_library_selection"
+  /** The session's store actor was taken or created (cold after a wake) for this write. */
+  | "session_actor_acquire"
+  /** The write's session source checks were prepared. */
+  | "session_source_prepare"
+  /** The actor read the current entry: it queues behind the actor's earlier work. */
+  | "session_entry_read"
   /**
    * The store admitted this turn's entry read: until then another write held its writer,
    * or a cold transcript was restored.

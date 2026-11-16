@@ -42,7 +42,14 @@ export type SqliteSessionEntryPatchOptions = SessionEntryPatchOptions & {
   onCommitted?: SessionEntryPatchCommitObserver;
   /** Exact source acknowledged by the writer; never discover it after the operation yields. */
   onCommittedSource?: (source: CapturedSessionEntryReadSource, entry: SessionEntry) => void;
+  /** Closes a measured step of an actor write before its updater runs; trace names only. */
+  onWriterStep?: (step: SessionActorWriterStep) => void;
 };
+
+export type SessionActorWriterStep =
+  | "session_actor_acquire"
+  | "session_source_prepare"
+  | "session_entry_read";
 
 export type SessionEntryUpdater = (
   entry: SessionEntry,

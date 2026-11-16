@@ -462,6 +462,7 @@ export async function persistAgentSessionPhase(params: {
               replaceEntry: true,
               takeCacheOwnership: true,
               maintenanceConfig: params.maintenanceConfig,
+              onWriterStep: params.onStep,
               workerGuard: { source: commitGuard },
             },
           )) ?? undefined;
