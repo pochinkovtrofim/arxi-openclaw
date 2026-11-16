@@ -287,7 +287,9 @@ describe("runEmbeddedAgent cross-provider fallback error handling", () => {
       return isCurrentAttemptAssistant(assistant) && assistant.errorMessage.includes("quota");
     });
     const getLastFormattedAssistant = captureFormattedAssistant();
-    mockedRunEmbeddedAttempt.mockResolvedValueOnce(
+    // An attempt without a current assistant is retried once as a missing reply; the
+    // retry finds the same stale session, so every attempt returns this result.
+    mockedRunEmbeddedAttempt.mockResolvedValue(
       makeAttemptResult({
         assistantTexts: [],
         lastAssistant: makeAssistantMessageFixture({

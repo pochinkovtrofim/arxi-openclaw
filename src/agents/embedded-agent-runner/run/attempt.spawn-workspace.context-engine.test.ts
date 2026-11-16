@@ -868,7 +868,7 @@ describe("runEmbeddedAttempt context engine sessionKey forwarding", () => {
         customType: "openclaw.runtime-context",
         display: false,
         content: expect.stringMatching(
-          /^## Temporal Context\nCurrent date: \d{4}-\d{2}-\d{2}\nTime zone: [^\n]+$/,
+          /^## Temporal Context\nCurrent date: \d{4}-\d{2}-\d{2}\nTime zone: [^\n]+\n\nCurrent active computer \(latest reported app\/system input, not message origin\): active_node=unknown active_node_identity=unknown$/,
         ),
       }),
     ]);

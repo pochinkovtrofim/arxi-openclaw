@@ -138,7 +138,7 @@ describe("subagent facts through full attempt history preparation", () => {
     expectSubagentCarrier(empty.messages, "## Temporal Context\n");
     expect(empty.messages.at(-1)).toMatchObject({
       content: expect.stringMatching(
-        /^## Temporal Context\nCurrent date: \d{4}-\d{2}-\d{2}\nTime zone: [^\n]+$/,
+        /^## Temporal Context\nCurrent date: \d{4}-\d{2}-\d{2}\nTime zone: [^\n]+\n\nCurrent active computer \(latest reported app\/system input, not message origin\): active_node=unknown active_node_identity=unknown$/,
       ),
     });
   });
