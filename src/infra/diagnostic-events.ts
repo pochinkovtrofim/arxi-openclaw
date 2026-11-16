@@ -213,8 +213,17 @@ export type GatewayPreflightStep =
   | "handler_prepare"
   | "handler_entry"
   | "request_preflight";
+/** Steps of the run's `prepare` stage, after admission and before the run is prepared. */
+export type PrepareStep =
+  | "transcript_repair"
+  | "delivery_prepare"
+  | "session_persist"
+  | "diff_baseline"
+  | "session_state"
+  | "model_selection";
 export type PreflightStep =
   | CommandPrepareStep
+  | PrepareStep
   | SessionWriteStep
   | ContentStep
   | RunAdmissionStep

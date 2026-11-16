@@ -23,7 +23,7 @@ import {
   captureAgentRunLifecycleGeneration,
   withAgentRunLifecycleGeneration,
 } from "../infra/agent-events.js";
-import type { CommandPrepareStep } from "../infra/diagnostic-events.js";
+import type { CommandPrepareStep, PrepareStep } from "../infra/diagnostic-events.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { createPreflightStepRecorder } from "../infra/preflight-step-recorder.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -289,6 +289,7 @@ async function agentCommandInternal(
     return await runWithReplySettleStages(settleStages, () =>
       admittedWork.run(async () => {
         preflightStages.mark("admission");
+        const prepareSteps = createPreflightStepRecorder<PrepareStep>();
         if (sessionStore && sessionKey && !suppressVisibleSessionEffects) {
           try {
             await repairPendingAssistantTranscriptTurns({
@@ -312,6 +313,7 @@ async function agentCommandInternal(
               `Could not repair predecessor transcript before session reset for ${sessionKey}: ${diagnosticError(error)}`,
             );
           }
+          prepareSteps.record("transcript_repair");
         }
         if (opts.deliver === true) {
           const sendPolicy = resolveSendPolicy({
@@ -353,6 +355,7 @@ async function agentCommandInternal(
               `delivery preflight failed; continuing model run with requested delivery intent because bestEffortDeliver is enabled: ${diagnosticError(error)}`,
             );
           }
+          prepareSteps.record("delivery_prepare");
           assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
           if (preparedDelivery) {
             currentRunDeliveryContext = preparedDelivery.context;
@@ -435,6 +438,7 @@ async function agentCommandInternal(
           });
           // The commit already happened. Cleanup must retain ownership even if
           // cancellation invalidates the task during the awaited session write.
+          prepareSteps.record("session_persist");
           sessionEntry = persisted;
           trackedRestartRecoveryDeliveryClaim = persisted?.restartRecoveryDeliveryRunId === runId;
           const completion = bindCommandHarnessCompletionAssertion({
@@ -460,6 +464,7 @@ async function agentCommandInternal(
             storePath,
             sessionStore,
           });
+          prepareSteps.record("diff_baseline");
         }
         await prepareDeliveryForRun(sessionEntry);
 
@@ -508,6 +513,7 @@ async function agentCommandInternal(
           { config: cfg },
         );
         ({ sessionEntry, opts } = embeddedSessionState);
+        prepareSteps.record("session_state");
         const { requestedThinkLevel, runContext } = embeddedSessionState;
 
         const modelSelection = await measureAgentStartup(
@@ -524,7 +530,8 @@ async function agentCommandInternal(
           { config: cfg },
         );
         sessionEntry = modelSelection.sessionEntry;
-        preflightStages.mark("prepare");
+        prepareSteps.record("model_selection");
+        preflightStages.subStages("prepare", prepareSteps.steps, preflightStages.mark("prepare"));
         const { prepared: attemptPrepared, admission } = await prepareCommandForegroundRun({
           preflightStages,
           prepared,
