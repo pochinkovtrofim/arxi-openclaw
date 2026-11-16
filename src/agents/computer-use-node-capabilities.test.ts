@@ -264,6 +264,26 @@ describe("paired computer tool preparation", () => {
     expect(loadGatewayComputerStatus).not.toHaveBeenCalled();
   });
 
+  it("reads in-process during a run's preparation inside the Gateway's request scope", async () => {
+    const context = createContext();
+    connect(context, "scoped-node", ["screenshot", "double_click"]);
+    const prepared = await withPluginRuntimeGatewayRequestScope(
+      { context, isWebchatConnect: () => false },
+      load,
+    );
+    expect(prepared?.prepared?.actions).toEqual(["screenshot", "double_click"]);
+    expect(listNodes).not.toHaveBeenCalled();
+    expect(loadGatewayComputerStatus).not.toHaveBeenCalled();
+
+    const embedded = createContext();
+    embedded.localEmbedded = true;
+    await withPluginRuntimeGatewayRequestScope(
+      { context: embedded, isWebchatConnect: () => false },
+      load,
+    );
+    expect(listNodes).toHaveBeenCalledOnce();
+  });
+
   it("retains transport discovery for CLI and embedded callers", async () => {
     vi.mocked(listNodes).mockResolvedValue([
       {

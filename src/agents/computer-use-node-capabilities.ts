@@ -9,6 +9,7 @@ import {
   COMPUTER_USE_V1_ACTION_NAMES,
   COMPUTER_USE_V2_ACTION_NAMES,
 } from "../plugins/computer-use-contract.js";
+import { getInProcessGatewayRequestContext } from "../plugins/runtime/gateway-request-scope.js";
 import {
   loadGatewayComputerStatus,
   type GatewayComputerStatus,
@@ -78,10 +79,15 @@ export async function loadPairedComputerUseAvailabilityForSurface(params: {
     return undefined;
   }
   const { signal } = params;
-  const inProcess = shouldUseInProcessGatewayTool({});
-  const context = inProcess
-    ? getGatewayToolCallerIdentity()?.gatewayContextResolver?.()
-    : undefined;
+  // A tool call's own Gateway binding decides, and a retired one rejects locally. A run's
+  // preparation has no caller binding but runs inside the Gateway's request scope: it reads
+  // the same facts in-process instead of making a Gateway call on every turn.
+  const callerResolver = getGatewayToolCallerIdentity()?.gatewayContextResolver;
+  const scopeContext = callerResolver ? undefined : getInProcessGatewayRequestContext();
+  const inProcess = callerResolver
+    ? shouldUseInProcessGatewayTool({})
+    : scopeContext !== undefined && scopeContext.localEmbedded !== true;
+  const context = callerResolver ? (inProcess ? callerResolver() : undefined) : scopeContext;
   // Hosted discovery consumes its owners' prepared facts; execution still admits live authority.
   // In-process reads and Gateway calls are timed apart: a call costs a connection.
   const [nodes, gateway] = await Promise.all([
