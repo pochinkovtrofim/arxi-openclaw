@@ -95,7 +95,7 @@ describe("persistAgentSessionPhase", () => {
       expect(sql.queries.filter(isSessionEntryDataSql)).toEqual([]);
       // The actor's own steps and the wait for its writer come ahead of building the patch.
       expect(steps.slice(0, 6)).toEqual([
-        "session_actor_acquire",
+        "session_write_queue",
         "session_source_prepare",
         "session_entry_read",
         "session_writer_wait",

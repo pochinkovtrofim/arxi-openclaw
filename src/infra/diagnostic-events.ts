@@ -146,6 +146,8 @@ export type CommandPrepareStep =
   | "skill_commands";
 export type SessionWriteStep =
   | "skill_library_selection"
+  /** The store's write queue admitted this write (earlier writes to the store finished). */
+  | "session_write_queue"
   /** The session's store actor was taken or created (cold after a wake) for this write. */
   | "session_actor_acquire"
   /** The write's session source checks were prepared. */

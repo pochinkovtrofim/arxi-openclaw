@@ -47,6 +47,7 @@ export type SqliteSessionEntryPatchOptions = SessionEntryPatchOptions & {
 };
 
 export type SessionActorWriterStep =
+  | "session_write_queue"
   | "session_actor_acquire"
   | "session_source_prepare"
   | "session_entry_read";

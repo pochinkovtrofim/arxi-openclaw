@@ -377,6 +377,7 @@ async function patchSqliteSessionEntrySnapshot(
     assertCurrent,
   } = captureSessionEntryPatchSource(params);
   const prepare = async (prepared: SqliteLifecycleTargetSnapshot) => {
+    options.onWriterStep?.("session_entry_read");
     const existing = prepared[0]?.entry;
     if (
       options.prepareIf?.kind === "live-model-switch-pending" &&
@@ -495,8 +496,10 @@ async function patchSqliteSessionEntrySnapshot(
   const pendingCommit = runExclusiveSqliteSessionWrite(
     resolved,
     async () => {
+      options.onWriterStep?.("session_write_queue");
       if (useWorker) {
         const source = await prepareSessionSourceAuthority(sourceAssertion);
+        options.onWriterStep?.("session_source_prepare");
         const locality: "same-store" | "cross-store" =
           !source.nativeSource &&
           source.checks.every(
