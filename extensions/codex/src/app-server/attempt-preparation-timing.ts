@@ -6,11 +6,24 @@ import { createRunPrepStageReporter } from "openclaw/plugin-sdk/diagnostic-runti
 import { createStageTimingTracker, formatStageTimings } from "openclaw/plugin-sdk/time-runtime";
 import { isCodexAppServerProfilerEnabled } from "./profiler-flag.js";
 
-/** Records startup before the native turn owns inference and tool execution. */
+/**
+ * Records startup before the native turn owns inference and tool execution.
+ * `runtimeLoadStartedAt` is when the harness began loading the app-server runtime for
+ * this attempt: the clock starts there and that load is the first stage.
+ */
 export function createCodexAttemptPreparationTiming(
   params: Pick<EmbeddedRunAttemptParamsV2, "runId" | "sessionId" | "sessionKey" | "config">,
+  runtimeLoadStartedAt?: number,
 ) {
-  const tracker = createStageTimingTracker();
+  let trackerStartedAt = runtimeLoadStartedAt;
+  const tracker = createStageTimingTracker(() => {
+    const at = trackerStartedAt ?? Date.now();
+    trackerStartedAt = undefined;
+    return at;
+  });
+  if (runtimeLoadStartedAt !== undefined) {
+    tracker.mark("runtime-load");
+  }
   const stageIdentity = {
     runId: params.runId,
     ...(params.sessionKey ? { sessionKey: params.sessionKey } : {}),

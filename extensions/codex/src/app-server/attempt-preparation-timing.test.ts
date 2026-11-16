@@ -127,6 +127,34 @@ describe("Codex attempt preparation timing", () => {
     },
   );
 
+  it("starts the clock where the harness began loading the runtime", async () => {
+    let nowMs = 1_000;
+    vi.spyOn(Date, "now").mockImplementation(() => nowMs);
+    vi.spyOn(diagnostics, "areDiagnosticsEnabledForProcess").mockReturnValue(true);
+    const reported: Extract<diagnostics.DiagnosticEventPayload, { type: "context.stages" }>[] = [];
+    const unsubscribe = diagnostics.onInternalDiagnosticEvent((event) => {
+      if (event.type === "context.stages") {
+        reported.push(event);
+      }
+    });
+    const runTrace = diagnostics.createDiagnosticTraceContext();
+    const preparation = runWithDiagnosticTraceContext(runTrace, () =>
+      createCodexAttemptPreparationTiming({ runId: "run-1" }, 345),
+    );
+    await preparation.measure("connection", () => {
+      nowMs += 40;
+    });
+    preparation.ready();
+    await diagnostics.waitForDiagnosticEventsDrained();
+    unsubscribe();
+
+    expect(reported[0]?.stages).toEqual([
+      { name: "runtime-load", startedAt: 345, endedAt: 1_000 },
+      { name: "connection", startedAt: 1_000, endedAt: 1_040 },
+      { name: "native-turn-handoff", startedAt: 1_040, endedAt: 1_040 },
+    ]);
+  });
+
   it("reports contiguous preparation stages, then the native turn start, with the run's trace", async () => {
     let nowMs = 1_000;
     vi.spyOn(Date, "now").mockImplementation(() => nowMs);
