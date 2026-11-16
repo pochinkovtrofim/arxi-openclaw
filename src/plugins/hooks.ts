@@ -831,8 +831,9 @@ export function createHookRunner(
       earlier: readonly Promise<unknown>[],
     ): Promise<PluginHookBeforePromptBuildResult | undefined> => {
       if (hook.afterEarlierHandlers) {
-        await Promise.allSettled(earlier);
-        if (!dispatchOpen) {
+        const settled = await Promise.allSettled(earlier);
+        // A rejected earlier handler ends the dispatch; its finally may not have run yet.
+        if (!dispatchOpen || settled.some((outcome) => outcome.status === "rejected")) {
           return undefined;
         }
       }
@@ -870,7 +871,8 @@ export function createHookRunner(
         } finally {
           // Expiry closes this handler even while its work or a sibling continues.
           invocation.active = false;
-          if (runId) {
+          // A sibling outliving a failed dispatch must not land in the run's next prompt build.
+          if (runId && dispatchOpen) {
             recordHookPhaseTiming({
               runId,
               phase: hookName,
