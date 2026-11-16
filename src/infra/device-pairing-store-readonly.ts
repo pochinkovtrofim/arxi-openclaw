@@ -3,6 +3,7 @@ import {
   getActiveOpenClawStateDatabaseReadSnapshot,
 } from "../state/openclaw-state-db-readonly.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
+import { measurePrepStage } from "./run-prep-stages.js";
 import type { DeviceBootstrapBoundContextInput } from "./device-bootstrap.worker-types.js";
 import { withDevicePairingLock } from "./device-pairing-lock.js";
 import { captureDevicePairingPublication } from "./device-pairing-publication.js";
@@ -34,7 +35,10 @@ async function readPairing<Command extends DevicePairingReadCommand>(
         command.type === "devicePairing.list" && !snapshot
           ? { ...command, publishedRevision: publication.completeRevision() }
           : command;
-      reply = await executeExistingOpenClawStateRead(selected, selectedCommand, { current });
+      // Shown in a run's preparation only when the published pairing could not serve it.
+      reply = await measurePrepStage("pairing-state-read", () =>
+        executeExistingOpenClawStateRead(selected, selectedCommand, { current }),
+      );
     } catch (error) {
       if (!snapshot) {
         publication.fail();

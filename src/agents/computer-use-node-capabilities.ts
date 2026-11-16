@@ -1,5 +1,6 @@
 import { stableStringify } from "@openclaw/normalization-core/stable-stringify";
 import type { GatewayRequestContext } from "../gateway/server-methods/types.js";
+import { measurePrepStage } from "../infra/run-prep-stages.js";
 import type {
   ComputerUseCapabilityDescriptor,
   ComputerUseV2ActionName,
@@ -17,7 +18,6 @@ import {
   type ComputerToolTransport,
   SCREEN_SNAPSHOT_COMMAND,
 } from "./tools/computer-tool-shared.js";
-import { measurePrepStage } from "../infra/run-prep-stages.js";
 import { getGatewayToolCallerIdentity } from "./tools/gateway-caller-context.js";
 import { shouldUseInProcessGatewayTool } from "./tools/gateway.js";
 import { listNodes, type NodeListNode } from "./tools/nodes-utils.js";
