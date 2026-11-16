@@ -236,8 +236,13 @@ export type PluginHookRegistrationOptions<K extends PluginHookName> = {
     ? {
         /** Run only after the host has finalized the turn's policy-filtered tool surface. */
         requiresToolAuthority?: true;
+        /**
+         * Start only once every earlier handler of the same dispatch has settled,
+         * for a handler that reads what an earlier one finishes. Others start together.
+         */
+        afterEarlierHandlers?: true;
       }
-    : { requiresToolAuthority?: never });
+    : { requiresToolAuthority?: never; afterEarlierHandlers?: never });
 
 type PluginHookUsage = Pick<
   NormalizedUsage,
@@ -984,6 +989,8 @@ export type PluginHookRegistration<K extends PluginHookName = PluginHookName> = 
   eligibleTriggers?: readonly PluginHookAgentTrigger[];
   eligibleDispatchKinds?: readonly PluginHookReplyDispatchKind[];
   requiresToolAuthority?: true;
+  /** before_prompt_build only: waits for every earlier handler of its dispatch to settle. */
+  afterEarlierHandlers?: true;
   /** Host-resolved transcript authority. Never infer this again from plugin identity. */
   conversationAccessAllowed?: true;
   source: string;

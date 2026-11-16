@@ -76,11 +76,15 @@ ACPX, Agents API, Codex, and Copilot), ordering is: drain queued injections →
 
 For multiple registrations, the first defined provider/model/fallback override and
 `systemPrompt` win. Context additions concatenate in priority order, and tool
-restrictions intersect. A nested ordinary `before_prompt_build` dispatch on
+restrictions intersect. `before_prompt_build` handlers of one dispatch start in
+priority order without waiting for each other, so the phase takes about as long
+as its slowest handler; their results still merge in priority order. A handler
+that needs an earlier handler's finished work registers with
+`afterEarlierHandlers: true` and starts once every earlier handler has settled. A nested ordinary `before_prompt_build` dispatch on
 the same runner is skipped while its outer dispatch is active; other hook
 families and independent turns remain available.
 
-Message-consuming prompt hooks receive a detached model-context snapshot. Mutating nested messages does not change the caller's history, including when a handler retains its input after returning. Registrations within one dispatch share that snapshot in priority order; prepare, ordinary prompt-build, authorized enrichment, and subsequent prompt rebuilds receive separate snapshots. Storage-only native prompt text and tool-result details are excluded from these snapshots.
+Message-consuming prompt hooks receive a detached model-context snapshot. Mutating nested messages does not change the caller's history, including when a handler retains its input after returning. Registrations within one dispatch share that snapshot and run concurrently, so one handler's in-place change is not ordered against another's read; return changes instead; prepare, ordinary prompt-build, authorized enrichment, and subsequent prompt rebuilds receive separate snapshots. Storage-only native prompt text and tool-result details are excluded from these snapshots.
 
 ### Restrict a run to local models
 
@@ -113,7 +117,7 @@ Installation repair retains its separately admitted model list.
 Each `before_prompt_build` handler receives a read-only
 `ctx.hookInvocation.assertActive()` capability in both ordinary and authorized
 prompt phases. It throws after the runner stops awaiting that individual
-handler, including timeout, return, or error, before the next handler starts.
+handler, including timeout, return, or error, while its siblings may still run.
 Call it after awaited work and immediately before a synchronous side effect
 whose result must still be eligible for this hook invocation. Other handlers
 have independent capabilities, even within the same prompt dispatch.

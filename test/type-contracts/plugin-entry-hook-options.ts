@@ -31,6 +31,10 @@ function registerAuthorizedPromptHook(api: OpenClawPluginApi): void {
 
   // @ts-expect-error Tool authority is only supported for before_prompt_build.
   api.on("before_tool_call", async () => undefined, { requiresToolAuthority: true });
+
+  api.on("before_prompt_build", async () => undefined, { afterEarlierHandlers: true });
+  // @ts-expect-error Waiting for earlier handlers is only supported for before_prompt_build.
+  api.on("before_agent_finalize", async () => undefined, { afterEarlierHandlers: true });
 }
 
 void registerScopedReplyHook;

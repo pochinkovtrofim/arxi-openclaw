@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDeferred } from "../../test/helpers/promise.js";
 import { withPrepStages } from "../infra/run-prep-stages.js";
 import { createStageTimingTracker } from "../shared/stage-timing.js";
 import { hookTimingLabel, promptHookStageName, takeHookPhaseTimings } from "./hook-phase-timing.js";
@@ -16,6 +17,7 @@ describe("gating hook phase timing", () => {
   });
 
   it("reports the slowest prompt hook and a timed-out handler without changing the result", async () => {
+    // The handlers run together: the phase lasts as long as the slowest one.
     vi.useFakeTimers();
     const runner = createHookRunner(
       createMockPluginRegistry([
@@ -48,7 +50,7 @@ describe("gating hook phase timing", () => {
 
     const { before_prompt_build: timing } = takeHookPhaseTimings(RUN_ID);
     expect(timing).toEqual({
-      durationMs: 2_300,
+      durationMs: 2_000,
       count: 2,
       timeouts: 1,
       slowest: "arxi-channel:relationship-state",
@@ -76,6 +78,8 @@ describe("gating hook phase timing", () => {
   it("times each prompt hook as a measured step of the run's preparation", async () => {
     let clock = 0;
     const tracker = createStageTimingTracker(() => clock);
+    const connections = createDeferred();
+    const memory = createDeferred();
     const runner = createHookRunner(
       createMockPluginRegistry([
         {
@@ -84,7 +88,7 @@ describe("gating hook phase timing", () => {
           registrationId: "connections",
           priority: 10,
           handler: async () => {
-            clock += 40;
+            await connections.promise;
             return { appendContext: "setup" };
           },
         },
@@ -92,18 +96,27 @@ describe("gating hook phase timing", () => {
           hookName: "before_prompt_build",
           pluginId: "memory",
           priority: 1,
-          handler: () => {
-            clock += 5;
+          handler: async () => {
+            await memory.promise;
             return undefined;
           },
         },
       ]),
     );
-    await withPrepStages(tracker, () => runner.runBeforePromptBuild(promptEvent, ctx));
+    const run = withPrepStages(tracker, () => runner.runBeforePromptBuild(promptEvent, ctx));
+    clock = 5;
+    memory.resolve();
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    clock = 40;
+    connections.resolve();
+    await run;
 
+    // Both stages start with the dispatch and overlap; each ends when its handler settles.
     expect(tracker.snapshot().stages.map(({ name, durationMs }) => [name, durationMs])).toEqual([
-      ["hook-arxi-channel-connections", 40],
       ["hook-memory-1", 5],
+      ["hook-arxi-channel-connections", 40],
     ]);
   });
 
