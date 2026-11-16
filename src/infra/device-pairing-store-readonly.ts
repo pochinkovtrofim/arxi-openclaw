@@ -68,13 +68,15 @@ async function readPairing<Command extends DevicePairingReadCommand>(
     return observed;
   }
   // Only a superseded read joins writer admission; unrelated queued history must not block auth.
-  return withDevicePairingLock(async () => {
-    const refreshed = await read();
-    if (!refreshed) {
-      throw new Error("Device pairing read publication was replaced");
-    }
-    return refreshed;
-  });
+  return measurePrepStage("pairing-lock-retry", () =>
+    withDevicePairingLock(async () => {
+      const refreshed = await read();
+      if (!refreshed) {
+        throw new Error("Device pairing read publication was replaced");
+      }
+      return refreshed;
+    }),
+  );
 }
 
 /** Current paired rows and prepared node bindings share the publication's revision and lifetime. */
