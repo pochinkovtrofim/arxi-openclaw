@@ -215,6 +215,11 @@ type CliPreparedBackend = Awaited<ReturnType<typeof prepareCliBundleMcpConfig>> 
   ) => Promise<void>;
   /** Transfer process-owned native skill artifacts without claiming turn-scoped MCP/auth state. */
   claimLiveSessionResources?: () => (() => Promise<void>) | undefined;
+  /**
+   * Layout of this turn's native skills plugin dir when every skill links to its
+   * source dir; a live process that claimed a dir of the same layout can rescan it.
+   */
+  skillsReloadLayout?: string;
   /** Private child-only credential transport; never serialized into env or public plugin state. */
   secretInput?: CliSecretInput;
   /** Gateway-owned capture fence for this prepared bundle-MCP client. */

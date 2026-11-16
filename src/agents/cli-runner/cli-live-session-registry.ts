@@ -15,6 +15,7 @@ import {
   changedCliLiveSessionFingerprintPart,
   type CliLiveSessionFingerprintPartLabel,
   type CliLiveSessionFingerprintParts,
+  onlyCliLiveSessionSkillsChanged,
 } from "./live-session-fingerprint.js";
 import { cliBackendLog } from "./log.js";
 import type { PreparedCliRunContext } from "./types.js";
@@ -59,6 +60,8 @@ type CliLiveSessionRecord = {
   approvalGrants: Set<string>;
   cleanup?: () => Promise<void>;
   cleanupPromise?: Promise<void>;
+  /** Layout of the native skills plugin dir this record claimed and cleans up. */
+  skillsReloadLayout?: string;
   capture?: {
     token: string;
     key: string;
@@ -93,12 +96,14 @@ function rememberEndCause(ownerKey: string, cause: CliBackendLiveSessionEndCause
 
 export type CliLiveSessionStartReason =
   | "reused"
+  | "skills-reload"
   | "new"
   | CliBackendLiveSessionEndCause
   | `fingerprint-${CliLiveSessionFingerprintPartLabel}`;
 
 /**
- * Why this turn's CLI process was reused or started: "reused", "new" (no
+ * Why this turn's CLI process was reused or started: "reused", "skills-reload"
+ * (reused after it rescanned edited skills), "new" (no
  * process for this conversation yet in this Gateway), the cause the previous
  * process ended with, or "fingerprint-<input>" when an input of the warm
  * process changed. A closed list, never content.
@@ -299,6 +304,21 @@ export function createCliLiveSessionCapability(params: {
     }
     return record;
   };
+  // Edited skill files reach a process whose plugin dir links their source dirs
+  // once it rescans; any other changed input still needs a new process.
+  const skillsReloadable = (handle: CliBackendLiveSessionHandle) => {
+    assertActive();
+    const record = liveSessions.get(ownerKey);
+    const previous = handleFingerprintParts.get(handle);
+    return (
+      record?.handle === handle &&
+      (!params.requiredGeneration || params.requiredGeneration === handle.generation) &&
+      record.skillsReloadLayout !== undefined &&
+      record.skillsReloadLayout === params.context.preparedBackend.skillsReloadLayout &&
+      previous !== undefined &&
+      onlyCliLiveSessionSkillsChanged(previous, fingerprintParts)
+    );
+  };
 
   return Object.freeze({
     fingerprint,
@@ -333,6 +353,25 @@ export function createCliLiveSessionCapability(params: {
       }
       await restartCliLiveSession(params.context, params.abortSignal);
     },
+    reloadSkills: async (handle, reload) => {
+      if (!skillsReloadable(handle)) {
+        return false;
+      }
+      try {
+        await reload();
+      } catch (error) {
+        cliBackendLog.warn(`cli live session skills reload failed: ${String(error)}`);
+        return false;
+      }
+      // The process may have ended or been replaced while it rescanned.
+      if (!skillsReloadable(handle)) {
+        return false;
+      }
+      handle.fingerprint = fingerprint;
+      handleFingerprintParts.set(handle, fingerprintParts);
+      startReasons.set(params.context, "skills-reload");
+      return true;
+    },
     register: (handle) => {
       assertActive();
       if (retiredSessionCleanup.has(ownerKey)) {
@@ -358,6 +397,10 @@ export function createCliLiveSessionCapability(params: {
         owner: params.context.preparedBackend,
         approvalGrants: new Set(),
         ...(cleanup ? { cleanup } : {}),
+        // Only the record that claimed the plugin dir keeps it until exit.
+        ...(cleanup && params.context.preparedBackend.skillsReloadLayout
+          ? { skillsReloadLayout: params.context.preparedBackend.skillsReloadLayout }
+          : {}),
         ...(grant && params.captureKey
           ? {
               capture: {

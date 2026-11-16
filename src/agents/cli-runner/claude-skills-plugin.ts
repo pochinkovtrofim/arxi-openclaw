@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
+import { sha256Hex } from "../../infra/crypto-digest.js";
 import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
 import { ensureWritableSkillDirectories } from "../../skills/loading/skill-directory-modes.js";
 import type { SkillSnapshot } from "../../skills/types.js";
@@ -26,13 +27,17 @@ function sanitizeSkillDirName(name: string, used: Set<string>): string {
   return candidate;
 }
 
-async function linkOrCopySkillDir(params: { sourceDir: string; targetDir: string }) {
+async function linkOrCopySkillDir(params: {
+  sourceDir: string;
+  targetDir: string;
+}): Promise<"linked" | "copied"> {
   try {
     await fs.symlink(
       params.sourceDir,
       params.targetDir,
       process.platform === "win32" ? "junction" : "dir",
     );
+    return "linked";
   } catch {
     // Symlinks are preferred to avoid copying skill trees, but Windows/TCC/filesystem policy can
     // reject them. Copying preserves the session-scoped plugin contract.
@@ -45,14 +50,26 @@ async function linkOrCopySkillDir(params: { sourceDir: string; targetDir: string
       path.dirname(params.targetDir),
       path.basename(params.targetDir),
     );
+    return "copied";
   }
 }
 
-/** Prepares Claude CLI `--plugin-dir` args for the current session skill snapshot. */
+/**
+ * Prepares Claude CLI `--plugin-dir` args for the current session skill snapshot.
+ * `reloadLayout` identifies a plugin dir whose skills are all links to their live
+ * source dirs: a process started on another dir with the same layout sees this
+ * snapshot's skill files after a native skills reload. A copied skill is a stale
+ * snapshot, so a dir with one has no layout.
+ */
 export async function prepareClaudeCliSkillsPlugin(params: {
   backendId: string;
   skillsSnapshot?: SkillSnapshot;
-}): Promise<{ args: string[]; cleanup: () => Promise<void>; pluginDir?: string }> {
+}): Promise<{
+  args: string[];
+  cleanup: () => Promise<void>;
+  pluginDir?: string;
+  reloadLayout?: string;
+}> {
   if (normalizeLowercaseStringOrEmpty(params.backendId) !== CLAUDE_CLI_BACKEND_ID) {
     return { args: [], cleanup: async () => {} };
   }
@@ -111,14 +128,16 @@ export async function prepareClaudeCliSkillsPlugin(params: {
       },
     );
 
-    let linkedSkillCount = 0;
+    const placedSkills: Array<[targetDirName: string, sourceDir: string]> = [];
+    let copiedSkill = false;
     for (const skill of skills) {
       try {
-        await linkOrCopySkillDir({
+        const placement = await linkOrCopySkillDir({
           sourceDir: skill.sourceDir,
           targetDir: path.join(skillsDir, skill.targetDirName),
         });
-        linkedSkillCount += 1;
+        placedSkills.push([skill.targetDirName, skill.sourceDir]);
+        copiedSkill ||= placement === "copied";
       } catch (error) {
         cliBackendLog.warn(
           `claude skill plugin skipped ${skill.name}: ${error instanceof Error ? error.message : String(error)}`,
@@ -126,7 +145,7 @@ export async function prepareClaudeCliSkillsPlugin(params: {
       }
     }
 
-    if (linkedSkillCount === 0) {
+    if (placedSkills.length === 0) {
       await cleanup();
       return { args: [], cleanup: async () => {} };
     }
@@ -135,6 +154,13 @@ export async function prepareClaudeCliSkillsPlugin(params: {
       args: ["--plugin-dir", pluginDir],
       pluginDir,
       cleanup,
+      ...(copiedSkill
+        ? {}
+        : {
+            reloadLayout: sha256Hex(
+              JSON.stringify({ skillFilter: params.skillsSnapshot?.skillFilter, placedSkills }),
+            ),
+          }),
     };
   } catch (error) {
     await cleanup().catch(() => undefined);

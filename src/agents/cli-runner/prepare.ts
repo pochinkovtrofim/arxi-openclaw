@@ -1219,7 +1219,7 @@ async function prepareCliRunContextWithinReadFence(
             await preparedExecution?.beforeExecution?.();
           }
         : undefined;
-    const claudeSkillsPlugin =
+    const claudeSkillsPlugin: Awaited<ReturnType<typeof prepareClaudeCliSkillsPlugin>> =
       // Exact Claude execution strips native plugins; keep selected skills in
       // the host prompt instead of suppressing them for an unusable plugin.
       skipsTurnPreparation || nodeClaudePlacement || params.cliToolAvailability !== undefined
@@ -1273,6 +1273,9 @@ async function prepareCliRunContextWithinReadFence(
         ? { beforeExecution: preparedBackendBeforeExecution }
         : {}),
       ...(claimLiveSessionResources ? { claimLiveSessionResources } : {}),
+      ...(claudeSkillsPlugin.reloadLayout
+        ? { skillsReloadLayout: claudeSkillsPlugin.reloadLayout }
+        : {}),
       ...(preparedExecution?.secretInput ? { secretInput: preparedExecution.secretInput } : {}),
       ...(mcpClientGrantCapture ? { mcpClientGrantCapture } : {}),
       ...(preparedCleanup ? { cleanup: preparedCleanup } : {}),

@@ -65,6 +65,19 @@ export function changedCliLiveSessionFingerprintPart(
   return "unknown";
 }
 
+/** Whether the skills input is the only one that differs. */
+export function onlyCliLiveSessionSkillsChanged(
+  previous: CliLiveSessionFingerprintParts,
+  next: CliLiveSessionFingerprintParts,
+): boolean {
+  return (
+    previous.skillsFingerprint !== next.skillsFingerprint &&
+    Object.keys(FINGERPRINT_PART_LABELS).every(
+      (key) => key === "skillsFingerprint" || previous[key] === next[key],
+    )
+  );
+}
+
 function buildCliLiveSessionFingerprintInputs(params: CliLiveSessionFingerprintParams) {
   const context = params.context;
   const managedGrant = context.preparedBackend.mcpClientGrantCapture;
