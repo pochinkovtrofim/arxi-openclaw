@@ -674,6 +674,7 @@ export function createHookRunner(
 
   /**
    * Handlers are executed sequentially in priority order, and results are merged.
+   * before_prompt_build runs through runPromptBuildHooks instead.
    */
   async function runModifyingHook<K extends PluginHookName>(
     hookName: K,
@@ -693,7 +694,7 @@ export function createHookRunner(
     // Snapshot only after registration/authority filtering. Handlers in this dispatch
     // intentionally share its event, while later dispatches and the caller stay isolated.
     const dispatchEvent =
-      (hookName === "before_prompt_build" || hookName === "agent_turn_prepare") &&
+      hookName === "agent_turn_prepare" &&
       "messages" in event &&
       Array.isArray(event.messages)
         ? cloneHookIsolationValue(hookName, {
@@ -723,46 +724,19 @@ export function createHookRunner(
           : policy.isolateEventPerHandler
             ? cloneHookIsolationValue(hookName, dispatchEvent)
             : dispatchEvent;
-        const invocation = hookName === "before_prompt_build" ? { active: true } : undefined;
-        const handlerContext = invocation
-          ? {
-              ...ctx,
-              hookInvocation: Object.freeze({
-                assertActive() {
-                  if (!invocation.active) {
-                    throw new Error("prompt hook invocation is no longer active");
-                  }
-                },
-              }),
-            }
-          : ctx;
         let handlerResult: HookResult<K> | undefined;
         const startedAt = timedRunId ? Date.now() : 0;
         let timedOut = false;
         try {
-          const invoke = () =>
-            awaitHook(
-              hook,
-              Promise.resolve(handler(handlerEvent, handlerContext)),
-              modifyingHookTimeoutMsByHook[hookName],
-            );
-          // Each prompt hook is a measured step of the run's preparation, so a trace
-          // names the one the first model request waited for.
-          handlerResult =
-            hookName === "before_prompt_build"
-              ? await measurePrepStage(
-                  promptHookStageName(hookTimingLabel(hook, hookIndex)),
-                  invoke,
-                )
-              : await invoke();
+          handlerResult = await awaitHook(
+            hook,
+            Promise.resolve(handler(handlerEvent, ctx)),
+            modifyingHookTimeoutMsByHook[hookName],
+          );
         } catch (err) {
           timedOut = err instanceof HookTimeoutError;
           throw err;
         } finally {
-          // Expiry closes this handler even while its work or a later handler continues.
-          if (invocation) {
-            invocation.active = false;
-          }
           if (timedRunId && isTimedHookPhase(hookName)) {
             recordHookPhaseTiming({
               runId: timedRunId,
@@ -810,6 +784,139 @@ export function createHookRunner(
     }
 
     return result;
+  }
+
+  /**
+   * Prompt-build handlers start one after another in priority order without
+   * waiting for each other, so each one's synchronous start still runs in that
+   * order while their awaited work overlaps: the phase lasts about as long as its
+   * slowest handler, not the sum. Results merge in priority order however they
+   * settle. A handler registered with `afterEarlierHandlers` starts only once
+   * every handler before it has settled.
+   */
+  async function runPromptBuildHooks(
+    event: PluginHookBeforePromptBuildEvent,
+    ctx: PluginHookAgentContext,
+    policy: {
+      includeRegistration: (registration: PluginHookRegistration<"before_prompt_build">) => boolean;
+      assertHandlerBoundaryActive?: () => void;
+    },
+  ): Promise<PluginHookBeforePromptBuildResult | undefined> {
+    const hookName = "before_prompt_build";
+    const hooks = getHooksForName(registry, hookName).filter(policy.includeRegistration);
+    if (hooks.length === 0) {
+      return undefined;
+    }
+
+    // Snapshot only after registration/authority filtering. Handlers in this dispatch
+    // share its event, while later dispatches and the caller stay isolated.
+    const dispatchEvent = Array.isArray(event.messages)
+      ? cloneHookIsolationValue(hookName, {
+          ...event,
+          messages: projectModelContextMessages(event.messages),
+        })
+      : event;
+
+    logger?.debug?.(`[hooks] running ${hookName} (${hooks.length} handlers, concurrent)`);
+
+    const runId = typeof ctx.runId === "string" && ctx.runId ? ctx.runId : undefined;
+    const assertBoundary = () => {
+      policy.assertHandlerBoundaryActive?.();
+      readClaimingHookAdmission(ctx)?.assertCurrent?.();
+    };
+    const invocations: Array<{ active: boolean }> = [];
+    let dispatchOpen = true;
+
+    const runHandler = async (
+      hook: PluginHookRegistration<"before_prompt_build">,
+      hookIndex: number,
+      earlier: readonly Promise<unknown>[],
+    ): Promise<PluginHookBeforePromptBuildResult | undefined> => {
+      if (hook.afterEarlierHandlers) {
+        await Promise.allSettled(earlier);
+        if (!dispatchOpen) {
+          return undefined;
+        }
+      }
+      assertBoundary();
+      const invocation = { active: true };
+      invocations.push(invocation);
+      const handlerContext: PluginHookAgentContext = {
+        ...ctx,
+        hookInvocation: Object.freeze({
+          assertActive() {
+            if (!invocation.active) {
+              throw new Error("prompt hook invocation is no longer active");
+            }
+          },
+        }),
+      };
+      const label = hookTimingLabel(hook, hookIndex);
+      let handlerResult: PluginHookBeforePromptBuildResult | void = undefined;
+      try {
+        const startedAt = runId ? Date.now() : 0;
+        let timedOut = false;
+        try {
+          // Each prompt hook is a measured step of the run's preparation, so a trace
+          // names the one the first model request waited for.
+          handlerResult = await measurePrepStage(promptHookStageName(label), () =>
+            awaitHook(
+              hook,
+              Promise.resolve(hook.handler(dispatchEvent, handlerContext)),
+              modifyingHookTimeoutMsByHook[hookName],
+            ),
+          );
+        } catch (err) {
+          timedOut = err instanceof HookTimeoutError;
+          throw err;
+        } finally {
+          // Expiry closes this handler even while its work or a sibling continues.
+          invocation.active = false;
+          if (runId) {
+            recordHookPhaseTiming({
+              runId,
+              phase: hookName,
+              label,
+              startedAt,
+              endedAt: Date.now(),
+              timedOut,
+            });
+          }
+        }
+      } catch (err) {
+        if (err instanceof HookIsolationError) {
+          throw err;
+        }
+        handleHookError({ hookName, pluginId: hook.pluginId, error: err });
+      }
+      assertBoundary();
+      return handlerResult ?? undefined;
+    };
+
+    const tasks: Promise<PluginHookBeforePromptBuildResult | undefined>[] = [];
+    try {
+      for (const [hookIndex, hook] of hooks.entries()) {
+        tasks.push(runHandler(hook, hookIndex, [...tasks]));
+      }
+      // The first failure (a revoked boundary, a fail-closed handler) ends the
+      // dispatch without a result, as it did when it stopped the next handler.
+      const results = await Promise.all(tasks);
+      assertBoundary();
+      let merged: PluginHookBeforePromptBuildResult | undefined;
+      for (const handlerResult of results) {
+        if (handlerResult !== undefined && handlerResult !== null) {
+          merged = mergeBeforePromptBuild(merged, handlerResult);
+        }
+      }
+      return merged;
+    } finally {
+      // Siblings still running when the dispatch ends lose their invocation, and
+      // a waiting handler never starts.
+      dispatchOpen = false;
+      for (const invocation of invocations) {
+        invocation.active = false;
+      }
+    }
   }
 
   /**
@@ -885,8 +992,7 @@ export function createHookRunner(
     const token = { active: true };
     return await beforePromptBuildDispatch.run(token, async () => {
       try {
-        return await runModifyingHook("before_prompt_build", event, ctx, {
-          mergeResults: mergeBeforePromptBuild,
+        return await runPromptBuildHooks(event, ctx, {
           includeRegistration: (registration) => registration.requiresToolAuthority !== true,
         });
       } finally {
@@ -933,12 +1039,10 @@ export function createHookRunner(
       assertActive,
     });
     try {
-      const result = await runModifyingHook(
-        "before_prompt_build",
+      const result = await runPromptBuildHooks(
         event,
         { ...ctx, toolAuthority: authority },
         {
-          mergeResults: mergeBeforePromptBuild,
           includeRegistration: (registration) => registration.requiresToolAuthority === true,
           assertHandlerBoundaryActive: assertActive,
         },

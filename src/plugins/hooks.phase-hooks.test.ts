@@ -3,6 +3,7 @@ import { createDeferred } from "../../test/helpers/promise.js";
 import { applyEmbeddedAttemptToolsAllow } from "../agents/embedded-agent-runner/run/attempt-tool-construction-plan.js";
 import { readToolAllowlistIntersection } from "../agents/tool-policy.js";
 import { createDeferredCore } from "../shared/deferred.js";
+import { withClaimingHookAdmission } from "./hook-claim-admission.js";
 import type { PluginHookAgentContext } from "./hook-types.js";
 import { createHookRunner } from "./hooks.js";
 import {
@@ -19,7 +20,7 @@ import type {
 
 type PromptHook = Pick<
   PluginHookRegistration<"before_prompt_build">,
-  "handler" | "requiresToolAuthority" | "priority"
+  "handler" | "requiresToolAuthority" | "priority" | "afterEarlierHandlers" | "timeoutMs"
 >;
 const phaseEvent = { prompt: "test", messages: [] };
 function promptRunner(hooks: PromptHook[]) {
@@ -129,7 +130,10 @@ describe("prompt phase hooks", () => {
     expect(() => retained?.assertActive()).toThrow("no longer active");
   });
 
-  it("rejects stale enrichment and never starts its successor after host authority closes", async () => {
+  it.each([
+    { name: "a concurrent sibling", afterEarlierHandlers: undefined },
+    { name: "a waiting successor", afterEarlierHandlers: true as const },
+  ])("rejects stale enrichment with $name after host authority closes", async (params) => {
     const started = createDeferred();
     const gate = createDeferred();
     const later = vi.fn(() => ({ prependContext: "later context" }));
@@ -142,7 +146,11 @@ describe("prompt phase hooks", () => {
           return { prependContext: "stale context" };
         },
       },
-      { requiresToolAuthority: true, handler: later },
+      {
+        requiresToolAuthority: true,
+        handler: later,
+        ...(params.afterEarlierHandlers ? { afterEarlierHandlers: true } : {}),
+      },
     ]);
     let active = true;
     const run = runner.runAuthorizedPromptBuild(
@@ -161,7 +169,249 @@ describe("prompt phase hooks", () => {
     active = false;
     gate.resolve();
     await expect(run).rejects.toThrow("host turn authority is no longer active");
-    expect(later).not.toHaveBeenCalled();
+    // A sibling started with the dispatch; a waiting handler never starts once it closed.
+    expect(later).toHaveBeenCalledTimes(params.afterEarlierHandlers ? 0 : 1);
+  });
+});
+
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+describe("prompt hooks run together", () => {
+  it("takes as long as the slowest handler and merges in priority order", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const settled: string[] = [];
+      const slow = (name: string, ms: number) => async () => {
+        await sleep(ms);
+        settled.push(name);
+        return { prependContext: name, appendSystemContext: `system ${name}` };
+      };
+      const runner = promptRunner([
+        { priority: 10, handler: slow("C", 200) },
+        { priority: 30, handler: slow("A", 300) },
+        { priority: 20, handler: slow("B", 100) },
+      ]);
+      let done = false;
+      const run = runner.runBeforePromptBuild(phaseEvent, {}).finally(() => {
+        done = true;
+      });
+      await vi.advanceTimersByTimeAsync(299);
+      expect(settled).toEqual(["B", "C"]);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await expect(run).resolves.toMatchObject({
+        prependContext: "A\n\nB\n\nC",
+        appendSystemContext: "system A\n\nsystem B\n\nsystem C",
+      });
+      expect(settled).toEqual(["B", "C", "A"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("runs each handler's synchronous start in priority order before any awaited work", async () => {
+    const entered: string[] = [];
+    const reads = new Map<string, Promise<string>>();
+    const gate = createDeferred();
+    const runner = promptRunner([
+      {
+        priority: 1,
+        handler: async () => {
+          entered.push("reader");
+          // The preload pattern: a later handler takes a read an earlier one started.
+          const read = reads.get("setup");
+          return read ? { appendContext: await read } : undefined;
+        },
+      },
+      {
+        priority: 1000,
+        handler: () => {
+          entered.push("preload");
+          reads.set(
+            "setup",
+            gate.promise.then(() => "preloaded"),
+          );
+          return undefined;
+        },
+      },
+      {
+        priority: 500,
+        handler: async () => {
+          entered.push("middle");
+          await gate.promise;
+          return undefined;
+        },
+      },
+    ]);
+    const run = runner.runBeforePromptBuild(phaseEvent, {});
+    expect(entered).toEqual(["preload", "middle", "reader"]);
+    gate.resolve();
+    await expect(run).resolves.toMatchObject({ appendContext: "preloaded" });
+  });
+
+  it("keeps the other results when one handler throws and another times out", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const logger = { warn: vi.fn(), error: vi.fn() };
+      const registry = createEmptyPluginRegistry();
+      const hook = (
+        pluginId: string,
+        priority: number,
+        handler: PromptHook["handler"],
+        timeoutMs?: number,
+      ) => ({
+        pluginId,
+        hookName: "before_prompt_build" as const,
+        source: "test",
+        priority,
+        handler,
+        ...(timeoutMs ? { timeoutMs } : {}),
+      });
+      registry.typedHooks.push(
+        hook("hung", 30, () => new Promise(() => {}), 50),
+        hook(
+          "broken",
+          20,
+          async () => {
+            await sleep(10);
+            throw new Error("synthetic failure");
+          },
+        ),
+        hook("healthy", 10, async () => {
+          await sleep(20);
+          return { appendContext: "healthy context" };
+        }),
+      );
+      const run = createHookRunner(registry, { logger }).runBeforePromptBuild(phaseEvent, {});
+      await vi.advanceTimersByTimeAsync(50);
+      await expect(run).resolves.toMatchObject({ appendContext: "healthy context" });
+      expect(logger.error).toHaveBeenCalledTimes(2);
+      expect(logger.error.mock.calls.map(([message]) => message)).toEqual([
+        expect.stringContaining("before_prompt_build handler from broken failed"),
+        expect.stringContaining("before_prompt_build handler from hung failed"),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("returns no result and closes running siblings when a fail-closed handler throws", async () => {
+    const registry = createEmptyPluginRegistry();
+    const gate = createDeferred();
+    let siblingContext: PluginHookAgentContext | undefined;
+    registry.typedHooks.push(
+      {
+        pluginId: "sibling",
+        hookName: "before_prompt_build",
+        source: "test",
+        priority: 10,
+        handler: async (_event, ctx) => {
+          siblingContext = ctx;
+          await gate.promise;
+          return { appendContext: "late" };
+        },
+      },
+      {
+        pluginId: "strict",
+        hookName: "before_prompt_build",
+        source: "test",
+        priority: 1,
+        handler: async () => {
+          throw new Error("synthetic strict failure");
+        },
+      },
+    );
+    const runner = createHookRunner(registry, { catchErrors: false });
+    await expect(runner.runBeforePromptBuild(phaseEvent, {})).rejects.toThrow(
+      "before_prompt_build handler from strict failed",
+    );
+    expect(isActive(siblingContext?.hookInvocation)).toBe(false);
+    gate.resolve();
+  });
+
+  it("drops the merged result when claim admission is revoked while handlers run", async () => {
+    const gate = createDeferred();
+    let current = true;
+    const runner = promptRunner([
+      {
+        handler: async () => {
+          await gate.promise;
+          return { appendContext: "context" };
+        },
+      },
+      { handler: () => ({ prependContext: "fast" }) },
+    ]);
+    const context = withClaimingHookAdmission(
+      {},
+      {
+        assertCurrent: () => {
+          if (!current) {
+            throw new Error("admission revoked");
+          }
+        },
+      },
+    );
+    const run = runner.runBeforePromptBuild(phaseEvent, context);
+    await Promise.resolve();
+    current = false;
+    gate.resolve();
+    await expect(run).rejects.toThrow("admission revoked");
+  });
+
+  it("starts a waiting handler only after every earlier handler settles, timed out ones included", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const entered: string[] = [];
+      const runner = promptRunner([
+        {
+          priority: 30,
+          timeoutMs: 100,
+          handler: () => {
+            entered.push("hung");
+            return new Promise(() => {});
+          },
+        },
+        {
+          priority: 20,
+          handler: async () => {
+            entered.push("earlier");
+            await sleep(40);
+            return { appendContext: "earlier" };
+          },
+        },
+        {
+          priority: 10,
+          afterEarlierHandlers: true,
+          // Its own budget counts from its start, not from the dispatch.
+          timeoutMs: 30,
+          handler: async () => {
+            entered.push("waiting");
+            await sleep(20);
+            return { appendContext: "waiting" };
+          },
+        },
+        {
+          priority: 0,
+          handler: () => {
+            entered.push("later");
+            return { appendContext: "later" };
+          },
+        },
+      ]);
+      const run = runner.runBeforePromptBuild(phaseEvent, {});
+      expect(entered).toEqual(["hung", "earlier", "later"]);
+      await vi.advanceTimersByTimeAsync(99);
+      expect(entered).toEqual(["hung", "earlier", "later"]);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(entered).toEqual(["hung", "earlier", "later", "waiting"]);
+      await vi.advanceTimersByTimeAsync(20);
+      await expect(run).resolves.toMatchObject({ appendContext: "earlier\n\nwaiting\n\nlater" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -280,7 +530,7 @@ describe("prompt hook invocation", () => {
   );
 
   it.each(["ordinary", "authorized"] as const)(
-    "expires only the timed-out %s handler while its next sibling is still active",
+    "expires only the timed-out %s handler while its concurrent sibling is still active",
     async (phase) => {
       vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       const firstGate = createDeferredCore();
@@ -332,12 +582,12 @@ describe("prompt hook invocation", () => {
       );
       const run = dispatch(runner, phase, context);
       try {
-        expect(contexts).toHaveLength(1);
+        // Both start with the dispatch, in priority order.
+        expect(contexts).toHaveLength(2);
+        expect(firstActiveAtSecondEntry).toBe(true);
         expect(isActive(contexts[0]?.hookInvocation)).toBe(true);
         await vi.advanceTimersByTimeAsync(5);
-        expect(contexts).toHaveLength(2);
         expect(activeAtTimeout).toEqual([false]);
-        expect(firstActiveAtSecondEntry).toBe(false);
         expect(contexts[0]?.hookInvocation).not.toBe(contexts[1]?.hookInvocation);
         expect(isActive(contexts[0]?.hookInvocation)).toBe(false);
         expect(isActive(contexts[1]?.hookInvocation)).toBe(true);

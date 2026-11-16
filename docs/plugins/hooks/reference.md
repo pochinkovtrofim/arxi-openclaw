@@ -21,12 +21,18 @@ order breaking ties. Execution depends on the hook kind:
 
 | Kind             | Execution contract                                                                                                                                  |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Modify           | Sequential; results merge according to the hook's contract below. Returning a rewrite does not generally change the event passed to later handlers. |
+| Modify           | Sequential; results merge according to the hook's contract below. Returning a rewrite does not generally change the event passed to later handlers. `before_prompt_build` is the exception: its handlers start together, see below. |
 | Claim            | Sequential; the first `{ handled: true }` wins and skips remaining handlers.                                                                        |
 | Gate             | Sequential; a block stops remaining handlers.                                                                                                       |
 | Observe          | Handlers run concurrently; return values are ignored. The emitter may await completion or dispatch fire-and-forget.                                 |
 | Sync modify/gate | Synchronous, in priority order; each handler sees the latest message. Promises are ignored with a warning.                                          |
 | Evaluate         | Skill evaluators run concurrently and produce separate attributed outcomes.                                                                         |
+
+`before_prompt_build` handlers start one after another in priority order
+without waiting for each other: each handler's synchronous start runs in
+priority order, its awaited work overlaps the others', and results still merge
+in priority order. A handler that reads what an earlier handler of the same
+dispatch finishes after an `await` registers with `afterEarlierHandlers: true`.
 
 Priority does not serialize observation side effects. Fire-and-forget events
 can overlap later events, and callbacks are not a durable event queue. Return
@@ -43,6 +49,7 @@ modifications explicitly instead of relying on in-place mutation.
 | `eligibleTriggers`      | For `before_agent_reply` only, limits host dispatch to one or more of `cron`, `heartbeat`, or `user`.                                                                                                                                                 |
 | `eligibleDispatchKinds` | For `reply_dispatch` only, limits host dispatch to `agent`, `acp`, or both. Omit to handle all dispatch kinds.                                                                                                                                        |
 | `requiresToolAuthority` | For `before_prompt_build` only, runs the handler after the host finalizes the current turn's tool surface and supplies ephemeral `ctx.toolAuthority`. Use this for context retrieval that must follow tool policy.                                    |
+| `afterEarlierHandlers`  | For `before_prompt_build` only, starts the handler once every earlier handler of the same dispatch has settled (returned, failed or timed out). Its own `timeoutMs` counts from its start. Use it only for a handler that depends on an earlier one's finished work. |
 
 Trigger eligibility is enforced by the host before it invokes the handler. A
 hook registered with `eligibleTriggers: ["heartbeat", "cron"]` is therefore

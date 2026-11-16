@@ -1,6 +1,6 @@
 import type { PluginHookRegistration } from "./hook-types.js";
 
-/** Gating hook phases whose sequential handlers delay the first model request. */
+/** Gating hook phases whose handlers delay the first model request. */
 export type TimedHookPhase = "before_prompt_build" | "before_agent_run";
 
 /** Content-free summary of one run's handlers for a gating hook phase. */

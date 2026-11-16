@@ -16,6 +16,7 @@ export function createMockPluginRegistry(
     timeoutMs?: number;
     eligibleTriggers?: readonly PluginHookAgentTrigger[];
     requiresToolAuthority?: true;
+    afterEarlierHandlers?: true;
     conversationAccessAllowed?: true;
   }>,
 ): PluginRegistry {
@@ -44,6 +45,7 @@ export function createMockPluginRegistry(
       ...(h.timeoutMs !== undefined ? { timeoutMs: h.timeoutMs } : {}),
       ...(h.eligibleTriggers !== undefined ? { eligibleTriggers: h.eligibleTriggers } : {}),
       ...(h.requiresToolAuthority ? { requiresToolAuthority: true } : {}),
+      ...(h.afterEarlierHandlers ? { afterEarlierHandlers: true } : {}),
       ...(h.conversationAccessAllowed ? { conversationAccessAllowed: true } : {}),
       source: "test",
     })) as PluginRegistry["typedHooks"],

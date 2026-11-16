@@ -438,6 +438,9 @@ export function createToolHookRegistrars(state: PluginRegistryState) {
       ...(hookName === "before_prompt_build" && opts?.requiresToolAuthority === true
         ? { requiresToolAuthority: true }
         : {}),
+      ...(hookName === "before_prompt_build" && opts?.afterEarlierHandlers === true
+        ? { afterEarlierHandlers: true }
+        : {}),
       ...(hookName === "session_end" && conversationAccessAllowed
         ? { conversationAccessAllowed: true }
         : {}),
