@@ -10,6 +10,7 @@ import type {
   DevicePairingNodeSnapshot,
   DevicePairingReadCommand,
 } from "./device-pairing-read.types.js";
+import { measurePrepStage } from "./run-prep-stages.js";
 
 async function readPairing<Command extends DevicePairingReadCommand>(
   command: Command,
@@ -34,7 +35,10 @@ async function readPairing<Command extends DevicePairingReadCommand>(
         command.type === "devicePairing.list" && !snapshot
           ? { ...command, publishedRevision: publication.completeRevision() }
           : command;
-      reply = await executeExistingOpenClawStateRead(selected, selectedCommand, { current });
+      // Shown in a run's preparation only when the published pairing could not serve it.
+      reply = await measurePrepStage("pairing-state-read", () =>
+        executeExistingOpenClawStateRead(selected, selectedCommand, { current }),
+      );
     } catch (error) {
       if (!snapshot) {
         publication.fail();
@@ -64,13 +68,15 @@ async function readPairing<Command extends DevicePairingReadCommand>(
     return observed;
   }
   // Only a superseded read joins writer admission; unrelated queued history must not block auth.
-  return withDevicePairingLock(async () => {
-    const refreshed = await read();
-    if (!refreshed) {
-      throw new Error("Device pairing read publication was replaced");
-    }
-    return refreshed;
-  });
+  return measurePrepStage("pairing-lock-retry", () =>
+    withDevicePairingLock(async () => {
+      const refreshed = await read();
+      if (!refreshed) {
+        throw new Error("Device pairing read publication was replaced");
+      }
+      return refreshed;
+    }),
+  );
 }
 
 /** Current paired rows and prepared node bindings share the publication's revision and lifetime. */
