@@ -607,8 +607,9 @@ export async function loadCliSessionPromptContext(
     }
   }
   assertActive?.();
-  // Past the resume cursor only the context build reads entries, and it starts at the
-  // latest compaction; the session-gap note counts back further, so it keeps the reset window.
+  // The resume note looks back only to the cursor's entry and the context build starts at
+  // the latest compaction, so older rows only cost reading. The session-gap note (withheld
+  // content only) counts back to the reset, so it keeps that window.
   const cursor = params.cliSessionBinding?.transcriptCursor;
   const keepFromEntryId =
     !contentBlocked && cursor?.entryId && cursor.localSessionId === params.sessionId
