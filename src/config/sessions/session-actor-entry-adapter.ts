@@ -53,6 +53,7 @@ export function patchSessionActorEntryInScope(
     if (!binding) {
       return { entry: null };
     }
+    params.options.onWriterStep?.("session_actor_acquire");
     try {
       return {
         entry: await patchSessionActorEntry(binding, {
@@ -74,6 +75,7 @@ async function patchSessionActorEntry(
   const { actor, authority } = binding;
   const { options, update, sessionKey } = params;
   const source = await prepareSessionSourceAuthority(options.workerGuard?.source);
+  options.onWriterStep?.("session_source_prepare");
   const failures: unknown[] = [];
   let cancelled = false;
   let maintenancePreservation:
@@ -98,6 +100,7 @@ async function patchSessionActorEntry(
     let expected: { entry: SessionEntry | undefined } | undefined;
     if (typeof update === "function") {
       const entry = await actor.storage!.read({ type: "session.entry.read", input: {} }, authority);
+      options.onWriterStep?.("session_entry_read");
       if (options.prepareIf && !entry?.liveModelSwitchPending) {
         return null;
       }

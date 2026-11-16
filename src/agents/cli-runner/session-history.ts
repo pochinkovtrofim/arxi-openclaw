@@ -16,6 +16,7 @@ import { SessionTranscriptStorageUnavailableError } from "../../config/sessions/
 import { resolveSessionTranscriptReadFence } from "../../config/sessions/session-transcript-read-fence.js";
 import { readSessionTranscriptWatermarkAsync } from "../../config/sessions/session-transcript-watermark.js";
 import type { CliSessionBinding } from "../../config/sessions/types.js";
+import { measurePrepStage } from "../../infra/run-prep-stages.js";
 import {
   annotateInterSessionPromptText,
   normalizeInputProvenance,
@@ -325,19 +326,21 @@ async function loadCliSessionEntries(
   // Normalize bounded cuts with opaque ancestry before rebuilding CLI context.
   try {
     return (
-      await SessionManager.openBoundedAsync(sessionTarget, {
-        signal: abortSignal,
-        maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
-        maxEvents: MAX_CLI_SESSION_HISTORY_EVENTS,
-        // A reset closes every look-back here; rows before it only cost reading.
-        fromLatestBoundary: true,
-        // The resume note looks back only to this entry, so older summarized rows may go too.
-        ...(keepFromEntryId ? { keepFromEntryId } : {}),
-        onTruncated: () =>
-          cliBackendLog.warn(
-            `cli session history truncated to bounded active context: ${sessionTarget.sessionId}`,
-          ),
-      })
+      await measurePrepStage("history-bounded-read", () =>
+        SessionManager.openBoundedAsync(sessionTarget, {
+          signal: abortSignal,
+          maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
+          maxEvents: MAX_CLI_SESSION_HISTORY_EVENTS,
+          // A reset closes every look-back here; rows before it only cost reading.
+          fromLatestBoundary: true,
+          // The resume note looks back only to this entry, so older summarized rows may go too.
+          ...(keepFromEntryId ? { keepFromEntryId } : {}),
+          onTruncated: () =>
+            cliBackendLog.warn(
+              `cli session history truncated to bounded active context: ${sessionTarget.sessionId}`,
+            ),
+        }),
+      )
     ).getBranch();
   } catch (error) {
     if (
@@ -390,23 +393,30 @@ export async function loadCliSessionHistoryMessages({
     return [];
   }
   const target = memory?.target ?? sessionTarget;
+  // The turn's first history read: a cold transcript is restored and projected here.
   if (!memory) {
-    const { restoreSessionColdTranscript } =
-      await import("../../config/sessions/session-cold-storage.js");
-    await restoreSessionColdTranscript(target, () => abortSignal?.throwIfAborted());
+    await measurePrepStage("history-cold-restore", async () => {
+      const { restoreSessionColdTranscript } =
+        await import("../../config/sessions/session-cold-storage.js");
+      await restoreSessionColdTranscript(target, () => abortSignal?.throwIfAborted());
+    });
   }
-  await waitForSessionTranscriptProjection(target, abortSignal);
+  await measurePrepStage("history-projection-wait", () =>
+    waitForSessionTranscriptProjection(target, abortSignal),
+  );
   // Hooks retain history across compactions; only reset closes their history window.
   const { readSessionTranscriptBoundedMessageTailPageAsync } =
     await import("../../gateway/session-transcript-readers.js");
-  const page = await readSessionTranscriptBoundedMessageTailPageAsync(
-    target,
-    {
-      maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
-      maxMessages: MAX_CLI_SESSION_HISTORY_MESSAGES,
-      offset: 0,
-    },
-    abortSignal,
+  const page = await measurePrepStage("history-tail-read", () =>
+    readSessionTranscriptBoundedMessageTailPageAsync(
+      target,
+      {
+        maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
+        maxMessages: MAX_CLI_SESSION_HISTORY_MESSAGES,
+        offset: 0,
+      },
+      abortSignal,
+    ),
   );
   if (page.events.length < page.scannedMessages) {
     cliBackendLog.warn(
