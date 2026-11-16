@@ -408,7 +408,10 @@ export function protectRecoveryDependencies(
   const backupGroups = new Map<string, string>();
   for (const [archive, references] of refs) {
     for (const ref of references.filter(active)) {
-      if (ref.target.databaseIdentity) {
+      // An untrusted member (outside the state directory, like Ro's leased credential
+      // database, or behind a symlink) stays untouched, but cleanup can never release it,
+      // so it must not pin the members cleanup owns.
+      if (ref.target.databaseIdentity && ref.trusted) {
         const sibling = backupGroups.get(ref.run.manifestPath);
         if (sibling) {
           connect(archive, sibling);
