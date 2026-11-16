@@ -45,16 +45,16 @@ export function startupStageMoments(
 }
 
 /**
- * The turn's own run goes to its harness: its pre-run stages close, split into steps. The
- * last step runs from the dispatch checkpoint to this hand-off (the attempt's workspace,
- * prompt, skills and gateway tools).
+ * The turn's own run is handed to its backend: its startup checkpoints become steps, the
+ * last one from the dispatch checkpoint to this hand-off (the attempt's workspace, prompt,
+ * skills and gateway tools). The pre-run stages close where the harness starts the attempt.
  */
-export function closeRunAdmission(
+export function handOffAdmission(
   tracker: Pick<ReturnType<typeof createStageTimingTracker>, "snapshot">,
   runId: string,
 ) {
   const now = Date.now();
-  getReplySettleStages()?.runStarting(
+  getReplySettleStages()?.runHandedOff(
     [...startupStageMoments(tracker, now), { step: "attempt_handoff", at: now }],
     runId,
   );

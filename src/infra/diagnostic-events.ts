@@ -178,7 +178,9 @@ export type ContentStep =
 /**
  * The embedded runner's startup checkpoints (its slow-start log names, `-` as `_`), after
  * the command hands the run over and the session's admission (placement, maintenance,
- * lanes) ends: they split `run_admission`, which closes where the attempt is dispatched.
+ * lanes) ends: they split `run_admission`. `attempt_handoff` is where the attempt is handed
+ * to its backend; `harness_entry` closes the stage where the harness starts the attempt
+ * (attachments, native session checks, host scope and harness parameter setup between).
  */
 export const RUN_ADMISSION_STEPS = [
   "run_params",
@@ -197,6 +199,7 @@ export const RUN_ADMISSION_STEPS = [
   "attempt_runtime_plan",
   "attempt_dispatch",
   "attempt_handoff",
+  "harness_entry",
 ] as const;
 export type RunAdmissionStep = (typeof RUN_ADMISSION_STEPS)[number];
 /**

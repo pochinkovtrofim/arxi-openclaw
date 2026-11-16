@@ -1,5 +1,9 @@
 // Verifies harness lifecycle capability checks, diagnostics, and trace scoping.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createReplySettleStages,
+  runWithReplySettleStages,
+} from "../../auto-reply/reply/reply-settle-stages.js";
 import { clearRuntimeConfigSnapshot } from "../../config/config.js";
 import { OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST } from "../../context-engine/host-compat.js";
 import type { ContextEngine } from "../../context-engine/types.js";
@@ -193,6 +197,29 @@ describe("AgentHarness lifecycle runner", () => {
         operationalRunInstance,
       ),
     ).toEqual(["/tmp/reply.opus"]);
+  });
+
+  it("closes the turn's pre-run stages where its harness starts, before the attempt runs", async () => {
+    const params = createAttemptParams();
+    const onRunStarting = vi.fn();
+    const stages = createReplySettleStages({ runId: params.runId, onRunStarting });
+    stages.runHandedOff([{ step: "attempt_handoff", at: 1 }], params.runId);
+    const harness: AgentHarness = {
+      id: "codex",
+      label: "Codex",
+      supports: () => ({ supported: true }),
+      runAttempt: async () => {
+        expect(onRunStarting).toHaveBeenCalledTimes(1);
+        return createAttemptResult();
+      },
+    };
+
+    await runWithReplySettleStages(stages, () => runAgentHarnessLifecycleAttempt(harness, params));
+
+    expect(onRunStarting.mock.calls[0]?.[0]).toEqual([
+      { step: "attempt_handoff", at: 1 },
+      { step: "harness_entry", at: expect.any(Number) },
+    ]);
   });
 
   it("backfills omitted current-attempt provenance from the harness assistant", async () => {

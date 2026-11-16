@@ -1,3 +1,4 @@
+import { getReplySettleStages } from "../../auto-reply/reply/reply-settle-stages.js";
 import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { getRuntimeConfigSnapshot } from "../../config/config.js";
 import { assertContextEngineHostSupport } from "../../context-engine/host-compat.js";
@@ -399,6 +400,9 @@ export async function runAgentHarnessLifecycleAttempt(
   ) => harness.runAttempt(attemptParams),
 ): Promise<EmbeddedRunAttemptResult> {
   let result: EmbeddedRunAttemptResult;
+  // The turn's own run reaches its harness: the pre-run stages close here, after the
+  // attempt's hand-off (attachments, native session checks, host scope and harness setup).
+  getReplySettleStages()?.runStarting([{ step: "harness_entry", at: Date.now() }], params.runId);
   const diagnostics = createAgentHarnessLifecycleDiagnostics(harness, params);
   try {
     assertAgentHarnessContextEngineSupport(harness, params);

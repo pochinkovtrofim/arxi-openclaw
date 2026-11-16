@@ -807,8 +807,8 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
     embeddedRunParams,
     readChannelSourceTurnSameThreadRequired(params.runContext),
   );
-  // The pre-run stages close where the embedded runner dispatches the attempt (or where a
-  // CLI backend it hands the run to starts it), after the session's admission and startup.
+  // The pre-run stages close where the harness starts the attempt (or where a CLI backend
+  // the run is handed to starts it), after the session's admission and startup.
   getReplySettleStages()?.runStep("run_params");
   const embeddedResult = await runEmbeddedAgent(embeddedRunParams);
   getReplySettleStages()?.runEnded();
