@@ -1,3 +1,4 @@
+import { measurePrepStage } from "../../infra/run-prep-stages.js";
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
 import { sliceUtf16Safe, truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import {
@@ -317,15 +318,20 @@ async function loadCliSessionEntries(
   }
   const admission = resolveSessionTranscriptReadFence(sessionTarget);
   if (!memory) {
-    const { restoreSessionColdTranscript } =
-      await import("../../config/sessions/session-cold-storage.js");
-    await restoreSessionColdTranscript(sessionTarget, () => abortSignal?.throwIfAborted());
+    await measurePrepStage("history-cold-restore", async () => {
+      const { restoreSessionColdTranscript } =
+        await import("../../config/sessions/session-cold-storage.js");
+      await restoreSessionColdTranscript(sessionTarget, () => abortSignal?.throwIfAborted());
+    });
   }
-  await waitForSessionTranscriptProjection(sessionTarget, abortSignal);
+  await measurePrepStage("history-projection-wait", () =>
+    waitForSessionTranscriptProjection(sessionTarget, abortSignal),
+  );
   // Normalize bounded cuts with opaque ancestry before rebuilding CLI context.
   try {
     return (
-      await SessionManager.openBoundedAsync(sessionTarget, {
+      await measurePrepStage("history-bounded-read", () =>
+        SessionManager.openBoundedAsync(sessionTarget, {
         signal: abortSignal,
         maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
         maxEvents: MAX_CLI_SESSION_HISTORY_EVENTS,
@@ -337,7 +343,8 @@ async function loadCliSessionEntries(
           cliBackendLog.warn(
             `cli session history truncated to bounded active context: ${sessionTarget.sessionId}`,
           ),
-      })
+        }),
+      )
     ).getBranch();
   } catch (error) {
     if (
