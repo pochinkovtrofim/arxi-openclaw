@@ -38,6 +38,7 @@ describe("frame receipt through the authenticated dispatcher", () => {
     expect(frameReceipt?.steps.map(({ step }) => step)).toEqual([
       "frame_admission",
       "authorize_profile",
+      "authorize_session_facts",
       "request_authorize",
       "handler_prepare",
     ]);
