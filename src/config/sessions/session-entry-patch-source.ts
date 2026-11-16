@@ -1,5 +1,5 @@
-import type { SessionWriteStep } from "../../infra/diagnostic-events.js";
 import { isMainThread } from "node:worker_threads";
+import type { SessionWriteStep } from "../../infra/diagnostic-events.js";
 import {
   assertExistingDatabaseIdentity,
   readDatabasePathIdentitySync,
