@@ -42,6 +42,25 @@ export function createReplySettleStages(params: {
       }
     },
     /**
+     * The run was handed to its backend: records these moments (in order) as steps without
+     * closing; `runStarting` closes where the harness starts. Another run's id records nothing.
+     */
+    runHandedOff: (steps: ReadonlyArray<PreflightStepMoment>, runId?: string) => {
+      if (
+        runStarted ||
+        (runId !== undefined && params.runId !== undefined && runId !== params.runId)
+      ) {
+        return;
+      }
+      for (const moment of steps) {
+        const index = runSteps.findIndex((recorded) => recorded.step === moment.step);
+        if (index >= 0) {
+          runSteps.splice(index, 1);
+        }
+        runSteps.push(moment);
+      }
+    },
+    /**
      * The agent run is about to start; the first call closes the pre-run stages with the
      * steps recorded so far, then `steps` (moments recorded elsewhere, in order). A run with
      * another id inside the turn (the pre-run memory flush) closes nothing.

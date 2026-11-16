@@ -172,3 +172,26 @@ it("closes nothing for another run inside the turn, then closes for its own run"
   stages.runStarting([], "run-1");
   expect(onRunStarting).toHaveBeenCalledWith([{ step: "run_params", at: 2_010 }]);
 });
+
+it("keeps the hand-off steps open until the harness starts, for the turn's own run only", () => {
+  const onRunStarting = vi.fn();
+  const stages = createReplySettleStages({ runId: "run-1", onRunStarting });
+  stages.runHandedOff([{ step: "attempt_handoff", at: 3_000 }], "flush-run");
+  stages.runHandedOff(
+    [
+      { step: "attempt_dispatch", at: 3_010 },
+      { step: "attempt_handoff", at: 3_020 },
+    ],
+    "run-1",
+  );
+  expect(onRunStarting).not.toHaveBeenCalled();
+  stages.runStarting([{ step: "harness_entry", at: 3_200 }], "run-1");
+  stages.runHandedOff([{ step: "attempt_handoff", at: 3_300 }], "run-1");
+  stages.runStarting([], "run-1");
+  expect(onRunStarting).toHaveBeenCalledTimes(1);
+  expect(onRunStarting).toHaveBeenCalledWith([
+    { step: "attempt_dispatch", at: 3_010 },
+    { step: "attempt_handoff", at: 3_020 },
+    { step: "harness_entry", at: 3_200 },
+  ]);
+});
