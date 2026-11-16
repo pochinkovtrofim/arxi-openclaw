@@ -13,6 +13,8 @@ export type CodexRunAttemptOptions = {
   /** Private app-server request identity; public attempt identity remains params.modelId. */
   runtimeModelId?: string;
   startupTimeoutFloorMs?: number;
+  /** Wall-clock ms when the harness began loading the app-server runtime for this attempt. */
+  runtimeLoadStartedAt?: number;
   nativeHookRelay?: {
     enabled?: boolean;
     events?: readonly NativeHookRelayEvent[];

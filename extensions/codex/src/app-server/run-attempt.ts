@@ -32,7 +32,7 @@ export async function runCodexAppServerAttempt(
   ) {
     throw new Error("Codex required-root execution requires an enabled host-mediated tool surface");
   }
-  const preparation = createCodexAttemptPreparationTiming(params);
+  const preparation = createCodexAttemptPreparationTiming(params, options.runtimeLoadStartedAt);
   const settle: { current?: ReturnType<typeof preparation.turnSettle> } = {};
   const connection = await preparation.measure("connection", () =>
     prepareCodexAttemptConnection({

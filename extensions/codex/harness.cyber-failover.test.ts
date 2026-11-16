@@ -218,6 +218,10 @@ describe("Codex fallback terminal results", () => {
       FALLBACK,
       PRIMARY,
     ]);
+    // Each turn's first attempt times its runtime load; the retry's clock starts with itself.
+    expect(runAttempt.mock.calls.map(([, options]) => typeof options.runtimeLoadStartedAt)).toEqual(
+      ["number", "undefined", "number"],
+    );
     expect(firstResult).toBe(refusal);
     expect(nextResult).toBe(nextRefusal);
     expect(runAttempt.mock.calls[1]?.[0]).toEqual({

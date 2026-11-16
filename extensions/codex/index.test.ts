@@ -659,6 +659,7 @@ describe("codex plugin", () => {
         bindingStore: testCodexAppServerBindingStore,
         pluginConfig: { appServer: {} },
         nativeHookRelay: { enabled: true },
+        runtimeLoadStartedAt: expect.any(Number),
       },
     );
   });
@@ -709,6 +710,7 @@ describe("codex plugin", () => {
         runtime,
         runtimeModelId: undefined,
         nativeHookRelay: { enabled: true },
+        runtimeLoadStartedAt: expect.any(Number),
       },
     );
   });

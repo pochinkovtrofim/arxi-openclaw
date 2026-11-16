@@ -324,6 +324,9 @@ export function createCodexAppServerAgentHarness(
       return { supported: true, priority: 100 };
     },
     runAttempt: async (params) => {
+      // The first attempt's preparation clock starts here, so loading the runtime
+      // below (slow on a cold module cache) is measured as its own stage.
+      const runtimeLoadStartedAt = Date.now();
       // Keep app-server runtime code behind lazy imports so plugin discovery and
       // cold provider catalog reads do not pull in the whole Codex runtime.
       const { runCodexAppServerAttempt } = await import("./src/app-server/run-attempt.js");
@@ -350,6 +353,8 @@ export function createCodexAppServerAgentHarness(
             runtime: sessionRuntime,
             runtimeModelId: model,
             nativeHookRelay: { enabled: true },
+            // A retry's clock starts with its own attempt.
+            ...(isRetry ? {} : { runtimeLoadStartedAt }),
           },
         );
 
