@@ -347,7 +347,6 @@ async function agentCommandInternal(
               currentSessionKey: sessionKey,
               sessionEntry: candidateSessionEntry,
             });
-            prepareSteps.record("delivery_prepare");
           } catch (error) {
             if (opts.bestEffortDeliver !== true) {
               throw error;
@@ -356,6 +355,7 @@ async function agentCommandInternal(
               `delivery preflight failed; continuing model run with requested delivery intent because bestEffortDeliver is enabled: ${diagnosticError(error)}`,
             );
           }
+          prepareSteps.record("delivery_prepare");
           assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
           if (preparedDelivery) {
             currentRunDeliveryContext = preparedDelivery.context;
