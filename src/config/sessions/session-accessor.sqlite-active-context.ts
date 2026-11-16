@@ -233,6 +233,28 @@ function readIndexedLogicalParents(
   );
 }
 
+function readActivePositionOfEntry(
+  projection: CurrentTranscriptProjection,
+  entryId: string,
+  beforeRawSeq: number | undefined,
+): number | undefined {
+  const db = getActiveTranscriptKysely(projection.database);
+  return executeSqliteQueryTakeFirstSync(
+    projection.database.db,
+    db
+      .selectFrom("transcript_event_identities as identity")
+      .innerJoin("session_transcript_active_events as active", (join) =>
+        join
+          .onRef("active.session_id", "=", "identity.session_id")
+          .onRef("active.event_seq", "=", "identity.seq"),
+      )
+      .select("active.active_position")
+      .where("identity.session_id", "=", projection.resolved.sessionId)
+      .where("identity.event_id", "=", entryId)
+      .$if(beforeRawSeq !== undefined, (query) => query.where("identity.seq", "<", beforeRawSeq!)),
+  )?.active_position;
+}
+
 /** Reads one byte-bounded active branch without materializing abandoned transcript history. */
 export function readSessionTranscriptBoundedActiveContextCore(
   scope: SessionTranscriptReadScope,
@@ -244,6 +266,12 @@ export function readSessionTranscriptBoundedActiveContextCore(
      * the reset), which every context build discards; callers must accept the full set.
      */
     fromLatestBoundary?: boolean;
+    /**
+     * With fromLatestBoundary, may also skip rows before the latest compaction's window
+     * but keeps every row from this active-path entry on; an unknown entry keeps the
+     * reset window.
+     */
+    keepFromEntryId?: string;
     ignoreReadFence?: boolean;
     readOnly?: boolean;
     resolvedScope?: ResolvedTranscriptReadScope;
@@ -339,12 +367,21 @@ export function readSessionTranscriptBoundedActiveContextCore(
       : resolveTranscriptBoundaryWindow(projection, "context", fence?.beforeRawSeq);
     const retained = window?.keptMessagePositions.slice(-(maxEvents + 1)) ?? [];
     // Only a reset closes the history the CLI's resume and gap notes look back over;
-    // a compaction's summarized prefix stays readable for them.
-    const contextAfter =
+    // a compaction's summarized prefix stays readable for them unless the caller names
+    // the entry its look-back starts at.
+    const resetAfter =
       options.fromLatestBoundary && !covered
         ? resolveTranscriptBoundaryWindow(projection, "history", fence?.beforeRawSeq)
             ?.contextAfterActivePosition
         : undefined;
+    const keepFrom =
+      options.fromLatestBoundary && !covered && options.keepFromEntryId && window
+        ? readActivePositionOfEntry(projection, options.keepFromEntryId, fence?.beforeRawSeq)
+        : undefined;
+    const contextAfter =
+      keepFrom === undefined || !window
+        ? resetAfter
+        : Math.max(resetAfter ?? -1, Math.min(window.contextAfterActivePosition, keepFrom - 1));
     const metadata = covered
       ? covered.rows
           .filter((row) => !fence || row.event_seq < fence.beforeRawSeq)

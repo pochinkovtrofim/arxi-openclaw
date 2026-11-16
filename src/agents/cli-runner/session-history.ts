@@ -300,11 +300,10 @@ function loadCliMemoryEntries(sessionManager: SessionManager, hooks = false): Se
 
 // Both owners return an ordered branch. Bounded omissions may leave parent IDs
 // outside this view, so projection must not reconstruct ancestry a second time.
-async function loadCliSessionEntries({
-  sessionManager,
-  sessionTarget,
-  abortSignal,
-}: CliSessionHistoryParams): Promise<SessionEntry[]> {
+async function loadCliSessionEntries(
+  { sessionManager, sessionTarget, abortSignal }: CliSessionHistoryParams,
+  keepFromEntryId?: string,
+): Promise<SessionEntry[]> {
   abortSignal?.throwIfAborted();
   if (sessionManager) {
     return loadCliMemoryEntries(sessionManager);
@@ -332,6 +331,8 @@ async function loadCliSessionEntries({
         maxEvents: MAX_CLI_SESSION_HISTORY_EVENTS,
         // A reset closes every look-back here; rows before it only cost reading.
         fromLatestBoundary: true,
+        // The resume note looks back only to this entry, so older summarized rows may go too.
+        ...(keepFromEntryId ? { keepFromEntryId } : {}),
         onTruncated: () =>
           cliBackendLog.warn(
             `cli session history truncated to bounded active context: ${sessionTarget.sessionId}`,
@@ -606,7 +607,15 @@ export async function loadCliSessionPromptContext(
     }
   }
   assertActive?.();
-  const entries = await loadCliSessionEntries(params);
+  // The resume note looks back only to the cursor's entry and the context build starts at
+  // the latest compaction, so older rows only cost reading. The session-gap note (withheld
+  // content only) counts back to the reset, so it keeps that window.
+  const cursor = params.cliSessionBinding?.transcriptCursor;
+  const keepFromEntryId =
+    !contentBlocked && cursor?.entryId && cursor.localSessionId === params.sessionId
+      ? cursor.entryId
+      : undefined;
+  const entries = await loadCliSessionEntries(params, keepFromEntryId);
   params.markStage?.("session-entries-load");
   assertActive?.();
   const replies = classifyCliReplies(entries, params.provider);

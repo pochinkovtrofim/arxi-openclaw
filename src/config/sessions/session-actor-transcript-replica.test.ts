@@ -116,6 +116,9 @@ describe("actor transcript context replica", () => {
     expect(
       readSessionActorTranscriptContext(retained, hot, { ...limits, maxEvents: 7 }),
     ).toBeUndefined();
+    expect(
+      readSessionActorTranscriptContext(retained, hot, { ...limits, keepFromEntryId: "reply" }),
+    ).toBeUndefined();
     const changed = structuredClone(hot);
     changed.transcript.version.updatedAt = 99;
     expect(readSessionActorTranscriptContext(retained, changed, limits)).toBeUndefined();
@@ -155,6 +158,13 @@ describe("actor transcript context replica", () => {
     expect(result?.snapshot.parents.get("next-user")).toBe("reply");
     expect(result?.snapshot.totalEvents).toBe(3);
     expect(result?.snapshot.activeLeafEntryId).toBe("next-user");
+    // Retained rows have no boundary to cut at, so a turn's kept entry still reads them.
+    expect(
+      readSessionActorTranscriptContext(advanced, outcome.receipt.postimage, {
+        ...limits,
+        keepFromEntryId: "reply",
+      })?.snapshot.events,
+    ).toEqual(result?.snapshot.events);
   });
 
   it("completes a fenced cold path from the receipt without replaying the current user", () => {

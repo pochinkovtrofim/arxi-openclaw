@@ -12,7 +12,12 @@ import { transcriptEventContextEligibility } from "./session-transcript-projecti
 import { isCanonicalSessionTranscriptEntry } from "./transcript-tree.js";
 
 type Bounded = Extract<PreparedSessionTranscriptHydration, { kind: "bounded" }>;
-type Limits = { maxBytes: number; maxEvents: number; fromLatestBoundary?: boolean };
+type Limits = {
+  maxBytes: number;
+  maxEvents: number;
+  fromLatestBoundary?: boolean;
+  keepFromEntryId?: string;
+};
 
 /** A projection owned and evicted by ReplicaCell, never a separate transcript authority. */
 export type SessionActorTranscriptReplica = {
@@ -246,7 +251,12 @@ export function readSessionActorTranscriptContext(
     return undefined;
   }
   if (!context.rows) {
-    if (JSON.stringify(context.admission) !== JSON.stringify(admission)) {
+    // Retained rows exist only without a boundary, where the kept entry cannot cut anything;
+    // an exact snapshot was cut for one entry and serves only that entry.
+    if (
+      context.limits.keepFromEntryId !== limits.keepFromEntryId ||
+      JSON.stringify(context.admission) !== JSON.stringify(admission)
+    ) {
       return undefined;
     }
     return structuredClone(context.exact);

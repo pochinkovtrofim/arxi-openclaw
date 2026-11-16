@@ -104,8 +104,20 @@ describe("bounded active context from the latest boundary", () => {
     const window = (
       await SessionManager.openBoundedAsync(target, { ...limits, fromLatestBoundary: true })
     ).getBranch();
-    return { whole, window };
+    const keepingFrom = async (keepFromEntryId: string) =>
+      (
+        await SessionManager.openBoundedAsync(target, {
+          ...limits,
+          fromLatestBoundary: true,
+          keepFromEntryId,
+        })
+      ).getBranch();
+    return { whole, window, keepingFrom };
   }
+
+  const ids = (entries: Array<{ id: string }>) => entries.map((entry) => entry.id);
+  const from = (entries: Array<{ id: string }>, id: string) =>
+    ids(entries).slice(ids(entries).indexOf(id));
 
   it.each([
     ["a reset that keeps nothing", (): Boundary => ({ type: "reset" })],
@@ -128,6 +140,55 @@ describe("bounded active context from the latest boundary", () => {
     );
 
     expect(window).toEqual(whole);
+  });
+
+  it("starts at the latest compaction's kept entry when the named entry is newer", async () => {
+    const { whole, keepingFrom } = await readBoth(
+      windowOfRuns(20, 10, () => ({ type: "compaction", keepFrom: 7 })),
+    );
+
+    const window = await keepingFrom("m-19-3");
+
+    expect(buildSessionContext(window).messages).toEqual(buildSessionContext(whole).messages);
+    expect(from(window, "m-19-3")).toEqual(from(whole, "m-19-3"));
+    expect(window.length).toBeLessThan(whole.length / 10);
+  });
+
+  it("keeps every row from a named entry older than the latest compaction", async () => {
+    const { whole, keepingFrom } = await readBoth(
+      windowOfRuns(20, 10, () => ({ type: "compaction", keepFrom: 7 })),
+    );
+
+    const window = await keepingFrom("m-15-2");
+
+    expect(buildSessionContext(window).messages).toEqual(buildSessionContext(whole).messages);
+    expect(from(window, "m-15-2")).toEqual(from(whole, "m-15-2"));
+    expect(window.length).toBeLessThan(whole.length / 3);
+  });
+
+  it("keeps the reset window for an unknown entry", async () => {
+    const compactions = await readBoth(
+      windowOfRuns(20, 10, () => ({ type: "compaction", keepFrom: 7 })),
+    );
+    expect(await compactions.keepingFrom("missing")).toEqual(compactions.window);
+  });
+
+  it("keeps the reset window for an entry before the latest reset", async () => {
+    const reset = await readBoth(
+      windowOfRuns(20, 10, (run) =>
+        run === 19 ? { type: "reset" } : { type: "compaction", keepFrom: 7 },
+      ),
+    );
+    expect(await reset.keepingFrom("m-10-0")).toEqual(reset.window);
+  });
+
+  it("keeps the reset window when a reset after the entry precedes a later compaction", async () => {
+    const reset = await readBoth(
+      windowOfRuns(20, 10, (run) =>
+        run === 15 ? { type: "reset" } : { type: "compaction", keepFrom: 7 },
+      ),
+    );
+    expect(await reset.keepingFrom("m-12-0")).toEqual(reset.window);
   });
 
   it("reads the same rows when there is no boundary", async () => {
