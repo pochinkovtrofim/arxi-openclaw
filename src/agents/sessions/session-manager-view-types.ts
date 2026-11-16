@@ -9,6 +9,11 @@ export type SessionManagerBoundedContextLimits = {
   maxEvents: number;
   /** May skip rows before the latest reset's window; callers accept the full set too. */
   fromLatestBoundary?: boolean;
+  /**
+   * With fromLatestBoundary, may also skip rows before the latest compaction's window,
+   * but keeps every row from this active-path entry on; an unknown entry keeps the reset window.
+   */
+  keepFromEntryId?: string;
 };
 export type PreparedSessionTranscriptReload = PreparedSessionTranscriptHydration;
 export type SessionManagerTranscriptCohort = {
