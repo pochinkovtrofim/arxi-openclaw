@@ -28,7 +28,10 @@ vi.mock("./attempt-client-cleanup.js", () => ({
   retireUnsafeCodexTurnClientBestEffort: cleanup.retire,
 }));
 vi.mock("./attempt-diagnostics.js", () => ({
-  createCodexModelCallDiagnosticEmitter: () => ({ setRequestPayloadBytes: vi.fn() }),
+  createCodexModelCallDiagnosticEmitter: () => ({
+    setRequestPayloadBytes: vi.fn(),
+    observeInferenceTransport: vi.fn(),
+  }),
   utf8JsonByteLength: () => 1,
 }));
 vi.mock("./client-runtime.js", async (importOriginal) => ({

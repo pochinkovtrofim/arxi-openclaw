@@ -35,10 +35,14 @@ export function createEmbeddedOAuthLoginRenewal(params: {
   let armed = false;
   const clear = () => clearTimeout(timer);
 
-  /** Renews the active OAuth login through its refresh path; false when the run moved on. */
+  /**
+   * Renews the active OAuth login through its refresh path; false when the run moved on.
+   * Outside a run's attempts (before start, after stop) a renewal would be dropped, so
+   * it is not requested: a forced refresh can rotate the login for nothing.
+   */
   const renew = async (): Promise<boolean> => {
     const info = state.apiKeyInfo;
-    if (info?.mode !== "oauth" || !info.profileId || state.runtimeAuthState) {
+    if (!armed || info?.mode !== "oauth" || !info.profileId || state.runtimeAuthState) {
       return false;
     }
     const runtimeModel = state.models.runtime;
