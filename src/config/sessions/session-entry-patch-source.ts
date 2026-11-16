@@ -44,10 +44,10 @@ export type SqliteSessionEntryPatchOptions = SessionEntryPatchOptions & {
   /** Exact source acknowledged by the writer; never discover it after the operation yields. */
   onCommittedSource?: (source: CapturedSessionEntryReadSource, entry: SessionEntry) => void;
   /** Closes a measured step of an entry write before its updater runs; trace names only. */
-  onWriterStep?: (step: SessionActorWriterStep) => void;
+  onWriterStep?: (step: SessionEntryWriterStep) => void;
 };
 
-export type SessionActorWriterStep = Extract<
+export type SessionEntryWriterStep = Extract<
   SessionWriteStep,
   | "session_write_queue"
   | "session_actor_acquire"

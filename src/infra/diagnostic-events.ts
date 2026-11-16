@@ -160,7 +160,10 @@ export type SessionWriteStep =
    * actor's earlier work.
    */
   | "session_entry_read"
-  /** From the entry read to building this turn's patch; the store's own steps come before. */
+  /**
+   * Until building this turn's patch starts. On ordinary writes the store's own steps above
+   * come first, so this is short; a reset turn records none of them, so it covers the wait.
+   */
   | "session_writer_wait"
   | "session_patch_build"
   | "session_store_commit"
