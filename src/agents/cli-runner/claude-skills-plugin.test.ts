@@ -68,4 +68,59 @@ describe("prepareClaudeCliSkillsPlugin", () => {
     ).rejects.toBe(error);
     await expect(fs.readdir(pluginTempRoot)).resolves.toEqual([]);
   });
+
+  it("gives plugin dirs that link the same skill sources one reload layout", async () => {
+    const demo = skillsSnapshot.resolvedSkills?.[0];
+    if (!demo) {
+      throw new Error("The fixture snapshot has no skill.");
+    }
+    const otherDir = path.join(base, "source", "other");
+    await fs.mkdir(otherDir, { recursive: true });
+    await fs.writeFile(path.join(otherDir, "SKILL.md"), "# Other\n", "utf8");
+    const other = {
+      ...demo,
+      name: "other",
+      filePath: path.join(otherDir, "SKILL.md"),
+      baseDir: otherDir,
+    };
+    const prepare = (snapshot: Partial<SkillSnapshot>) =>
+      prepareClaudeCliSkillsPlugin({
+        backendId: "claude-cli",
+        skillsSnapshot: { ...skillsSnapshot, ...snapshot },
+      });
+    const prepared = [
+      await prepare({}),
+      await prepare({
+        resolvedSkills: [{ ...demo, description: "Edited", contentHash: "edited" }],
+      }),
+      await prepare({ resolvedSkills: [demo, other] }),
+      await prepare({ resolvedSkills: [{ ...demo, name: "renamed" }] }),
+      await prepare({ resolvedSkills: [{ ...other, name: "demo" }] }),
+      await prepare({ skillFilter: ["demo"] }),
+    ];
+    try {
+      const [original, edited, ...changed] = prepared.map((entry) => entry.reloadLayout);
+      expect(original).toEqual(expect.any(String));
+      expect(edited).toBe(original);
+      expect(new Set([original, ...changed]).size).toBe(changed.length + 1);
+    } finally {
+      await Promise.all(prepared.map((entry) => entry.cleanup()));
+    }
+  });
+
+  it("leaves a plugin dir with a copied skill without a reload layout", async () => {
+    vi.spyOn(fs, "symlink").mockRejectedValueOnce(
+      Object.assign(new Error("operation not permitted"), { code: "EPERM" }),
+    );
+    const prepared = await prepareClaudeCliSkillsPlugin({
+      backendId: "claude-cli",
+      skillsSnapshot,
+    });
+    try {
+      expect(prepared.args).toEqual(["--plugin-dir", prepared.pluginDir]);
+      expect(prepared.reloadLayout).toBeUndefined();
+    } finally {
+      await prepared.cleanup();
+    }
+  });
 });

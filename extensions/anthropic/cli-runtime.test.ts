@@ -149,6 +149,7 @@ describe("Claude native stdio boundary", () => {
       const second = resultDetail(await pending);
       expect(second.pid).not.toBe(first.pid);
       expect(second.turn).toBe(1);
+      await expect(access(path.join(context.cwd, "reload.received"))).rejects.toThrow();
       expect(second.argv).toEqual(expect.arrayContaining(["--resume", context.sessionId]));
       expect(second.initialize).toMatchObject({
         appendSystemPrompt: "changed authoritative instructions",
@@ -158,6 +159,39 @@ describe("Claude native stdio boundary", () => {
     } finally {
       gate.resolve();
     }
+  });
+
+  it("keeps the warm process after it rescans skills when only their contents changed", async () => {
+    const liveSession = createLiveSession();
+    const context = await createContext("normal", { liveSession });
+    const first = resultDetail(await collect(context));
+    const handle = liveSession.current();
+    liveSession.fingerprint = "edited-skill-contents";
+    liveSession.skillsOnlyChanged = true;
+
+    const second = resultDetail(await collect({ ...context, useResume: true }));
+    expect(second).toMatchObject({ pid: first.pid, turn: 2, skillsReloads: 1 });
+    expect(liveSession.current()).toBe(handle);
+    expect(handle?.fingerprint).toBe("edited-skill-contents");
+    expect(liveSession.endCauses).toEqual([]);
+
+    const third = resultDetail(await collect({ ...context, useResume: true }));
+    expect(third).toMatchObject({ pid: first.pid, turn: 3, skillsReloads: 1 });
+  });
+
+  it("starts a fresh process when the warm one refuses to rescan its skills", async () => {
+    const liveSession = createLiveSession();
+    const context = await createContext("normal", { liveSession });
+    context.env.CLAUDE_FIXTURE_RELOAD = "error";
+    const first = resultDetail(await collect(context));
+    liveSession.fingerprint = "edited-skill-contents";
+    liveSession.skillsOnlyChanged = true;
+
+    const second = resultDetail(await collect({ ...context, useResume: true }));
+    expect(await readFile(path.join(context.cwd, "reload.received"), "utf8")).toBe("1");
+    expect(second).toMatchObject({ turn: 1, skillsReloads: 0 });
+    expect(second.pid).not.toBe(first.pid);
+    expect(liveSession.endCauses).toEqual(["restart"]);
   });
 
   it("refuses replacement when the retired predecessor's cleanup failed", async () => {

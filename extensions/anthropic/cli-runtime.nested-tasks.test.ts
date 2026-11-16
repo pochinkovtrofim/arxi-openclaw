@@ -129,6 +129,7 @@ async function context(mode: string, childType = "local_agent", ancestry?: Ances
       }
     },
     activate: () => {},
+    reloadSkills: async () => false,
     restart: async () => {
       current?.close("restart");
       await current?.waitForExit();

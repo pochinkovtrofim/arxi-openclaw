@@ -615,9 +615,15 @@ export async function* executeClaudeCli(
   context.abortSignal?.throwIfAborted();
   const capability = context.liveSession;
   const existing = capability?.current();
+  const warm = existing && sessions.get(existing);
   const reusable =
-    existing && existing.fingerprint === capability?.fingerprint
-      ? sessions.get(existing)
+    warm &&
+    (warm.handle.fingerprint === capability?.fingerprint ||
+      // Edited skill files are visible through the warm process's linked plugin dir.
+      (warm.handle.isIdle() &&
+        warm.transport &&
+        (await capability?.reloadSkills(warm.handle, warm.transport.reloadSkills))))
+      ? warm
       : undefined;
   if (!reusable && capability) {
     await capability.restart();

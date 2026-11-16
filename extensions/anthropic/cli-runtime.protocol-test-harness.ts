@@ -78,14 +78,19 @@ ${fixtureSource}`,
   };
 }
 
-export function createLiveSession(
-  cleanup?: () => Promise<void>,
-): CliBackendLiveSessionCapability & { endCauses: (CliBackendLiveSessionEndCause | undefined)[] } {
+type FakeLiveSession = CliBackendLiveSessionCapability & {
+  endCauses: (CliBackendLiveSessionEndCause | undefined)[];
+  /** Whether the host would let the current process rescan its skills for this turn. */
+  skillsOnlyChanged: boolean;
+};
+
+export function createLiveSession(cleanup?: () => Promise<void>): FakeLiveSession {
   let current: CliBackendLiveSessionHandle | undefined;
   let retiredCleanup: Promise<void> | undefined;
   const endCauses: (CliBackendLiveSessionEndCause | undefined)[] = [];
-  return {
+  const liveSession: FakeLiveSession = {
     endCauses,
+    skillsOnlyChanged: false,
     fingerprint: "synthetic-process-policy",
     current: () => current,
     restart: async () => {
@@ -102,6 +107,18 @@ export function createLiveSession(
       handles.add(handle);
     },
     activate: () => {},
+    reloadSkills: async (handle, reload) => {
+      if (!liveSession.skillsOnlyChanged || current !== handle) {
+        return false;
+      }
+      try {
+        await reload();
+      } catch {
+        return false;
+      }
+      handle.fingerprint = liveSession.fingerprint;
+      return true;
+    },
     remove: (handle, cause) => {
       if (current === handle) {
         current = undefined;
@@ -117,6 +134,7 @@ export function createLiveSession(
       }
     },
   };
+  return liveSession;
 }
 
 export async function collect(context: CliBackendExecuteContext) {

@@ -42,6 +42,7 @@ async function createOwner(
     cleanup?: () => Promise<void>;
     systemPrompt?: string;
     skillsSnapshot?: SkillSnapshot;
+    skillsReloadLayout?: string;
     capture?: { token: string; key: string };
     requiredGeneration?: string;
     trigger?: "user" | "cron" | "heartbeat";
@@ -68,6 +69,7 @@ async function createOwner(
     "registry-test",
   );
   context.params.skillsSnapshot = options.skillsSnapshot;
+  context.preparedBackend.skillsReloadLayout = options.skillsReloadLayout;
   if (options.trigger) {
     context.params.trigger = options.trigger;
   }
@@ -603,6 +605,119 @@ describe("generic plugin-owned live session registry", () => {
       expect(original.capability.current()).toBe(original.session);
     },
   );
+
+  describe("skills reload", () => {
+    const snapshot = (instructions: string): SkillSnapshot => {
+      const skill = materializeSkill({
+        content: `---\nname: procedure\ndescription: Review changes\n---\n# Procedure\n${instructions}\n`,
+        frontmatter: { name: "procedure", description: "Review changes" },
+        name: "procedure",
+        description: "Review changes",
+        filePath: "/workspace/skills/procedure/SKILL.md",
+        baseDir: "/workspace/skills/procedure",
+        source: "test",
+        sourceOptions: { source: "test" },
+      });
+      return {
+        prompt: formatSkillsForPromptCore([skill]),
+        skills: [{ name: skill.name }],
+        resolvedSkills: [skill],
+      };
+    };
+    const warmOwner = async (
+      sessionId: string,
+      options: { layout?: string; claimed: boolean } = { layout: "layout-a", claimed: true },
+    ) => {
+      const original = await createOwner({
+        sessionId,
+        skillsSnapshot: snapshot("Before"),
+        skillsReloadLayout: options.layout,
+        ...(options.claimed ? { cleanup: async () => {} } : {}),
+      });
+      original.register();
+      return original;
+    };
+
+    it.each([
+      { change: "only skill contents changed", reloads: true },
+      { change: "the skill layout changed", layout: "layout-b", reloads: false },
+      { change: "the turn's plugin dir copied a skill", layout: null, reloads: false },
+      { change: "the process's plugin dir copied a skill", warmLayout: null, reloads: false },
+      { change: "the process does not own its plugin dir", unclaimed: true, reloads: false },
+      { change: "another input changed too", systemPrompt: "Changed policy.", reloads: false },
+    ])(
+      "lets a warm process rescan its skills only when $change",
+      async ({ layout, warmLayout, unclaimed, systemPrompt, reloads }) => {
+        const sessionId = `skills-reload-${String(layout)}-${String(warmLayout)}-${String(unclaimed)}-${String(systemPrompt)}`;
+        const original = await warmOwner(sessionId, {
+          layout: warmLayout === null ? undefined : "layout-a",
+          claimed: !unclaimed,
+        });
+        const next = await createOwner({
+          sessionId,
+          skillsSnapshot: snapshot("After"),
+          skillsReloadLayout: layout === null ? undefined : (layout ?? "layout-a"),
+          ...(systemPrompt ? { systemPrompt } : {}),
+        });
+        expect(next.capability.current()).toBe(original.session);
+        const reload = vi.fn(async () => {});
+
+        expect(await next.capability.reloadSkills(original.session, reload)).toBe(reloads);
+        expect(reload).toHaveBeenCalledTimes(reloads ? 1 : 0);
+        if (reloads) {
+          expect(original.session.fingerprint).toBe(next.capability.fingerprint);
+          expect(getCliLiveSessionStartReason(next.context)).toBe("skills-reload");
+          next.capability.activate(original.session);
+          const after = await createOwner({
+            sessionId,
+            skillsSnapshot: snapshot("After"),
+            skillsReloadLayout: "layout-a",
+          });
+          after.capability.current();
+          expect(getCliLiveSessionStartReason(after.context)).toBe("reused");
+        } else {
+          expect(original.session.fingerprint).toBe(original.capability.fingerprint);
+          expect(getCliLiveSessionStartReason(next.context)).toBe(
+            systemPrompt ? "fingerprint-system-prompt" : "fingerprint-skills",
+          );
+          expect(() => next.capability.activate(original.session)).toThrow("admitted run");
+        }
+        expect(original.close).not.toHaveBeenCalled();
+      },
+    );
+
+    it("keeps the old fingerprint when the rescan fails or the process ends during it", async () => {
+      const failed = await warmOwner("skills-reload-failed");
+      const failedNext = await createOwner({
+        sessionId: "skills-reload-failed",
+        skillsSnapshot: snapshot("After"),
+        skillsReloadLayout: "layout-a",
+      });
+      failedNext.capability.current();
+      expect(
+        await failedNext.capability.reloadSkills(failed.session, async () => {
+          throw new Error("native refused");
+        }),
+      ).toBe(false);
+      expect(failed.session.fingerprint).toBe(failed.capability.fingerprint);
+      expect(getCliLiveSessionStartReason(failedNext.context)).toBe("fingerprint-skills");
+
+      const ended = await warmOwner("skills-reload-ended");
+      const endedNext = await createOwner({
+        sessionId: "skills-reload-ended",
+        skillsSnapshot: snapshot("After"),
+        skillsReloadLayout: "layout-a",
+      });
+      endedNext.capability.current();
+      expect(
+        await endedNext.capability.reloadSkills(ended.session, async () => {
+          ended.session.close("idle");
+        }),
+      ).toBe(false);
+      expect(ended.session.fingerprint).toBe(ended.capability.fingerprint);
+      expect(endedNext.capability.current()).toBeUndefined();
+    });
+  });
 
   it("transfers admitted MCP authority to the original private process before capture", async () => {
     const original = await createOwner({

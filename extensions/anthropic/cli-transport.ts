@@ -12,12 +12,19 @@ const MAX_LINE_CHARS = 8 * 1024 * 1024;
 // Leave room for process exit and Windows taskkill completion inside the host's 5s close budget.
 const CLOSE_GRACE_MS = 500;
 const KILL_GRACE_MS = 1_000;
+// Measured rescans take 0.3-1.4 s and a restart 1.2-1.9 s; a silent build costs at most this.
+const SKILLS_RELOAD_TIMEOUT_MS = 3_000;
 
 export type ClaudeCliTransport = {
   close(): void;
   waitForExit(): Promise<void>;
   send(message: Record<string, unknown>): Promise<void>;
   initialize(): Promise<Record<string, unknown>>;
+  /**
+   * Makes the idle process rescan its skills from disk. Rejects on a refusal, on
+   * close, or when it is not answered within `timeoutMs`.
+   */
+  reloadSkills(timeoutMs?: number): Promise<void>;
 };
 
 /** One Claude Code subprocess and its bidirectional stream-json control channel. */
@@ -48,6 +55,10 @@ export async function createClaudeCliTransport(params: {
     throw error;
   }
   const requests = new Map<string, AbortController>();
+  const controlReplies = new Map<
+    string,
+    ReturnType<typeof createDeferred<Record<string, unknown>>>
+  >();
   const initializeId = randomUUID();
   const {
     promise: ready,
@@ -111,6 +122,10 @@ export async function createClaudeCliTransport(params: {
     }
     closed = true;
     rejectReady(new Error("Claude CLI closed before initialization completed."));
+    for (const reply of controlReplies.values()) {
+      reply.reject(new Error("Claude CLI control channel is closed."));
+    }
+    controlReplies.clear();
     abortRequests();
     owner[Symbol.dispose]();
     beginShutdown();
@@ -254,6 +269,15 @@ export async function createClaudeCliTransport(params: {
         } else {
           throw new Error("Claude CLI initialization failed.");
         }
+      } else if (isRecord(response) && typeof response.request_id === "string") {
+        const reply = controlReplies.get(response.request_id);
+        controlReplies.delete(response.request_id);
+        if (response.subtype === "success") {
+          reply?.resolve(isRecord(response.response) ? response.response : {});
+        } else {
+          // Never echo native error text.
+          reply?.reject(new Error("Claude CLI refused the control request."));
+        }
       }
     } else if (message.type === "control_request") {
       if (typeof message.request_id !== "string" || !isRecord(message.request)) {
@@ -304,6 +328,26 @@ export async function createClaudeCliTransport(params: {
     void (settling ? settling.then(fail) : fail(error));
   });
   void reading.catch(fail);
+  // A host control request other than initialize, answered by its request id.
+  const controlRequest = async (request: Record<string, unknown>, timeoutMs: number) => {
+    const id = randomUUID();
+    const reply = createDeferred<Record<string, unknown>>();
+    // Close can reject the reply before its request is written.
+    void reply.promise.catch(() => {});
+    controlReplies.set(id, reply);
+    const timer = setTimeout(
+      () => reply.reject(new Error("Claude CLI did not answer the control request in time.")),
+      timeoutMs,
+    );
+    timer.unref();
+    try {
+      await send({ type: "control_request", request_id: id, request });
+      return await reply.promise;
+    } finally {
+      clearTimeout(timer);
+      controlReplies.delete(id);
+    }
+  };
   return {
     close,
     waitForExit: async () => {
@@ -312,6 +356,9 @@ export async function createClaudeCliTransport(params: {
       child.dispose();
     },
     send,
+    reloadSkills: async (timeoutMs = SKILLS_RELOAD_TIMEOUT_MS) => {
+      await controlRequest({ subtype: "reload_skills" }, timeoutMs);
+    },
     async initialize() {
       await send({
         type: "control_request",

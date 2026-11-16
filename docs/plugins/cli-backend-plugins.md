@@ -310,6 +310,13 @@ The host rejects restart when the caller is revoked or an exact live generation
 must be preserved. `register()` remains a synchronous admission check and refuses
 replacement while cleanup is unresolved.
 
+When the current process differs from the turn only in its skill contents, call
+`liveSession.reloadSkills(handle, reload)` before restarting. The host calls
+`reload` only when the process's native skills directory links the same skill
+sources; make `reload` resolve once the process has rescanned them and reject
+otherwise. On `true` the handle now carries the turn's fingerprint and is reused;
+on `false` restart as usual.
+
 A runtime that can accept user input into a turn already in flight offers it
 through `ctx.registerMessageInjection`. Call it once the turn is ready to take
 input; the host then exposes same-turn steering for that run instead of queueing

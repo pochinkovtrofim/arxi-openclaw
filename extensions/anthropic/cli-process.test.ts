@@ -136,6 +136,7 @@ function attachLiveSession(context: CliBackendExecuteContext) {
       sessions.add(handle);
     },
     activate: () => {},
+    reloadSkills: async () => false,
     remove: (handle) => {
       if (current === handle) {
         current = undefined;

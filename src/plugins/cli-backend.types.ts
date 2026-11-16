@@ -210,6 +210,13 @@ export type CliBackendLiveSessionCapability = {
   /** Retires the current process and awaits host-owned cleanup before replacement. */
   restart(): Promise<void>;
   register(handle: CliBackendLiveSessionHandle): void;
+  /**
+   * Keeps the registered process for this turn when only its skill contents changed
+   * and its native skills plugin still links the same skill sources: `reload` makes
+   * the process rescan them. On true the handle's fingerprint is this turn's; false
+   * (not eligible, or `reload` failed) means the process must be restarted.
+   */
+  reloadSkills(handle: CliBackendLiveSessionHandle, reload: () => Promise<void>): Promise<boolean>;
   /** Rebinds this exact admitted turn to the registered process's stable capture. */
   activate(handle: CliBackendLiveSessionHandle): void;
   /** `cause` names why the process ended, for the next turn's start reason in the trace. */

@@ -25,6 +25,7 @@ const request = (id, request) => send({ type: "control_request", request_id: id,
 let hooks;
 let initialize;
 let turn = 0;
+let skillsReloads = 0;
 let user;
 let privateContext;
 let lateDecision;
@@ -73,7 +74,7 @@ const nativeToolName = scenario === "user-question" ? "AskUserQuestion" : scenar
 const nativeToolInput = scenario === "user-question" ? questionInput : firstSeenBackground ? { command: "synthetic long command", run_in_background: explicitBackground } : { file_path: "fixture.txt" };
 const result = (detail = {}) => send({
   type: "result", subtype: "success", is_error: false,
-  result: JSON.stringify({ pid: process.pid, turn, user, privateContext, injectedRerunContext, initialize, argv: process.argv.slice(2), ...detail }),
+  result: JSON.stringify({ pid: process.pid, turn, skillsReloads, user, privateContext, injectedRerunContext, initialize, argv: process.argv.slice(2), ...detail }),
   session_id: "fixture-session",
   ...(detail.injectedContext ? { user_message_uuid: pendingInputUuid } : {}),
   ...((!replayReceipts || scenario === "background-bash-overlap") && detail.finalBackgroundAnswer ? {
@@ -95,6 +96,14 @@ for await (const line of createInterface({ input: process.stdin })) {
     send({ type: "control_response", response: {
       subtype: "success", request_id: message.request_id, response: { commands: [], models: [] },
     } });
+  } else if (message.type === "control_request" && message.request.subtype === "reload_skills") {
+    skillsReloads++;
+    writeFileSync("reload.received", String(skillsReloads));
+    // Claude Code 2.1.325 announces the refreshed commands before its answer.
+    send({ type: "system", subtype: "commands_changed" });
+    send({ type: "control_response", response: process.env.CLAUDE_FIXTURE_RELOAD === "error"
+      ? { subtype: "error", request_id: message.request_id, error: "fixture refused the reload" }
+      : { subtype: "success", request_id: message.request_id, response: { skills: [] } } });
   } else if (message.type === "user") {
     assert.ok(hooks);
     turn++;
