@@ -304,7 +304,7 @@ describe("prompt hooks run together", () => {
         hookName: "before_prompt_build",
         source: "test",
         priority: 10,
-        handler: async (_event, ctx) => {
+        handler: async (_event: unknown, ctx: PluginHookAgentContext) => {
           siblingContext = ctx;
           await gate.promise;
           return { appendContext: "late" };
