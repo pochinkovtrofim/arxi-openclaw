@@ -12,8 +12,8 @@ const MAX_LINE_CHARS = 8 * 1024 * 1024;
 // Leave room for process exit and Windows taskkill completion inside the host's 5s close budget.
 const CLOSE_GRACE_MS = 500;
 const KILL_GRACE_MS = 1_000;
-// Measured rescans take 0.3-1.4 s; past this bound a fresh process is the faster answer.
-const SKILLS_RELOAD_TIMEOUT_MS = 10_000;
+// Measured rescans take 0.3-1.4 s and a restart 1.2-1.9 s; a silent build costs at most this.
+const SKILLS_RELOAD_TIMEOUT_MS = 3_000;
 
 export type ClaudeCliTransport = {
   close(): void;
