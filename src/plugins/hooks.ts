@@ -694,9 +694,7 @@ export function createHookRunner(
     // Snapshot only after registration/authority filtering. Handlers in this dispatch
     // intentionally share its event, while later dispatches and the caller stay isolated.
     const dispatchEvent =
-      hookName === "agent_turn_prepare" &&
-      "messages" in event &&
-      Array.isArray(event.messages)
+      hookName === "agent_turn_prepare" && "messages" in event && Array.isArray(event.messages)
         ? cloneHookIsolationValue(hookName, {
             ...event,
             messages: projectModelContextMessages(event.messages),

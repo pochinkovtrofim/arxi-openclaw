@@ -272,14 +272,10 @@ describe("prompt hooks run together", () => {
       });
       registry.typedHooks.push(
         hook("hung", 30, () => new Promise(() => {}), 50),
-        hook(
-          "broken",
-          20,
-          async () => {
-            await sleep(10);
-            throw new Error("synthetic failure");
-          },
-        ),
+        hook("broken", 20, async () => {
+          await sleep(10);
+          throw new Error("synthetic failure");
+        }),
         hook("healthy", 10, async () => {
           await sleep(20);
           return { appendContext: "healthy context" };
