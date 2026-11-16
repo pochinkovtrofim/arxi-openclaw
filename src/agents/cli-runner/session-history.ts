@@ -1,4 +1,3 @@
-import { measurePrepStage } from "../../infra/run-prep-stages.js";
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
 import { sliceUtf16Safe, truncateUtf16Safe } from "@openclaw/normalization-core/utf16-slice";
 import {
@@ -17,6 +16,7 @@ import { SessionTranscriptStorageUnavailableError } from "../../config/sessions/
 import { resolveSessionTranscriptReadFence } from "../../config/sessions/session-transcript-read-fence.js";
 import { readSessionTranscriptWatermarkAsync } from "../../config/sessions/session-transcript-watermark.js";
 import type { CliSessionBinding } from "../../config/sessions/types.js";
+import { measurePrepStage } from "../../infra/run-prep-stages.js";
 import {
   annotateInterSessionPromptText,
   normalizeInputProvenance,
@@ -332,17 +332,17 @@ async function loadCliSessionEntries(
     return (
       await measurePrepStage("history-bounded-read", () =>
         SessionManager.openBoundedAsync(sessionTarget, {
-        signal: abortSignal,
-        maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
-        maxEvents: MAX_CLI_SESSION_HISTORY_EVENTS,
-        // A reset closes every look-back here; rows before it only cost reading.
-        fromLatestBoundary: true,
-        // The resume note looks back only to this entry, so older summarized rows may go too.
-        ...(keepFromEntryId ? { keepFromEntryId } : {}),
-        onTruncated: () =>
-          cliBackendLog.warn(
-            `cli session history truncated to bounded active context: ${sessionTarget.sessionId}`,
-          ),
+          signal: abortSignal,
+          maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
+          maxEvents: MAX_CLI_SESSION_HISTORY_EVENTS,
+          // A reset closes every look-back here; rows before it only cost reading.
+          fromLatestBoundary: true,
+          // The resume note looks back only to this entry, so older summarized rows may go too.
+          ...(keepFromEntryId ? { keepFromEntryId } : {}),
+          onTruncated: () =>
+            cliBackendLog.warn(
+              `cli session history truncated to bounded active context: ${sessionTarget.sessionId}`,
+            ),
         }),
       )
     ).getBranch();
