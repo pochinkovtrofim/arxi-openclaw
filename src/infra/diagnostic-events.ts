@@ -192,6 +192,9 @@ export type RunAdmissionStep = (typeof RUN_ADMISSION_STEPS)[number];
  */
 export type GatewayPreflightStep =
   | "frame_admission"
+  | "authorize_projection"
+  | "authorize_profile"
+  | "authorize_startup_wait"
   | "request_authorize"
   | "handler_prepare"
   | "handler_entry"
