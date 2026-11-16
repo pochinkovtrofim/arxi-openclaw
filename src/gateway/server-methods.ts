@@ -361,6 +361,7 @@ export async function handleGatewayRequest(
         expectedProfileBinding: profileBinding,
         hasCurrentClientAuthority,
         markSessionSubscribePhase: subscribeDiagnostics?.mark,
+        markStep: (step) => markGatewayFrameStep(opts.frameReceipt, step),
         assertInvocationCurrent: () => {
           runtimeParticipant?.assertCurrent();
           profileBinding?.assertCurrent();

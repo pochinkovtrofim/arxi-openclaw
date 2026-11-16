@@ -116,6 +116,12 @@ async function prepareStartupReadAgents(
 }
 
 /** Applies the router-owned authorization fence before any transport or typed dispatch. */
+/** Steps inside request_authorize; whatever follows the last one stays request_authorize. */
+export type RequestAuthorizeStep =
+  | "authorize_projection"
+  | "authorize_profile"
+  | "authorize_startup_wait";
+
 export async function authorizeGatewayRequestPreDispatch(params: {
   method: string;
   requestParams: unknown;
@@ -128,6 +134,8 @@ export async function authorizeGatewayRequestPreDispatch(params: {
   assertInvocationCurrent?: () => void;
   assertPreparationCurrent?: () => void;
   markSessionSubscribePhase?: (phase: SessionSubscribePhase) => void;
+  /** Closes a measured step inside this authorization's window; trace names only. */
+  markStep?: (step: RequestAuthorizeStep) => void;
   consumeSessionTurn?: {
     target: { sessionKey: string; agentId?: string; sessionId: string };
     consume: (entry: InternalSessionEntry) => unknown;
@@ -150,6 +158,7 @@ export async function authorizeGatewayRequestPreDispatch(params: {
   if (params.context.ensureSessionRowProjection) {
     params.markSessionSubscribePhase?.("projectionReadiness");
     await params.context.ensureSessionRowProjection();
+    params.markStep?.("authorize_projection");
   }
   params.markSessionSubscribePhase?.("accessFacts");
   const authorizeMethod = () =>
@@ -198,6 +207,7 @@ export async function authorizeGatewayRequestPreDispatch(params: {
           (params.context.getCommittedRuntimeConfig ?? params.context.getRuntimeConfig)().gateway
             ?.roles !== undefined),
     });
+    params.markStep?.("authorize_profile");
     if (profileError) {
       return { error: profileError };
     }
@@ -295,6 +305,7 @@ export async function authorizeGatewayRequestPreDispatch(params: {
           } finally {
             observation.abort();
           }
+          params.markStep?.("authorize_startup_wait");
           // Discovery and preparation publish facts only into a fresh authorization iteration.
           continue;
         }
