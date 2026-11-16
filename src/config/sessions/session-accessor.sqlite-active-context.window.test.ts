@@ -166,12 +166,14 @@ describe("bounded active context from the latest boundary", () => {
     expect(window.length).toBeLessThan(whole.length / 3);
   });
 
-  it("keeps the reset window for an unknown entry or one before the latest reset", async () => {
+  it("keeps the reset window for an unknown entry", async () => {
     const compactions = await readBoth(
       windowOfRuns(20, 10, () => ({ type: "compaction", keepFrom: 7 })),
     );
     expect(await compactions.keepingFrom("missing")).toEqual(compactions.window);
+  });
 
+  it("keeps the reset window for an entry before the latest reset", async () => {
     const reset = await readBoth(
       windowOfRuns(20, 10, (run) =>
         run === 19 ? { type: "reset" } : { type: "compaction", keepFrom: 7 },
