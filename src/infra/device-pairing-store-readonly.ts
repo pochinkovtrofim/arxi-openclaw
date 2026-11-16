@@ -3,7 +3,6 @@ import {
   getActiveOpenClawStateDatabaseReadSnapshot,
 } from "../state/openclaw-state-db-readonly.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
-import { measurePrepStage } from "./run-prep-stages.js";
 import type { DeviceBootstrapBoundContextInput } from "./device-bootstrap.worker-types.js";
 import { withDevicePairingLock } from "./device-pairing-lock.js";
 import { captureDevicePairingPublication } from "./device-pairing-publication.js";
@@ -11,6 +10,7 @@ import type {
   DevicePairingNodeSnapshot,
   DevicePairingReadCommand,
 } from "./device-pairing-read.types.js";
+import { measurePrepStage } from "./run-prep-stages.js";
 
 async function readPairing<Command extends DevicePairingReadCommand>(
   command: Command,
