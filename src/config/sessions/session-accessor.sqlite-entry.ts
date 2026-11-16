@@ -485,6 +485,7 @@ async function patchSqliteSessionEntrySnapshot(
               ensureIdentitySource,
             },
       prepare,
+      onWorkerReady: () => options.onWriterStep?.("session_worker_start"),
       onCommitted: options.onCommitted,
       onCommittedSource: options.onCommittedSource,
     }).then((result) => {

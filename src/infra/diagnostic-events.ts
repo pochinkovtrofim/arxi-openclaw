@@ -146,18 +146,21 @@ export type CommandPrepareStep =
   | "skill_commands";
 export type SessionWriteStep =
   | "skill_library_selection"
-  /** The store's write queue admitted this write (earlier writes to the store finished). */
+  /** The store's write queue admitted this write: earlier writes to the store finished. */
   | "session_write_queue"
-  /** The session's store actor was taken or created (cold after a wake) for this write. */
+  /** Incognito sessions: the session's store actor was taken or created for this write. */
   | "session_actor_acquire"
   /** The write's session source checks were prepared. */
   | "session_source_prepare"
-  /** The actor read the current entry: it queues behind the actor's earlier work. */
-  | "session_entry_read"
+  /** The store's worker is ready for this write (a cold worker starts here). */
+  | "session_worker_start"
   /**
-   * The store admitted this turn's entry read: until then another write held its writer,
-   * or a cold transcript was restored.
+   * The current entry was read: on the worker path this waits for the database write
+   * admission (another writer holding it) and the read itself; on the actor path, the
+   * actor's earlier work.
    */
+  | "session_entry_read"
+  /** From the entry read to building this turn's patch; the store's own steps come before. */
   | "session_writer_wait"
   | "session_patch_build"
   | "session_store_commit"

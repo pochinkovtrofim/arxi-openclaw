@@ -318,15 +318,11 @@ async function loadCliSessionEntries(
   }
   const admission = resolveSessionTranscriptReadFence(sessionTarget);
   if (!memory) {
-    await measurePrepStage("history-cold-restore", async () => {
-      const { restoreSessionColdTranscript } =
-        await import("../../config/sessions/session-cold-storage.js");
-      await restoreSessionColdTranscript(sessionTarget, () => abortSignal?.throwIfAborted());
-    });
+    const { restoreSessionColdTranscript } =
+      await import("../../config/sessions/session-cold-storage.js");
+    await restoreSessionColdTranscript(sessionTarget, () => abortSignal?.throwIfAborted());
   }
-  await measurePrepStage("history-projection-wait", () =>
-    waitForSessionTranscriptProjection(sessionTarget, abortSignal),
-  );
+  await waitForSessionTranscriptProjection(sessionTarget, abortSignal);
   // Normalize bounded cuts with opaque ancestry before rebuilding CLI context.
   try {
     return (
@@ -397,23 +393,30 @@ export async function loadCliSessionHistoryMessages({
     return [];
   }
   const target = memory?.target ?? sessionTarget;
+  // The turn's first history read: a cold transcript is restored and projected here.
   if (!memory) {
-    const { restoreSessionColdTranscript } =
-      await import("../../config/sessions/session-cold-storage.js");
-    await restoreSessionColdTranscript(target, () => abortSignal?.throwIfAborted());
+    await measurePrepStage("history-cold-restore", async () => {
+      const { restoreSessionColdTranscript } =
+        await import("../../config/sessions/session-cold-storage.js");
+      await restoreSessionColdTranscript(target, () => abortSignal?.throwIfAborted());
+    });
   }
-  await waitForSessionTranscriptProjection(target, abortSignal);
+  await measurePrepStage("history-projection-wait", () =>
+    waitForSessionTranscriptProjection(target, abortSignal),
+  );
   // Hooks retain history across compactions; only reset closes their history window.
   const { readSessionTranscriptBoundedMessageTailPageAsync } =
     await import("../../gateway/session-transcript-readers.js");
-  const page = await readSessionTranscriptBoundedMessageTailPageAsync(
-    target,
-    {
-      maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
-      maxMessages: MAX_CLI_SESSION_HISTORY_MESSAGES,
-      offset: 0,
-    },
-    abortSignal,
+  const page = await measurePrepStage("history-tail-read", () =>
+    readSessionTranscriptBoundedMessageTailPageAsync(
+      target,
+      {
+        maxBytes: MAX_CLI_SESSION_HISTORY_BYTES,
+        maxMessages: MAX_CLI_SESSION_HISTORY_MESSAGES,
+        offset: 0,
+      },
+      abortSignal,
+    ),
   );
   if (page.events.length < page.scannedMessages) {
     cliBackendLog.warn(

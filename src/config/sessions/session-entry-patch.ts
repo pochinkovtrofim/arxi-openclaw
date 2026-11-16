@@ -61,6 +61,8 @@ export async function patchSessionEntryInWorker(params: {
   preparedSource?: PreparedSessionSourceAuthority;
   reduction?: SessionEntryPatchReduction;
   prepare(snapshot: SqliteLifecycleTargetSnapshot): Promise<SessionEntryPatchCommit | undefined>;
+  /** The store's worker is ready for this write; its write admission and read follow. */
+  onWorkerReady?: () => void;
   onCommitted?: SessionEntryPatchCommitObserver;
   onCommittedSource?: (source: CapturedSessionEntryReadSource, entry: SessionEntry) => void;
 }): Promise<{ entry: SessionEntry | null; wrote: boolean }> {
@@ -135,6 +137,7 @@ export async function patchSessionEntryInWorker(params: {
       ? undefined
       : (execution, executionSource) => ({
           async prepare() {
+            params.onWorkerReady?.();
             params.assertCurrent();
             params.guard?.assertCurrent?.();
             source?.assertCurrent();
