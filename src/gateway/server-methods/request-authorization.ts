@@ -119,7 +119,8 @@ async function prepareStartupReadAgents(
 export type RequestAuthorizeStep =
   | "authorize_projection"
   | "authorize_profile"
-  | "authorize_startup_wait";
+  | "authorize_startup_wait"
+  | "authorize_session_facts";
 
 /** Applies the router-owned authorization fence before any transport or typed dispatch. */
 export async function authorizeGatewayRequestPreDispatch(params: {
@@ -392,6 +393,9 @@ export async function authorizeGatewayRequestPreDispatch(params: {
           ...sessionAuthorizationParams,
           assertInvocationCurrent: assertSessionInvocationCurrent,
         });
+    if (!sessionPolicy) {
+      params.markStep?.("authorize_session_facts");
+    }
     let transferred = false;
     try {
       const authorizeSession = () => workerSessionMutation;

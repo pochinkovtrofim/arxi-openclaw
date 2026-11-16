@@ -11,6 +11,7 @@ export type GatewayFrameStep = Extract<
   | "authorize_projection"
   | "authorize_profile"
   | "authorize_startup_wait"
+  | "authorize_session_facts"
   | "request_authorize"
   | "handler_prepare"
 >;
