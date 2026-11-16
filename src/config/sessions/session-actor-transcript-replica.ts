@@ -246,13 +246,17 @@ export function readSessionActorTranscriptContext(
     !sameSessionActorTranscriptVersion(retained.version, hot.transcript.version) ||
     context.limits.maxBytes !== limits.maxBytes ||
     context.limits.maxEvents !== limits.maxEvents ||
-    (context.limits.fromLatestBoundary === true) !== (limits.fromLatestBoundary === true) ||
-    context.limits.keepFromEntryId !== limits.keepFromEntryId
+    (context.limits.fromLatestBoundary === true) !== (limits.fromLatestBoundary === true)
   ) {
     return undefined;
   }
   if (!context.rows) {
-    if (JSON.stringify(context.admission) !== JSON.stringify(admission)) {
+    // Retained rows exist only without a boundary, where the kept entry cannot cut anything;
+    // an exact snapshot was cut for one entry and serves only that entry.
+    if (
+      context.limits.keepFromEntryId !== limits.keepFromEntryId ||
+      JSON.stringify(context.admission) !== JSON.stringify(admission)
+    ) {
       return undefined;
     }
     return structuredClone(context.exact);

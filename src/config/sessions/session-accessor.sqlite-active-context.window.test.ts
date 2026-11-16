@@ -182,6 +182,15 @@ describe("bounded active context from the latest boundary", () => {
     expect(await reset.keepingFrom("m-10-0")).toEqual(reset.window);
   });
 
+  it("keeps the reset window when a reset after the entry precedes a later compaction", async () => {
+    const reset = await readBoth(
+      windowOfRuns(20, 10, (run) =>
+        run === 15 ? { type: "reset" } : { type: "compaction", keepFrom: 7 },
+      ),
+    );
+    expect(await reset.keepingFrom("m-12-0")).toEqual(reset.window);
+  });
+
   it("reads the same rows when there is no boundary", async () => {
     const { whole, window } = await readBoth(windowOfRuns(1, 30, () => ({ type: "reset" })));
 
