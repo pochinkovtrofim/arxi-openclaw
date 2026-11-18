@@ -7,7 +7,12 @@ import { runWithSessionMcpToolCallAuthority } from "../agents/agent-bundle-mcp-r
 import { runBeforeToolCallHook, type HookContext } from "../agents/agent-tools.before-tool-call.js";
 import { extractToolErrorMessage } from "../agents/embedded-agent-tool-results.js";
 import { runAgentHarnessAfterToolCallHook } from "../agents/harness/hook-helpers.js";
+import {
+  LOOPBACK_TOOL_IMAGE_MAX_BYTES,
+  resolveImageSanitizationLimits,
+} from "../agents/image-sanitization.js";
 import { copyInternalToolResultState } from "../agents/runtime/internal-hooks.js";
+import { sanitizeContentBlocksImages } from "../agents/tool-images.js";
 import {
   formatToolExecutionErrorMessage,
   protectNetworkToolExecutionError,
@@ -59,6 +64,34 @@ function normalizeToolCallContent(result: unknown): ContentBlock[] {
       text: stringifyMcpContent(result),
     },
   ];
+}
+
+// The loopback client keeps tool images in its own history (see
+// LOOPBACK_TOOL_IMAGE_MAX_BYTES), so they leave here at the size the model needs.
+// The budget is a cost target, not a provider limit: an image the sanitizer
+// cannot fit or decode goes as it came rather than as an omission note.
+async function fitLoopbackImages(
+  content: ContentBlock[],
+  toolName: string,
+  config: HookContext["config"],
+): Promise<ContentBlock[]> {
+  if (!content.some((block) => block.type === "image")) {
+    return content;
+  }
+  const fitted = await sanitizeContentBlocksImages(
+    content as Parameters<typeof sanitizeContentBlocksImages>[0],
+    `mcp:${toolName}`,
+    { ...resolveImageSanitizationLimits(config), maxBytes: LOOPBACK_TOOL_IMAGE_MAX_BYTES },
+  );
+  // The sanitizer returns exactly one block for each block it is given.
+  if (fitted.length !== content.length) {
+    return content;
+  }
+  return content.map((block, index) =>
+    block.type === "image" && fitted[index]?.type !== "image"
+      ? block
+      : (fitted[index] as ContentBlock),
+  );
 }
 
 /** Handles one MCP loopback JSON-RPC message and returns a response or notification null. */
@@ -245,7 +278,11 @@ export async function handleMcpJsonRpc(params: {
         return copyInternalToolResultState(
           result,
           jsonRpcResult(id, {
-            content: normalizeToolCallContent(result),
+            content: await fitLoopbackImages(
+              normalizeToolCallContent(result),
+              toolName,
+              params.hookContext?.config,
+            ),
             isError: failureKind !== undefined,
           }),
         );
