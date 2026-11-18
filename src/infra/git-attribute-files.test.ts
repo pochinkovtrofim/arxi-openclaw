@@ -104,7 +104,7 @@ describe("resolveGitGlobalAndSystemAttributeFiles", () => {
       ...replies,
     });
     await expect(resolveGitGlobalAndSystemAttributeFiles(run, { HOME: "/h" })).rejects.toThrow(
-      "attributes could not be verified",
+      "attribute files could not be verified",
     );
   });
 
@@ -115,8 +115,11 @@ describe("resolveGitGlobalAndSystemAttributeFiles", () => {
       "--exec-path": { code: 0, stdout: "/usr/lib/git-core\n" },
     });
     await expect(
-      resolveGitGlobalAndSystemAttributeFiles(run, { HOME: "/h", GIT_EXEC_PATH: "/usr/lib/git-core" }),
-    ).rejects.toThrow("attributes could not be verified");
+      resolveGitGlobalAndSystemAttributeFiles(run, {
+        HOME: "/h",
+        GIT_EXEC_PATH: "/usr/lib/git-core",
+      }),
+    ).rejects.toThrow("attribute files could not be verified");
   });
 
   it.each([
@@ -128,7 +131,7 @@ describe("resolveGitGlobalAndSystemAttributeFiles", () => {
   ])("refuses when %s fails", async (_label, replies) => {
     const { run } = gitWith(replies);
     await expect(resolveGitGlobalAndSystemAttributeFiles(run, { HOME: "/h" })).rejects.toThrow(
-      "attributes could not be verified",
+      "attribute files could not be verified",
     );
   });
 });

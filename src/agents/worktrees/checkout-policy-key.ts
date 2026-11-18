@@ -101,8 +101,7 @@ export async function resolveWorktreeCheckoutKey(
       async (argv) => {
         const result = await git.run(options.destination, argv.slice(1), options.gitOptions);
         return {
-          code:
-            result.termination === "exit" && !result.stdoutTruncatedBytes ? result.code : null,
+          code: result.termination === "exit" && !result.stdoutTruncatedBytes ? result.code : null,
           stdout: result.stdout,
         };
       },
@@ -119,7 +118,11 @@ export async function resolveWorktreeCheckoutKey(
     return undefined;
   }
   for (const file of attributeFiles) {
-    if (await worktreePathExists(path.resolve(options.destination, normalizeGitPathForFilesystem(file)))) {
+    if (
+      await worktreePathExists(
+        path.resolve(options.destination, normalizeGitPathForFilesystem(file)),
+      )
+    ) {
       if (scope === "template") {
         setWorktreePreparationTemplate("unavailable", { reason: "external-attributes" });
       }
