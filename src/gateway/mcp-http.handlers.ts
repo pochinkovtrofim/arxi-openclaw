@@ -6,7 +6,10 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { runWithSessionMcpToolCallAuthority } from "../agents/agent-bundle-mcp-request-context.js";
 import { runBeforeToolCallHook, type HookContext } from "../agents/agent-tools.before-tool-call.js";
 import { extractToolErrorMessage } from "../agents/embedded-agent-tool-results.js";
-import { LOOPBACK_TOOL_IMAGE_MAX_BYTES } from "../agents/image-sanitization.js";
+import {
+  LOOPBACK_TOOL_IMAGE_MAX_BYTES,
+  resolveImageSanitizationLimits,
+} from "../agents/image-sanitization.js";
 import { runAgentHarnessAfterToolCallHook } from "../agents/harness/hook-helpers.js";
 import { copyInternalToolResultState } from "../agents/runtime/internal-hooks.js";
 import {
@@ -65,15 +68,27 @@ function normalizeToolCallContent(result: unknown): ContentBlock[] {
 
 // The loopback client keeps tool images in its own history (see
 // LOOPBACK_TOOL_IMAGE_MAX_BYTES), so they leave here at the size the model needs.
-async function fitLoopbackImages(content: ContentBlock[], toolName: string) {
+// The budget is a cost target, not a provider limit: an image the sanitizer
+// cannot fit or decode goes as it came rather than as an omission note.
+async function fitLoopbackImages(
+  content: ContentBlock[],
+  toolName: string,
+  config: HookContext["config"],
+): Promise<ContentBlock[]> {
   if (!content.some((block) => block.type === "image")) {
     return content;
   }
-  return (await sanitizeContentBlocksImages(
+  const fitted = await sanitizeContentBlocksImages(
     content as Parameters<typeof sanitizeContentBlocksImages>[0],
     `mcp:${toolName}`,
-    { maxBytes: LOOPBACK_TOOL_IMAGE_MAX_BYTES },
-  )) as ContentBlock[];
+    { ...resolveImageSanitizationLimits(config), maxBytes: LOOPBACK_TOOL_IMAGE_MAX_BYTES },
+  );
+  // The sanitizer returns exactly one block for each block it is given.
+  return content.map((block, index) =>
+    block.type === "image" && fitted[index]?.type !== "image"
+      ? block
+      : (fitted[index] as ContentBlock),
+  );
 }
 
 /** Handles one MCP loopback JSON-RPC message and returns a response or notification null. */
@@ -260,7 +275,11 @@ export async function handleMcpJsonRpc(params: {
         return copyInternalToolResultState(
           result,
           jsonRpcResult(id, {
-            content: await fitLoopbackImages(normalizeToolCallContent(result), toolName),
+            content: await fitLoopbackImages(
+              normalizeToolCallContent(result),
+              toolName,
+              params.hookContext?.config,
+            ),
             isError: failureKind !== undefined,
           }),
         );

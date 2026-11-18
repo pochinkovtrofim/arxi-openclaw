@@ -42,8 +42,7 @@ describe("Gateway MCP loopback tool images", () => {
     expect(result.isError).toBe(false);
     expect(result.content[0]).toEqual({ type: "text", text: '{"device":"mac"}' });
     const image = result.content[1];
-    expect(image?.type).toBe("image");
-    expect(image?.mimeType).toBe("image/jpeg");
+    expect(image).toMatchObject({ type: "image", mimeType: "image/jpeg" });
     expect(Buffer.from(image?.data ?? "", "base64").byteLength).toBeLessThanOrEqual(
       LOOPBACK_TOOL_IMAGE_MAX_BYTES,
     );
@@ -57,6 +56,18 @@ describe("Gateway MCP loopback tool images", () => {
     expect(result.content[1]).toEqual({
       type: "image",
       data: png.toString("base64"),
+      mimeType: "image/png",
+    });
+  });
+
+  it("sends an image it cannot re-encode as it came, not as an omission note", async () => {
+    const notAnImage = Buffer.alloc(LOOPBACK_TOOL_IMAGE_MAX_BYTES + 1, 7);
+
+    const result = await callScreenshotTool(notAnImage);
+
+    expect(result.content[1]).toEqual({
+      type: "image",
+      data: notAnImage.toString("base64"),
       mimeType: "image/png",
     });
   });
