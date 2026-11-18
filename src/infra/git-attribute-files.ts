@@ -1,19 +1,20 @@
 import path from "node:path";
 
-type GitAttributeProbeResult = { code: number | null; stdout: Buffer };
+type GitAttributeProbeResult = { code: number | null; stdout: Buffer | string };
 type GitAttributeProbe = (argv: string[]) => Promise<GitAttributeProbeResult>;
 
 // Git's usage() exit: `git var` before 2.42 does not know GIT_ATTR_GLOBAL or GIT_ATTR_SYSTEM.
 const GIT_USAGE_EXIT_CODE = 129;
 
-class GitAttributeFilesUnverifiedError extends Error {
+/** Git applies attribute files here that this process cannot name. */
+export class GitAttributeFilesUnverifiedError extends Error {
   constructor() {
-    super("GitHub publication workspace attributes could not be verified.");
+    super("Git attribute files could not be verified.");
   }
 }
 
 function probedPath(result: GitAttributeProbeResult): string | undefined {
-  const value = result.stdout.toString("utf8").trim();
+  const value = result.stdout.toString().trim();
   return value || undefined;
 }
 
@@ -74,7 +75,7 @@ async function legacySystemAttributeFiles(
 /**
  * The system and global attribute files Git applies in this environment. Git 2.42+ names
  * them through `git var`; older Git (Debian 12, the Owner VM base, ships 2.39) gets Git's
- * documented lookup instead.
+ * documented lookup instead. Paths may be relative to the repository, as Git reads them.
  */
 export async function resolveGitGlobalAndSystemAttributeFiles(
   run: GitAttributeProbe,

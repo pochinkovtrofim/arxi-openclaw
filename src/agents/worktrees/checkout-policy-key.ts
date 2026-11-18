@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
+import {
+  GitAttributeFilesUnverifiedError,
+  resolveGitGlobalAndSystemAttributeFiles,
+} from "../../infra/git-attribute-files.js";
 import { normalizeGitPathForFilesystem, type GitCommandOptions } from "../../infra/git-exec.js";
 import type { WorktreeGitPolicy } from "./checkout-git-config.js";
 import { requireGit, worktreePathExists } from "./git.js";
@@ -90,40 +94,34 @@ export async function resolveWorktreeCheckoutKey(
     }
     return undefined;
   }
-  // Join both probes before returning or throwing, including cancellation, so
-  // checkout cleanup cannot race an admitted Git process.
-  const attributePaths = await Promise.allSettled(
-    ["GIT_ATTR_GLOBAL", "GIT_ATTR_SYSTEM"].map((variable) =>
-      git.run(options.destination, ["var", variable], options.gitOptions),
-    ),
-  );
-  for (const probe of attributePaths) {
-    if (probe.status === "rejected") {
-      throw probe.reason;
+  // Probes run one at a time, so no admitted Git process outlives a throw or cancellation.
+  let attributeFiles: string[];
+  try {
+    attributeFiles = await resolveGitGlobalAndSystemAttributeFiles(
+      async (argv) => {
+        const result = await git.run(options.destination, argv.slice(1), options.gitOptions);
+        return {
+          code:
+            result.termination === "exit" && !result.stdoutTruncatedBytes ? result.code : null,
+          stdout: result.stdout,
+        };
+      },
+      // The policy may only add GIT_ATTR_NOSYSTEM; a missed one can only retain native checkout.
+      { ...process.env, ...options.gitOptions.env },
+    );
+  } catch (error) {
+    if (!(error instanceof GitAttributeFilesUnverifiedError)) {
+      throw error;
     }
-    const result = probe.value;
-    // git var exits 1 without output for a known but disabled path (for example
-    // GIT_ATTR_NOSYSTEM=1). Unknown variables on older Git still report an error.
-    if (
-      result.termination === "exit" &&
-      result.code === 1 &&
-      !result.stdout.trim() &&
-      !result.stderr.trim()
-    ) {
-      continue;
+    if (scope === "template") {
+      setWorktreePreparationTemplate("unavailable", { reason: "attributes-probe-failed" });
     }
-    // Older Git cannot report its attribute search paths: retain native checkout.
-    if (
-      result.termination !== "exit" ||
-      result.code !== 0 ||
-      result.stdoutTruncatedBytes ||
-      (result.stdout.trim() &&
-        (await worktreePathExists(normalizeGitPathForFilesystem(result.stdout.trim()))))
-    ) {
+    return undefined;
+  }
+  for (const file of attributeFiles) {
+    if (await worktreePathExists(path.resolve(options.destination, normalizeGitPathForFilesystem(file)))) {
       if (scope === "template") {
-        setWorktreePreparationTemplate("unavailable", {
-          reason: result.code === 0 ? "external-attributes" : "attributes-probe-failed",
-        });
+        setWorktreePreparationTemplate("unavailable", { reason: "external-attributes" });
       }
       return undefined;
     }

@@ -104,9 +104,8 @@ describe("Git operation host lifecycle", () => {
     );
   });
 
-  it("uses local PR statistics when Git supports disabling lazy fetches", async () => {
+  it("reads PR statistics only from local objects on every Git version", async () => {
     const root = tempDirs.make("openclaw-pr-facts-partial-clone-");
-    const localOnly = (await gitResult(root, ["--no-lazy-fetch", "version"])).code === 0;
     const { clone, commit } = await partialClone(root);
     const blob = await git(clone, "rev-parse", `${commit}:README.md`);
     await git(clone, "read-tree", commit);
@@ -143,15 +142,17 @@ describe("Git operation host lifecycle", () => {
       });
 
     const stats = { additions: 1, deletions: 1, changedFiles: 1 };
-    expect(await readFacts()).toEqual({ creatable: true, stats: localOnly ? null : stats });
-    expect(await traceStarts(trace, "fetch")).toHaveLength(localOnly ? 0 : 1);
+    // The diff inventory admits only present blobs, so Git without --no-lazy-fetch never
+    // reaches a promisor fetch either.
+    expect(await readFacts()).toEqual({ creatable: true, stats: null });
+    expect(await traceStarts(trace, "fetch")).toHaveLength(0);
 
     await git(clone, "fetch", "--no-tags", "--no-write-fetch-head", "origin", blob);
     expect(await readFacts()).toEqual({
       creatable: true,
       stats,
     });
-    expect(await traceStarts(trace, "fetch")).toHaveLength(localOnly ? 0 : 1);
+    expect(await traceStarts(trace, "fetch")).toHaveLength(0);
   });
 
   it("bounds ignored dependency output during snapshot without losing private staged inputs", async () => {

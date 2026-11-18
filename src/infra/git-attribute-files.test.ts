@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveGitGlobalAndSystemAttributeFiles } from "./github-publication-attribute-files.js";
+import { resolveGitGlobalAndSystemAttributeFiles } from "./git-attribute-files.js";
 
 type Reply = { code: number; stdout?: string };
 
