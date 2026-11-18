@@ -838,6 +838,9 @@ describe("scheduled message actions", () => {
             version: 1,
             source: "final-executable-surface",
             callerOrigin: { kind: "local" },
+            // An empty map records a captured surface with no MCP tools; an absent one is a
+            // legacy job whose MCP-looking names stay quarantined.
+            mcpToolBindings: [],
           });
           expect(job.delivery).toMatchObject({
             mode: "none",

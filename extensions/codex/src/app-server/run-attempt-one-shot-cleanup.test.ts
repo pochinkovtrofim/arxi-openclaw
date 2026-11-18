@@ -15,6 +15,7 @@ import { readAttemptTerminal } from "./attempt-terminal.test-helper.js";
 import { CodexAppServerClient } from "./client.js";
 import { setCodexTestToolFactory } from "./host-capability.test-support.js";
 import {
+  CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
   flattenCodexDynamicToolFunctions,
   isJsonObject,
   type CodexDynamicToolSpec,
@@ -143,7 +144,11 @@ describe("Codex one-shot cleanup receipts", () => {
       expect(start.params).toMatchObject({
         config: {
           "features.shell_tool": false,
-          "features.code_mode": false,
+          // Model tool_mode can still select Code Mode, so host-owned exec and process stay direct.
+          "features.code_mode": {
+            enabled: false,
+            direct_only_tool_namespaces: [CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE],
+          },
         },
       });
       const { dynamicTools } = start.params as { dynamicTools: CodexDynamicToolSpec[] };
