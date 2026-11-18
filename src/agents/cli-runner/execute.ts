@@ -311,7 +311,7 @@ export async function executePreparedCliRun(
     assertCurrent();
     const cliTurnStartedAt = Date.now();
     const restoreSkillEnv =
-      params.skillsSnapshot && !params.controlOperation
+      params.skillsSnapshot && params.controlOperation !== "compact"
         ? applySkillEnvOverridesFromSnapshot({
             snapshot: params.skillsSnapshot,
             config: params.config,

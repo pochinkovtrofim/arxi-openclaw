@@ -123,6 +123,7 @@ import { runCliCleanup, sequenceCliCleanups } from "./cleanup.js";
 import { resolveBundledCliBackendAuthPolicy } from "./cli-backend-auth-policy.js";
 import { getCliLiveSessionGeneration } from "./cli-live-session-registry.js";
 import { resolveCliSessionId } from "./cli-run-recovery.js";
+import { readCliDaySummaryReplay, rememberCliDaySummaryReplay } from "./day-summary-replay.js";
 import {
   createCliRunCurrentAssertion,
   resolveCliExecutionTarget,
@@ -238,10 +239,16 @@ async function prepareCliRunContextWithinReadFence(
   // wall-clock correction cannot shorten or extend an operator-configured timeout.
   const executionMode = params.executionMode ?? "agent";
   const isSideQuestion = executionMode === "side-question";
-  const isControlOperation = params.controlOperation !== undefined;
+  const isControlOperation = params.controlOperation === "compact";
+  // A day summary is a silent turn in the owner's warm process: it rebuilds the same
+  // system prompt, tools and process inputs as the turn before it (so the whole
+  // conversation is read from the prompt cache), but replays that turn's prompt-hook
+  // system result instead of running the hooks, and touches no turn state.
+  const isDaySummary = params.controlOperation === "day-summary";
   // Control bytes must reach the resumed backend without turn hooks, prompts,
   // tools, MCP, skills, or context-engine setup changing their execution.
   const skipsTurnPreparation = isSideQuestion || isControlOperation;
+  const nativeSessionOnly = isControlOperation || isDaySummary;
   const runtimeChatType = params.chatType ?? params.sessionEntry?.chatType;
   const workspaceResolution = resolveRunWorkspaceDir({
     workspaceDir: params.workspaceDir,
@@ -273,7 +280,7 @@ async function prepareCliRunContextWithinReadFence(
   }
   // Every prompt/history read must observe prior deferred rewrites. Caller-owned
   // memory remains independent of durable work sharing its correlation key.
-  if (!params.isolatedCompletion && !isControlOperation && !params.sessionManager) {
+  if (!params.isolatedCompletion && !nativeSessionOnly && !params.sessionManager) {
     await waitForDeferredTurnMaintenanceForSession(params.sessionKey ?? params.sessionId);
   }
   markStage("workspace-and-maintenance");
@@ -577,9 +584,16 @@ async function prepareCliRunContextWithinReadFence(
     workspaceDir,
     modelId,
   });
-  const promptBuildHookRunner = skipsTurnPreparation ? undefined : getGlobalHookRunner();
-  let promptBuildHookResult: ResolvedPromptBuildHookResult | undefined;
-  if (!skipsTurnPreparation) {
+  const promptBuildHookRunner =
+    skipsTurnPreparation || isDaySummary ? undefined : getGlobalHookRunner();
+  // Read after the session key is canonical, as the replay was recorded.
+  const daySummaryReplay = isDaySummary ? readCliDaySummaryReplay(params) : undefined;
+  if (isDaySummary && !daySummaryReplay) {
+    throw new Error("A day summary needs a prior person turn in this process to replay.");
+  }
+  let promptBuildHookResult: ResolvedPromptBuildHookResult | undefined =
+    daySummaryReplay?.hookResult;
+  if (!skipsTurnPreparation && !isDaySummary) {
     try {
       const historyMessages = await loadOpenClawHistoryMessages();
       markStage("session-history-load");
@@ -596,6 +610,7 @@ async function prepareCliRunContextWithinReadFence(
     } catch (error) {
       cliBackendLog.warn(`cli prompt-build hook preparation failed: ${String(error)}`);
     }
+    rememberCliDaySummaryReplay(params, promptBuildHookResult);
   }
   markStage("prompt-build-hooks");
   const promptBuildToolsAllow = mergeForcedEmbeddedAttemptToolsAllow(
@@ -1293,7 +1308,7 @@ async function prepareCliRunContextWithinReadFence(
     const ignoreCliSessionCandidate = preparedBackendFinal.backend.sessionMode === "none";
     // Native controls target the already-owned transcript without rebuilding its turn-time MCP
     // topology. Re-validating that topology here would discard the session being compacted.
-    const controlOperationCliSessionId = isControlOperation
+    const controlOperationCliSessionId = nativeSessionOnly
       ? params.cliSessionBinding?.sessionId?.trim() || params.cliSessionId?.trim()
       : undefined;
     const reusableCliSessionCandidate: CliReusableSession = ignoreCliSessionCandidate
@@ -1326,7 +1341,7 @@ async function prepareCliRunContextWithinReadFence(
     // Control operations must keep the exact native session they were asked to mutate.
     // Ordinary-turn transcript recovery must not turn `/compact` into a fresh session.
     const hasClaudeCliCandidate =
-      !isControlOperation &&
+      !nativeSessionOnly &&
       !nodeClaudePlacement &&
       candidateClaudeCliSessionId !== undefined &&
       isClaudeCliBackendId(params.provider);
@@ -1485,7 +1500,7 @@ async function prepareCliRunContextWithinReadFence(
         ? "session-expired"
         : (invalidatedReason ?? (ignoreCliSessionCandidate ? undefined : "missing-transcript"));
     const sessionPromptContext =
-      skipsTurnPreparation || params.isolatedCompletion
+      skipsTurnPreparation || params.isolatedCompletion || isDaySummary
         ? undefined
         : await loadCliSessionPromptContext({
             ...params,
@@ -1515,13 +1530,13 @@ async function prepareCliRunContextWithinReadFence(
         : params.transcriptPrompt;
     let promptContext: CliBackendPromptContext | undefined;
     let promptForHooks: string | undefined;
-    let preparedPrompt = isControlOperation
+    let preparedPrompt = nativeSessionOnly
       ? params.prompt
       : (params.finalizePromptForResolvedTools?.({
           prompt: params.prompt,
           messageToolAvailable,
         }) ?? params.prompt);
-    if (!isControlOperation && params.skillsSnapshot?.librarySelections?.length) {
+    if (!nativeSessionOnly && params.skillsSnapshot?.librarySelections?.length) {
       preparedPrompt = remapSkillReferencePaths(preparedPrompt, preparedSkills.usagePaths);
     }
     let historyPromptCurrentTurn = preparedPrompt;
@@ -1577,7 +1592,7 @@ async function prepareCliRunContextWithinReadFence(
     // Node placement keeps history from the Gateway transcript: fresh remote
     // CLI sessions still receive prior conversation context via stdin.
     const shouldPrepareOpenClawHistoryPrompt =
-      !skipsTurnPreparation && (!reusableCliSessionId || allowRawTranscriptReseed);
+      !skipsTurnPreparation && !isDaySummary && (!reusableCliSessionId || allowRawTranscriptReseed);
     let openClawHistoryPrompt = shouldPrepareOpenClawHistoryPrompt
       ? buildCliSessionHistoryPrompt({
           messages: sessionPromptContext?.reseedMessages ?? [],
@@ -1691,7 +1706,7 @@ async function prepareCliRunContextWithinReadFence(
         workspaceResolution.agentId,
       );
       bindMcpClientGrantAdmission(preparedParams.admittedRunContext);
-      if (!isControlOperation) {
+      if (!nativeSessionOnly) {
         recordAdmittedModelRoutingDecision({
           admittedRunContext: preparedParams.admittedRunContext,
           abortSignal: preparedParams.abortSignal,
@@ -1711,9 +1726,26 @@ async function prepareCliRunContextWithinReadFence(
       }
       return preparedParams;
     };
-    if (skipsTurnPreparation) {
+    // A day summary also skips the context engine turn and held heartbeat notes.
+    if (skipsTurnPreparation || isDaySummary) {
       const preparedParams = await admitFinalParams();
-      return finishPreparation({ ...buildPreparedContext(preparedParams), hadSessionFile: false });
+      // A day summary runs only in the warm process it continues: one whose inputs no
+      // longer match would restart and read the whole conversation uncached.
+      const daySummaryGeneration = isDaySummary
+        ? getCliLiveSessionGeneration({
+            backendId: backendResolved.id,
+            agentId: workspaceResolution.agentId,
+            sessionId: params.sessionId,
+            sessionKey: params.sessionKey,
+          })
+        : undefined;
+      return finishPreparation({
+        ...buildPreparedContext(preparedParams),
+        ...(daySummaryGeneration
+          ? { requiredClaudeLiveSessionGeneration: daySummaryGeneration }
+          : {}),
+        hadSessionFile: false,
+      });
     }
     // Context remains session-owned. Trusted helper runs may borrow a different
     // agentDir only for model/auth execution.

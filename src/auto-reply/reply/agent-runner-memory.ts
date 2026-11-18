@@ -8,6 +8,7 @@ import { resolveEffectiveCompactionReserveTokens } from "../../agents/agent-comp
 import { resolveDefaultAgentId } from "../../agents/agent-scope-config.js";
 import { MemoryFlushToolsUnavailableError } from "../../agents/agent-tools.memory-flush.js";
 import { resolveBootstrapWarningSignaturesSeen } from "../../agents/bootstrap-budget.js";
+import { usesCliDayMemory } from "../../agents/cli-runner/day-compaction.js";
 import { resolveColdCacheCompaction } from "../../agents/embedded-agent-runner/cold-cache-compaction.js";
 import { isBenignCompactionSkipResult } from "../../agents/embedded-agent-runner/compact-reasons.js";
 import type { AcceptedCompactionSuccessor } from "../../agents/embedded-agent-runner/compaction-successor.js";
@@ -69,6 +70,7 @@ import {
   buildModelResolveContext,
   resolveRunThinkingLevelForFallbackCandidate,
 } from "./agent-runner-utils.js";
+import { runCliDayCompactionIfDue } from "./cli-day-compaction-run.js";
 import {
   resolveCompactionCompletionNotice,
   type CompactionNoticePhase,
@@ -171,6 +173,34 @@ export async function runSessionCompactionIfNeeded(params: {
   const runtimeId = resolveFollowupAgentRuntimeId(runtimeParams);
   const isCli = followupUsesCliRuntime(runtimeParams, runtimeId);
   const ownsNativeCompaction = followupOwnsNativeCompaction(runtimeParams, runtimeId);
+  if (isCli && usesCliDayMemory(entry)) {
+    // A Claude Code conversation keeps today verbatim and earlier days as summaries.
+    const storeAgentId = params.followupRun.run.agentId ?? resolveDefaultAgentId(params.cfg);
+    const cliAgentId = isUnscopedSessionKeySentinel(params.sessionKey)
+      ? storeAgentId
+      : resolveAgentIdFromSessionKey(params.sessionKey, storeAgentId);
+    return await runCliDayCompactionIfDue({
+      cfg: params.cfg,
+      agentId: cliAgentId,
+      sessionKey: params.sessionKey,
+      storePath: resolveSessionStorePathForScope({
+        agentId: cliAgentId,
+        sessionKey: params.sessionKey,
+        storePath:
+          params.storePath ??
+          resolveSessionStorePathCore(params.cfg.session?.store, { agentId: cliAgentId }),
+      }),
+      entry,
+      sessionStore: params.sessionStore ?? { [params.sessionKey]: entry },
+      isHeartbeat: params.isHeartbeat,
+      coldCacheAhead: params.coldCacheAhead,
+      onColdCacheNotDue: params.onColdCacheNotDue,
+      pendingUserEntryId: params.pendingUserEntryId,
+      abortSignal: params.abortSignal,
+      assertActive,
+      onCompactionStart: params.onCompactionStart,
+    });
+  }
   if (isCli || ownsNativeCompaction) {
     return entry;
   }

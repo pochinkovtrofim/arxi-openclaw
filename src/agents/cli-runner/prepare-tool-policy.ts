@@ -96,7 +96,7 @@ export async function resolveCliRuntimeToolPolicy(input: {
   const delegatedExecution = Boolean(requesterPolicy?.delegatedToolPolicy);
   // Internal controls and backend-enforced tool-free questions have no file authority.
   const workspaceOnly =
-    params.controlOperation === undefined &&
+    params.controlOperation !== "compact" &&
     !(input.isSideQuestion && input.sideQuestionToolMode === "disabled") &&
     resolveEffectiveToolFsWorkspaceOnly({ cfg: params.config, agentId: input.policyAgentId });
   const ordinaryClaudeMediation =
