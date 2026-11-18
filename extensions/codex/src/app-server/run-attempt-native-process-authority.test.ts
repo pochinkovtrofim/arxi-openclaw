@@ -17,6 +17,7 @@ import { consumeCodexAppServerLiveThread, hasCodexAppServerLiveThread } from "./
 import { setCodexTestToolFactory } from "./host-capability.test-support.js";
 import { buildCodexNativeHookRelayId } from "./native-hook-relay.js";
 import {
+  CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE,
   flattenCodexDynamicToolFunctions,
   type CodexThreadStartParams,
   type CodexTurnStartParams,
@@ -854,7 +855,14 @@ describe("managed-only Codex sandbox compatibility", () => {
         ?.params as CodexTurnStartParams;
       expect(start).toMatchObject({
         environments: [],
-        config: { "features.code_mode": false, "features.code_mode_only": false },
+        config: {
+          // Model tool_mode can still select Code Mode, so the replacement shell tools stay direct.
+          "features.code_mode": {
+            enabled: false,
+            direct_only_tool_namespaces: [CODEX_OPENCLAW_DIRECT_DYNAMIC_TOOL_NAMESPACE],
+          },
+          "features.code_mode_only": false,
+        },
       });
       expect(turn.environments).toEqual([]);
       expect(f.preparation.indexOf("managed")).toBeGreaterThanOrEqual(0);

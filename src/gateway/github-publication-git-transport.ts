@@ -5,6 +5,10 @@ import { githubRepositoryUrl } from "../agents/github-host.js";
 import type { WorktreeGitPolicy } from "../agents/worktrees/checkout-git-config.js";
 import { splitNullBuffer } from "../agents/worktrees/git-path-inventory.js";
 import { hasErrnoCode } from "../infra/errno.js";
+import {
+  GitAttributeFilesUnverifiedError,
+  resolveGitGlobalAndSystemAttributeFiles,
+} from "../infra/git-attribute-files.js";
 import { gitNullConfigPath, gitReadOnlyEnvironment } from "../infra/git-exec.js";
 import { retryableGitNetworkOperation, withGitNetworkRetry } from "../infra/git-network-retry.js";
 import { runCommandBuffered } from "../process/exec.js";
@@ -365,19 +369,18 @@ async function assertGitHubPublicationTreeHasNoFilters(
   if (infoPath.code !== 0) {
     throw new Error("GitHub publication workspace attributes could not be verified.");
   }
-  const attributeFiles = await Promise.all(
-    ["GIT_ATTR_GLOBAL", "GIT_ATTR_SYSTEM"].map(
-      async (name) => await run(["git", "var", name], { cwd }),
-    ),
-  );
-  if (attributeFiles.some((result) => result.code !== 0)) {
-    throw new Error("GitHub publication workspace attributes could not be verified.");
-  }
   const paths = [
     path.resolve(cwd, infoPath.stdout.toString("utf8").trim()),
-    ...attributeFiles.flatMap((result) =>
-      result.stdout.length > 0 ? [result.stdout.toString("utf8").trim()] : [],
-    ),
+    // Git resolves a relative attributes path from the repository, not this process.
+    ...(
+      await resolveGitGlobalAndSystemAttributeFiles((argv) => run(argv, { cwd })).catch(
+        (error: unknown) => {
+          throw error instanceof GitAttributeFilesUnverifiedError
+            ? new Error("GitHub publication workspace attributes could not be verified.")
+            : error;
+        },
+      )
+    ).map((file) => path.resolve(cwd, file)),
   ];
   for (const file of paths) {
     const contents = await readOptionalAttributeFile(file);

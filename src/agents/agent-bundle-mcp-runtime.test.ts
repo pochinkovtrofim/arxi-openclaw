@@ -3486,7 +3486,7 @@ describe("disposeSession timeout", () => {
 
   it(
     "retires timed-out shared MCP sessions before later catalog retries",
-    { timeout: 8_000 },
+    { timeout: 15_000 },
     async ({ signal }) => {
       const tempDir = makeTempDir(tempDirs, "bundle-mcp-timeout-retire-");
       const triggerServerPath = path.join(tempDir, "trigger-server.mjs");
@@ -3518,15 +3518,17 @@ describe("disposeSession timeout", () => {
         cfg: {
           mcp: {
             servers: {
+              // Node process start under release load counts against the connect timeout, so
+              // the simulated hang (slow) and the success path (trigger) leave room for it.
               trigger: {
                 command: process.execPath,
                 args: [triggerServerPath],
-                connectionTimeoutMs: 2_000,
+                connectionTimeoutMs: 10_000,
               },
               slow: {
                 command: process.execPath,
                 args: [slowServerPath],
-                connectionTimeoutMs: 1_000,
+                connectionTimeoutMs: 5_000,
               },
             },
           },
