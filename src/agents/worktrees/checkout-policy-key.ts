@@ -107,7 +107,7 @@ export async function resolveWorktreeCheckoutKey(
         };
       },
       // The policy may only add GIT_ATTR_NOSYSTEM; a missed one can only retain native checkout.
-      { ...process.env, ...options.gitOptions.env },
+      { ...(options.gitOptions.baseEnv ?? process.env), ...options.gitOptions.env },
     );
   } catch (error) {
     if (!(error instanceof GitAttributeFilesUnverifiedError)) {
