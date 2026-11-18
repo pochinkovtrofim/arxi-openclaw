@@ -1,0 +1,98 @@
+import path from "node:path";
+
+type GitAttributeProbeResult = { code: number | null; stdout: Buffer };
+type GitAttributeProbe = (argv: string[]) => Promise<GitAttributeProbeResult>;
+
+// Git's usage() exit: `git var` before 2.42 does not know GIT_ATTR_GLOBAL or GIT_ATTR_SYSTEM.
+const GIT_USAGE_EXIT_CODE = 129;
+
+class GitAttributeFilesUnverifiedError extends Error {
+  constructor() {
+    super("GitHub publication workspace attributes could not be verified.");
+  }
+}
+
+function probedPath(result: GitAttributeProbeResult): string | undefined {
+  const value = result.stdout.toString("utf8").trim();
+  return value || undefined;
+}
+
+// git_env_bool: an unparseable value makes Git itself fail, so it never disables a source here.
+function gitEnvironmentFlag(value: string | undefined): boolean {
+  const normalized = value?.trim().toLowerCase();
+  if (!normalized) {
+    return false;
+  }
+  if (/^(?:true|yes|on)$/u.test(normalized)) {
+    return true;
+  }
+  return /^-?\d+$/u.test(normalized) && Number(normalized) !== 0;
+}
+
+async function legacyGlobalAttributeFiles(
+  run: GitAttributeProbe,
+  env: NodeJS.ProcessEnv,
+): Promise<string[]> {
+  const configured = await run(["git", "config", "--type=path", "--get", "core.attributesFile"]);
+  if (configured.code === 0) {
+    const file = probedPath(configured);
+    return file ? [file] : [];
+  }
+  if (configured.code !== 1) {
+    throw new GitAttributeFilesUnverifiedError();
+  }
+  // gitattributes(5): $XDG_CONFIG_HOME/git/attributes, or $HOME/.config/git/attributes
+  // when XDG_CONFIG_HOME is unset or empty.
+  const xdg = env.XDG_CONFIG_HOME;
+  if (xdg) {
+    return [path.join(xdg, "git", "attributes")];
+  }
+  return env.HOME ? [path.join(env.HOME, ".config", "git", "attributes")] : [];
+}
+
+async function legacySystemAttributeFiles(
+  run: GitAttributeProbe,
+  env: NodeJS.ProcessEnv,
+): Promise<string[]> {
+  if (gitEnvironmentFlag(env.GIT_ATTR_NOSYSTEM)) {
+    return [];
+  }
+  // $(sysconfdir)/gitattributes: /etc for a /usr prefix, $(prefix)/etc otherwise.
+  // Both candidates are read, so a layout guess can only add a file to the check.
+  const execPath = await run(["git", "--exec-path"]);
+  const prefix = /^(.*)\/(?:libexec|lib)\/git-core\/?$/u.exec(probedPath(execPath) ?? "")?.[1];
+  if (execPath.code !== 0 || prefix === undefined) {
+    throw new GitAttributeFilesUnverifiedError();
+  }
+  return [...new Set(["/etc/gitattributes", path.join(prefix || "/", "etc", "gitattributes")])];
+}
+
+/**
+ * The system and global attribute files Git applies in this environment. Git 2.42+ names
+ * them through `git var`; older Git (Debian 12, the Owner VM base, ships 2.39) gets Git's
+ * documented lookup instead.
+ */
+export async function resolveGitGlobalAndSystemAttributeFiles(
+  run: GitAttributeProbe,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string[]> {
+  const files: string[] = [];
+  for (const [name, legacy] of [
+    ["GIT_ATTR_GLOBAL", legacyGlobalAttributeFiles],
+    ["GIT_ATTR_SYSTEM", legacySystemAttributeFiles],
+  ] as const) {
+    const result = await run(["git", "var", name]);
+    if (result.code === 0) {
+      const file = probedPath(result);
+      files.push(...(file ? [file] : []));
+    } else if (result.code === 1 && !probedPath(result)) {
+      // A known but disabled source, such as GIT_ATTR_NOSYSTEM=1 or no HOME.
+      continue;
+    } else if (result.code === GIT_USAGE_EXIT_CODE) {
+      files.push(...(await legacy(run, env)));
+    } else {
+      throw new GitAttributeFilesUnverifiedError();
+    }
+  }
+  return files;
+}

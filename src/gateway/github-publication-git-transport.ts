@@ -11,6 +11,7 @@ import { runCommandBuffered } from "../process/exec.js";
 import { withGitProcessOperation, type GitProcessOperation } from "../process/spawn-diagnostics.js";
 import { getOrCreatePromise } from "../shared/lazy-promise.js";
 import { captureOpenClawStateWorkerContext } from "../state/openclaw-state-worker-context.js";
+import { resolveGitGlobalAndSystemAttributeFiles } from "./github-publication-attribute-files.js";
 import {
   githubPublicationUnsafeConfigArgs,
   parseGitHubPublicationBaseRef,
@@ -365,19 +366,9 @@ async function assertGitHubPublicationTreeHasNoFilters(
   if (infoPath.code !== 0) {
     throw new Error("GitHub publication workspace attributes could not be verified.");
   }
-  const attributeFiles = await Promise.all(
-    ["GIT_ATTR_GLOBAL", "GIT_ATTR_SYSTEM"].map(
-      async (name) => await run(["git", "var", name], { cwd }),
-    ),
-  );
-  if (attributeFiles.some((result) => result.code !== 0)) {
-    throw new Error("GitHub publication workspace attributes could not be verified.");
-  }
   const paths = [
     path.resolve(cwd, infoPath.stdout.toString("utf8").trim()),
-    ...attributeFiles.flatMap((result) =>
-      result.stdout.length > 0 ? [result.stdout.toString("utf8").trim()] : [],
-    ),
+    ...(await resolveGitGlobalAndSystemAttributeFiles((argv) => run(argv, { cwd }))),
   ];
   for (const file of paths) {
     const contents = await readOptionalAttributeFile(file);
