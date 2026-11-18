@@ -57,14 +57,16 @@ async function legacySystemAttributeFiles(
   if (gitEnvironmentFlag(env.GIT_ATTR_NOSYSTEM)) {
     return [];
   }
-  // $(sysconfdir)/gitattributes: /etc for a /usr prefix, $(prefix)/etc otherwise.
-  // Both candidates are read, so a layout guess can only add a file to the check.
+  // $(sysconfdir)/gitattributes: /etc for a /usr prefix, $(prefix)/etc otherwise. Any other
+  // prefix also reads /etc, so a layout guess can only add a file to the check.
   const execPath = await run(["git", "--exec-path"]);
   const prefix = /^(.*)\/(?:libexec|lib)\/git-core\/?$/u.exec(probedPath(execPath) ?? "")?.[1];
   if (execPath.code !== 0 || prefix === undefined) {
     throw new GitAttributeFilesUnverifiedError();
   }
-  return [...new Set(["/etc/gitattributes", path.join(prefix || "/", "etc", "gitattributes")])];
+  return prefix === "/usr"
+    ? ["/etc/gitattributes"]
+    : ["/etc/gitattributes", path.join(prefix || "/", "etc", "gitattributes")];
 }
 
 /**
