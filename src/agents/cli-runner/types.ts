@@ -102,8 +102,12 @@ export type RunCliAgentParams = {
   /** Diagnostic attribution only; must not change execution policy or timeout selection. */
   isolatedCompletionPurpose?: IsolatedCompletionPurpose;
   outputTextPolicy?: AgentHarnessIsolatedCompletionParamsV2["outputTextPolicy"];
-  /** Internal backend control command: reuse the native session without recording a conversation turn. */
-  controlOperation?: "compact";
+  /**
+   * Internal turn that reuses the native session without recording a conversation turn:
+   * `compact` sends a backend control command; `day-summary` asks the owner's warm
+   * process for a silent summary with the previous person turn's exact inputs.
+   */
+  controlOperation?: "compact" | "day-summary";
   /** Persist the successful CLI assistant reply into the OpenClaw session transcript. */
   persistAssistantTranscript?: boolean;
   /** Session store path used when assistant transcript persistence is enabled. */

@@ -54,7 +54,9 @@ export function createCliEventHandlers(params: {
   };
   const context = params.context;
   const runParams = context.params;
-  const emitLiveEvents = runParams.executionMode !== "side-question";
+  // A day summary is silent: no partial text or tool progress reaches any surface.
+  const emitLiveEvents =
+    runParams.executionMode !== "side-question" && runParams.controlOperation !== "day-summary";
   const emitLiveEvent = (stream: AgentEventStream, data: () => Record<string, unknown>) => {
     if (emitLiveEvents) {
       emitAgentEvent({ runId: runParams.runId, stream, data: data() });

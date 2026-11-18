@@ -28,6 +28,7 @@ import { beginSessionWorkAdmission } from "../../sessions/session-lifecycle-admi
 import { classifySessionStateActor } from "../../sessions/session-state-events.js";
 import { runInDetachedAsyncContext } from "../../shared/detached-async-context.js";
 import { resolveGlobalSingleton } from "../../shared/global-singleton.js";
+import { resolveCliDayMemoryAheadMs, usesCliDayMemory } from "../cli-runner/day-compaction.js";
 import { createCommandBudget } from "../command/maintenance-budget.js";
 import {
   loadAgentRunnerMemoryRuntime,
@@ -227,11 +228,16 @@ export function scheduleColdCacheAheadMaintenance(
     agentId: request.followupRun.run.agentId,
   });
   const freshTokens = resolveFreshSessionTotalTokens(sessionEntry);
-  if (
-    !sessionKey ||
-    coldCache?.aheadMs === undefined ||
-    (freshTokens !== undefined && freshTokens < coldCache.minTokens)
-  ) {
+  // A Claude Code conversation condenses by day whatever its size: its instructions and
+  // tool descriptions alone exceed the token floor, and its run may have to beat night sleep.
+  const cliDayMemory = usesCliDayMemory(sessionEntry);
+  const aheadMs = cliDayMemory
+    ? resolveCliDayMemoryAheadMs(request.prepared.cfg)
+    : coldCache?.aheadMs !== undefined &&
+        (freshTokens === undefined || freshTokens >= coldCache.minTokens)
+      ? coldCache.aheadMs
+      : undefined;
+  if (!sessionKey || aheadMs === undefined) {
     return;
   }
   // The timer outlives this turn's request: keep only the live Gateway resolver, never the
@@ -287,7 +293,7 @@ export function scheduleColdCacheAheadMaintenance(
   void afterTurn.then(
     (completed) => {
       if (completed) {
-        arm(coldCache.aheadMs ?? 0, MAX_COLD_CACHE_AHEAD_REARMS);
+        arm(aheadMs, MAX_COLD_CACHE_AHEAD_REARMS);
       }
     },
     () => {},

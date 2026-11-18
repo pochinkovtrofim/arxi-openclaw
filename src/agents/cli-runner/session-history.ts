@@ -36,6 +36,7 @@ import {
   type SessionEntry,
   type SessionMessageEntry,
 } from "../sessions/session-manager.js";
+import { renderCliDayMemoryHistory, resolveCliDayMemoryReseed } from "./day-memory-seed.js";
 import { cliBackendLog } from "./log.js";
 import {
   classifyCliReplies,
@@ -57,6 +58,8 @@ const MAX_CLI_DURABLE_CONTEXT_CHARS = 2_000;
 const CLI_DURABLE_CONTEXT_OMISSION = "[Session notes truncated; earlier notes may be omitted.]";
 // Newest exchanges win; older ones stay readable through the session's own history.
 const MAX_CLI_SESSION_UNSEEN_TURNS = 8;
+// A generic reseed keeps a tool result's start; whole results crowded out the turns.
+const MAX_CLI_SESSION_RESEED_TOOL_RESULT_CHARS = 2_000;
 
 type CliSessionHistoryParams = {
   abortSignal?: AbortSignal;
@@ -138,13 +141,17 @@ function renderHistoryMessage(message: unknown): string | undefined {
   if (!role) {
     return undefined;
   }
-  const text =
+  const fullText =
     entry.role === "compactionSummary" && typeof entry.summary === "string"
       ? entry.summary.trim()
       : coerceHistoryText(entry.content);
-  if (!text) {
+  if (!fullText) {
     return undefined;
   }
+  const text =
+    entry.role === "toolResult" && fullText.length > MAX_CLI_SESSION_RESEED_TOOL_RESULT_CHARS
+      ? `${truncateUtf16Safe(fullText, MAX_CLI_SESSION_RESEED_TOOL_RESULT_CHARS).trimEnd()}\n[tool result shortened]`
+      : fullText;
   const timestamp = formatHistoryTimestamp(entry.timestamp);
   return `${timestamp ? `[${timestamp}] ` : ""}${role}: ${text}`;
 }
@@ -155,6 +162,10 @@ export function buildCliSessionHistoryPrompt(params: {
   maxHistoryChars?: number;
 }): string | undefined {
   const maxHistoryChars = params.maxHistoryChars ?? MAX_CLI_SESSION_RESEED_HISTORY_CHARS;
+  const dayMemory = renderCliDayMemoryHistory(params.messages, maxHistoryChars);
+  if (dayMemory !== undefined) {
+    return wrapCliSessionHistoryPrompt(dayMemory, params.prompt);
+  }
   const historyBudget = maxHistoryChars - CLI_SESSION_RESEED_CURRENCY_GUIDANCE.length - "\n".length;
   if (historyBudget <= 0) {
     return undefined;
@@ -222,10 +233,13 @@ export function buildCliSessionHistoryPrompt(params: {
       tailRaw.length > historyBudget ? renderTruncatedTail(tailRaw, historyBudget) : tailRaw;
   }
 
+  return wrapCliSessionHistoryPrompt(renderedHistory, params.prompt);
+}
+
+function wrapCliSessionHistoryPrompt(renderedHistory: string, prompt: string): string | undefined {
   if (!renderedHistory) {
     return undefined;
   }
-
   return [
     "Continue this conversation using the OpenClaw transcript below as prior session history.",
     "Treat it as authoritative context for this fresh CLI session.",
@@ -236,7 +250,7 @@ export function buildCliSessionHistoryPrompt(params: {
     "</conversation_history>",
     "",
     "<next_user_message>",
-    params.prompt,
+    prompt,
     "</next_user_message>",
   ].join("\n");
 }
@@ -678,6 +692,19 @@ export async function loadCliSessionPromptContext(
   const historyMessages = buildSessionContext(entries).messages;
   // Reference notes remain bounded recovery context, independent of the resume cursor.
   const durableContext = renderCliDurableContext(historyMessages);
+  const dayMemory = resolveCliDayMemoryReseed(
+    entries,
+    params.userTurnTranscriptRecorder?.getAdmissionReceipt()?.entryId,
+  );
+  if (dayMemory) {
+    return {
+      reseedMessages: dayMemory,
+      durableContext,
+      resumeContext,
+      transcriptCursor,
+      sessionGapContext,
+    };
+  }
   const summary = historyMessages[0];
   const hasSummary = summary?.role === "compactionSummary" && summary.summary.trim().length > 0;
   if (
