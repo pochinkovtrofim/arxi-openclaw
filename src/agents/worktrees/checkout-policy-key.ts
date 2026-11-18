@@ -5,6 +5,7 @@ import {
   resolveGitGlobalAndSystemAttributeFiles,
 } from "../../infra/git-attribute-files.js";
 import { normalizeGitPathForFilesystem, type GitCommandOptions } from "../../infra/git-exec.js";
+import { mergeProcessEnv } from "../../infra/process-env.js";
 import type { WorktreeGitPolicy } from "./checkout-git-config.js";
 import { requireGit, worktreePathExists } from "./git.js";
 import { setWorktreePreparationTemplate } from "./preparation-timing.js";
@@ -105,8 +106,8 @@ export async function resolveWorktreeCheckoutKey(
           stdout: result.stdout,
         };
       },
-      // The policy may only add GIT_ATTR_NOSYSTEM; a missed one can only retain native checkout.
-      { ...(options.gitOptions.baseEnv ?? process.env), ...options.gitOptions.env },
+      // The policy only disables sources or strips GIT_*; any mismatch keeps native checkout.
+      mergeProcessEnv([options.gitOptions.baseEnv ?? process.env, options.gitOptions.env]),
     );
   } catch (error) {
     if (!(error instanceof GitAttributeFilesUnverifiedError)) {

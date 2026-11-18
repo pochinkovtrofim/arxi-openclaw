@@ -104,7 +104,7 @@ describe("Git operation host lifecycle", () => {
     );
   });
 
-  it("reads PR statistics only from local objects on every Git version", async () => {
+  it("reads PR statistics only from local objects", async () => {
     const root = tempDirs.make("openclaw-pr-facts-partial-clone-");
     const { clone, commit } = await partialClone(root);
     const blob = await git(clone, "rev-parse", `${commit}:README.md`);
@@ -142,8 +142,8 @@ describe("Git operation host lifecycle", () => {
       });
 
     const stats = { additions: 1, deletions: 1, changedFiles: 1 };
-    // The diff inventory admits only present blobs, so Git without --no-lazy-fetch never
-    // reaches a promisor fetch either.
+    // GIT_NO_LAZY_FETCH keeps the inventory local. Git honours it from 2.44 and in the patched
+    // 2.39.x/2.43.x builds that lack --no-lazy-fetch, so that flag is no test of it.
     expect(await readFacts()).toEqual({ creatable: true, stats: null });
     expect(await traceStarts(trace, "fetch")).toHaveLength(0);
 
