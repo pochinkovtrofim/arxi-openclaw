@@ -237,7 +237,7 @@ describe("scheduled message actions", () => {
       {},
       { gatewayLifecycle: true, catalogMode: "static" },
     );
-    resetPreparedModelRuntimeSnapshotsForTest();
+    await resetPreparedModelRuntimeSnapshotsForTest();
     closeOpenClawStateDatabaseForTest();
   });
   const tempDirs = useAutoCleanupTempDirTracker(afterEach);

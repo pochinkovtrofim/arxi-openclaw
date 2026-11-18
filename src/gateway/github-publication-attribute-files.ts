@@ -47,7 +47,8 @@ async function legacyGlobalAttributeFiles(
   if (xdg) {
     return [path.join(xdg, "git", "attributes")];
   }
-  return env.HOME ? [path.join(env.HOME, ".config", "git", "attributes")] : [];
+  // Git's xdg_config_home() tests only that HOME is set: HOME="" reads /.config/git/attributes.
+  return env.HOME !== undefined ? [path.join(env.HOME || "/", ".config", "git", "attributes")] : [];
 }
 
 async function legacySystemAttributeFiles(
@@ -57,16 +58,17 @@ async function legacySystemAttributeFiles(
   if (gitEnvironmentFlag(env.GIT_ATTR_NOSYSTEM)) {
     return [];
   }
-  // $(sysconfdir)/gitattributes: /etc for a /usr prefix, $(prefix)/etc otherwise. Any other
-  // prefix also reads /etc, so a layout guess can only add a file to the check.
+  // A /usr Git reads $(sysconfdir)/gitattributes = /etc/gitattributes. Other builds may set
+  // their own sysconfdir or ETC_GITATTRIBUTES, which old Git cannot report: refuse them.
   const execPath = await run(["git", "--exec-path"]);
-  const prefix = /^(.*)\/(?:libexec|lib)\/git-core\/?$/u.exec(probedPath(execPath) ?? "")?.[1];
-  if (execPath.code !== 0 || prefix === undefined) {
+  if (
+    execPath.code !== 0 ||
+    env.GIT_EXEC_PATH !== undefined ||
+    !/^\/usr\/(?:libexec|lib)\/git-core\/?$/u.test(probedPath(execPath) ?? "")
+  ) {
     throw new GitAttributeFilesUnverifiedError();
   }
-  return prefix === "/usr"
-    ? ["/etc/gitattributes"]
-    : ["/etc/gitattributes", path.join(prefix || "/", "etc", "gitattributes")];
+  return ["/etc/gitattributes"];
 }
 
 /**

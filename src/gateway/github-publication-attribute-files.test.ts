@@ -60,15 +60,23 @@ describe("resolveGitGlobalAndSystemAttributeFiles", () => {
     ).resolves.toEqual(["/xdg/git/attributes", "/etc/gitattributes"]);
   });
 
-  it("prefers core.attributesFile and reads both system candidates of a non-/usr prefix", async () => {
+  it("prefers core.attributesFile and takes HOME even when it is empty", async () => {
     const { run } = gitWith({
       ...legacyVar,
       "config --type=path --get core.attributesFile": { code: 0, stdout: "/owner/attributes\n" },
-      "--exec-path": { code: 0, stdout: "/opt/git/libexec/git-core\n" },
+      "--exec-path": { code: 0, stdout: "/usr/libexec/git-core\n" },
     });
     await expect(
       resolveGitGlobalAndSystemAttributeFiles(run, { HOME: "/home/owner" }),
-    ).resolves.toEqual(["/owner/attributes", "/etc/gitattributes", "/opt/git/etc/gitattributes"]);
+    ).resolves.toEqual(["/owner/attributes", "/etc/gitattributes"]);
+    const unset = gitWith({
+      ...legacyVar,
+      "config --type=path --get core.attributesFile": { code: 1 },
+      "--exec-path": { code: 0, stdout: "/usr/lib/git-core\n" },
+    });
+    await expect(resolveGitGlobalAndSystemAttributeFiles(unset.run, { HOME: "" })).resolves.toEqual(
+      ["/.config/git/attributes", "/etc/gitattributes"],
+    );
   });
 
   it("honours GIT_ATTR_NOSYSTEM and a missing home on Git without the attribute variables", async () => {
@@ -84,6 +92,10 @@ describe("resolveGitGlobalAndSystemAttributeFiles", () => {
 
   it.each([
     ["an unknown install layout", { "--exec-path": { code: 0, stdout: "/opt/git/bin\n" } }],
+    [
+      "a non-/usr prefix",
+      { "--exec-path": { code: 0, stdout: "/opt/homebrew/opt/git/libexec/git-core\n" } },
+    ],
     ["a failed exec-path probe", { "--exec-path": { code: 128 } }],
   ])("refuses to guess the system file from %s", async (_label, replies) => {
     const { run } = gitWith({
@@ -94,6 +106,17 @@ describe("resolveGitGlobalAndSystemAttributeFiles", () => {
     await expect(resolveGitGlobalAndSystemAttributeFiles(run, { HOME: "/h" })).rejects.toThrow(
       "attributes could not be verified",
     );
+  });
+
+  it("refuses a GIT_EXEC_PATH override, which hides the install prefix", async () => {
+    const { run } = gitWith({
+      ...legacyVar,
+      "config --type=path --get core.attributesFile": { code: 1 },
+      "--exec-path": { code: 0, stdout: "/usr/lib/git-core\n" },
+    });
+    await expect(
+      resolveGitGlobalAndSystemAttributeFiles(run, { HOME: "/h", GIT_EXEC_PATH: "/usr/lib/git-core" }),
+    ).rejects.toThrow("attributes could not be verified");
   });
 
   it.each([

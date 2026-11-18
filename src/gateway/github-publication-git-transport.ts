@@ -368,7 +368,10 @@ async function assertGitHubPublicationTreeHasNoFilters(
   }
   const paths = [
     path.resolve(cwd, infoPath.stdout.toString("utf8").trim()),
-    ...(await resolveGitGlobalAndSystemAttributeFiles((argv) => run(argv, { cwd }))),
+    // Git resolves a relative attributes path from the repository, not this process.
+    ...(await resolveGitGlobalAndSystemAttributeFiles((argv) => run(argv, { cwd }))).map((file) =>
+      path.resolve(cwd, file),
+    ),
   ];
   for (const file of paths) {
     const contents = await readOptionalAttributeFile(file);
