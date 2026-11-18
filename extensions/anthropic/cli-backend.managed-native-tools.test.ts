@@ -85,6 +85,41 @@ describe("Claude CLI managed native tools", () => {
     expect(Object.keys(prepare(true, "default").env)).not.toContain("CLAUDE_CODE_SUBAGENT_MODEL");
   });
 
+  it("lets a subagent that names haiku or sonnet run on the configured model", () => {
+    const prepare = (subagentModels: unknown) =>
+      (
+        buildAnthropicCliBackend().prepareExecution?.({
+          workspaceDir: "/tmp/openclaw-claude-cli",
+          provider: "claude-cli",
+          modelId: "claude-opus-5-5",
+          config: {
+            plugins: {
+              entries: { anthropic: { config: { turnModelOnly: true, subagentModels } } },
+            },
+          },
+        }) as { env: Record<string, string> }
+      ).env;
+    const tiered = prepare({ haiku: "claude-haiku-5-5", sonnet: "claude-sonnet-5-5" });
+    expect(tiered).not.toHaveProperty("CLAUDE_CODE_SUBAGENT_MODEL_FORCE");
+    expect(tiered).toMatchObject({
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "claude-haiku-5-5",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "claude-sonnet-5-5",
+      // No model named, other aliases and the program's own calls stay on the turn's model.
+      CLAUDE_CODE_SUBAGENT_MODEL: "claude-opus-5-5",
+      CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL: "claude-opus-5-5",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "claude-opus-5-5",
+      ANTHROPIC_DEFAULT_FABLE_MODEL: "claude-opus-5-5",
+      ANTHROPIC_SMALL_FAST_MODEL: "claude-opus-5-5",
+      CLAUDE_CODE_NO_MODEL_FALLBACK: "1",
+    });
+    // Nothing usable keeps the subagent forced to the turn's model.
+    for (const selection of [{}, { haiku: "gpt-6-luna" }, "claude-haiku-5-5"]) {
+      const forced = prepare(selection);
+      expect(forced.CLAUDE_CODE_SUBAGENT_MODEL_FORCE).toBe("1");
+      expect(forced.ANTHROPIC_DEFAULT_HAIKU_MODEL).toBe("claude-opus-5-5");
+    }
+  });
+
   it("names only orchestration tools as delegation", () => {
     expect(buildAnthropicCliBackend().nativeDelegationTools).toEqual(["Agent", "Workflow"]);
   });

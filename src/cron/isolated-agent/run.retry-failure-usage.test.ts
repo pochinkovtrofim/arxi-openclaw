@@ -117,18 +117,18 @@ describe("cron retry failure accounting", () => {
           );
         }
         expect(result.outputText).toBeUndefined();
+        // The first prompt's terminal cumulative usage, not its last call, is what it cost.
         expect(result.usage).toEqual({
-          input_tokens: retryCompleted ? 40 : 10,
-          output_tokens: retryCompleted ? 60 : 20,
-          cache_read_tokens: 3,
-          total_tokens: retryCompleted ? 103 : 33,
+          input_tokens: retryCompleted ? 130 : 100,
+          output_tokens: retryCompleted ? 240 : 200,
+          total_tokens: retryCompleted ? 370 : 300,
         });
         expect(cronSession.sessionEntry).toMatchObject({
-          inputTokens: retryCompleted ? 40 : 10,
-          outputTokens: retryCompleted ? 60 : 20,
-          cacheRead: 3,
+          inputTokens: retryCompleted ? 130 : 100,
+          outputTokens: retryCompleted ? 240 : 200,
+          cacheRead: 0,
           cacheWrite: 0,
-          estimatedCostUsd: retryCompleted ? 0.03 : 0.01,
+          estimatedCostUsd: retryCompleted ? 0.07 : 0.05,
         });
         expect(cronSession.sessionEntry.sessionId).toBe("test-session-id");
         expect(cronSession.sessionEntry.agentHarnessId).not.toBe("ack-harness");
@@ -166,6 +166,7 @@ async function runUsageCase(
   usage: NormalizedUsage,
   lastCallUsage: NormalizedUsage,
   totalTokens?: number,
+  diagnosticUsage?: NormalizedUsage,
 ) {
   const cronSession = makeCronSession();
   resolveCronSessionMock.mockReturnValue(cronSession);
@@ -173,7 +174,7 @@ async function runUsageCase(
   deriveSessionTotalTokensMock.mockReturnValueOnce(totalTokens);
   runEmbeddedAgentMock.mockResolvedValueOnce({
     payloads: [{ text: "done" }],
-    meta: { agentMeta: { usage, lastCallUsage } },
+    meta: { agentMeta: { usage, lastCallUsage, ...(diagnosticUsage ? { diagnosticUsage } : {}) } },
   });
   const result = await runCronIsolatedAgentTurn(makeIsolatedAgentParamsFixture());
   expect(result.status).toBe("ok");
@@ -231,6 +232,30 @@ describe("runCronIsolatedAgentTurn usage accounting", () => {
       total_tokens: 927_907,
       cache_read_tokens: 819_661,
       cache_write_tokens: 93_130,
+    });
+  });
+
+  it("records every model call of a CLI prompt, not only its last call", async () => {
+    const lastCall = { input: 2, output: 300, cacheRead: 150_000, cacheWrite: 1_000 };
+    const { result, cronSession } = await runUsageCase(
+      lastCall,
+      lastCall,
+      151_302,
+      { input: 40, output: 9_000, cacheRead: 1_900_000, cacheWrite: 60_000 },
+    );
+    expect(result.usage).toEqual({
+      input_tokens: 40,
+      output_tokens: 9_000,
+      total_tokens: 1_969_040,
+      cache_read_tokens: 1_900_000,
+      cache_write_tokens: 60_000,
+    });
+    expect(cronSession.sessionEntry).toMatchObject({
+      inputTokens: 40,
+      outputTokens: 9_000,
+      cacheRead: 1_900_000,
+      cacheWrite: 60_000,
+      totalTokens: 151_302,
     });
   });
 });

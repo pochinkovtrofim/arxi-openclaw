@@ -408,6 +408,14 @@
         }
       },
       "turnModelOnly": { "type": "boolean" },
+      "subagentModels": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "haiku": { "type": "string", "pattern": "^claude-" },
+          "sonnet": { "type": "string", "pattern": "^claude-" }
+        }
+      },
       "managedNativeTools": {
         "type": "object",
         "additionalProperties": false,
@@ -463,6 +471,10 @@
     "turnModelOnly": {
       "label": "Claude Code Uses Only the Turn's Model",
       "help": "Off by default. Runs every model call Claude Code makes on its own (subagents, a subagent's model alias or full id, page summaries, command checks) on the turn's model instead of a smaller default model, and never swaps a refused model for another one. Applies when the turn names a full Claude model id."
+    },
+    "subagentModels": {
+      "label": "Claude Code Subagent Models",
+      "help": "With turnModelOnly: full Claude model ids for the haiku and sonnet aliases. A subagent that names one of them then runs on that model; one that names no model stays on the turn's model."
     }
   }
 }
