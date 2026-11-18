@@ -4,7 +4,7 @@ import path from "node:path";
 import { json as readJson } from "node:stream/consumers";
 import { expectDefined } from "@openclaw/normalization-core";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { persistAuthProfileBatch } from "../src/agents/auth-profiles/upsert-with-lock.js";
 import { refreshPreparedModelRuntimeSnapshots } from "../src/agents/prepared-model-runtime.js";
 import { resetPreparedModelRuntimeSnapshotsForTest } from "../src/agents/prepared-model-runtime.test-support.js";
@@ -35,6 +35,7 @@ import { buildMockOpenAiResponsesProvider } from "../src/gateway/test-openai-res
 import { formatErrorMessage } from "../src/infra/errors.js";
 import { redactToolPayloadText } from "../src/logging/redact.js";
 import { buildAgentPeerSessionKey } from "../src/routing/session-key.js";
+import { loadBundledPluginFacade } from "../src/test-utils/bundled-plugin-public-surface.js";
 import {
   closeOpenClawStateDatabaseAsync,
   closeOpenClawStateDatabaseForTest,
@@ -223,6 +224,19 @@ async function closeServer(server: Server): Promise<void> {
 }
 
 describe("scheduled message actions", () => {
+  // The Gateway, its plugin facades and the model catalog load once per test process. Paying
+  // that here keeps each scenario's budget for its own journey, whichever scenario runs first.
+  beforeAll(async () => {
+    await Promise.all([
+      import("../src/gateway/server.js"),
+      import("../src/gateway/server-start.js"),
+      loadBundledPluginFacade({ pluginId: "anthropic", artifactBasename: "api.js" }),
+      loadBundledPluginFacade({ pluginId: "discord", artifactBasename: "api.js" }),
+    ]);
+    await refreshPreparedModelRuntimeSnapshots({}, { gatewayLifecycle: true, catalogMode: "static" });
+    resetPreparedModelRuntimeSnapshotsForTest();
+    closeOpenClawStateDatabaseForTest();
+  });
   const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
   it.each(scenarios)("$title", { timeout: 60_000 }, async (scenario) => {
