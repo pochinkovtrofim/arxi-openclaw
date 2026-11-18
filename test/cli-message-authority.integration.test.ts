@@ -1124,6 +1124,13 @@ describe("CLI message authority integration", () => {
 
   it("retains an accepted Gateway send result after normal CLI completion", async () => {
     const turn = await createTurn("discord", { gatewaySend: true, bindCapability: false });
+    const target = `channel:${channels.discord.current}`;
+    // The first send's route commit starts SQLite carriers from TypeScript source (about 1 s of
+    // CPU, several under load). Pay it here so the drain grace below measures only the held send.
+    expectSuccess(
+      await turn.call({ action: "send", channel: "discord", target, message: "Warm the route." }),
+    );
+    requests.length = 0;
     const heldSend = holdProviderRequest("POST");
     const context = buildPreparedCliRunContext({
       ...turn.runParams,
@@ -1146,7 +1153,7 @@ describe("CLI message authority integration", () => {
     const args = {
       action: "send",
       channel: "discord",
-      target: `channel:${channels.discord.current}`,
+      target,
       message: "Preserve the accepted message.",
     };
     let pendingSend: ReturnType<typeof turn.call> | undefined;
