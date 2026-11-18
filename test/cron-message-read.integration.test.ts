@@ -35,11 +35,11 @@ import { buildMockOpenAiResponsesProvider } from "../src/gateway/test-openai-res
 import { formatErrorMessage } from "../src/infra/errors.js";
 import { redactToolPayloadText } from "../src/logging/redact.js";
 import { buildAgentPeerSessionKey } from "../src/routing/session-key.js";
-import { loadBundledPluginFacade } from "../src/test-utils/bundled-plugin-public-surface.js";
 import {
   closeOpenClawStateDatabaseAsync,
   closeOpenClawStateDatabaseForTest,
 } from "../src/state/openclaw-state-db.js";
+import { loadBundledPluginFacade } from "../src/test-utils/bundled-plugin-public-surface.js";
 import { createAccountOwnedScheduledJob } from "./helpers/cron/account-owned-scheduled-job.js";
 import { installScheduledMessageReadRuntime } from "./helpers/cron/message-read-runtime.js";
 import { createDeferred, withTestTimeout } from "./helpers/promise.js";
@@ -233,7 +233,10 @@ describe("scheduled message actions", () => {
       loadBundledPluginFacade({ pluginId: "anthropic", artifactBasename: "api.js" }),
       loadBundledPluginFacade({ pluginId: "discord", artifactBasename: "api.js" }),
     ]);
-    await refreshPreparedModelRuntimeSnapshots({}, { gatewayLifecycle: true, catalogMode: "static" });
+    await refreshPreparedModelRuntimeSnapshots(
+      {},
+      { gatewayLifecycle: true, catalogMode: "static" },
+    );
     resetPreparedModelRuntimeSnapshotsForTest();
     closeOpenClawStateDatabaseForTest();
   });

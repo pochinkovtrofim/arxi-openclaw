@@ -53,7 +53,10 @@ describe("resolveGitGlobalAndSystemAttributeFiles", () => {
       resolveGitGlobalAndSystemAttributeFiles(run, { HOME: "/home/owner" }),
     ).resolves.toEqual(["/home/owner/.config/git/attributes", "/etc/gitattributes"]);
     await expect(
-      resolveGitGlobalAndSystemAttributeFiles(run, { HOME: "/home/owner", XDG_CONFIG_HOME: "/xdg" }),
+      resolveGitGlobalAndSystemAttributeFiles(run, {
+        HOME: "/home/owner",
+        XDG_CONFIG_HOME: "/xdg",
+      }),
     ).resolves.toEqual(["/xdg/git/attributes", "/etc/gitattributes"]);
   });
 
