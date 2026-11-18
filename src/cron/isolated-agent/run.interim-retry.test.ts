@@ -223,8 +223,12 @@ describe("runCronIsolatedAgentTurn — interim ack retry", () => {
         }),
       );
       expect(result.status).toBe("ok");
-      expect(result.usage).toEqual({ input_tokens: 40, output_tokens: 60, total_tokens: 100 });
-      expect(cronSession.sessionEntry.estimatedCostUsd).toBeCloseTo(0.0003, 9);
+      expect(result.usage).toEqual({
+        input_tokens: 1100,
+        output_tokens: 2200,
+        total_tokens: 3300,
+      });
+      expect(cronSession.sessionEntry.estimatedCostUsd).toBeCloseTo(0.015, 9);
       expect(usageEvents).toMatchObject([
         {
           provider: "cron-usage-test",

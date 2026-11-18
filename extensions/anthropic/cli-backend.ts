@@ -127,12 +127,39 @@ const CLAUDE_CLI_MODEL_ENV = [
   "ANTHROPIC_SMALL_FAST_MODEL",
 ] as const;
 
+// The program's aliases a subagent may name, each set to its own model by
+// `subagentModels`.
+const CLAUDE_CLI_SUBAGENT_ALIAS_ENV = {
+  haiku: "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  sonnet: "ANTHROPIC_DEFAULT_SONNET_MODEL",
+} as const;
+
+function resolveClaudeCliSubagentModelEnv(selection: unknown): Record<string, string> {
+  if (!isRecord(selection)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(CLAUDE_CLI_SUBAGENT_ALIAS_ENV).flatMap(([alias, envName]) => {
+      const model = selection[alias];
+      return typeof model === "string" && model.trim().startsWith("claude-")
+        ? [[envName, model.trim()]]
+        : [];
+    }),
+  );
+}
+
 /**
  * `plugins.entries.anthropic.config.turnModelOnly`: every model call the program
  * makes on its own (subagents, a subagent's model alias or full id, page
  * summaries, command checks) runs on the turn's model instead of a smaller
  * default, and a refused model is never swapped for another one. Only a full
  * Claude model id is pinned; an alias such as `default` keeps the program's own.
+ *
+ * `subagentModels` beside it (`{haiku, sonnet}`, full Claude model ids) lets a
+ * subagent run on a named smaller model: those aliases then name these models,
+ * and a subagent's own model choice stands instead of being forced to the turn's
+ * model. A subagent that names no model, every other alias and the program's own
+ * calls stay on the turn's model.
  */
 function resolveClaudeCliTurnModelEnv(
   config: OpenClawConfig | undefined,
@@ -146,8 +173,13 @@ function resolveClaudeCliTurnModelEnv(
   ) {
     return {};
   }
+  const pinned = Object.fromEntries(CLAUDE_CLI_MODEL_ENV.map((name) => [name, modelId]));
+  const subagentModels = resolveClaudeCliSubagentModelEnv(pluginConfig.subagentModels);
+  if (Object.keys(subagentModels).length > 0) {
+    return { ...pinned, ...subagentModels, CLAUDE_CODE_NO_MODEL_FALLBACK: "1" };
+  }
   return {
-    ...Object.fromEntries(CLAUDE_CLI_MODEL_ENV.map((name) => [name, modelId])),
+    ...pinned,
     // A subagent's own model choice otherwise outranks the pinned default.
     CLAUDE_CODE_SUBAGENT_MODEL_FORCE: "1",
     CLAUDE_CODE_NO_MODEL_FALLBACK: "1",

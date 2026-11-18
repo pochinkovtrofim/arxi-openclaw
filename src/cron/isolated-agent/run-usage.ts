@@ -22,13 +22,22 @@ import type { CronCompletedPromptRun } from "./run.types.js";
 
 const cronContextRuntimeLoader = createLazyImportLoader(() => import("./run-context.runtime.js"));
 
+/**
+ * A run's billing usage: the CLI's terminal cumulative usage covers every model call of the
+ * prompt, while `usage` is only the last call's snapshot there.
+ */
+function cronPromptBillingUsage(run: CronCompletedPromptRun) {
+  const meta = run.runResult.meta?.agentMeta;
+  return hasBillableUsage(meta?.diagnosticUsage) ? meta?.diagnosticUsage : meta?.usage;
+}
+
 export function resolveCronRunUsage(runs: readonly CronCompletedPromptRun[]) {
   if (runs.length === 1) {
-    return runs[0]?.runResult.meta?.agentMeta?.usage;
+    return runs[0] ? cronPromptBillingUsage(runs[0]) : undefined;
   }
   const accumulated = createUsageAccumulator();
-  for (const { runResult } of runs) {
-    const usage = runResult.meta?.agentMeta?.usage;
+  for (const run of runs) {
+    const usage = cronPromptBillingUsage(run);
     if (!usage) {
       continue;
     }
@@ -68,10 +77,7 @@ export async function recordCronRunUsage(params: {
   contextTokens?: number;
 }): Promise<void> {
   const { prepared, runs } = params;
-  const billableRuns = runs.filter(({ runResult }) => {
-    const meta = runResult.meta?.agentMeta;
-    return hasBillableUsage(meta?.usage) || hasBillableUsage(meta?.diagnosticUsage);
-  });
+  const billableRuns = runs.filter((run) => hasBillableUsage(cronPromptBillingUsage(run)));
   if (billableRuns.length === 0) {
     return;
   }
@@ -82,8 +88,7 @@ export async function recordCronRunUsage(params: {
   for (const run of billableRuns) {
     const result = run.runResult;
     const meta = result.meta?.agentMeta;
-    const usage = meta?.usage;
-    const diagnosticUsage = meta?.diagnosticUsage ?? usage;
+    const usage = cronPromptBillingUsage(run);
     const provider = meta?.provider ?? run.fallbackProvider;
     const model = meta?.model ?? run.fallbackModel;
     const costConfig = resolveModelCostConfig({
@@ -102,27 +107,27 @@ export async function recordCronRunUsage(params: {
     }
     if (
       !isDiagnosticsEnabled(prepared.cfgWithAgentDefaults) ||
-      !hasBillableUsage(diagnosticUsage)
+      !hasBillableUsage(usage)
     ) {
       continue;
     }
-    const input = diagnosticUsage.input ?? 0;
-    const output = diagnosticUsage.output ?? 0;
-    const cacheRead = diagnosticUsage.cacheRead ?? 0;
-    const cacheWrite = diagnosticUsage.cacheWrite ?? 0;
+    const input = usage.input ?? 0;
+    const output = usage.output ?? 0;
+    const cacheRead = usage.cacheRead ?? 0;
+    const cacheWrite = usage.cacheWrite ?? 0;
     const promptTokens = input + cacheRead + cacheWrite;
     const bucketTotalTokens = promptTokens + output;
     const total =
-      typeof diagnosticUsage.total === "number" && Number.isFinite(diagnosticUsage.total)
-        ? Math.max(bucketTotalTokens, diagnosticUsage.total)
+      typeof usage.total === "number" && Number.isFinite(usage.total)
+        ? Math.max(bucketTotalTokens, usage.total)
         : bucketTotalTokens;
     const costUsd = asNonNegativeFiniteNumber(
-      estimateAggregateUsageCost({ usage: diagnosticUsage, cost: costConfig }),
+      estimateAggregateUsageCost({ usage, cost: costConfig }),
     );
     const contextUsedTokens = deriveContextPromptTokens({
       lastCallUsage: meta?.lastCallUsage,
       promptTokens: meta?.promptTokens,
-      usage,
+      usage: meta?.usage,
     });
     const contextTokens =
       (result === runs.at(-1)?.runResult ? params.contextTokens : undefined) ??
