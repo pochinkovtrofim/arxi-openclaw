@@ -84,6 +84,9 @@ async function fitLoopbackImages(
     { ...resolveImageSanitizationLimits(config), maxBytes: LOOPBACK_TOOL_IMAGE_MAX_BYTES },
   );
   // The sanitizer returns exactly one block for each block it is given.
+  if (fitted.length !== content.length) {
+    return content;
+  }
   return content.map((block, index) =>
     block.type === "image" && fitted[index]?.type !== "image"
       ? block
