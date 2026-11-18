@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createNoisyPngBuffer,
-  createSolidPngBuffer,
-} from "../../test/helpers/image-fixtures.js";
+import { createNoisyPngBuffer, createSolidPngBuffer } from "../../test/helpers/image-fixtures.js";
 import { LOOPBACK_TOOL_IMAGE_MAX_BYTES } from "../agents/image-sanitization.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import { handleMcpJsonRpc } from "./mcp-http.handlers.js";

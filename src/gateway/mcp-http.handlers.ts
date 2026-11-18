@@ -6,19 +6,19 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { runWithSessionMcpToolCallAuthority } from "../agents/agent-bundle-mcp-request-context.js";
 import { runBeforeToolCallHook, type HookContext } from "../agents/agent-tools.before-tool-call.js";
 import { extractToolErrorMessage } from "../agents/embedded-agent-tool-results.js";
+import { runAgentHarnessAfterToolCallHook } from "../agents/harness/hook-helpers.js";
 import {
   LOOPBACK_TOOL_IMAGE_MAX_BYTES,
   resolveImageSanitizationLimits,
 } from "../agents/image-sanitization.js";
-import { runAgentHarnessAfterToolCallHook } from "../agents/harness/hook-helpers.js";
 import { copyInternalToolResultState } from "../agents/runtime/internal-hooks.js";
+import { sanitizeContentBlocksImages } from "../agents/tool-images.js";
 import {
   formatToolExecutionErrorMessage,
   protectNetworkToolExecutionError,
   resolveToolExecutionErrorKind,
   resolveToolResultFailureKind,
 } from "../agents/tool-result-error.js";
-import { sanitizeContentBlocksImages } from "../agents/tool-images.js";
 import { isAutomationsToolName } from "../agents/tools/automations-tool-name.js";
 import type { McpLoopbackToolCallOutcome } from "./mcp-http.loopback-runtime.js";
 import {
