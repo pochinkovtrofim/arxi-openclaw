@@ -34,7 +34,7 @@ async function callScreenshotTool(png: Buffer) {
 
 describe("Gateway MCP loopback tool images", () => {
   it("re-encodes an image over the loopback budget before the client keeps it", async () => {
-    const png = createNoisyPngBuffer(900, 560);
+    const png = createNoisyPngBuffer(600, 375);
     expect(png.byteLength).toBeGreaterThan(LOOPBACK_TOOL_IMAGE_MAX_BYTES);
 
     const result = await callScreenshotTool(png);
