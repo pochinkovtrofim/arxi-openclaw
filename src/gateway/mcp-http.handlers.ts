@@ -6,6 +6,7 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { runWithSessionMcpToolCallAuthority } from "../agents/agent-bundle-mcp-request-context.js";
 import { runBeforeToolCallHook, type HookContext } from "../agents/agent-tools.before-tool-call.js";
 import { extractToolErrorMessage } from "../agents/embedded-agent-tool-results.js";
+import { LOOPBACK_TOOL_IMAGE_MAX_BYTES } from "../agents/image-sanitization.js";
 import { runAgentHarnessAfterToolCallHook } from "../agents/harness/hook-helpers.js";
 import { copyInternalToolResultState } from "../agents/runtime/internal-hooks.js";
 import {
@@ -14,6 +15,7 @@ import {
   resolveToolExecutionErrorKind,
   resolveToolResultFailureKind,
 } from "../agents/tool-result-error.js";
+import { sanitizeContentBlocksImages } from "../agents/tool-images.js";
 import { isAutomationsToolName } from "../agents/tools/automations-tool-name.js";
 import type { McpLoopbackToolCallOutcome } from "./mcp-http.loopback-runtime.js";
 import {
@@ -59,6 +61,19 @@ function normalizeToolCallContent(result: unknown): ContentBlock[] {
       text: stringifyMcpContent(result),
     },
   ];
+}
+
+// The loopback client keeps tool images in its own history (see
+// LOOPBACK_TOOL_IMAGE_MAX_BYTES), so they leave here at the size the model needs.
+async function fitLoopbackImages(content: ContentBlock[], toolName: string) {
+  if (!content.some((block) => block.type === "image")) {
+    return content;
+  }
+  return (await sanitizeContentBlocksImages(
+    content as Parameters<typeof sanitizeContentBlocksImages>[0],
+    `mcp:${toolName}`,
+    { maxBytes: LOOPBACK_TOOL_IMAGE_MAX_BYTES },
+  )) as ContentBlock[];
 }
 
 /** Handles one MCP loopback JSON-RPC message and returns a response or notification null. */
@@ -245,7 +260,7 @@ export async function handleMcpJsonRpc(params: {
         return copyInternalToolResultState(
           result,
           jsonRpcResult(id, {
-            content: normalizeToolCallContent(result),
+            content: await fitLoopbackImages(normalizeToolCallContent(result), toolName),
             isError: failureKind !== undefined,
           }),
         );
