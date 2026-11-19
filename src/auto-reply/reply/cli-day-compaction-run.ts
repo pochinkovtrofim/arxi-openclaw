@@ -25,11 +25,14 @@ const log = createSubsystemLogger("auto-reply/cli-day-compaction");
 // The summary turn reads the whole conversation and writes a few thousand tokens.
 const CLI_DAY_SUMMARY_TIMEOUT_MS = 4 * 60_000;
 
-// Both reads take only the window since the latest boundary, bounded. A full read held
-// a long chat's every tool result and image in the Gateway heap, twice across the
-// summary turn, and ended an Owner's Gateway on its heap limit (2026-11-18/19).
+// Both reads are bounded: the newest rows since the latest reset, up to this many bytes
+// and events, with the latest compaction added back when it fits. A full read held a
+// long chat's every tool result and image in the Gateway heap, twice across the summary
+// turn, and ended an Owner's Gateway on its heap limit (2026-11-18/19). A day of
+// condensed chat is far below this bound; past it, the earliest uncondensed turns are
+// planned without (their rows stay in the transcript and its search).
 const CLI_DAY_WINDOW_LIMITS = {
-  maxBytes: 16 * 1024 * 1024,
+  maxBytes: 48 * 1024 * 1024,
   maxEvents: MAX_VISIBLE_MESSAGE_MAX_MESSAGES,
   fromLatestBoundary: true,
 } as const;
@@ -50,21 +53,16 @@ async function openCliDayWindow(
 }
 
 /**
- * A cut window that lost the latest boundary, or the turns it kept, would write a
- * boundary without the earlier day summaries; such a conversation waits instead.
+ * A cut window without the latest boundary would write a new one without the earlier
+ * day summaries; such a conversation waits instead.
  */
 function cliDayWindowLostBoundary(
   manager: SessionManager,
   branch: ReturnType<SessionManager["getBranch"]>,
 ): boolean {
-  const boundary = branch.findLast((row) => row.type === "compaction" || row.type === "reset");
-  if (!boundary) {
-    return manager.getBoundaryCount() > 0;
-  }
   return (
-    boundary.type === "compaction" &&
-    Boolean(boundary.firstKeptEntryId) &&
-    !branch.some((row) => row.id === boundary.firstKeptEntryId)
+    manager.getBoundaryCount() > 0 &&
+    !branch.some((row) => row.type === "compaction" || row.type === "reset")
   );
 }
 
@@ -121,11 +119,8 @@ export async function runCliDayCompactionIfDue(params: {
     const { manager, truncated } = await openCliDayWindow(target, params.abortSignal);
     const branch = manager.getBranch();
     params.assertActive();
-    if (truncated) {
-      log.info("cli day compaction plans from a cut window: older rows are past its bound");
-      if (cliDayWindowLostBoundary(manager, branch)) {
-        return undefined;
-      }
+    if (truncated && cliDayWindowLostBoundary(manager, branch)) {
+      return undefined;
     }
     return {
       plannedTipId: branch.at(-1)?.id,

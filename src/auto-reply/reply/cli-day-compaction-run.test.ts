@@ -131,7 +131,7 @@ describe("runCliDayCompactionIfDue", () => {
     expect(opens).toHaveLength(2);
     for (const call of opens) {
       expect(call[1]).toMatchObject({ fromLatestBoundary: true });
-      expect(call[1].maxBytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+      expect(call[1].maxBytes).toBeLessThanOrEqual(48 * 1024 * 1024);
       // The bounded readers refuse anything above this.
       expect(call[1].maxEvents).toBeLessThanOrEqual(MAX_VISIBLE_MESSAGE_MAX_MESSAGES);
     }
