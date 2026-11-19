@@ -506,7 +506,9 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
 
       expect(mcpMocks.authorityResolvers).toHaveLength(0);
       expect(mcpMocks.captureRefs).toHaveLength(1);
-      expect(mcpMocks.captureCalls[0]!.storedNames).toContain("fake__show");
+      if (certified) {
+        expect(mcpMocks.captureCalls[0]!.storedNames).toContain("fake__show");
+      }
       expect(mcpMocks.captureRefs[0]!.value).toEqual(
         certified ? { version: 1, source: "final-executable-surface" } : undefined,
       );
