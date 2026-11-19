@@ -59,6 +59,8 @@ type StaticHarnessMcpTools = {
   mcpNameAllocations?: readonly HarnessMcpNameAllocation[];
   /** Bounded model/operator warning when configured servers or final policy were incomplete. */
   diagnosticNotice?: string;
+  /** Some tools wait for a live approval, so a run without an approver will not get them. */
+  interactiveApprovalRequired?: boolean;
   dispose: () => Promise<void>;
 };
 
@@ -137,6 +139,7 @@ function applyConfiguredMcpApproval(
     projectedMcpServers?: CodexMcpServersConfig;
     requestApproval?: (params: InteractiveConfiguredMcpApprovalRequest) => Promise<void>;
     onOmitted?: (message: string) => void;
+    onInteractiveApproval?: () => void;
   },
 ): AnyAgentTool[] {
   return tools.flatMap((tool) => {
@@ -171,6 +174,7 @@ function applyConfiguredMcpApproval(
       );
       return [];
     }
+    options.onInteractiveApproval?.();
     const meta = getPluginToolMeta(tool)!;
     const execute = tool.execute;
     const guarded = {
@@ -368,6 +372,7 @@ export async function materializeStaticMcpToolsForHarnessRunCore(
       },
     };
     const fullPermission = params.autoApproveCodexAppServerApprovals === true;
+    let interactiveApprovalRequired = false;
     const policyTools = applyHarnessToolPolicy(liveRuntime.tools, policyParams);
     const projectedApproval = params.projectedMcpServers
       ? { projectedMcpServers: params.projectedMcpServers }
@@ -379,6 +384,9 @@ export async function materializeStaticMcpToolsForHarnessRunCore(
         ? { requestApproval: params.requestInteractiveCodexApproval }
         : {}),
       onOmitted: (message) => omissions.push(message),
+      onInteractiveApproval: () => {
+        interactiveApprovalRequired = true;
+      },
     });
     // App views outlive this attempt, so bind their callable surface to the
     // same complete catalog and final policy before any model tool can mint one.
@@ -410,6 +418,7 @@ export async function materializeStaticMcpToolsForHarnessRunCore(
         params.nameOwnershipBaseReservedToolNames ?? params.reservedToolNames,
       ),
       ...(diagnosticNotice ? { diagnosticNotice } : {}),
+      ...(interactiveApprovalRequired ? { interactiveApprovalRequired } : {}),
       dispose: createHarnessDisposer(liveRuntime),
     };
   } catch (error) {

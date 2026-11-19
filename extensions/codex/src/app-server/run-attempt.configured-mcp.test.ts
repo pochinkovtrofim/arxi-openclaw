@@ -475,6 +475,46 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(mcpMocks.requesterDispose).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { notice: undefined, interactive: false, certified: true },
+    {
+      notice: "Configured MCP is incomplete for this run: fake: authentication required.",
+      interactive: false,
+      certified: false,
+    },
+    { notice: undefined, interactive: true, certified: false },
+  ])(
+    "certifies a channel owner's transient MCP surface only when a scheduled run gets the same tools (notice=$notice, interactive=$interactive)",
+    async ({ notice, interactive, certified }) => {
+      // A narrow tool list turns the native surface off, as the ChatGPT-token route does,
+      // so configured MCP is projected into the dynamic tools (transient surface).
+      const params = createMcpParams(["cron", "fake__show"]);
+      // A channel turn names its sender, so no configured-MCP authority resolver exists.
+      params.senderId = "owner-channel-sender";
+      params.senderIsOwner = true;
+      mcpMocks.staticDiagnosticNotice = notice;
+      mcpMocks.staticInteractiveApprovalRequired = interactive;
+
+      const harness = createStartedThreadHarness();
+      const run = runCodexAppServerAttempt(params);
+      await harness.waitForMethod("turn/start");
+      const threadStart = harness.requests.find((request) => request.method === "thread/start")
+        ?.params as { config?: Record<string, unknown> } | undefined;
+      expect(threadStart?.config).not.toHaveProperty("mcp_servers");
+      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+      await expect(run).resolves.toBeDefined();
+
+      expect(mcpMocks.authorityResolvers).toHaveLength(0);
+      expect(mcpMocks.captureRefs).toHaveLength(1);
+      if (certified) {
+        expect(mcpMocks.captureCalls[0]!.storedNames).toContain("fake__show");
+      }
+      expect(mcpMocks.captureRefs[0]!.value).toEqual(
+        certified ? { version: 1, source: "final-executable-surface" } : undefined,
+      );
+    },
+  );
+
   it.each(["current hook policy", ""])(
     "keeps post-hook static discovery failures visible with replacement policy %j",
     async (systemPrompt) => {

@@ -182,6 +182,8 @@ describe("materializeStaticMcpToolsForHarnessRunCore", () => {
       requestInteractiveCodexApproval,
     });
     const tool = result.tools[0]!;
+    // A scheduled run has no approver, so callers must not treat this surface as its own.
+    expect(result.interactiveApprovalRequired).toBe(true);
 
     await expect(tool.execute("denied", { folder: "private" })).rejects.toThrow("operator denied");
     expect(callTool).not.toHaveBeenCalled();
@@ -220,6 +222,7 @@ describe("materializeStaticMcpToolsForHarnessRunCore", () => {
         : undefined,
       requestInteractiveCodexApproval,
     });
+    expect(result.interactiveApprovalRequired).toBe(approvalCalls > 0 ? true : undefined);
     await expect(result.tools[0]!.execute("call", {})).resolves.toBeDefined();
     expect(requestInteractiveCodexApproval).toHaveBeenCalledTimes(approvalCalls);
     await result.dispose();

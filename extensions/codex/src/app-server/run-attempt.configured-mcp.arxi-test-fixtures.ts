@@ -18,6 +18,7 @@ type StaticMcpFixtureState = {
   staticBaseToolName: string;
   staticCalls: Array<Record<string, unknown>>;
   staticDiagnosticNotice?: string;
+  staticInteractiveApprovalRequired?: boolean;
   staticFacade: FixtureMock;
   staticFailure?: Error;
   staticFailureGate?: Promise<void>;
@@ -118,6 +119,7 @@ export async function materializeStaticMcpFixture(
       },
     ],
     ...(state.staticDiagnosticNotice ? { diagnosticNotice: state.staticDiagnosticNotice } : {}),
+    ...(state.staticInteractiveApprovalRequired ? { interactiveApprovalRequired: true } : {}),
     dispose: async () => {
       await state.dispose();
     },
@@ -143,6 +145,7 @@ export function resetConfiguredMcpFixtureState(state: ConfiguredMcpFixtureState)
   state.ordinaryToolNames.length = 0;
   state.threadConfigCalls.length = 0;
   state.staticDiagnosticNotice = undefined;
+  state.staticInteractiveApprovalRequired = undefined;
   state.staticFailure = undefined;
   state.staticFailureGate = undefined;
   state.dispose.mockClear();
