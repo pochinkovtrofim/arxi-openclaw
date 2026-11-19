@@ -14,6 +14,7 @@ import { recordCliCompactionInStore } from "../../agents/command/session-store.j
 import { SessionManager } from "../../agents/sessions/session-manager.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions.js";
 import { getCliSessionBinding } from "../../config/sessions/cli-session-binding.js";
+import { MAX_VISIBLE_MESSAGE_MAX_MESSAGES } from "../../config/sessions/session-accessor.sqlite-visible-cursor.js";
 import { withSessionTranscriptWriteAssertion } from "../../config/sessions/transcript-write-context.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
@@ -23,6 +24,47 @@ const log = createSubsystemLogger("auto-reply/cli-day-compaction");
 
 // The summary turn reads the whole conversation and writes a few thousand tokens.
 const CLI_DAY_SUMMARY_TIMEOUT_MS = 4 * 60_000;
+
+// Both reads are bounded: the newest rows since the latest reset, up to this many bytes
+// and events, with the latest compaction added back when it fits. A full read held a
+// long chat's every tool result and image in the Gateway heap, twice across the summary
+// turn, and ended an Owner's Gateway on its heap limit (2026-11-18/19). A day of
+// condensed chat is far below this bound; past it, the earliest uncondensed turns are
+// planned without (their rows stay in the transcript and its search).
+const CLI_DAY_WINDOW_LIMITS = {
+  maxBytes: 48 * 1024 * 1024,
+  maxEvents: MAX_VISIBLE_MESSAGE_MAX_MESSAGES,
+  fromLatestBoundary: true,
+} as const;
+
+async function openCliDayWindow(
+  target: Parameters<typeof SessionManager.openBoundedAsync>[0],
+  signal: AbortSignal | undefined,
+): Promise<{ manager: SessionManager; truncated: boolean }> {
+  let truncated = false;
+  const manager = await SessionManager.openBoundedAsync(target, {
+    ...CLI_DAY_WINDOW_LIMITS,
+    signal,
+    onTruncated: () => {
+      truncated = true;
+    },
+  });
+  return { manager, truncated };
+}
+
+/**
+ * A cut window without the latest boundary would write a new one without the earlier
+ * day summaries; such a conversation waits instead.
+ */
+function cliDayWindowLostBoundary(
+  manager: SessionManager,
+  branch: ReturnType<SessionManager["getBranch"]>,
+): boolean {
+  return (
+    manager.getBoundaryCount() > 0 &&
+    !branch.some((row) => row.type === "compaction" || row.type === "reset")
+  );
+}
 
 /**
  * Condenses a Claude Code conversation by day. The summaries come from a silent turn in
@@ -72,16 +114,32 @@ export async function runCliDayCompactionIfDue(params: {
   }
   const timeZone = resolveCliDayMemoryTimeZone(cfg);
   const target = { agentId, sessionId: entry.sessionId, sessionKey, storePath };
-  const manager = await SessionManager.openAsync(target, undefined, undefined, params.abortSignal);
-  params.assertActive();
-  const branch = manager.getBranch();
-  const plannedTipId = branch.at(-1)?.id;
-  const plan = planCliDayCompaction({
-    entries: branch,
-    nowMs,
-    timeZone,
-    ...(params.pendingUserEntryId ? { excludeEntryIds: new Set([params.pendingUserEntryId]) } : {}),
-  });
+  // The plan keeps only what it needs; the session actor may cache one copy of the
+  // bounded read, so a peak holds about two bounded windows, never the whole history.
+  const window = await (async () => {
+    const { manager, truncated } = await openCliDayWindow(target, params.abortSignal);
+    const branch = manager.getBranch();
+    params.assertActive();
+    if (truncated && cliDayWindowLostBoundary(manager, branch)) {
+      return undefined;
+    }
+    return {
+      plannedTipId: branch.at(-1)?.id,
+      plan: planCliDayCompaction({
+        entries: branch,
+        nowMs,
+        timeZone,
+        ...(params.pendingUserEntryId
+          ? { excludeEntryIds: new Set([params.pendingUserEntryId]) }
+          : {}),
+      }),
+    };
+  })();
+  if (!window) {
+    log.warn("cli day compaction kept the conversation: its window lost the latest boundary");
+    return entry;
+  }
+  const { plan, plannedTipId } = window;
   if (!plan.due) {
     return entry;
   }
@@ -152,7 +210,7 @@ export async function runCliDayCompactionIfDue(params: {
   }
 
   // The boundary first: should clearing the binding fail, the next condensing redoes it.
-  const writer = await SessionManager.openAsync(target, undefined, undefined, params.abortSignal);
+  const { manager: writer } = await openCliDayWindow(target, params.abortSignal);
   // With no turn today, whatever arrived while the summary was written stays in context.
   const writerBranch = writer.getBranch();
   const plannedTipIndex = writerBranch.findIndex((candidate) => candidate.id === plannedTipId);

@@ -6,6 +6,7 @@ import {
 import type { RunCliAgentParams } from "../../agents/cli-runner/types.js";
 import { SessionManager } from "../../agents/sessions/session-manager.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions.js";
+import { MAX_VISIBLE_MESSAGE_MAX_MESSAGES } from "../../config/sessions/session-accessor.sqlite-visible-cursor.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
 const mocks = vi.hoisted(() => ({
@@ -101,7 +102,7 @@ beforeEach(() => {
   mocks.recordCliCompactionInStore.mockResolvedValue({ sessionId: "s-1", compactionCount: 1 });
   const manager = SessionManager.inMemory();
   mocks.manager = manager;
-  vi.spyOn(SessionManager, "openAsync").mockImplementation(async () => manager);
+  vi.spyOn(SessionManager, "openBoundedAsync").mockImplementation(async () => manager);
   say(manager, "2026-11-17T10:00:00Z", "user", "yesterday");
   say(manager, "2026-11-17T10:01:00Z", "assistant", "done");
   say(manager, "2026-11-18T08:00:00Z", "user", "today");
@@ -114,6 +115,72 @@ afterEach(() => {
 });
 
 describe("runCliDayCompactionIfDue", () => {
+  it("reads only the bounded window since the latest boundary", async () => {
+    rememberTurn();
+    mocks.runCliAgent.mockResolvedValue({
+      payloads: [{ text: "x" }],
+      meta: {
+        finalAssistantVisibleText:
+          '```json\n{"days":[{"date":"2026-11-17","summary":"Yesterday."}],"turns":[{"id":"t1","note":"none"}]}\n```',
+      },
+    });
+    await run("2026-11-18T08:59:00Z", { coldCacheAhead: true });
+    expect(mocks.runCliAgent).toHaveBeenCalledOnce();
+    const opens = vi.mocked(SessionManager.openBoundedAsync).mock.calls;
+    // The plan's read and the writer's read.
+    expect(opens).toHaveLength(2);
+    for (const call of opens) {
+      expect(call[1]).toMatchObject({ fromLatestBoundary: true });
+      expect(call[1].maxBytes).toBeLessThanOrEqual(48 * 1024 * 1024);
+      // The bounded readers refuse anything above this.
+      expect(call[1].maxEvents).toBeLessThanOrEqual(MAX_VISIBLE_MESSAGE_MAX_MESSAGES);
+    }
+  });
+
+  it("condenses a cut window that still holds the latest boundary", async () => {
+    rememberTurn();
+    const manager = mocks.manager!;
+    vi.mocked(SessionManager.openBoundedAsync).mockImplementation(async (_target, options) => {
+      options.onTruncated?.();
+      return manager;
+    });
+    vi.spyOn(manager, "getBoundaryCount").mockReturnValue(1);
+    vi.spyOn(manager, "getBranch").mockImplementation(() => [
+      {
+        type: "compaction",
+        id: "boundary",
+        parentId: null,
+        timestamp: "2026-11-16T10:00:00Z",
+        summary: "",
+        firstKeptEntryId: "",
+        tokensBefore: 0,
+      } as never,
+      ...SessionManager.prototype.getBranch.call(manager),
+    ]);
+    mocks.runCliAgent.mockResolvedValue({
+      payloads: [{ text: "x" }],
+      meta: {
+        finalAssistantVisibleText:
+          '```json\n{"days":[{"date":"2026-11-17","summary":"Yesterday."}],"turns":[{"id":"t1","note":"none"}]}\n```',
+      },
+    });
+    await run("2026-11-18T08:59:00Z", { coldCacheAhead: true });
+    expect(mocks.runCliAgent).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the conversation when a cut window lost the latest boundary", async () => {
+    rememberTurn();
+    const manager = mocks.manager!;
+    vi.mocked(SessionManager.openBoundedAsync).mockImplementation(async (_target, options) => {
+      options.onTruncated?.();
+      return manager;
+    });
+    vi.spyOn(manager, "getBoundaryCount").mockReturnValue(1);
+    await run("2026-11-18T08:59:00Z", { coldCacheAhead: true });
+    expect(mocks.runCliAgent).not.toHaveBeenCalled();
+    expect(mocks.recordCliCompactionInStore).not.toHaveBeenCalled();
+  });
+
   it("asks the warm session silently, writes the boundary and ends the native session", async () => {
     rememberTurn();
     mocks.runCliAgent.mockResolvedValue({
