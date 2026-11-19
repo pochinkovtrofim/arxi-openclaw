@@ -475,6 +475,35 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
     expect(mcpMocks.requesterDispose).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { notice: undefined, certified: true },
+    { notice: "Configured MCP is incomplete for this run: fake: authentication required.", certified: false },
+  ])(
+    "certifies a channel owner's transient MCP surface only when discovery is complete (notice=$notice)",
+    async ({ notice, certified }) => {
+      const params = createMcpParams();
+      // A channel turn names its sender, so no configured-MCP authority resolver exists.
+      params.senderId = "owner-channel-sender";
+      params.senderIsOwner = true;
+      mcpMocks.staticDiagnosticNotice = notice;
+
+      const harness = createStartedThreadHarness();
+      const run = runCodexAppServerAttempt(params);
+      await harness.waitForMethod("turn/start");
+      const threadStart = harness.requests.find((request) => request.method === "thread/start")
+        ?.params as { config?: Record<string, unknown> } | undefined;
+      expect(threadStart?.config).not.toHaveProperty("mcp_servers");
+      await harness.completeTurn({ threadId: "thread-1", turnId: "turn-1" });
+      await expect(run).resolves.toBeDefined();
+
+      expect(mcpMocks.authorityResolvers).toHaveLength(0);
+      expect(mcpMocks.captureRefs).toHaveLength(1);
+      expect(mcpMocks.captureRefs[0]!.value).toEqual(
+        certified ? { version: 1, source: "final-executable-surface" } : undefined,
+      );
+    },
+  );
+
   it.each(["current hook policy", ""])(
     "keeps post-hook static discovery failures visible with replacement policy %j",
     async (systemPrompt) => {
