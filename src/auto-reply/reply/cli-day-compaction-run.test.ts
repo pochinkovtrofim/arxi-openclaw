@@ -146,7 +146,15 @@ describe("runCliDayCompactionIfDue", () => {
     });
     vi.spyOn(manager, "getBoundaryCount").mockReturnValue(1);
     vi.spyOn(manager, "getBranch").mockImplementation(() => [
-      { type: "compaction", id: "boundary" } as never,
+      {
+        type: "compaction",
+        id: "boundary",
+        parentId: null,
+        timestamp: "2026-11-16T10:00:00Z",
+        summary: "",
+        firstKeptEntryId: "",
+        tokensBefore: 0,
+      } as never,
       ...SessionManager.prototype.getBranch.call(manager),
     ]);
     mocks.runCliAgent.mockResolvedValue({
