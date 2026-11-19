@@ -481,7 +481,9 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
   ])(
     "certifies a channel owner's transient MCP surface only when discovery is complete (notice=$notice)",
     async ({ notice, certified }) => {
-      const params = createMcpParams();
+      // A narrow tool list turns the native surface off, as the ChatGPT-token route does,
+      // so configured MCP is projected into the dynamic tools (transient surface).
+      const params = createMcpParams(["cron", "fake__show"]);
       // A channel turn names its sender, so no configured-MCP authority resolver exists.
       params.senderId = "owner-channel-sender";
       params.senderIsOwner = true;
