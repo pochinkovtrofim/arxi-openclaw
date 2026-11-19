@@ -12,9 +12,9 @@ import {
 import { readCliDaySummaryReplay } from "../../agents/cli-runner/day-summary-replay.js";
 import { recordCliCompactionInStore } from "../../agents/command/session-store.js";
 import { SessionManager } from "../../agents/sessions/session-manager.js";
-import { MAX_VISIBLE_MESSAGE_MAX_MESSAGES } from "../../config/sessions/session-accessor.sqlite-visible-cursor.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions.js";
 import { getCliSessionBinding } from "../../config/sessions/cli-session-binding.js";
+import { MAX_VISIBLE_MESSAGE_MAX_MESSAGES } from "../../config/sessions/session-accessor.sqlite-visible-cursor.js";
 import { withSessionTranscriptWriteAssertion } from "../../config/sessions/transcript-write-context.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";

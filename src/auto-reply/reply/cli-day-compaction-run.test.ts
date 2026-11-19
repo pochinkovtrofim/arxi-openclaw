@@ -5,8 +5,8 @@ import {
 } from "../../agents/cli-runner/day-summary-replay.js";
 import type { RunCliAgentParams } from "../../agents/cli-runner/types.js";
 import { SessionManager } from "../../agents/sessions/session-manager.js";
-import { MAX_VISIBLE_MESSAGE_MAX_MESSAGES } from "../../config/sessions/session-accessor.sqlite-visible-cursor.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions.js";
+import { MAX_VISIBLE_MESSAGE_MAX_MESSAGES } from "../../config/sessions/session-accessor.sqlite-visible-cursor.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 
 const mocks = vi.hoisted(() => ({
