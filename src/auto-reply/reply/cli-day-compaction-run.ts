@@ -24,6 +24,22 @@ const log = createSubsystemLogger("auto-reply/cli-day-compaction");
 // The summary turn reads the whole conversation and writes a few thousand tokens.
 const CLI_DAY_SUMMARY_TIMEOUT_MS = 4 * 60_000;
 
+// Both reads take only the window since the latest boundary, bounded. A full read held
+// a long chat's every tool result and image in the Gateway heap, twice across the
+// summary turn, and ended an Owner's Gateway on its heap limit (2026-11-18/19).
+const CLI_DAY_WINDOW_LIMITS = {
+  maxBytes: 16 * 1024 * 1024,
+  maxEvents: 20_000,
+  fromLatestBoundary: true,
+} as const;
+
+function openCliDayWindow(
+  target: Parameters<typeof SessionManager.openAsync>[0],
+  signal: AbortSignal | undefined,
+): Promise<SessionManager> {
+  return SessionManager.openAsync(target, undefined, CLI_DAY_WINDOW_LIMITS, signal);
+}
+
 /**
  * Condenses a Claude Code conversation by day. The summaries come from a silent turn in
  * the conversation's own warm process, so the conversation is read from the prompt cache;
@@ -72,16 +88,22 @@ export async function runCliDayCompactionIfDue(params: {
   }
   const timeZone = resolveCliDayMemoryTimeZone(cfg);
   const target = { agentId, sessionId: entry.sessionId, sessionKey, storePath };
-  const manager = await SessionManager.openAsync(target, undefined, undefined, params.abortSignal);
-  params.assertActive();
-  const branch = manager.getBranch();
-  const plannedTipId = branch.at(-1)?.id;
-  const plan = planCliDayCompaction({
-    entries: branch,
-    nowMs,
-    timeZone,
-    ...(params.pendingUserEntryId ? { excludeEntryIds: new Set([params.pendingUserEntryId]) } : {}),
-  });
+  // The read stays inside this call, so its entries are gone before the summary turn.
+  const { plan, plannedTipId } = await (async () => {
+    const branch = (await openCliDayWindow(target, params.abortSignal)).getBranch();
+    params.assertActive();
+    return {
+      plannedTipId: branch.at(-1)?.id,
+      plan: planCliDayCompaction({
+        entries: branch,
+        nowMs,
+        timeZone,
+        ...(params.pendingUserEntryId
+          ? { excludeEntryIds: new Set([params.pendingUserEntryId]) }
+          : {}),
+      }),
+    };
+  })();
   if (!plan.due) {
     return entry;
   }
@@ -152,7 +174,7 @@ export async function runCliDayCompactionIfDue(params: {
   }
 
   // The boundary first: should clearing the binding fail, the next condensing redoes it.
-  const writer = await SessionManager.openAsync(target, undefined, undefined, params.abortSignal);
+  const writer = await openCliDayWindow(target, params.abortSignal);
   // With no turn today, whatever arrived while the summary was written stays in context.
   const writerBranch = writer.getBranch();
   const plannedTipIndex = writerBranch.findIndex((candidate) => candidate.id === plannedTipId);

@@ -114,6 +114,26 @@ afterEach(() => {
 });
 
 describe("runCliDayCompactionIfDue", () => {
+  it("reads only the bounded window since the latest boundary", async () => {
+    rememberTurn();
+    mocks.runCliAgent.mockResolvedValue({
+      payloads: [{ text: "x" }],
+      meta: {
+        finalAssistantVisibleText:
+          '```json\n{"days":[{"date":"2026-11-17","summary":"Yesterday."}],"turns":[{"id":"t1","note":"none"}]}\n```',
+      },
+    });
+    await run("2026-11-18T08:59:00Z", { coldCacheAhead: true });
+    expect(mocks.runCliAgent).toHaveBeenCalledOnce();
+    const opens = vi.mocked(SessionManager.openAsync).mock.calls;
+    // The plan's read and the writer's read.
+    expect(opens).toHaveLength(2);
+    for (const call of opens) {
+      expect(call[2]).toMatchObject({ fromLatestBoundary: true });
+      expect(call[2]?.maxBytes).toBeLessThanOrEqual(16 * 1024 * 1024);
+    }
+  });
+
   it("asks the warm session silently, writes the boundary and ends the native session", async () => {
     rememberTurn();
     mocks.runCliAgent.mockResolvedValue({
