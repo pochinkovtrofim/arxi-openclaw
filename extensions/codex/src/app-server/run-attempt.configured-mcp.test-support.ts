@@ -49,6 +49,7 @@ const mcpMocks = vi.hoisted(() => ({
   requesterParams: [] as Array<Record<string, unknown>>,
   useRealStaticMcp: false,
   staticDiagnosticNotice: undefined as string | undefined,
+  staticInteractiveApprovalRequired: undefined as boolean | undefined,
   staticFailure: undefined as Error | undefined,
   staticFailureGate: undefined as Promise<void> | undefined,
   staticCalls: [] as Array<Record<string, unknown>>,

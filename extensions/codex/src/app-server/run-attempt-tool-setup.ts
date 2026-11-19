@@ -582,11 +582,13 @@ export async function prepareCodexAttemptTools(runtime: CodexAttemptRuntime) {
         { nativeToolSurfaceEnabled },
       );
       // A transient projection puts every configured MCP tool into the dynamic-tool
-      // list captured above; a discovery notice means some server's tools are missing.
+      // list captured above. A discovery notice means some server's tools are missing,
+      // and a tool behind live approval would be missing from a scheduled run.
       const staticMcpCaptured =
         configuredMcpSurface === "transient" &&
         configuredMcp !== undefined &&
-        !configuredMcp.diagnosticNotice;
+        !configuredMcp.diagnosticNotice &&
+        !configuredMcp.interactiveApprovalRequired;
       if (
         !authenticatedScheduledMode &&
         bundleMcpThreadConfig.staticServerNames.length > 0 &&

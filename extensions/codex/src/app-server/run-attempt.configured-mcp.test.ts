@@ -476,11 +476,16 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
   });
 
   it.each([
-    { notice: undefined, certified: true },
-    { notice: "Configured MCP is incomplete for this run: fake: authentication required.", certified: false },
+    { notice: undefined, interactive: false, certified: true },
+    {
+      notice: "Configured MCP is incomplete for this run: fake: authentication required.",
+      interactive: false,
+      certified: false,
+    },
+    { notice: undefined, interactive: true, certified: false },
   ])(
-    "certifies a channel owner's transient MCP surface only when discovery is complete (notice=$notice)",
-    async ({ notice, certified }) => {
+    "certifies a channel owner's transient MCP surface only when a scheduled run gets the same tools (notice=$notice, interactive=$interactive)",
+    async ({ notice, interactive, certified }) => {
       // A narrow tool list turns the native surface off, as the ChatGPT-token route does,
       // so configured MCP is projected into the dynamic tools (transient surface).
       const params = createMcpParams(["cron", "fake__show"]);
@@ -488,6 +493,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
       params.senderId = "owner-channel-sender";
       params.senderIsOwner = true;
       mcpMocks.staticDiagnosticNotice = notice;
+      mcpMocks.staticInteractiveApprovalRequired = interactive;
 
       const harness = createStartedThreadHarness();
       const run = runCodexAppServerAttempt(params);
@@ -500,6 +506,7 @@ describe("runCodexAppServerAttempt configured MCP ownership", () => {
 
       expect(mcpMocks.authorityResolvers).toHaveLength(0);
       expect(mcpMocks.captureRefs).toHaveLength(1);
+      expect(mcpMocks.captureCalls[0]!.storedNames).toContain("fake__show");
       expect(mcpMocks.captureRefs[0]!.value).toEqual(
         certified ? { version: 1, source: "final-executable-surface" } : undefined,
       );
