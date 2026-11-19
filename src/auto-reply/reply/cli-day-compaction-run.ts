@@ -12,6 +12,7 @@ import {
 import { readCliDaySummaryReplay } from "../../agents/cli-runner/day-summary-replay.js";
 import { recordCliCompactionInStore } from "../../agents/command/session-store.js";
 import { SessionManager } from "../../agents/sessions/session-manager.js";
+import { MAX_VISIBLE_MESSAGE_MAX_MESSAGES } from "../../config/sessions/session-accessor.sqlite-visible-cursor.js";
 import type { InternalSessionEntry as SessionEntry } from "../../config/sessions.js";
 import { getCliSessionBinding } from "../../config/sessions/cli-session-binding.js";
 import { withSessionTranscriptWriteAssertion } from "../../config/sessions/transcript-write-context.js";
@@ -29,15 +30,42 @@ const CLI_DAY_SUMMARY_TIMEOUT_MS = 4 * 60_000;
 // summary turn, and ended an Owner's Gateway on its heap limit (2026-11-18/19).
 const CLI_DAY_WINDOW_LIMITS = {
   maxBytes: 16 * 1024 * 1024,
-  maxEvents: 20_000,
+  maxEvents: MAX_VISIBLE_MESSAGE_MAX_MESSAGES,
   fromLatestBoundary: true,
 } as const;
 
-function openCliDayWindow(
-  target: Parameters<typeof SessionManager.openAsync>[0],
+async function openCliDayWindow(
+  target: Parameters<typeof SessionManager.openBoundedAsync>[0],
   signal: AbortSignal | undefined,
-): Promise<SessionManager> {
-  return SessionManager.openAsync(target, undefined, CLI_DAY_WINDOW_LIMITS, signal);
+): Promise<{ manager: SessionManager; truncated: boolean }> {
+  let truncated = false;
+  const manager = await SessionManager.openBoundedAsync(target, {
+    ...CLI_DAY_WINDOW_LIMITS,
+    signal,
+    onTruncated: () => {
+      truncated = true;
+    },
+  });
+  return { manager, truncated };
+}
+
+/**
+ * A cut window that lost the latest boundary, or the turns it kept, would write a
+ * boundary without the earlier day summaries; such a conversation waits instead.
+ */
+function cliDayWindowLostBoundary(
+  manager: SessionManager,
+  branch: ReturnType<SessionManager["getBranch"]>,
+): boolean {
+  const boundary = branch.findLast((row) => row.type === "compaction" || row.type === "reset");
+  if (!boundary) {
+    return manager.getBoundaryCount() > 0;
+  }
+  return (
+    boundary.type === "compaction" &&
+    Boolean(boundary.firstKeptEntryId) &&
+    !branch.some((row) => row.id === boundary.firstKeptEntryId)
+  );
 }
 
 /**
@@ -89,9 +117,16 @@ export async function runCliDayCompactionIfDue(params: {
   const timeZone = resolveCliDayMemoryTimeZone(cfg);
   const target = { agentId, sessionId: entry.sessionId, sessionKey, storePath };
   // The read stays inside this call, so its entries are gone before the summary turn.
-  const { plan, plannedTipId } = await (async () => {
-    const branch = (await openCliDayWindow(target, params.abortSignal)).getBranch();
+  const window = await (async () => {
+    const { manager, truncated } = await openCliDayWindow(target, params.abortSignal);
+    const branch = manager.getBranch();
     params.assertActive();
+    if (truncated) {
+      log.info("cli day compaction plans from a cut window: older rows are past its bound");
+      if (cliDayWindowLostBoundary(manager, branch)) {
+        return undefined;
+      }
+    }
     return {
       plannedTipId: branch.at(-1)?.id,
       plan: planCliDayCompaction({
@@ -104,6 +139,11 @@ export async function runCliDayCompactionIfDue(params: {
       }),
     };
   })();
+  if (!window) {
+    log.warn("cli day compaction kept the conversation: its window lost the latest boundary");
+    return entry;
+  }
+  const { plan, plannedTipId } = window;
   if (!plan.due) {
     return entry;
   }
@@ -174,7 +214,7 @@ export async function runCliDayCompactionIfDue(params: {
   }
 
   // The boundary first: should clearing the binding fail, the next condensing redoes it.
-  const writer = await openCliDayWindow(target, params.abortSignal);
+  const { manager: writer } = await openCliDayWindow(target, params.abortSignal);
   // With no turn today, whatever arrived while the summary was written stays in context.
   const writerBranch = writer.getBranch();
   const plannedTipIndex = writerBranch.findIndex((candidate) => candidate.id === plannedTipId);
