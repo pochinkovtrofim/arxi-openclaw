@@ -114,7 +114,8 @@ export async function runCliDayCompactionIfDue(params: {
   }
   const timeZone = resolveCliDayMemoryTimeZone(cfg);
   const target = { agentId, sessionId: entry.sessionId, sessionKey, storePath };
-  // The read stays inside this call, so its entries are gone before the summary turn.
+  // The plan keeps only what it needs; the session actor may cache one copy of the
+  // bounded read, so a peak holds about two bounded windows, never the whole history.
   const window = await (async () => {
     const { manager, truncated } = await openCliDayWindow(target, params.abortSignal);
     const branch = manager.getBranch();

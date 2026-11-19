@@ -137,6 +137,29 @@ describe("runCliDayCompactionIfDue", () => {
     }
   });
 
+  it("condenses a cut window that still holds the latest boundary", async () => {
+    rememberTurn();
+    const manager = mocks.manager!;
+    vi.mocked(SessionManager.openBoundedAsync).mockImplementation(async (_target, options) => {
+      options.onTruncated?.();
+      return manager;
+    });
+    vi.spyOn(manager, "getBoundaryCount").mockReturnValue(1);
+    vi.spyOn(manager, "getBranch").mockImplementation(() => [
+      { type: "compaction", id: "boundary" } as never,
+      ...SessionManager.prototype.getBranch.call(manager),
+    ]);
+    mocks.runCliAgent.mockResolvedValue({
+      payloads: [{ text: "x" }],
+      meta: {
+        finalAssistantVisibleText:
+          '```json\n{"days":[{"date":"2026-11-17","summary":"Yesterday."}],"turns":[{"id":"t1","note":"none"}]}\n```',
+      },
+    });
+    await run("2026-11-18T08:59:00Z", { coldCacheAhead: true });
+    expect(mocks.runCliAgent).toHaveBeenCalledOnce();
+  });
+
   it("keeps the conversation when a cut window lost the latest boundary", async () => {
     rememberTurn();
     const manager = mocks.manager!;
