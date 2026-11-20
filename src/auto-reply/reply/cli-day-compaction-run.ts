@@ -77,8 +77,7 @@ function cliDayWindowLostBoundary(
  * is due or the step fails; the uncondensed conversation still fits its window.
  */
 /** Condensing is upkeep: whatever fails in it keeps the conversation, never the turn. */
-export async function runCliDayCompactionIfDue(
-  params: {
+export async function runCliDayCompactionIfDue(params: {
   cfg: OpenClawConfig;
   agentId: string;
   sessionKey: string;
@@ -93,8 +92,7 @@ export async function runCliDayCompactionIfDue(
   assertActive: () => void;
   onCompactionStart?: () => void;
   nowMs?: number;
-},
-): Promise<SessionEntry> {
+}): Promise<SessionEntry> {
   try {
     return await condenseCliDaysIfDue(params);
   } catch (error) {
