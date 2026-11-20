@@ -217,7 +217,6 @@ export async function runCliDayCompactionIfDue(params: {
 
   // The boundary first: should clearing the binding fail, the next condensing redoes it.
   const { manager: writer } = await openCliDayWindow(target, params.abortSignal);
-  // With no turn today, whatever arrived while the summary was written stays in context.
   const writerBranch = writer.getBranch();
   const plannedTipIndex = writerBranch.findIndex((candidate) => candidate.id === plannedTipId);
   const arrivedSinceId = plannedTipIndex >= 0 ? writerBranch[plannedTipIndex + 1]?.id : undefined;
