@@ -270,6 +270,44 @@ describe("runCliDayCompactionIfDue", () => {
     });
   });
 
+  it("waits for today's first turn when the day has none yet and no message is pending", async () => {
+    rememberTurn();
+    const current = { ...entry(), updatedAt: Date.parse("2026-11-19T09:00:00Z") };
+    const result = await runCliDayCompactionIfDue({
+      cfg,
+      agentId: "main",
+      sessionKey,
+      storePath: "/tmp/store",
+      entry: current,
+      sessionStore: { [sessionKey]: current },
+      isHeartbeat: false,
+      assertActive: () => {},
+      nowMs: Date.parse("2026-11-19T09:00:01Z"),
+    });
+    // An empty anchor is refused by the transcript and failed the Owner's turn (2026-11-20).
+    expect(result).toBe(current);
+    expect(mocks.runCliAgent).not.toHaveBeenCalled();
+    expect(mocks.manager!.getBranch().some((row) => row.type === "compaction")).toBe(false);
+  });
+
+  it("keeps the turn going when the boundary cannot be written", async () => {
+    rememberTurn();
+    mocks.runCliAgent.mockResolvedValue({
+      meta: {
+        finalAssistantVisibleText:
+          '{"days":[{"date":"2026-11-17","summary":"Yesterday."}],"turns":[{"id":"t1","note":"none"}]}',
+      },
+    });
+    vi.spyOn(mocks.manager!, "appendCompactionAsync").mockRejectedValue(
+      new Error("Invalid session transcript entry: compaction"),
+    );
+    const current = entry();
+    const result = await run("2026-11-18T08:59:00Z", { coldCacheAhead: true });
+    expect(mocks.runCliAgent).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ sessionId: current.sessionId });
+    expect(mocks.recordCliCompactionInStore).not.toHaveBeenCalled();
+  });
+
   it("does nothing without a person turn to continue", async () => {
     await run("2026-11-18T10:00:00Z");
     expect(mocks.runCliAgent).not.toHaveBeenCalled();

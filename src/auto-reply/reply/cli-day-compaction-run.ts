@@ -143,6 +143,12 @@ export async function runCliDayCompactionIfDue(params: {
   if (!plan.due) {
     return entry;
   }
+  // The boundary keeps today from its first turn on. Before today's first turn, with no
+  // message being answered, it has nothing to keep (and the transcript refuses an empty
+  // anchor): the conversation is condensed after that turn instead.
+  if (!plan.firstTodayEntryId && !params.pendingUserEntryId) {
+    return entry;
+  }
   const lastActivityMs = plan.lastActivityMs ?? entry.updatedAt ?? nowMs;
   const idleMs = nowMs - lastActivityMs;
   if (params.coldCacheAhead) {
@@ -218,18 +224,30 @@ export async function runCliDayCompactionIfDue(params: {
   const pendingKeptId = writerBranch.some((candidate) => candidate.id === params.pendingUserEntryId)
     ? params.pendingUserEntryId
     : undefined;
+  // The message being answered now stays too: it may be today's first.
+  const firstKeptEntryId = plan.firstTodayEntryId ?? pendingKeptId ?? arrivedSinceId;
+  if (!firstKeptEntryId) {
+    log.warn("cli day compaction kept the conversation: nothing of today to keep yet");
+    return entry;
+  }
   const append = () =>
     writer.appendCompactionAsync(
       assembled.summary,
-      // The message being answered now stays too: it may be today's first.
-      plan.firstTodayEntryId ?? pendingKeptId ?? arrivedSinceId ?? "",
+      firstKeptEntryId,
       entry.totalTokens ?? 0,
       assembled.details,
     );
   const writeTarget = writer.getSessionTarget();
-  await (writeTarget
-    ? withSessionTranscriptWriteAssertion(writeTarget, params.assertActive, append)
-    : append());
+  try {
+    await (writeTarget
+      ? withSessionTranscriptWriteAssertion(writeTarget, params.assertActive, append)
+      : append());
+  } catch (error) {
+    params.assertActive();
+    // Condensing is upkeep: a boundary that cannot be written never costs the turn.
+    log.warn(`cli day compaction kept the conversation: ${formatErrorMessage(error)}`);
+    return entry;
+  }
   params.assertActive();
   // A rewritten shared history ends the native session; the next turn seeds a fresh one.
   const recorded = await recordCliCompactionInStore({
