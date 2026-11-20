@@ -308,6 +308,28 @@ describe("runCliDayCompactionIfDue", () => {
     expect(mocks.recordCliCompactionInStore).not.toHaveBeenCalled();
   });
 
+  it("keeps the turn going when the transcript cannot be read", async () => {
+    rememberTurn();
+    vi.mocked(SessionManager.openBoundedAsync).mockRejectedValue(new Error("database busy"));
+    const result = await run("2026-11-18T08:59:00Z", { coldCacheAhead: true });
+    expect(result).toMatchObject({ sessionId: "s-1" });
+    expect(mocks.runCliAgent).not.toHaveBeenCalled();
+  });
+
+  it("still stops a run that lost its authority", async () => {
+    rememberTurn();
+    vi.mocked(SessionManager.openBoundedAsync).mockRejectedValue(new Error("aborted"));
+    const stopped = new Error("run no longer active");
+    await expect(
+      run("2026-11-18T08:59:00Z", {
+        coldCacheAhead: true,
+        assertActive: () => {
+          throw stopped;
+        },
+      }),
+    ).rejects.toBe(stopped);
+  });
+
   it("does nothing without a person turn to continue", async () => {
     await run("2026-11-18T10:00:00Z");
     expect(mocks.runCliAgent).not.toHaveBeenCalled();

@@ -75,6 +75,8 @@ function cliDayWindowLostBoundary(
  * Runs in the background before the cache expires (`coldCacheAhead`), or before the first
  * turn after a pause the background run missed. Returns the entry unchanged when nothing
  * is due or the step fails; the uncondensed conversation still fits its window.
+ * Condensing is upkeep: whatever fails in it keeps the conversation, never the turn;
+ * only a run that lost its authority (`assertActive`) still throws.
  */
 export async function runCliDayCompactionIfDue(params: {
   cfg: OpenClawConfig;
@@ -92,6 +94,18 @@ export async function runCliDayCompactionIfDue(params: {
   onCompactionStart?: () => void;
   nowMs?: number;
 }): Promise<SessionEntry> {
+  try {
+    return await condenseCliDaysIfDue(params);
+  } catch (error) {
+    params.assertActive();
+    log.warn(`cli day compaction kept the conversation: ${formatErrorMessage(error)}`);
+    return params.entry;
+  }
+}
+
+async function condenseCliDaysIfDue(
+  params: Parameters<typeof runCliDayCompactionIfDue>[0],
+): Promise<SessionEntry> {
   const { cfg, entry, sessionKey, agentId, storePath } = params;
   const binding = getCliSessionBinding(entry, CLI_DAY_MEMORY_PROVIDER);
   if (!binding || params.isHeartbeat || cfg.agents?.defaults?.compaction?.enabled === false) {
@@ -237,16 +251,9 @@ export async function runCliDayCompactionIfDue(params: {
       assembled.details,
     );
   const writeTarget = writer.getSessionTarget();
-  try {
-    await (writeTarget
-      ? withSessionTranscriptWriteAssertion(writeTarget, params.assertActive, append)
-      : append());
-  } catch (error) {
-    params.assertActive();
-    // Condensing is upkeep: a boundary that cannot be written never costs the turn.
-    log.warn(`cli day compaction kept the conversation: ${formatErrorMessage(error)}`);
-    return entry;
-  }
+  await (writeTarget
+    ? withSessionTranscriptWriteAssertion(writeTarget, params.assertActive, append)
+    : append());
   params.assertActive();
   // A rewritten shared history ends the native session; the next turn seeds a fresh one.
   const recorded = await recordCliCompactionInStore({
