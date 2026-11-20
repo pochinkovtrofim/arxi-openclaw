@@ -75,8 +75,9 @@ function cliDayWindowLostBoundary(
  * Runs in the background before the cache expires (`coldCacheAhead`), or before the first
  * turn after a pause the background run missed. Returns the entry unchanged when nothing
  * is due or the step fails; the uncondensed conversation still fits its window.
+ * Condensing is upkeep: whatever fails in it keeps the conversation, never the turn;
+ * only a run that lost its authority (`assertActive`) still throws.
  */
-/** Condensing is upkeep: whatever fails in it keeps the conversation, never the turn. */
 export async function runCliDayCompactionIfDue(params: {
   cfg: OpenClawConfig;
   agentId: string;
