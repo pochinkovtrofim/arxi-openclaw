@@ -50,19 +50,31 @@ function record(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-/** The first stack frame in the program's own code, as basename:line. */
-export function errorOrigin(stack: unknown): string | undefined {
-  if (typeof stack !== "string") {
+/**
+ * The first stack frame in the program's own code, as basename:line. V8 writes
+ * the whole message, newlines included, before the first frame, so only the
+ * text after the message is read: a message line must never pass as a frame.
+ */
+export function errorOrigin(error: unknown): string | undefined {
+  if (!(error instanceof Error) || typeof error.stack !== "string") {
     return undefined;
   }
-  for (const line of stack.split("\n").slice(1, 40)) {
-    // "at fn (/path/file.js:12:3)", "at /path/file.js:12:3", "at file:///path/file.js:12:3"
-    const frame = /(?:\(|at )((?:file:\/\/)?[^\s()]+?):(\d+):\d+\)?\s*$/.exec(line.trim());
-    if (!frame) {
+  const stack = error.stack;
+  const message = typeof error.message === "string" ? error.message : "";
+  const at = message ? stack.indexOf(message) : stack.indexOf("\n");
+  if (at < 0) {
+    return undefined;
+  }
+  const frames = stack.slice(at + (message ? message.length : 0)).split("\n");
+  for (const raw of frames.slice(0, 40)) {
+    const line = raw.trim();
+    if (!line.startsWith("at ")) {
       continue;
     }
-    const file = frame[1];
-    const lineNumber = frame[2];
+    // "at fn (/path/file.js:12:3)", "at /path/file.js:12:3", "at file:///path/file.js:12:3"
+    const frame = /(?:\(|at )((?:file:\/\/)?[^\s()]+?):(\d+):\d+\)?$/.exec(line);
+    const file = frame?.[1];
+    const lineNumber = frame?.[2];
     if (!file || !lineNumber) {
       continue;
     }
@@ -87,7 +99,7 @@ function thrownFacts(value: unknown): { name?: string; code?: string; origin?: s
   return {
     name: token(value.name) ?? token(value.constructor?.name),
     code: token(typeof code === "number" ? String(code) : code),
-    origin: errorOrigin(value.stack),
+    origin: errorOrigin(value),
   };
 }
 

@@ -74,10 +74,21 @@ describe("agent run error identity", () => {
   });
 
   it("reads the first frame outside dependencies", () => {
-    expect(errorOrigin("E\n    at /x/node_modules/a.js:1:1\n    at C:\\app\\dist\\b.js:7:3")).toBe(
-      "b.js:7",
+    const error = new Error("E");
+    error.stack = "Error: E\n    at /x/node_modules/a.js:1:1\n    at C:\\app\\dist\\b.js:7:3";
+    expect(errorOrigin(error)).toBe("b.js:7");
+    error.stack = "Error: E\n    at <anonymous>";
+    expect(errorOrigin(error)).toBeUndefined();
+    expect(errorOrigin("Error: E\n    at /dist/b.js:7:3")).toBeUndefined();
+  });
+
+  it("never reads a line of a multi-line message as a frame", () => {
+    const error = new Error(
+      "tool failed:\nowner asked: dinner with Maria at 2026-11-21T20:30:00\n  at home (flat.js:4:2)",
     );
-    expect(errorOrigin("E\n    at <anonymous>")).toBeUndefined();
-    expect(errorOrigin(undefined)).toBeUndefined();
+    const origin = errorOrigin(error);
+    expect(origin).toMatch(/^agent-run-error-identity\.test\.ts:\d+$/);
+    error.stack = "Error: something else\n    at /dist/b.js:7:3";
+    expect(errorOrigin(error)).toBeUndefined();
   });
 });

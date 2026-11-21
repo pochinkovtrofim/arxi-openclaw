@@ -17,5 +17,9 @@ export function agentRunErrorShapeFromError(
     return shape;
   }
   const errorIdentity = describeAgentRunErrorIdentity({ error });
-  return errorIdentity ? { ...shape, details: { errorIdentity } } : shape;
+  if (errorIdentity) {
+    // The same object: errorShapeFromError keyed its display diagnostic to it.
+    shape.details = { errorIdentity };
+  }
+  return shape;
 }
