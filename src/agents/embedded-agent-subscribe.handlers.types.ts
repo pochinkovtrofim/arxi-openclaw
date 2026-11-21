@@ -132,6 +132,8 @@ export type EmbeddedAgentSubscribeState = {
   itemActiveIds: Set<string>;
   itemStartedCount: number;
   itemCompletedCount: number;
+  /** The run's first tool call started: its pre-tool text had its one chance. */
+  preToolTextDone: boolean;
   /**
    * Completed assistant round trips in this attempt. Survives compaction-retry
    * presentation resets, matching how usage totals keep counting model calls.

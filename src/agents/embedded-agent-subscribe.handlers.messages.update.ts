@@ -51,6 +51,43 @@ import {
 } from "./embedded-agent-utils.js";
 import type { AgentEvent, AgentMessage } from "./runtime/index.js";
 
+// A direct reply to the Owner's message: the text written before the run's
+// first tool call goes out as a preamble item the moment that call starts, so
+// the channel can send it ahead of the work, as the CLI runner's
+// emitPreToolText does. Only the first tool call counts: text between later
+// ones is working notes. Responses commentary never reaches here; it is
+// published as its own preamble.
+function emitPreToolPreamble(
+  ctx: EmbeddedAgentSubscribeContext,
+  message: AssistantMessage,
+  suppressed: boolean,
+): void {
+  if (!ctx.params.emitPreToolText || ctx.state.preToolTextDone) {
+    return;
+  }
+  ctx.state.preToolTextDone = true;
+  if (suppressed || ctx.params.silentExpected) {
+    return;
+  }
+  const progressText = extractAssistantVisibleText(message).trim();
+  if (!progressText) {
+    return;
+  }
+  const data = {
+    kind: "preamble",
+    title: "Preamble",
+    phase: "end",
+    progressText,
+    itemId: `preamble:${ctx.params.runId}`,
+  };
+  emitAgentEvent({ runId: ctx.params.runId, stream: "item", data });
+  runBestEffortCallback({
+    label: "pre-tool preamble agent event",
+    log: ctx.log,
+    callback: () => ctx.params.onAgentEvent?.({ stream: "item", data }),
+  });
+}
+
 export function handleMessageUpdate(
   ctx: EmbeddedAgentSubscribeContext,
   evt: AgentEvent & { message: AgentMessage; assistantMessageEvent?: unknown },
@@ -153,6 +190,10 @@ export function handleMessageUpdate(
     return undefined;
   }
 
+  if (evtType === "toolcall_start") {
+    emitPreToolPreamble(ctx, eventAssistantMessage, suppressSourceReplyOutput);
+    return undefined;
+  }
   if (evtType !== "text_delta" && evtType !== "text_start" && evtType !== "text_end") {
     return undefined;
   }
