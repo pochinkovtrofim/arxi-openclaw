@@ -1,3 +1,4 @@
+import type { AgentRunErrorIdentity } from "../../agents/agent-run-error-identity.js";
 import type { AgentRunTerminalDeliverySnapshot } from "../../agents/agent-run-terminal-delivery.js";
 import type { AgentRunTerminalOutcome } from "../../agents/agent-run-terminal-outcome.js";
 import type { AgentRunTerminalReceipt } from "../../agents/agent-run-terminal-receipt.js";
@@ -66,6 +67,8 @@ export type AgentJobTerminalSnapshot = Omit<AgentRunTerminalOutcome, "reason"> &
   yielded?: boolean;
   pendingError?: boolean;
   terminalDelivery?: AgentRunTerminalDeliverySnapshot;
+  /** Bounded tokens naming what ended a failed run; never its text. */
+  errorIdentity?: AgentRunErrorIdentity;
   terminalReceipt?: AgentRunTerminalReceipt;
   terminalReply?: AgentRunTerminalReplySnapshot;
 };

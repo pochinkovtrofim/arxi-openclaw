@@ -821,4 +821,31 @@ describe("agent.wait gateway dedupe observations", () => {
       expect(JSON.stringify(waiter.respond.mock.calls[0]?.[1])).not.toContain("private-target");
     },
   );
+
+  it("hands a failed run's error identity to agent.wait, and only bounded tokens", async () => {
+    const runId = "run-error-identity";
+    emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "start", startedAt: 100 } });
+    emitAgentEvent({
+      runId,
+      stream: "lifecycle",
+      data: {
+        phase: "error",
+        startedAt: 100,
+        endedAt: 300,
+        executionSettled: true,
+        error: "owner text that must stay inside",
+        errorIdentity: { name: "TypeError", origin: "day-memory.js:812", kind: "not a token" },
+      },
+    });
+    const waiter = waitThroughGateway({ runId, timeoutMs: 0 });
+    await waiter.promise;
+    expect(waiter.respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        runId,
+        status: "error",
+        errorIdentity: { name: "TypeError", origin: "day-memory.js:812" },
+      }),
+    );
+  });
 });

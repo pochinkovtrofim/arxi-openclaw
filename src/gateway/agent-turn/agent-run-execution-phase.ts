@@ -37,7 +37,6 @@ import { withCurrentUserTurnInput } from "../../sessions/user-turn-transcript-ru
 import { isOperatorUiClient } from "../../utils/message-channel.js";
 import { runWithChatAbortExecution } from "../chat-abort-lifecycle-internal.js";
 import { discardPreparedInboundMedia } from "../chat-attachments.js";
-import { errorShapeFromError } from "../error-shape.js";
 import { getGatewayLocalUserIngress } from "../local-user-ingress.js";
 import { revokeMessageActionTurnCapability } from "../message-action-turn-capability.js";
 import { ADMIN_SCOPE } from "../operator-scopes.js";
@@ -59,6 +58,7 @@ import {
   resolveCronContinuationDispatchFields,
 } from "./agent-run-dispatch-inputs.js";
 import { projectWithdrawnAgentInput } from "./agent-run-dispatch-outcome.js";
+import { agentRunErrorShapeFromError } from "./agent-run-error-shape.js";
 import type { StartAgentRunExecutionParams } from "./agent-run-execution-types.js";
 import {
   admitHostCurrentConversationActions,
@@ -206,7 +206,7 @@ async function executeAgentRun(params: StartAgentRunExecutionParams): Promise<vo
             })
           : undefined;
       const finishFailure = async (err: unknown, recordCompletion = true) => {
-        const error = errorShapeFromError(ErrorCodes.UNAVAILABLE, err);
+        const error = agentRunErrorShapeFromError(ErrorCodes.UNAVAILABLE, err);
         const renderedErr = error.message;
         gatewayMessage.finish({
           outcome: "error",
