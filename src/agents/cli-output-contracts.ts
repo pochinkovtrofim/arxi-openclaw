@@ -162,6 +162,13 @@ export type CliJsonlStreamingParserOptions = {
   onDisplayToolResult?: (delta: CliToolResultDelta) => void;
   onCommentaryText?: (text: string) => void;
   /**
+   * Observes the text written since the last tool boundary when a tool call
+   * starts, without taking it out of the streamed assistant text: the stream
+   * keeps every delta live, and only the observer learns the text came before a
+   * tool. Unused while onCommentaryText reroutes that text.
+   */
+  onPreToolText?: (text: string) => void;
+  /**
    * The caller delivers once, after the turn, so the reply is the final
    * message: text written before a tool call is working notes and stays out of
    * it. An empty final message still falls back to the streamed text.

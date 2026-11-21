@@ -635,6 +635,39 @@ describe("createCliJsonlStreamingParser", () => {
     expect(commentaryTexts).toEqual(expected);
   });
 
+  it("observes pre-tool text while every delta keeps streaming", () => {
+    const preTool: string[] = [];
+    const deltas: string[] = [];
+    const parser = createClaudeParser({
+      onPreToolText: (text) => preTool.push(text),
+      onAssistantDelta: ({ delta }) => deltas.push(delta ?? ""),
+    });
+    finishFrames(
+      parser,
+      init("session-pre-tool"),
+      messageStart,
+      claudeTextDelta("Checking "),
+      claudeTextDelta("now."),
+      toolStart("toolu_1", 1),
+      toolStart("toolu_2", 2),
+      messageStop,
+      messageStart,
+      toolStart("toolu_3", 0),
+      messageStop,
+      messageStart,
+      claudeTextDelta("One more look."),
+      toolStart("toolu_4", 1),
+      messageStop,
+      messageStart,
+      claudeTextDelta("Final answer"),
+      messageStop,
+      result(""),
+    );
+    expect(preTool).toEqual(["Checking now.", "One more look."]);
+    expect(deltas.slice(0, 2)).toEqual(["Checking ", "now."]);
+    expect(deltas.join("")).toContain("Final answer");
+  });
+
   it.each([
     {
       name: "a streamed final answer",

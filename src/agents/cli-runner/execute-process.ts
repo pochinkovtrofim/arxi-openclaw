@@ -153,6 +153,10 @@ export async function executeCliProcess(params: {
           params.events.emitLiveEvents && runParams.emitCommentaryText
             ? params.events.emitCliCommentaryText
             : undefined,
+        onPreToolText:
+          params.events.emitLiveEvents && runParams.emitPreToolText
+            ? params.events.emitCliCommentaryText
+            : undefined,
         finalMessageIsReply: runParams.replyIncludesPreToolText !== true,
         onPreToolTextOmitted: ({ omitted, reply }) =>
           cliBackendLog.info(
