@@ -66,7 +66,11 @@ export function errorOrigin(stack: unknown): string | undefined {
     if (!file || !lineNumber) {
       continue;
     }
-    if (file.startsWith("node:") || file.includes("/node_modules/") || file.includes("\\node_modules\\")) {
+    if (
+      file.startsWith("node:") ||
+      file.includes("/node_modules/") ||
+      file.includes("\\node_modules\\")
+    ) {
       continue;
     }
     const base = file.split(/[\\/]/).pop() ?? "";

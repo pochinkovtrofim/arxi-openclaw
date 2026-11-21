@@ -58,6 +58,7 @@ import {
   resolveCronContinuationDispatchFields,
 } from "./agent-run-dispatch-inputs.js";
 import { projectWithdrawnAgentInput } from "./agent-run-dispatch-outcome.js";
+import { agentRunErrorShapeFromError } from "./agent-run-error-shape.js";
 import type { StartAgentRunExecutionParams } from "./agent-run-execution-types.js";
 import {
   admitHostCurrentConversationActions,
@@ -72,7 +73,6 @@ import {
   finalizePreparedAgentRunUserTurn,
   releaseStoppedAgentRunUserTurn,
 } from "./agent-run-user-turn.js";
-import { agentRunErrorShapeFromError } from "./agent-run-error-shape.js";
 
 export async function startAgentRunExecution(params: StartAgentRunExecutionParams): Promise<void> {
   // Autonomous turns prepare their own workspace and cannot borrow a previous chat run's gate.

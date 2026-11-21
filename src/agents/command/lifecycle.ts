@@ -217,7 +217,8 @@ export function createAgentCommandLifecycle(params: {
         error,
         includeObservation,
         describeAgentRunErrorIdentity({
-          kind: runResult.meta.error?.kind ?? (fallbackExhausted ? "fallback_exhausted" : undefined),
+          kind:
+            runResult.meta.error?.kind ?? (fallbackExhausted ? "fallback_exhausted" : undefined),
           observation: includeObservation ? params.state.lifecycleErrorObservation : undefined,
         }),
       );

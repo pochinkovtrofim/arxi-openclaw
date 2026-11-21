@@ -50,7 +50,9 @@ describe("agent run error identity", () => {
   });
 
   it("names a result error by its kind when nothing was thrown", () => {
-    expect(describeAgentRunErrorIdentity({ error: "free text", kind: "compaction_failure" })).toEqual({
+    expect(
+      describeAgentRunErrorIdentity({ error: "free text", kind: "compaction_failure" }),
+    ).toEqual({
       kind: "compaction_failure",
     });
     expect(describeAgentRunErrorIdentity({ error: "free text" })).toBeUndefined();
@@ -72,7 +74,9 @@ describe("agent run error identity", () => {
   });
 
   it("reads the first frame outside dependencies", () => {
-    expect(errorOrigin("E\n    at /x/node_modules/a.js:1:1\n    at C:\\app\\dist\\b.js:7:3")).toBe("b.js:7");
+    expect(errorOrigin("E\n    at /x/node_modules/a.js:1:1\n    at C:\\app\\dist\\b.js:7:3")).toBe(
+      "b.js:7",
+    );
     expect(errorOrigin("E\n    at <anonymous>")).toBeUndefined();
     expect(errorOrigin(undefined)).toBeUndefined();
   });

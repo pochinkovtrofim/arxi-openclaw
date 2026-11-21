@@ -52,8 +52,8 @@ import {
   resolveGatewayAgentAbortStopReason,
   resolveResolvedAgentTimeoutStopReason,
 } from "./agent-run-dispatch-outcome.js";
-import type { AgentTurnContext, AgentTurnIo } from "./types.js";
 import { agentRunErrorShapeFromError } from "./agent-run-error-shape.js";
+import type { AgentTurnContext, AgentTurnIo } from "./types.js";
 
 type AgentRunMediaCustody = Pick<
   ReturnType<typeof createAssistantCommentaryMediaCustody>,

@@ -9,13 +9,13 @@ import { SessionMutationAuthorizationChangedError } from "../session-mutation-au
 import { assertParentSubagentResumeCurrent } from "../session-subagent-resume.js";
 import { formatForLog } from "../ws-log.js";
 import { setAbortedAgentDedupeEntries } from "./agent-dedupe.js";
+import { agentRunErrorShapeFromError } from "./agent-run-error-shape.js";
 import {
   releasePreparedAgentRunUserTurn,
   releasePreparedAgentRunUserTurnAfterFailure,
   type PreparedAgentRunUserTurn,
 } from "./agent-run-user-turn.js";
 import type { AgentTurnContext, AgentTurnPrincipal } from "./types.js";
-import { agentRunErrorShapeFromError } from "./agent-run-error-shape.js";
 
 /** Keep owner-provided policy failures intact across every preaccept preparation phase. */
 export function resolveAgentRunAdmissionError(

@@ -333,7 +333,9 @@ function createSnapshotFromLifecycleEvent(params: {
     data?.status == null;
   const terminalDelivery = normalizeAgentRunTerminalDeliverySnapshot(data?.terminalDelivery);
   const errorIdentity =
-    terminalOutcome.status === "ok" ? undefined : normalizeAgentRunErrorIdentity(data?.errorIdentity);
+    terminalOutcome.status === "ok"
+      ? undefined
+      : normalizeAgentRunErrorIdentity(data?.errorIdentity);
   const terminalReply = normalizeAgentRunTerminalReplySnapshot(data?.terminalReply);
   const normalizedTerminalReceipt = normalizeAgentRunTerminalReceipt(data?.terminalReceipt);
   const terminalReceipt =
