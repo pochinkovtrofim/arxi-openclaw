@@ -15,6 +15,7 @@ import {
   type PreparedAgentRunUserTurn,
 } from "./agent-run-user-turn.js";
 import type { AgentTurnContext, AgentTurnPrincipal } from "./types.js";
+import { agentRunErrorShapeFromError } from "./agent-run-error-shape.js";
 
 /** Keep owner-provided policy failures intact across every preaccept preparation phase. */
 export function resolveAgentRunAdmissionError(
@@ -29,7 +30,7 @@ export function resolveAgentRunAdmissionError(
           retryable: true,
           retryAfterMs: 0,
         })
-      : errorShapeFromError(code, error);
+      : agentRunErrorShapeFromError(code, error);
 }
 
 /** Join rejected input and preaccept cleanup without losing either failure. */

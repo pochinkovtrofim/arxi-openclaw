@@ -3,6 +3,7 @@
 import { asFiniteNumber } from "@openclaw/normalization-core/number-coercion";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { readNonBlankString } from "@openclaw/normalization-core/string-coerce";
+import { normalizeAgentRunErrorIdentity } from "../../agents/agent-run-error-identity.js";
 import { normalizeAgentRunTerminalDeliverySnapshot } from "../../agents/agent-run-terminal-delivery.js";
 import {
   AGENT_RUN_TERMINAL_RETRY_GRACE_MS,
@@ -303,6 +304,7 @@ function createPendingErrorTimeoutSnapshot(snapshot: AgentJobObservation): Agent
       ? { providerStarted: snapshot.providerStarted }
       : {}),
     ...(snapshot.terminalDelivery ? { terminalDelivery: snapshot.terminalDelivery } : {}),
+    ...(snapshot.errorIdentity ? { errorIdentity: snapshot.errorIdentity } : {}),
   };
 }
 
@@ -330,6 +332,8 @@ function createSnapshotFromLifecycleEvent(params: {
     data?.stopReason == null &&
     data?.status == null;
   const terminalDelivery = normalizeAgentRunTerminalDeliverySnapshot(data?.terminalDelivery);
+  const errorIdentity =
+    terminalOutcome.status === "ok" ? undefined : normalizeAgentRunErrorIdentity(data?.errorIdentity);
   const terminalReply = normalizeAgentRunTerminalReplySnapshot(data?.terminalReply);
   const normalizedTerminalReceipt = normalizeAgentRunTerminalReceipt(data?.terminalReceipt);
   const terminalReceipt =
@@ -351,6 +355,7 @@ function createSnapshotFromLifecycleEvent(params: {
       ? { providerStarted: terminalOutcome.providerStarted }
       : {}),
     ...(terminalDelivery ? { terminalDelivery } : {}),
+    ...(errorIdentity ? { errorIdentity } : {}),
     ...(terminalReply ? { terminalReply } : {}),
     ...(terminalReceipt ? { terminalReceipt } : {}),
     version: nextAgentRunVersion(),
@@ -633,6 +638,7 @@ export function projectAgentJobObservation(snapshot: AgentJobObservation): Agent
     timeoutPhase: snapshot.timeoutPhase,
     providerStarted: snapshot.providerStarted,
     ...(snapshot.terminalDelivery ? { terminalDelivery: snapshot.terminalDelivery } : {}),
+    ...(snapshot.errorIdentity ? { errorIdentity: snapshot.errorIdentity } : {}),
     terminalReceipt: snapshot.terminalReceipt,
     terminalReply: snapshot.terminalReply,
   };

@@ -37,7 +37,6 @@ import { readWithdrawnUserTurnInputId } from "../../sessions/user-turn-transcrip
 import { completeUserTurnProcessing } from "../../sessions/user-turn-transcript-processing.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import type { ChatAbortControllerEntry } from "../chat-abort.js";
-import { errorShapeFromError } from "../error-shape.js";
 import type { createAssistantCommentaryMediaCustody } from "../server-methods/chat-send-commentary-media.js";
 import type { GatewayCronCreatorAuthorityAdmission } from "../server-methods/cron-creator-authority-admission.js";
 import type { DedupeEntry } from "../server-shared.js";
@@ -54,6 +53,7 @@ import {
   resolveResolvedAgentTimeoutStopReason,
 } from "./agent-run-dispatch-outcome.js";
 import type { AgentTurnContext, AgentTurnIo } from "./types.js";
+import { agentRunErrorShapeFromError } from "./agent-run-error-shape.js";
 
 type AgentRunMediaCustody = Pick<
   ReturnType<typeof createAssistantCommentaryMediaCustody>,
@@ -477,7 +477,7 @@ export function dispatchAgentRunFromGateway(params: {
     })
     .catch(async (cause: unknown) => {
       const aborted = isGatewayAgentAbortRejection(cause, params.abortController.signal);
-      const error = errorShapeFromError(ErrorCodes.UNAVAILABLE, cause);
+      const error = agentRunErrorShapeFromError(ErrorCodes.UNAVAILABLE, cause);
       const renderedErr = error.message;
       const stopReason = aborted
         ? resolveGatewayAgentAbortStopReason(params.abortController.signal, cause)
