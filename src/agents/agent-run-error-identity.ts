@@ -62,11 +62,15 @@ export function errorOrigin(stack: unknown): string | undefined {
       continue;
     }
     const file = frame[1];
+    const lineNumber = frame[2];
+    if (!file || !lineNumber) {
+      continue;
+    }
     if (file.startsWith("node:") || file.includes("/node_modules/") || file.includes("\\node_modules\\")) {
       continue;
     }
     const base = file.split(/[\\/]/).pop() ?? "";
-    return token(`${base}:${frame[2]}`);
+    return token(`${base}:${lineNumber}`);
   }
   return undefined;
 }
