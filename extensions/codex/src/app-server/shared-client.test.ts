@@ -1148,6 +1148,7 @@ describe("shared Codex app-server client", () => {
         closed: true,
         activeLeases: 0,
         pendingAcquires: 0,
+        peerThreads: false,
       });
       expect(replacement.stdinDestroyed).toBe(true);
     },
@@ -1612,6 +1613,7 @@ describe("shared Codex app-server client", () => {
       closed: true,
       activeLeases: 0,
       pendingAcquires: 0,
+      peerThreads: false,
     });
     expect(first.process.stdin.destroyed).toBe(true);
 
@@ -1625,6 +1627,7 @@ describe("shared Codex app-server client", () => {
       closed: false,
       activeLeases: 0,
       pendingAcquires: 0,
+      peerThreads: false,
     });
     expect(second.process.kill).not.toHaveBeenCalled();
     expect(clearSharedCodexAppServerClientIfCurrentAndUnclaimed(second.client)).toEqual({
@@ -1632,6 +1635,7 @@ describe("shared Codex app-server client", () => {
       closed: true,
       activeLeases: 0,
       pendingAcquires: 0,
+      peerThreads: false,
     });
     expect(second.process.stdin.destroyed).toBe(true);
   });
@@ -1728,6 +1732,7 @@ describe("shared Codex app-server client", () => {
       closed: false,
       activeLeases: 1,
       pendingAcquires: 0,
+      peerThreads: false,
     });
     expect(first.process.stdin.destroyed).toBe(false);
 
@@ -1742,6 +1747,7 @@ describe("shared Codex app-server client", () => {
       closed: true,
       activeLeases: 0,
       pendingAcquires: 0,
+      peerThreads: false,
     });
     expect(first.process.stdin.destroyed).toBe(true);
   });

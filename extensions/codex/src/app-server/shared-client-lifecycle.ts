@@ -79,7 +79,7 @@ export type SharedCodexAppServerClientEntry = {
   closeWhenIdle: boolean;
   closeError?: Error;
   idleTimer?: ReturnType<typeof setTimeout>;
-  hasOwnedThreads?: () => boolean;
+  hasOwnedThreads?: (excludedThreadId?: string) => boolean;
   startupAbort?: AbortController;
   onStartedClientCallbacks: Set<(client: CodexAppServerClient) => void>;
   acquireBoundary?: CodexAppServerAcquireBoundary;
@@ -145,8 +145,15 @@ export function rekeySharedClientEntry(
   return true;
 }
 
-export function closeSharedClientEntryIfUnclaimed(entry: SharedCodexAppServerClientEntry): boolean {
-  if (entry.activeLeases > 0 || entry.pendingAcquires > 0) {
+/**
+ * Live threads of other conversations claim the client like leases do; it stays
+ * under idle retirement, which waits for them. The caller's own thread is excluded.
+ */
+export function closeSharedClientEntryIfUnclaimed(
+  entry: SharedCodexAppServerClientEntry,
+  ownThreadId?: string,
+): boolean {
+  if (entry.activeLeases > 0 || entry.pendingAcquires > 0 || entry.hasOwnedThreads?.(ownThreadId)) {
     return false;
   }
   const state = getSharedCodexAppServerClientState();

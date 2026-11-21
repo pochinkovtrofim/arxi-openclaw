@@ -177,20 +177,22 @@ export function prepareCodexAttemptResources(prompt: CodexAttemptPrompt) {
       return;
     }
     state.sharedCodexClientRetiredForOneShotCleanup = true;
-    const retired = clearSharedCodexAppServerClientIfCurrentAndUnclaimed(state.client);
+    // This run's own thread never keeps its client; another conversation's live thread does.
+    const retired = clearSharedCodexAppServerClientIfCurrentAndUnclaimed(
+      state.client,
+      state.thread?.threadId,
+    );
     // Runs on every one-shot attempt teardown; routine retirement checks are
     // diagnostic detail, not operator-facing info.
     embeddedAgentLog.debug("codex app-server one-shot cleanup checked shared client retirement", {
       runId: params.runId,
       sessionId: params.sessionId,
       sessionKey: params.sessionKey,
-      activeLeases: retired.activeLeases,
-      pendingAcquires: retired.pendingAcquires,
-      closed: retired.closed,
-      matchedSharedClient: retired.found,
+      ...retired,
     });
-    // Retained peers prevent retirement; preserve their client without treating
-    // missing close evidence as a completed one-shot cleanup.
+    // Retained peers and other conversations' live threads prevent retirement;
+    // the client stays under idle retirement. Missing close evidence is never a
+    // completed one-shot cleanup.
     const result = retired.closed
       ? await state.client.closeAndWait(CODEX_ONE_SHOT_CLIENT_CLOSE_OPTIONS)
       : undefined;

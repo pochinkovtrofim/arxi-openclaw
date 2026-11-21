@@ -16,6 +16,7 @@ import {
   isThreadProtected,
   releaseThreadProtection,
   forgetThreadOwnership,
+  hasOtherThreadOwnership,
   hasSiblingThreadWork,
   hasThreadOwnership,
   invalidateThreadOwnership,
@@ -622,8 +623,14 @@ export function revertCodexAppServerLiveThreadInstructions(
   revertRetainedThreadInstructions(configuredClients.get(client), threadId);
 }
 
-export function hasCodexAppServerThreadOwnership(client: CodexAppServerClient): boolean {
-  return hasThreadOwnership(configuredClients.get(client));
+export function hasCodexAppServerThreadOwnership(
+  client: CodexAppServerClient,
+  excludedThreadId?: string,
+): boolean {
+  const runtime = configuredClients.get(client);
+  return excludedThreadId === undefined
+    ? hasThreadOwnership(runtime)
+    : hasOtherThreadOwnership(runtime, excludedThreadId);
 }
 
 /** Distinguish active claimed ownership from an already-evicted idle subscription. */

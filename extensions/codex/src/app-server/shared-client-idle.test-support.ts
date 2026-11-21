@@ -12,6 +12,7 @@ import { listCodexAppServerModels } from "./models.js";
 import { CodexNativeProcessAuthority } from "./native-process-authority.js";
 import {
   captureSharedCodexAppServerCatalogLifetime,
+  clearSharedCodexAppServerClientIfCurrentAndUnclaimed,
   getLeasedSharedCodexAppServerClient,
   releaseLeasedSharedCodexAppServerClient,
 } from "./shared-client.js";
@@ -95,6 +96,59 @@ export function registerSharedClientIdleTests() {
       expect(client.getCloseError()).toBeDefined();
     },
   );
+
+  it("one-shot cleanup keeps a client with another conversation's live thread until idle retirement", async () => {
+    vi.useFakeTimers();
+    const harness = createIdleLifecycleHarness();
+    const start = vi.spyOn(CodexAppServerClient, "start").mockResolvedValue(harness.client);
+    const client = await getLeasedSharedCodexAppServerClient();
+    const catalogCurrent = captureSharedCodexAppServerCatalogLifetime(client);
+    expect(await retainCodexAppServerLiveThread(client, "owner-thread")).toBe(true);
+    const oneShotThread = await claimCodexAppServerLiveThread(client, "one-shot-thread");
+    expect(oneShotThread).toBeDefined();
+    releaseLeasedSharedCodexAppServerClient(client);
+
+    expect(clearSharedCodexAppServerClientIfCurrentAndUnclaimed(client, "one-shot-thread")).toEqual(
+      { found: true, closed: false, activeLeases: 0, pendingAcquires: 0, peerThreads: true },
+    );
+    expect(client.getCloseError()).toBeUndefined();
+    expect(catalogCurrent()).toBe(true);
+
+    await oneShotThread!.release("one-shot-thread");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(catalogCurrent()).toBe(true);
+    await expect(getLeasedSharedCodexAppServerClient()).resolves.toBe(client);
+    releaseLeasedSharedCodexAppServerClient(client);
+    expect(start).toHaveBeenCalledOnce();
+
+    await releaseCodexAppServerLiveThread(client, "owner-thread");
+    await vi.advanceTimersByTimeAsync(29_999);
+    expect(client.getCloseError()).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(client.getCloseError()).toBeDefined();
+    expect(catalogCurrent()).toBe(false);
+  });
+
+  it("one-shot cleanup closes a client whose only live thread is the run's own", async () => {
+    vi.useFakeTimers();
+    const harness = createIdleLifecycleHarness();
+    vi.spyOn(CodexAppServerClient, "start").mockResolvedValue(harness.client);
+    const client = await getLeasedSharedCodexAppServerClient();
+    const catalogCurrent = captureSharedCodexAppServerCatalogLifetime(client);
+    const oneShotThread = await claimCodexAppServerLiveThread(client, "one-shot-thread");
+    expect(oneShotThread).toBeDefined();
+    // A native child can defer the run's own release past its cleanup.
+    const unprotect = protectCodexAppServerLiveThread(client, "one-shot-thread");
+    await oneShotThread!.release("one-shot-thread");
+    releaseLeasedSharedCodexAppServerClient(client);
+
+    expect(clearSharedCodexAppServerClientIfCurrentAndUnclaimed(client, "one-shot-thread")).toEqual(
+      { found: true, closed: true, activeLeases: 0, pendingAcquires: 0, peerThreads: false },
+    );
+    expect(client.getCloseError()).toBeDefined();
+    expect(catalogCurrent()).toBe(false);
+    unprotect();
+  });
 
   it("idle retirement preserves a confirmed background terminal until its completion receipt", async () => {
     vi.useFakeTimers();

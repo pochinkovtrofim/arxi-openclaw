@@ -454,7 +454,8 @@ function createSharedCodexAppServerClientStartup(
       (client) => {
         const state = getSharedCodexAppServerClientState();
         params.entry.client = client;
-        params.entry.hasOwnedThreads = () => hasCodexAppServerThreadOwnership(client);
+        params.entry.hasOwnedThreads = (excludedThreadId) =>
+          hasCodexAppServerThreadOwnership(client, excludedThreadId);
         // Unsupported managed candidates close before fallback starts. Only the
         // ready client's closure may remove the shared acquisition entry.
         client.addCloseHandler((closedClient) => {
@@ -947,13 +948,22 @@ export async function clearSharedCodexAppServerClientAndWait(
 
 export function clearSharedCodexAppServerClientIfCurrentAndUnclaimed(
   client: CodexAppServerClient | undefined,
-): { found: boolean; closed: boolean; activeLeases: number; pendingAcquires: number } {
+  ownThreadId?: string,
+): {
+  found: boolean;
+  closed: boolean;
+  activeLeases: number;
+  pendingAcquires: number;
+  peerThreads: boolean;
+} {
   const entry = getCurrentSharedClientEntry(client);
+  const peerThreads = entry?.hasOwnedThreads?.(ownThreadId) ?? false;
   return {
     found: entry !== undefined,
-    closed: entry ? closeSharedClientEntryIfUnclaimed(entry) : false,
+    closed: entry ? closeSharedClientEntryIfUnclaimed(entry, ownThreadId) : false,
     activeLeases: entry?.activeLeases ?? 0,
     pendingAcquires: entry?.pendingAcquires ?? 0,
+    peerThreads,
   };
 }
 
