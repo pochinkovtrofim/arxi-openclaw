@@ -841,12 +841,16 @@ describe("gateway agent handler", () => {
         expect(dispose).toHaveBeenCalledOnce();
         expect(order).toEqual(["cleanup started", "cleanup finished", "response"]);
         expect(respond.mock.calls).toEqual([
-          [false, undefined, {
-      code: ErrorCodes.UNAVAILABLE,
-      message: inputError.message,
-      // An untyped run failure names its kind and place, never its text.
-      details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
-    }],
+          [
+            false,
+            undefined,
+            {
+              code: ErrorCodes.UNAVAILABLE,
+              message: inputError.message,
+              // An untyped run failure names its kind and place, never its text.
+              details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
+            },
+          ],
         ]);
         expect(mocks.agentCommand).not.toHaveBeenCalled();
         expect(context.chatAbortControllers.has(runId)).toBe(false);

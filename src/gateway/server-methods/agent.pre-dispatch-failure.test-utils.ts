@@ -110,11 +110,11 @@ export function registerAgentPreDispatchFailureTests() {
               false,
               { runId, status: "error", summary: "ACP preparation cancelled" },
               {
-      code: "UNAVAILABLE",
-      message: "ACP preparation cancelled",
-      // An untyped run failure names its kind and place, never its text.
-      details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
-    },
+                code: "UNAVAILABLE",
+                message: "ACP preparation cancelled",
+                // An untyped run failure names its kind and place, never its text.
+                details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
+              },
               { runId, error: "ACP preparation cancelled" },
             );
           } else if (acp) {
@@ -219,12 +219,16 @@ export function registerAgentPreDispatchFailureTests() {
       expect(store[sessionKey]?.restartRecoveryDeliveryRunId).toBeUndefined();
       if (failurePhase === "pending input admission") {
         expect(respond.mock.calls).toEqual([
-          [false, undefined, {
-      code: "UNAVAILABLE",
-      message: inputError.message,
-      // An untyped run failure names its kind and place, never its text.
-      details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
-    }],
+          [
+            false,
+            undefined,
+            {
+              code: "UNAVAILABLE",
+              message: inputError.message,
+              // An untyped run failure names its kind and place, never its text.
+              details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
+            },
+          ],
         ]);
       } else {
         expectReactivationFailure(respond, runId);
