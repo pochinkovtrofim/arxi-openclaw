@@ -144,6 +144,23 @@ export function hasThreadOwnership(
   );
 }
 
+/** Ownership by any thread except one, such as a finishing run's own thread. */
+export function hasOtherThreadOwnership(
+  runtime: ThreadOwnershipState | undefined,
+  excludedThreadId: string,
+): boolean {
+  return Boolean(
+    runtime &&
+    !runtime.closed &&
+    [
+      runtime.retainedThreads,
+      runtime.claimedThreads,
+      runtime.releasingThreads,
+      runtime.protectedThreads,
+    ].some((threads) => threads.size > (threads.has(excludedThreadId) ? 1 : 0)),
+  );
+}
+
 export function hasSiblingThreadWork(
   runtime: ThreadOwnershipState | undefined,
   threadId: string,

@@ -57,8 +57,14 @@ function createFixture(acknowledged: boolean) {
   };
   // Only the start-recovery owner runs here. The mocked transport owns validation
   // of this opaque marker; the separate transport tests exercise real issuance.
+  const releasedThreads: string[] = [];
+  const releaseThreadSubscription = vi.fn(async () => {
+    releasedThreads.push(state.thread.threadId);
+    return true;
+  });
   const resources = {
     state,
+    releaseThreadSubscription,
     prompt: {
       turnState: { codexTurnPromptText: "reviewed continuation" },
       context: {
@@ -101,6 +107,8 @@ function createFixture(acknowledged: boolean) {
     waitForActiveNativeTurnCompletion,
     mutateBinding,
     restartContextEngineCodexThread,
+    releaseThreadSubscription,
+    releasedThreads,
     run: () => startCodexAttemptTurn(resources, turnRuntime, notifications, requestRuntime),
   };
 }
@@ -132,4 +140,15 @@ describe("native acknowledged turn recovery boundary", () => {
       expect(recovery.clearImageBinding).toHaveBeenCalledTimes(kind === "image" ? 1 : 0);
     },
   );
+
+  it("releases the abandoned thread's subscription before an overflow retry replaces it", async () => {
+    recovery.kind = "overflow";
+    const fixture = createFixture(false);
+    await expect(fixture.run()).rejects.toBe(fixture.originalError);
+    expect(fixture.releasedThreads).toEqual(["reviewed-thread"]);
+    expect(fixture.releaseThreadSubscription.mock.invocationCallOrder[0]).toBeLessThan(
+      fixture.restartContextEngineCodexThread.mock.invocationCallOrder[0]!,
+    );
+    expect(fixture.state.thread.threadId).toBe("replacement-thread");
+  });
 });

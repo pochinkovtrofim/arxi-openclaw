@@ -788,7 +788,13 @@ function installCleanupTrackingClient() {
     sharedClientModule,
     "clearSharedCodexAppServerClientIfCurrentAndUnclaimed",
   );
-  retireSpy.mockReturnValue({ found: true, activeLeases: 0, pendingAcquires: 0, closed: true });
+  retireSpy.mockReturnValue({
+    found: true,
+    activeLeases: 0,
+    pendingAcquires: 0,
+    peerThreads: false,
+    closed: true,
+  });
   const events: string[] = [];
   const turnStarted = createDeferred<void>();
   const closeAndWait = vi.fn(async () => {
@@ -2333,7 +2339,7 @@ describe("runCodexAppServerAttempt", () => {
     expect(events).toContain("request:thread/start");
     expect(events).not.toContain("request:turn/start");
     expect(retireSpy).toHaveBeenCalledOnce();
-    expect(retireSpy).toHaveBeenCalledWith(state.client);
+    expect(retireSpy).toHaveBeenCalledWith(state.client, "thread-1");
     expect(closeAndWait).toHaveBeenCalledOnce();
     expect(closeAndWait).toHaveBeenCalledWith({
       exitTimeoutMs: 6_000,
@@ -2383,7 +2389,7 @@ describe("runCodexAppServerAttempt", () => {
     expect(events).toContain("request:turn/start");
     expect(events).toContain("closeAndWait");
     expect(retireSpy).toHaveBeenCalledOnce();
-    expect(retireSpy).toHaveBeenCalledWith(state.client);
+    expect(retireSpy).toHaveBeenCalledWith(state.client, "thread-1");
     expect(closeAndWait).toHaveBeenCalledOnce();
     expect(removeAbortListener).toHaveBeenCalledWith("abort", expect.any(Function));
     expect(queueActiveRunMessageForTest("session-1", "after cleanup")).toBe(false);
