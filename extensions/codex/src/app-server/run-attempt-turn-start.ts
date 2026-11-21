@@ -115,6 +115,8 @@ export async function startCodexAttemptTurn(
             { threadId: resourceState.thread.threadId, error: formatErrorMessage(turnStartError) },
           );
         } else {
+          // Settle the abandoned thread's subscription; a warm claim never expires on its own.
+          await resources.releaseThreadSubscription();
           resourceState.thread = await resourceState.restartContextEngineCodexThread();
           void emitCodexAppServerEvent(params, {
             stream: "codex_app_server.lifecycle",

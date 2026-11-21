@@ -129,6 +129,24 @@ export function registerSharedClientIdleTests() {
     expect(catalogCurrent()).toBe(false);
   });
 
+  it("abandoned-startup cleanup without a thread treats any live thread as a peer", async () => {
+    vi.useFakeTimers();
+    const harness = createIdleLifecycleHarness();
+    vi.spyOn(CodexAppServerClient, "start").mockResolvedValue(harness.client);
+    const client = await getLeasedSharedCodexAppServerClient();
+    expect(await retainCodexAppServerLiveThread(client, "owner-thread")).toBe(true);
+    releaseLeasedSharedCodexAppServerClient(client);
+
+    expect(clearSharedCodexAppServerClientIfCurrentAndUnclaimed(client)).toEqual({
+      found: true,
+      closed: false,
+      activeLeases: 0,
+      pendingAcquires: 0,
+      peerThreads: true,
+    });
+    expect(client.getCloseError()).toBeUndefined();
+  });
+
   it("one-shot cleanup closes a client whose only live thread is the run's own", async () => {
     vi.useFakeTimers();
     const harness = createIdleLifecycleHarness();
