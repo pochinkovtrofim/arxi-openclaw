@@ -32,7 +32,12 @@ function expectReactivationFailure(respond: ReturnType<typeof vi.fn>, runId: str
   expect(respond).toHaveBeenCalledWith(
     false,
     { runId, status: "error", summary: "reactivate boom" },
-    { code: "UNAVAILABLE", message: "reactivate boom" },
+    {
+      code: "UNAVAILABLE",
+      message: "reactivate boom",
+      // An untyped run failure names its kind and place, never its text.
+      details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
+    },
     { runId, error: "reactivate boom" },
   );
 }
@@ -104,7 +109,12 @@ export function registerAgentPreDispatchFailureTests() {
             expect(respond).toHaveBeenCalledWith(
               false,
               { runId, status: "error", summary: "ACP preparation cancelled" },
-              { code: "UNAVAILABLE", message: "ACP preparation cancelled" },
+              {
+      code: "UNAVAILABLE",
+      message: "ACP preparation cancelled",
+      // An untyped run failure names its kind and place, never its text.
+      details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
+    },
               { runId, error: "ACP preparation cancelled" },
             );
           } else if (acp) {
@@ -209,7 +219,12 @@ export function registerAgentPreDispatchFailureTests() {
       expect(store[sessionKey]?.restartRecoveryDeliveryRunId).toBeUndefined();
       if (failurePhase === "pending input admission") {
         expect(respond.mock.calls).toEqual([
-          [false, undefined, { code: "UNAVAILABLE", message: inputError.message }],
+          [false, undefined, {
+      code: "UNAVAILABLE",
+      message: inputError.message,
+      // An untyped run failure names its kind and place, never its text.
+      details: { errorIdentity: expect.objectContaining({ name: "Error" }) },
+    }],
         ]);
       } else {
         expectReactivationFailure(respond, runId);
