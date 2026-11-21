@@ -10,6 +10,7 @@ import { createAgentHarnessHostCapabilities } from "../agents/harness/host-capab
 import { projectEffectiveExecPolicy } from "../agents/session-permission-exec-mode.js";
 import { getRuntimeConfig } from "../config/config.js";
 import { replaceSessionEntry } from "../config/sessions/session-accessor.js";
+import * as mutableFilePolicy from "../infra/system-run-mutable-file-policy.js";
 import { REALTIME_VOICE_AGENT_CONSULT_TOOL_NAME } from "../talk/agent-consult-tool.js";
 import { captureGatewayOperatorRunAuthority } from "./operator-run-authority.js";
 import { handleGatewayRequest } from "./server-methods.js";
@@ -153,6 +154,16 @@ export async function runTalkNodePermissionParity({
       }
       return result;
     });
+  // Root can write every path, so the approval binding would call the installed
+  // /usr/bin/touch mutable; this suite is about approval cancellation, not binding.
+  const originalMutable = mutableFilePolicy.pathLooksMutableForShellPayloadSync;
+  const installedBinary = await fs.realpath("/usr/bin/touch");
+  const stableInstalledBinary =
+    process.getuid?.() === 0
+      ? vi
+          .spyOn(mutableFilePolicy, "pathLooksMutableForShellPayloadSync")
+          .mockImplementation((target) => target !== installedBinary && originalMutable(target))
+      : null;
   let requested = createDeferred<Record<string, unknown>>();
   let approvalEvents = 0;
   const onMessage = (raw: unknown) => {
@@ -488,6 +499,7 @@ export async function runTalkNodePermissionParity({
     context.getClientConnIds = originalConnections;
     provider.restore();
     observeNative.mockRestore();
+    stableInstalledBinary?.mockRestore();
     reviewer.off("message", onMessage);
     await node.close();
     reviewer.close();
