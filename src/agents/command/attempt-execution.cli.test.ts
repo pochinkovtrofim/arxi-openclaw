@@ -1906,6 +1906,31 @@ describe("CLI attempt execution", () => {
   });
 
   it.each([
+    { purpose: "direct_owner_reply" as const, emits: true },
+    { purpose: undefined, emits: false },
+  ])("emits CLI pre-tool text as commentary only for $purpose", async ({ purpose, emits }) => {
+    const sessionKey = `agent:main:direct:claude-commentary-${String(purpose)}`;
+    const sessionEntry = makeSessionEntry(`openclaw-session-commentary-${String(purpose)}`);
+    const sessionStore: Record<string, SessionEntry> = { [sessionKey]: sessionEntry };
+    await writeSessionStoreSeed(sessionStore);
+    runCliAgentMock.mockResolvedValueOnce(makeCliResult("final reply"));
+
+    await runStoredAttempt({
+      providerOverride: "claude-cli",
+      modelOverride: "opus",
+      sessionEntry,
+      sessionKey,
+      body: "look this up",
+      runId: `run-cli-commentary-${String(purpose)}`,
+      opts: purpose ? { nativeDeliveryPurpose: purpose } : {},
+      messageChannel: "telegram",
+      sessionStore,
+    });
+
+    expectMockArgFields(runCliAgentMock, { provider: "claude-cli", emitCommentaryText: emits });
+  });
+
+  it.each([
     ...SUBAGENT_ANNOUNCE_CLAUDE_CLI_DELIVERY_CASES.map((testCase) =>
       Object.assign({ provider: "claude-cli" }, testCase),
     ),
