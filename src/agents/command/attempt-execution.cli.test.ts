@@ -1908,7 +1908,7 @@ describe("CLI attempt execution", () => {
   it.each([
     { purpose: "direct_owner_reply" as const, emits: true },
     { purpose: undefined, emits: false },
-  ])("emits CLI pre-tool text as commentary only for $purpose", async ({ purpose, emits }) => {
+  ])("publishes CLI pre-tool text only for $purpose", async ({ purpose, emits }) => {
     const sessionKey = `agent:main:direct:claude-commentary-${String(purpose)}`;
     const sessionEntry = makeSessionEntry(`openclaw-session-commentary-${String(purpose)}`);
     const sessionStore: Record<string, SessionEntry> = { [sessionKey]: sessionEntry };
@@ -1927,7 +1927,7 @@ describe("CLI attempt execution", () => {
       sessionStore,
     });
 
-    expectMockArgFields(runCliAgentMock, { provider: "claude-cli", emitCommentaryText: emits });
+    expectMockArgFields(runCliAgentMock, { provider: "claude-cli", emitPreToolText: emits });
   });
 
   it.each([

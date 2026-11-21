@@ -186,6 +186,12 @@ export type RunCliAgentParams = {
   }) => void;
   emitCommentaryText?: boolean;
   /**
+   * Publish the text written before each tool call as a preamble item while
+   * the assistant text keeps streaming whole: a direct Owner reply's channel
+   * sends the first such text at once.
+   */
+  emitPreToolText?: boolean;
+  /**
    * The caller shows assistant text to the recipient while it streams, so text
    * written before a tool call already reached them and the reply keeps it
    * (#106760). Every other caller delivers once, and its reply is the final

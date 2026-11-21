@@ -587,7 +587,7 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
               params.opts.requireExplicitMessageTarget ?? isSubagentSessionKey(params.sessionKey),
             // The Owner's own message gets the text Claude writes before its
             // tools as a preamble item, so the channel can send it at once.
-            emitCommentaryText: params.opts.nativeDeliveryPurpose === "direct_owner_reply",
+            emitPreToolText: params.opts.nativeDeliveryPurpose === "direct_owner_reply",
             cliSessionBindingFacts: params.opts.cliSessionBindingFacts,
             cliSessionId: cliSessionBinding?.sessionId,
             cliSessionBinding,

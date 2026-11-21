@@ -104,6 +104,19 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
   let taggedReasoningRouter = createLeadingTaggedReasoningRouter();
   let currentTaggedReasoningText = "";
 
+  // The streamed text up to here was already shown to onPreToolText.
+  let preToolTextObservedUpTo = 0;
+  const observePreToolText = () => {
+    if (!params.onPreToolText || classifyClaudeCommentary) {
+      return;
+    }
+    const text = assistantText.slice(Math.max(currentMessageStart, preToolTextObservedUpTo)).trim();
+    preToolTextObservedUpTo = assistantText.length;
+    if (text) {
+      params.onPreToolText(text);
+    }
+  };
+
   const appendAssistantText = (delta: string) => {
     assistantText += delta;
     params.onAssistantDelta({ text: assistantText, delta, sessionId, usage });
@@ -547,6 +560,7 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
         isRecord(evt.content_block) &&
         isClaudeToolUseBlockType(evt.content_block.type);
       if (isToolUseBlockStart) {
+        observePreToolText();
         sawToolUseSinceText = true;
         finalItemText = undefined;
         currentMessageHadToolUse = true;
@@ -605,6 +619,7 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
       const onToolUseStart =
         claudeStreamJson && parsed.type === "assistant"
           ? (tool: Parameters<NonNullable<typeof params.onToolUseStart>>[0]) => {
+              observePreToolText();
               sawToolUseSinceText = true;
               finalItemText = undefined;
               currentMessageHadToolUse = true;
