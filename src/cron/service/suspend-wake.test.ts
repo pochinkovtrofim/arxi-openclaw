@@ -133,7 +133,12 @@ describe("cron suspend wake policy", () => {
           id: "look",
           suspendWake: "batched",
         }),
-        watchJob({ now: clock.now, nextRunAtMs: clock.now + EVERY_MS, id: "watch", suspendWake: "never" }),
+        watchJob({
+          now: clock.now,
+          nextRunAtMs: clock.now + EVERY_MS,
+          id: "condition",
+          suspendWake: "never",
+        }),
         watchJob({ now: clock.now, nextRunAtMs: clock.now + 6 * HOUR_MS, id: "reminder" }),
       ],
     });
