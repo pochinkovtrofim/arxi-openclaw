@@ -22,6 +22,7 @@ import { createCliJsonlStreamingParser } from "../cli-output-stream.js";
 import { parseCliOutput } from "../cli-output.js";
 import type { FailoverError } from "../failover-error.js";
 import { CLI_PARTIAL_OUTPUT_REJECTED_ERROR_CODE } from "../failover/error.js";
+import { ownerPreambleText } from "../owner-preamble-text.js";
 import type { CliExecuteDeps } from "./execute-deps.js";
 import type { CliEventHandlers } from "./execute-events.js";
 import { createCliAbortError, executeNodeClaudeRun } from "./execute-node-claude.js";
@@ -34,7 +35,6 @@ import {
   createCliFailoverError,
   resolveCliResumeAtError,
 } from "./exit-error.js";
-import { ownerPreambleText } from "../owner-preamble-text.js";
 import { cliBackendLog, formatCliBackendOutputDigest } from "./log.js";
 import type { createClaudeCliModelCallDiagnostics } from "./model-call-diagnostics.js";
 import {

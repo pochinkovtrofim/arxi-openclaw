@@ -40,7 +40,6 @@ import type {
   EmbeddedAgentSubscribeState,
 } from "./embedded-agent-subscribe.handlers.types.js";
 import { appendRawStream } from "./embedded-agent-subscribe.raw-stream.js";
-import { ownerPreambleText } from "./owner-preamble-text.js";
 import {
   createAssistantStreamBlockState,
   createAssistantVisibleStreamText,
@@ -50,6 +49,7 @@ import {
   extractAssistantVisibleText,
   extractThinkingFromTaggedStream,
 } from "./embedded-agent-utils.js";
+import { ownerPreambleText } from "./owner-preamble-text.js";
 import type { AgentEvent, AgentMessage } from "./runtime/index.js";
 
 // A direct reply to the Owner's message: the text written before the run's
