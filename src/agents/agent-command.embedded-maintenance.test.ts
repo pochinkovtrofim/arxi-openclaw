@@ -711,6 +711,40 @@ describe("agentCommand embedded maintenance", () => {
     expect(readLifecyclePhases()).not.toContain("error");
   });
 
+  it("arms a Claude Code conversation's day compaction ahead of its next turn", async () => {
+    const storePath = requireStorePath();
+    const sessionId = "claude-code-day-memory";
+    const sessionKey = `agent:main:explicit:${sessionId}`;
+    await replaceSessionEntry(
+      { sessionKey, storePath },
+      {
+        sessionId,
+        updatedAt: Date.now(),
+        cliSessionBindings: { "claude-cli": { sessionId: "claude-code-session" } },
+      },
+    );
+    state.runAgentAttemptMock.mockImplementationOnce(async () =>
+      makeResult({ sessionId, text: "claude code answer", runner: "cli" }),
+    );
+    // The early-run timers, created with the first one.
+    const timers = () =>
+      (globalThis as Record<PropertyKey, unknown>)[
+        Symbol.for("openclaw.coldCacheAheadMaintenance")
+      ] as Map<string, ReturnType<typeof setTimeout>> | undefined;
+    try {
+      await agentCommand({ message: "hello", sessionId, sessionKey, json: true, deliver: false });
+      await waitForSessionMaintenance(sessionKey);
+
+      // Nothing runs after the turn; the next turn after a pause finds its days condensed.
+      expect(state.runSessionCompactionIfNeededMock).not.toHaveBeenCalled();
+      expect(state.runMemoryFlushIfNeededMock).not.toHaveBeenCalled();
+      expect(timers()?.has(sessionKey)).toBe(true);
+    } finally {
+      clearTimeout(timers()?.get(sessionKey));
+      timers()?.delete(sessionKey);
+    }
+  });
+
   it.each([
     { runner: "cli", expiry: false },
     { runner: "embedded", expiry: false },

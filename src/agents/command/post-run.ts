@@ -33,6 +33,7 @@ import { normalizeAgentRunTerminalReceipt } from "../agent-run-terminal-receipt.
 import { normalizeAgentRunTerminalReplySnapshot } from "../agent-run-terminal-reply.js";
 import { OPENCLAW_AGENT_RUNTIME_ID } from "../agent-runtime-id.js";
 import { isHeartbeatLifecycleRunKind } from "../bootstrap-mode.js";
+import { usesCliDayMemory } from "../cli-runner/day-compaction.js";
 import type { AcceptedCompactionSuccessor } from "../embedded-agent-runner/compaction-successor.js";
 import { buildMainSessionRecoverySettlementPatch } from "../main-session-recovery/main-session-recovery-clear.js";
 import { inspectMainSessionRecoveryLifecycleEvent } from "../main-session-recovery/main-session-recovery-lifecycle.js";
@@ -375,16 +376,19 @@ export async function finalizeEmbeddedAgentCommand(params: {
           }
         : undefined;
     const agentMeta = result.meta.agentMeta;
-    const embeddedMaintenance =
-      transcriptPersistenceRunner === "embedded" &&
-      agentMeta?.agentHarnessId === OPENCLAW_AGENT_RUNTIME_ID &&
-      params.attempt.maintenanceAuthProfile !== undefined &&
+    // An embedded turn gets after-turn maintenance; a Claude Code conversation only condenses
+    // earlier days in the background, ahead of its next turn.
+    const turnMaintenance =
+      (transcriptPersistenceRunner === "embedded"
+        ? agentMeta?.agentHarnessId === OPENCLAW_AGENT_RUNTIME_ID &&
+          params.attempt.maintenanceAuthProfile !== undefined &&
+          (compactionFact?.count ?? 0) === 0
+        : transcriptPersistenceRunner === "cli" && usesCliDayMemory(sessionEntry)) &&
       !fallbackExhausted &&
       terminal.outcome.status === "ok" &&
       !resultErrorPayload &&
       !result.meta.yielded &&
       !result.meta.aborted &&
-      (compactionFact?.count ?? 0) === 0 &&
       !params.preserveUserFacingSessionModelState &&
       params.opts.modelRun !== true &&
       params.opts.promptMode !== "none";
@@ -396,7 +400,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
       !sessionReboundDuringRun &&
       !isHeartbeatLifecycleRun &&
       cfg.agents?.defaults?.compaction?.enabled !== false &&
-      embeddedMaintenance
+      turnMaintenance
         ? {
             prepared: { cfg, sessionKey, storePath, timeoutMs },
             followupRun: createCommandMaintenanceFollowup({
@@ -416,6 +420,7 @@ export async function finalizeEmbeddedAgentCommand(params: {
             oneShotCliRun: params.opts.oneShotCliRun,
             agentHarnessId: agentMeta?.agentHarnessId,
             compactionRequestBudget: params.attempt.compactionRequestBudget,
+            cliDayMemory: transcriptPersistenceRunner === "cli",
           }
         : undefined;
 

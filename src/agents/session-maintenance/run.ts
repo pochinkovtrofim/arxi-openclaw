@@ -55,6 +55,8 @@ export type SessionMaintenanceRequest = {
   oneShotCliRun?: boolean;
   agentHarnessId?: string;
   compactionRequestBudget?: CompactionRequestBudget;
+  /** A Claude Code conversation: no after-turn step, only the day compaction ahead. */
+  cliDayMemory?: boolean;
 };
 
 /** Copy data only: turn callbacks, tool grants, delivery context and writer custody stay behind. */
@@ -562,13 +564,23 @@ function startSessionMaintenance(
     .finally(() => budget.dispose());
 }
 
-/** After-turn maintenance; a turn a person waited on also arms the cold-cache run ahead. */
+/**
+ * After-turn maintenance; a turn a person waited on also arms the cold-cache run ahead.
+ * A Claude Code conversation's turn arms only its day compaction ahead.
+ */
 export function scheduleTurnEndMaintenance(
   request: SessionMaintenanceRequest | undefined,
   sessionEntry: SessionEntry | undefined,
   personWaiting: boolean,
 ): void {
   if (!request) {
+    return;
+  }
+  if (request.cliDayMemory) {
+    // Its turn already ran the due compaction before the model; the next one waits for a pause.
+    if (personWaiting && sessionEntry) {
+      scheduleColdCacheAheadMaintenance(request, sessionEntry, Promise.resolve(true));
+    }
     return;
   }
   const afterTurn = scheduleSessionMaintenance(request);

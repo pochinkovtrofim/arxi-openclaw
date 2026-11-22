@@ -15,7 +15,11 @@ import { closeOpenClawAgentDatabaseByPathAsync } from "../../state/openclaw-agen
 import { openOpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { beginForegroundSessionMaintenance, waitForSessionMaintenance } from "./coordinator.js";
-import { scheduleColdCacheAheadMaintenance } from "./run.js";
+import {
+  scheduleColdCacheAheadMaintenance,
+  scheduleTurnEndMaintenance,
+  type SessionMaintenanceRequest,
+} from "./run.js";
 
 const memory = vi.hoisted(() => ({
   runMemoryFlushIfNeeded: vi.fn(async () => ({ outcome: "skipped" })),
@@ -72,6 +76,7 @@ async function withIdleSession(
   run: (session: {
     sessionKey: string;
     arm: (afterTurn: Promise<boolean>, turnEntry?: Partial<SessionEntry>) => Promise<void>;
+    endTurn: (request: Partial<SessionMaintenanceRequest>) => Promise<void>;
   }) => Promise<void>,
   storedEntry: Partial<SessionEntry> = {},
 ) {
@@ -90,39 +95,47 @@ async function withIdleSession(
     writeSessionEntry(database, sessionKey, { ...entry, ...storedEntry });
     await closeOpenClawAgentDatabaseByPathAsync(database.path);
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
-    const arm = async (afterTurn: Promise<boolean>, turnEntry: Partial<SessionEntry> = {}) => {
+    const request = (): SessionMaintenanceRequest => ({
+      // No deadline timer, so fake time can pass without expiring the run.
+      prepared: {
+        cfg,
+        sessionKey,
+        storePath: database.path,
+        timeoutMs: MAX_TIMER_TIMEOUT_MS,
+      },
+      followupRun: createTestFollowupRun({
+        sessionKey,
+        sessionId: entry.sessionId,
+        provider: "anthropic",
+        model: "claude-opus-5-5",
+      }),
+      sessionId: entry.sessionId,
+      lifecycleRevision: entry.lifecycleRevision,
+      lifecycleGeneration: getAgentEventLifecycleGeneration(),
+      startedAt: Date.now(),
+    });
+    const inGateway = async (schedule: () => void) => {
       withPluginRuntimeGatewayRequestScope(
         { pluginRegistry: createEmptyPluginRegistry(), isWebchatConnect: () => false },
-        () =>
-          scheduleColdCacheAheadMaintenance(
-            {
-              // No deadline timer, so fake time can pass without expiring the run.
-              prepared: {
-                cfg,
-                sessionKey,
-                storePath: database.path,
-                timeoutMs: MAX_TIMER_TIMEOUT_MS,
-              },
-              followupRun: createTestFollowupRun({
-                sessionKey,
-                sessionId: entry.sessionId,
-                provider: "anthropic",
-                model: "claude-opus-5-5",
-              }),
-              sessionId: entry.sessionId,
-              lifecycleRevision: entry.lifecycleRevision,
-              lifecycleGeneration: getAgentEventLifecycleGeneration(),
-              startedAt: Date.now(),
-            },
-            { ...entry, ...turnEntry },
-            afterTurn,
-          ),
+        schedule,
       );
       // Let a settled turn arm the timer.
       await vi.advanceTimersByTimeAsync(0);
     };
+    const arm = (afterTurn: Promise<boolean>, turnEntry: Partial<SessionEntry> = {}) =>
+      inGateway(() =>
+        scheduleColdCacheAheadMaintenance(request(), { ...entry, ...turnEntry }, afterTurn),
+      );
+    const endTurn = (overrides: Partial<SessionMaintenanceRequest>) =>
+      inGateway(() =>
+        scheduleTurnEndMaintenance(
+          { ...request(), ...overrides },
+          { ...entry, ...storedEntry },
+          true,
+        ),
+      );
     try {
-      await run({ sessionKey, arm });
+      await run({ sessionKey, arm, endTurn });
     } finally {
       vi.useRealTimers();
       await waitForSessionMaintenance(sessionKey);
@@ -272,4 +285,29 @@ it("yields to a turn that arrives during the early compaction", async () => {
       release();
     }
   });
+});
+
+it("arms only the day compaction after a Claude Code turn, ahead of the next turn", async () => {
+  await withIdleSession(
+    async ({ sessionKey, endTurn }) => {
+      await endTurn({ cliDayMemory: true });
+      await waitForSessionMaintenance(sessionKey);
+      // Its turn already ran the due compaction before the model: no after-turn run.
+      expect(memory.runSessionCompactionIfNeeded).not.toHaveBeenCalled();
+      expect(memory.runMemoryFlushIfNeeded).not.toHaveBeenCalled();
+      // Five minutes before the Owner's night sleep, otherwise three before the cache expires.
+      await vi.advanceTimersByTimeAsync(25 * MINUTE - 1);
+      await waitForSessionMaintenance(sessionKey);
+      expect(memory.runSessionCompactionIfNeeded).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(AHEAD_MS - 25 * MINUTE + 1);
+      await waitForSessionMaintenance(sessionKey);
+      expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledOnce();
+      expect(memory.runSessionCompactionIfNeeded).toHaveBeenCalledWith(
+        expect.objectContaining({ coldCacheAhead: true }),
+      );
+      expect(memory.runMemoryFlushIfNeeded).not.toHaveBeenCalled();
+    },
+    // A small conversation: Claude Code condenses by day whatever its size.
+    { totalTokens: 20_000, cliSessionBindings: { "claude-cli": { sessionId: "claude-code" } } },
+  );
 });
