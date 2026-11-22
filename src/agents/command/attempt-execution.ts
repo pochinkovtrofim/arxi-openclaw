@@ -725,6 +725,9 @@ export async function runAgentAttempt(params: AgentAttemptParams) {
     messageTo: params.opts.replyTo ?? params.opts.to,
     messageThreadId: params.opts.threadId,
     hasRepliedRef: params.runContext.hasRepliedRef,
+    // As for the CLI runner above: the Owner's own message gets the text
+    // written before the first tool call as a preamble item.
+    emitPreToolText: params.opts.nativeDeliveryPurpose === "direct_owner_reply",
     permissionMode: params.sessionEntry?.permissionMode,
     sessionRoot: params.sessionEntry?.sessionRoot,
     ...(params.pluginGeneration ? { pluginGeneration: params.pluginGeneration } : {}),

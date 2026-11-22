@@ -43,6 +43,7 @@ export type SubscribeEmbeddedAgentSessionParams = Pick<
   | "onToolStreamBoundary"
   | "enforceFinalTag"
   | "silentExpected"
+  | "emitPreToolText"
   | "suppressLiveStreamOutput"
   | "config"
   | "sessionPersistence"

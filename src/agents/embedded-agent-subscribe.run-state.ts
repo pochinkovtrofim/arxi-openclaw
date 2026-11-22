@@ -36,6 +36,7 @@ export function createEmbeddedAgentSubscribeState(
     itemActiveIds: new Set(),
     itemStartedCount: 0,
     itemCompletedCount: 0,
+    preToolTextDone: false,
     assistantTurnCount: 0,
     lastToolError: undefined,
     blockReplyBreak: params.blockReplyBreak ?? "text_end",

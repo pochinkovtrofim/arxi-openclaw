@@ -268,6 +268,12 @@ export type RunEmbeddedAgentParams = {
   streamParams?: AgentStreamParams;
   enforceFinalTag?: boolean;
   silentExpected?: boolean;
+  /**
+   * A direct reply to the Owner's message: the text written before the run's
+   * first tool call is published as a preamble item at once, as the CLI
+   * runner's emitPreToolText does.
+   */
+  emitPreToolText?: boolean;
   /** Skip per-chunk live visible-text parsing when no live stream consumer exists (e.g. subagents). */
   suppressLiveStreamOutput?: boolean;
   /**

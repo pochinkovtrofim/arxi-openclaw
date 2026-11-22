@@ -635,6 +635,7 @@ export async function prepareAndDispatchEmbeddedRunAttempt(
     ownerNumbers: params.ownerNumbers,
     enforceFinalTag: params.enforceFinalTag,
     silentExpected: params.silentExpected,
+    emitPreToolText: params.emitPreToolText,
     suppressLiveStreamOutput: params.suppressLiveStreamOutput,
     bootstrapContextMode: params.bootstrapContextMode,
     bootstrapContextRunKind: params.bootstrapContextRunKind,
