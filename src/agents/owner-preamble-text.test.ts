@@ -13,5 +13,6 @@ describe("ownerPreambleText", () => {
     expect(ownerPreambleText("NO_REPLY")).toBeUndefined();
     expect(ownerPreambleText("Here it is\nMEDIA:/tmp/chart.png")).toBeUndefined();
     expect(ownerPreambleText("[[reply_to_current]]")).toBeUndefined();
+    expect(ownerPreambleText("Here it is\nMEDIA:../../etc/passwd")).toBeUndefined();
   });
 });

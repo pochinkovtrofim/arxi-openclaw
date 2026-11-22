@@ -9,7 +9,11 @@ import { parseReplyDirectives } from "../auto-reply/reply/reply-directives.js";
  */
 export function ownerPreambleText(raw: string): string | undefined {
   const parsed = parseReplyDirectives(raw);
-  if (parsed.isSilent || (parsed.mediaUrls?.length ?? 0) > 0) {
+  if (
+    parsed.isSilent ||
+    (parsed.mediaUrls?.length ?? 0) > 0 ||
+    (parsed.mediaFailures?.length ?? 0) > 0
+  ) {
     return undefined;
   }
   return parsed.text.trim() || undefined;
