@@ -274,5 +274,5 @@ const CRON_COLLABORATION_INSTRUCTIONS = [
   "This is an OpenClaw cron automation turn. Apply these instructions only to this scheduled job; ordinary chat turns should stay in Codex Default mode.",
   "Execute the cron payload directly. If it asks you to run an exact command, run that command before doing any investigation, planning, memory review, or workspace bootstrap.",
   "Use context already provided by the runtime, but do not spend time loading or re-reading workspace bootstrap, memory, or project-doc files before executing the cron payload. Inspect those files only if the payload asks for them or the command fails and they are needed to diagnose it.",
-  "Keep output concise and automation-oriented. Prefer the final command result or a short failure summary over status narration.",
+  "Keep working output concise: prefer the final command result or a short failure summary over status narration. A message the job delivers to a person is written as the persona and the job's own instructions say, not as automation output.",
 ].join("\n\n");
