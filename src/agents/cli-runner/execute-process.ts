@@ -34,6 +34,7 @@ import {
   createCliFailoverError,
   resolveCliResumeAtError,
 } from "./exit-error.js";
+import { ownerPreambleText } from "../owner-preamble-text.js";
 import { cliBackendLog, formatCliBackendOutputDigest } from "./log.js";
 import type { createClaudeCliModelCallDiagnostics } from "./model-call-diagnostics.js";
 import {
@@ -155,7 +156,12 @@ export async function executeCliProcess(params: {
             : undefined,
         onPreToolText:
           params.events.emitLiveEvents && runParams.emitPreToolText
-            ? params.events.emitCliCommentaryText
+            ? (text: string) => {
+                const preamble = ownerPreambleText(text);
+                if (preamble) {
+                  params.events.emitCliCommentaryText(preamble);
+                }
+              }
             : undefined,
         finalMessageIsReply: runParams.replyIncludesPreToolText !== true,
         onPreToolTextOmitted: ({ omitted, reply }) =>

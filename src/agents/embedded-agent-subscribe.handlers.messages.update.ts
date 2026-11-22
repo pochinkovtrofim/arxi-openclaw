@@ -1,6 +1,6 @@
 import { asOptionalObjectRecord } from "@openclaw/normalization-core/record-coerce";
 import { scanReasoningTags } from "../../packages/markdown-core/src/reasoning-tags.js";
-import { emitAgentEvent } from "../infra/agent-events.js";
+import { emitAgentEvent, emitAgentEventIfCurrent } from "../infra/agent-events.js";
 import type { AssistantMessage } from "../llm/types.js";
 import { resolveAssistantMessagePhase } from "../shared/chat-message-content.js";
 import { toolCallXmlTextFilter } from "../shared/text/assistant-visible-text.js";
@@ -40,6 +40,7 @@ import type {
   EmbeddedAgentSubscribeState,
 } from "./embedded-agent-subscribe.handlers.types.js";
 import { appendRawStream } from "./embedded-agent-subscribe.raw-stream.js";
+import { ownerPreambleText } from "./owner-preamble-text.js";
 import {
   createAssistantStreamBlockState,
   createAssistantVisibleStreamText,
@@ -69,7 +70,7 @@ function emitPreToolPreamble(
   if (suppressed || ctx.params.silentExpected) {
     return;
   }
-  const progressText = extractAssistantVisibleText(message).trim();
+  const progressText = ownerPreambleText(extractAssistantVisibleText(message));
   if (!progressText) {
     return;
   }
@@ -80,12 +81,19 @@ function emitPreToolPreamble(
     progressText,
     itemId: `preamble:${ctx.params.runId}`,
   };
-  emitAgentEvent({ runId: ctx.params.runId, stream: "item", data });
-  runBestEffortCallback({
-    label: "pre-tool preamble agent event",
-    log: ctx.log,
-    callback: () => ctx.params.onAgentEvent?.({ stream: "item", data }),
+  const emitted = emitAgentEventIfCurrent({
+    runId: ctx.params.runId,
+    lifecycleGeneration: ctx.params.lifecycleGeneration,
+    stream: "item",
+    data,
   });
+  if (emitted) {
+    runBestEffortCallback({
+      label: "pre-tool preamble agent event",
+      log: ctx.log,
+      callback: () => ctx.params.onAgentEvent?.({ stream: "item", data }),
+    });
+  }
 }
 
 export function handleMessageUpdate(

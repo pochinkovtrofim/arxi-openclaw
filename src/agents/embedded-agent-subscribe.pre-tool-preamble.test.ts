@@ -68,6 +68,16 @@ describe("pre-tool preamble", () => {
     });
   });
 
+  it("drops reply directives and sends nothing for a silent reply", async () => {
+    const [item] = await runToolStep({ emitPreToolText: true }, [
+      { before: "[[reply_to_current]] Let me check.", toolId: "t1" },
+    ]);
+    expect(item?.data.progressText).toBe("Let me check.");
+    expect(
+      await runToolStep({ emitPreToolText: true }, [{ before: "NO_REPLY", toolId: "t1" }]),
+    ).toHaveLength(0);
+  });
+
   it("keeps quiet when the first tool call had no text before it", async () => {
     const items = await runToolStep({ emitPreToolText: true }, [
       { before: "", toolId: "t1" },
