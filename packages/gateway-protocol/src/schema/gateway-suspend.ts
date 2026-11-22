@@ -78,13 +78,16 @@ export const GatewaySuspendPrepareDrainingResultSchema = closedObject({
   writeCustody: Type.Optional(GatewayWriteCustodySchema),
 });
 
+// batchedAtMs: the earliest due run of a job the host wakes for only in its next batch slot.
 export const GatewaySuspendWakeAtRequirementSchema = closedObject({
   kind: Type.Literal("at"),
   atMs: CountSchema,
+  batchedAtMs: Type.Optional(CountSchema),
 });
 
 export const GatewaySuspendWakeExternalEventOnlyRequirementSchema = closedObject({
   kind: Type.Literal("external-event-only"),
+  batchedAtMs: Type.Optional(CountSchema),
 });
 
 export const GatewaySuspendWakeRequirementSchema = Type.Union([

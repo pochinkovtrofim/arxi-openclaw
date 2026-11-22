@@ -60,9 +60,11 @@ export function getSuspendWakeSnapshot(state: CronServiceState): CronSuspendWake
       candidates.push(obligationAtMs);
     }
   }
+  const batchedWakeAtMs = nextWakeAtMs(state, { batchedOnly: true });
   return {
     complete: true,
     nextWakeAtMs: candidates.length > 0 ? Math.min(...candidates) : null,
+    ...(batchedWakeAtMs !== undefined ? { batchedWakeAtMs } : {}),
   };
 }
 

@@ -253,9 +253,11 @@ function inspectWakeRequirement(
   if (!snapshot.complete) {
     return undefined;
   }
+  const batched =
+    snapshot.batchedWakeAtMs !== undefined ? { batchedAtMs: snapshot.batchedWakeAtMs } : {};
   return snapshot.nextWakeAtMs === null
-    ? { kind: "external-event-only" }
-    : { kind: "at", atMs: snapshot.nextWakeAtMs };
+    ? { kind: "external-event-only", ...batched }
+    : { kind: "at", atMs: snapshot.nextWakeAtMs, ...batched };
 }
 
 function refreshHeldSuspension(held: HeldGatewaySuspension): GatewayActiveWorkSnapshot | undefined {

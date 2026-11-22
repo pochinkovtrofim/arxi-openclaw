@@ -33,7 +33,11 @@ const CronWakeModeSchema = Type.Union([Type.Literal("next-heartbeat"), Type.Lite
  * of the suspend wake deadline; it still runs at the first scheduler pass after
  * any other wake. Omitted means "always".
  */
-const CronSuspendWakeSchema = Type.Union([Type.Literal("always"), Type.Literal("never")]);
+const CronSuspendWakeSchema = Type.Union([
+  Type.Literal("always"),
+  Type.Literal("never"),
+  Type.Literal("batched"),
+]);
 /** Run status factory reused for the active field and deprecated alias metadata. */
 function cronRunStatusSchema(options: Record<string, unknown> = {}) {
   return Type.Union([Type.Literal("ok"), Type.Literal("error"), Type.Literal("skipped")], options);

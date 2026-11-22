@@ -56,7 +56,7 @@ export function combineGatewaySuspendWakeSnapshot(
   try {
     const deliveryWakeAtMs = inspectDeferredDelivery();
     return {
-      complete: true,
+      ...cron,
       nextWakeAtMs:
         deliveryWakeAtMs === null
           ? cron.nextWakeAtMs
