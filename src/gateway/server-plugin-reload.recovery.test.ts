@@ -210,9 +210,10 @@ it.each(["commit", "rollback"] as const)(
     assert(serviceGetter && hookGetter);
     // A hook's scheduler handle serves only that hook invocation (fork patch, #72):
     // neither the getter nor a handle the hook kept reaches the scheduler afterwards.
-    assert(hookCron);
+    const kept = hookCron;
+    assert(kept);
     expect(() => hookGetter()).toThrow("no longer active");
-    await expect(Promise.resolve().then(() => hookCron.list())).rejects.toThrow("no longer active");
+    await expect(Promise.resolve().then(() => kept.list())).rejects.toThrow("no longer active");
     expect(first.list).not.toHaveBeenCalled();
     const stale = serviceGetter();
     assert(stale);
