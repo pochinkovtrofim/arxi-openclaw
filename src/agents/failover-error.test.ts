@@ -348,7 +348,11 @@ describe("failover-error", () => {
       timeout: { timeoutPhase: "provider" },
       attempts: [{ provider: "anthropic", model: "sonnet-4.6", reason: "timeout" }],
       soonestCooldownExpiry: null,
-    } satisfies ConstructorParameters<typeof FailoverError>[1];
+      rateLimitRetriesExhausted: 2,
+      resetAtMs: 1_800_000_000_000,
+      // Every fact a producer can set: a new field fails this type until the
+      // enrichment below copies it (a dropped resetAtMs hid a used-up plan).
+    } satisfies Required<Omit<ConstructorParameters<typeof FailoverError>[1], "authMode" | "code">>;
     const original = new FailoverError("request timed out", facts);
     attachErrorDiagnostic(original, "stderr: Rate limit exceeded during an earlier request");
     const err = coerceToFailoverError(original, { authMode: "token" });

@@ -12,6 +12,7 @@ import {
   mintSecretSentinel,
   resolveSecretSentinel,
 } from "../../../secrets/sentinel.js";
+import { describeAgentRunErrorIdentity } from "../../agent-run-error-identity.js";
 import type { AuthProfileStore } from "../../auth-profiles.js";
 import { OAuthRefreshFailureError } from "../../auth-profiles/oauth-refresh-failure.js";
 import { resolveAuthProfileOrder } from "../../auth-profiles/order.js";
@@ -698,6 +699,38 @@ describe("createEmbeddedRunAuthController", () => {
         reason: disabledReason,
         authMode: "oauth",
       });
+    },
+  );
+
+  // Ro production 2026-11-23: after a plan was used up, every later turn failed
+  // on the cooled profile as an unnamed error and was retried until the reset.
+  const resetAtMs = Date.now() + 3_600_000;
+  const limit = { code: "subscription_limit", resetAtMs };
+  it.each([
+    [true, { blockedUntil: resetAtMs, blockedReason: "subscription_limit" }, limit],
+    [false, { blockedUntil: resetAtMs, blockedReason: "subscription_limit" }, limit],
+    [true, { cooldownUntil: resetAtMs, cooldownReason: "rate_limit" }, undefined],
+  ] as const)(
+    "names only a used-up plan (fallback %s)",
+    async (fallbackConfigured, stats, named) => {
+      const controller = createMutableEmbeddedRunAuthController({
+        harness: createMutableAuthControllerHarness(),
+        setRuntimeApiKey: vi.fn(),
+        profileCandidates: ["p"],
+        fallbackConfigured,
+        authStore: {
+          version: 1,
+          profiles: {
+            p: { type: "oauth", provider: "x", access: "a", refresh: "r", expires: resetAtMs },
+          },
+          usageStats: { p: { ...stats } },
+        },
+      });
+      const error = await controller.initializeAuthProfile().catch((err: unknown) => err);
+      expect(error).toMatchObject(named ?? { code: undefined, resetAtMs: undefined });
+      expect(describeAgentRunErrorIdentity({ error })).toMatchObject(
+        named ?? { name: "FailoverError" },
+      );
     },
   );
 

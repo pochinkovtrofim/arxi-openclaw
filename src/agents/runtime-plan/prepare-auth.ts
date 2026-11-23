@@ -23,6 +23,7 @@ import { createSelectedAuthProfileUnavailableError } from "../auth-profiles/sele
 import type { AuthProfileStore } from "../auth-profiles/types.js";
 import {
   isProfileInCooldown,
+  resolveProfilesSubscriptionLimit,
   resolveProfilesUnavailableReason,
 } from "../auth-profiles/usage-state.js";
 import { FailoverError, resolveFailoverStatus } from "../failover-error.js";
@@ -87,13 +88,12 @@ function createAuthProfileCooldownError(
   params: PrepareAgentRuntimeAuthPlanParams,
   profileId: string,
 ): FailoverError {
+  const store = params.authProfileStore;
   const reason =
-    (params.authProfileStore &&
-      resolveProfilesUnavailableReason({
-        store: params.authProfileStore,
-        profileIds: [profileId],
-      })) ??
-    "unknown";
+    (store && resolveProfilesUnavailableReason({ store, profileIds: [profileId] })) ?? "unknown";
+  // A plan used up earlier keeps its name and reset on every later turn.
+  const subscriptionLimit =
+    store && resolveProfilesSubscriptionLimit(store, [profileId], params.modelId);
   return new FailoverError(
     `Auth profile "${profileId}" is temporarily unavailable for ${params.provider}/${params.modelId}.`,
     {
@@ -102,6 +102,7 @@ function createAuthProfileCooldownError(
       provider: params.provider,
       model: params.modelId,
       profileId,
+      ...subscriptionLimit,
     },
   );
 }

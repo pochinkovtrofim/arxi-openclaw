@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import type { Model } from "../../llm/types.js";
 import { createPluginMetadataSnapshotFixture } from "../../plugins/plugin-metadata.test-support.js";
+import { describeAgentRunErrorIdentity } from "../agent-run-error-identity.js";
 import type { AuthProfileStore } from "../auth-profiles.js";
 import {
   createApiKeyCredential,
@@ -255,6 +256,90 @@ describe("prepareAgentRuntimeAuthPlan", () => {
         sessionAuthProfileSource: "auto",
       }),
     ).toThrow(/temporarily unavailable/u);
+  });
+
+  // Ro production 2026-11-23: after an Owner's plan was used up, every later
+  // turn failed here as an unnamed cooldown and was retried until the reset.
+  it("names a used-up subscription on the cooled profile, with its reset", () => {
+    const resetAtMs = Date.now() + 3_600_000;
+    const store = authStore(
+      { "xai:p1": createApiKeyCredential("xai", "p1-key") },
+      { xai: ["xai:p1"] },
+    );
+    store.usageStats = {
+      "xai:p1": {
+        blockedUntil: resetAtMs,
+        blockedReason: "subscription_limit",
+        blockedSource: "wham",
+        // A transient cooldown beside the block does not hide it.
+        cooldownUntil: Date.now() + 60_000,
+        cooldownReason: "rate_limit",
+      },
+    };
+    let error: unknown;
+    try {
+      prepareAgentRuntimeAuthPlan({
+        provider: "xai",
+        modelId: "grok-4",
+        env: {},
+        authProfileStore: store,
+        sessionAuthProfileId: "xai:p1",
+        sessionAuthProfileSource: "auto",
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({
+      name: "FailoverError",
+      reason: "rate_limit",
+      code: "subscription_limit",
+      resetAtMs,
+    });
+    expect(describeAgentRunErrorIdentity({ error })).toMatchObject({
+      name: "FailoverError",
+      code: "subscription_limit",
+      resetAtMs,
+    });
+  });
+
+  it.each([
+    [
+      "a transient rate limit",
+      { cooldownUntil: Date.now() + 60_000, cooldownReason: "rate_limit" },
+    ],
+    [
+      "a block for another model",
+      {
+        blockedUntil: Date.now() + 3_600_000,
+        blockedReason: "subscription_limit",
+        blockedSource: "codex_rate_limits",
+        blockedModel: "grok-3",
+        blockedScope: "model",
+        cooldownUntil: Date.now() + 60_000,
+        cooldownReason: "overloaded",
+      },
+    ],
+  ] as const)("leaves %s unnamed", (_name, stats) => {
+    const store = authStore(
+      { "xai:p1": createApiKeyCredential("xai", "p1-key") },
+      { xai: ["xai:p1"] },
+    );
+    store.usageStats = { "xai:p1": { ...stats } };
+    let error: unknown;
+    try {
+      prepareAgentRuntimeAuthPlan({
+        provider: "xai",
+        modelId: "grok-4",
+        env: {},
+        authProfileStore: store,
+        sessionAuthProfileId: "xai:p1",
+        sessionAuthProfileSource: "auto",
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toMatchObject({ name: "FailoverError" });
+    expect(error).toMatchObject({ code: undefined, resetAtMs: undefined });
   });
 
   it("fails closed when an explicit generic order contains only missing profiles", () => {

@@ -56,6 +56,8 @@ export class FailoverError extends Error {
   readonly timeout?: Pick<AgentRunTerminalOutcome, "timeoutPhase" | "providerStarted">;
   readonly attempts?: readonly FallbackAttemptRecord[];
   readonly soonestCooldownExpiry?: number | null;
+  /** When a used-up subscription resets (code subscription_limit), as epoch milliseconds. */
+  readonly resetAtMs?: number;
 
   constructor(
     message: string,
@@ -81,6 +83,7 @@ export class FailoverError extends Error {
     this.timeout = params.timeout;
     this.attempts = params.attempts;
     this.soonestCooldownExpiry = params.soonestCooldownExpiry;
+    this.resetAtMs = params.resetAtMs;
   }
 }
 

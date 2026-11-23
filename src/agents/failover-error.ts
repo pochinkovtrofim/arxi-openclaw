@@ -670,6 +670,7 @@ export function coerceToFailoverError(
           timeout: err.timeout ?? context?.timeout,
           attempts: err.attempts,
           soonestCooldownExpiry: err.soonestCooldownExpiry,
+          resetAtMs: err.resetAtMs,
         },
       );
       copyErrorDiagnostic(err, enriched);

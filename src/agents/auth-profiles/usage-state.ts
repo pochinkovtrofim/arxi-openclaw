@@ -395,6 +395,52 @@ export function resolveProfilesUnavailableReason(params: {
   return best;
 }
 
+/**
+ * The identity of a used-up subscription: what a cooldown error reports when
+ * every given profile is unusable because its plan is used up, the same name
+ * Codex gives the limit when it first hits it (CodexUsageLimitPromptError).
+ * Ro's guest reads only this code and reset time, never the text, to end the
+ * message with a limit notice instead of retrying until the reset (Ro
+ * production 2026-11-23: eight retries and a restart card that could not help).
+ */
+export type AuthProfileSubscriptionLimit = {
+  code: "subscription_limit";
+  /** When the earliest of the plans resets, as epoch milliseconds. */
+  resetAtMs: number;
+};
+
+/**
+ * Returns the subscription limit that keeps every profile unusable for this
+ * model, or undefined when any of them is usable or unusable for another
+ * reason. Only a provider-reported quota block qualifies: a transient rate
+ * limit is a cooldown, not a block, and a disabled profile needs its owner's
+ * action first, as resolveProfilesUnavailableReason ranks it.
+ */
+export function resolveProfilesSubscriptionLimit(
+  store: AuthProfileStore,
+  profileIds: readonly (string | undefined)[],
+  forModel?: string,
+  now = Date.now(),
+): AuthProfileSubscriptionLimit | undefined {
+  let resetAtMs: number | undefined;
+  for (const profileId of profileIds) {
+    // A candidate without a profile (a direct credential) is no plan to wait for.
+    const stats = profileId ? readAuthProfileUsageStats(store, profileId) : undefined;
+    const blockedUntil = asDateTimestampMs(stats?.blockedUntil);
+    if (
+      !stats ||
+      blockedUntil === undefined ||
+      stats.blockedReason !== "subscription_limit" ||
+      !isBlockedWindowActiveForModel(stats, now, forModel) ||
+      isActiveUnusableWindow(stats.disabledUntil, now)
+    ) {
+      return undefined;
+    }
+    resetAtMs = resetAtMs === undefined ? blockedUntil : Math.min(resetAtMs, blockedUntil);
+  }
+  return resetAtMs === undefined ? undefined : { code: "subscription_limit", resetAtMs };
+}
+
 /** Resolves the display-facing unusable timestamp, honoring provider bypasses. */
 export function resolveProfileUnusableUntilForDisplay(
   store: AuthProfileStore,

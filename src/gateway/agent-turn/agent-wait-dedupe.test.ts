@@ -848,4 +848,96 @@ describe("agent.wait gateway dedupe observations", () => {
       }),
     );
   });
+
+  // Ro production 2026-11-23: every agent.wait of a failed run answered without
+  // its identity, so the guest could not tell a used-up plan from a break.
+  it.each(["lifecycle-first", "dedupe-first"] as const)(
+    "keeps a failed run's error identity when its RPC completion lands too (%s)",
+    async (order) => {
+      const runId = `run-error-identity-${order}`;
+      const dedupe = new Map<string, DedupeEntry>();
+      const identity = {
+        name: "FailoverError",
+        code: "subscription_limit",
+        resetAtMs: 1_800_000_000_000,
+      };
+      const lifecycleError = () =>
+        emitAgentEvent({
+          runId,
+          stream: "lifecycle",
+          data: {
+            phase: "error",
+            startedAt: 100,
+            endedAt: 300,
+            executionSettled: true,
+            error: "limit",
+            errorIdentity: identity,
+          },
+        });
+      const rpcCompletion = () =>
+        setGatewayDedupeEntry({
+          dedupe,
+          key: `agent:${runId}`,
+          entry: {
+            ts: 400,
+            ok: true,
+            payload: { runId, status: "error", startedAt: 100, endedAt: 300, summary: "limit" },
+          },
+        });
+      emitAgentEvent({ runId, stream: "lifecycle", data: { phase: "start", startedAt: 100 } });
+      for (const observe of order === "lifecycle-first"
+        ? [lifecycleError, rpcCompletion]
+        : [rpcCompletion, lifecycleError]) {
+        observe();
+      }
+      const waiter = waitThroughGateway({ runId, timeoutMs: 0 });
+      await waiter.promise;
+      expect(waiter.respond).toHaveBeenCalledWith(
+        true,
+        expect.objectContaining({ runId, status: "error", errorIdentity: identity }),
+      );
+    },
+  );
+
+  it("hands agent.wait the identity of a run refused before it started", async () => {
+    const runId = "run-refused-identity";
+    const dedupe = new Map<string, DedupeEntry>();
+    setGatewayDedupeEntry({
+      dedupe,
+      key: `agent:${runId}`,
+      entry: {
+        ts: 200,
+        ok: false,
+        payload: { runId, status: "error", summary: "owner text that must stay inside" },
+        error: {
+          code: "UNAVAILABLE",
+          message: "owner text that must stay inside",
+          details: {
+            errorIdentity: {
+              name: "FailoverError",
+              code: "subscription_limit",
+              origin: "prepare-auth.js:28",
+              resetAtMs: 1_800_000_000_000,
+              kind: "not a token",
+            },
+          },
+        },
+      },
+    });
+    const waiter = waitThroughGateway({ runId, timeoutMs: 0 });
+    await waiter.promise;
+    expect(waiter.respond).toHaveBeenCalledWith(
+      true,
+      expect.objectContaining({
+        runId,
+        status: "error",
+        errorIdentity: {
+          name: "FailoverError",
+          code: "subscription_limit",
+          origin: "prepare-auth.js:28",
+          resetAtMs: 1_800_000_000_000,
+        },
+      }),
+    );
+  });
 });
