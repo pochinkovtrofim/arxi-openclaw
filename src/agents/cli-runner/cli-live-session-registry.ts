@@ -6,6 +6,7 @@ import type {
   CliBackendLiveSessionHandle,
 } from "../../plugins/cli-backend.types.js";
 import { isSubagentSessionKey } from "../../sessions/session-key-utils.js";
+import { resolveGlobalMap } from "../../shared/global-singleton.js";
 import { runCliCleanup } from "./cleanup.js";
 import { createCliRunCurrentAssertion } from "./execution-target.js";
 import { createCliFailoverError } from "./exit-error.js";
@@ -55,6 +56,7 @@ type CliLiveSessionOwner = {
 };
 
 type CliLiveSessionRecord = {
+  ownerKey: string;
   handle: CliBackendLiveSessionHandle;
   owner: PreparedCliRunContext["preparedBackend"];
   approvalGrants: Set<string>;
@@ -69,7 +71,22 @@ type CliLiveSessionRecord = {
   };
 };
 
-const liveSessions = new Map<string, CliLiveSessionRecord>();
+// A Gateway restart in place keeps this process and its warm CLI children, but
+// replaces the loopback MCP runtime and its bearers those children were started
+// with; the fingerprint ignores the port and token, so a later turn would reuse
+// a child that can no longer reach its tools (2026-11-23 every run in the
+// restarted conversation hung). The restart and close lifecycles retire every
+// live process instead.
+const liveSessions = resolveGlobalMap<string, CliLiveSessionRecord>(
+  Symbol.for("openclaw.cliLiveSessions"),
+  (sessions) => {
+    for (const record of [...sessions.values()]) {
+      record.handle.close("restart");
+      retireRecord(record, "restart");
+    }
+  },
+  "close-and-restart",
+);
 // Why each conversation's last process ended, and each live process's
 // fingerprint inputs: the next turn's start reason in the trace.
 const lastEndCause = new Map<string, CliBackendLiveSessionEndCause>();
@@ -115,6 +132,66 @@ export function getCliLiveSessionStartReason(
 }
 const retiredSessionCleanup = new Map<string, Promise<void>>();
 const retiringSessionHandles = new WeakSet<CliBackendLiveSessionHandle>();
+
+// A closed process normally exits within moments. One that does not must not
+// hold its conversation: a later turn waited on it without end (2026-11-23).
+// After this wait the conversation may start a new process; the stuck one's
+// resources are cleaned once it does exit.
+export const RETIRED_CLI_PROCESS_EXIT_WAIT_MS = 10_000;
+
+async function exitedWithin(handle: CliBackendLiveSessionHandle): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), RETIRED_CLI_PROCESS_EXIT_WAIT_MS);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([handle.waitForExit().then(() => true as const), late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Takes a record out of the registry; its process-owned cleanup runs at exit. */
+function retireRecord(record: CliLiveSessionRecord, cause: CliBackendLiveSessionEndCause): void {
+  const { ownerKey, handle } = record;
+  if (liveSessions.get(ownerKey) !== record) {
+    return;
+  }
+  rememberEndCause(ownerKey, evictedHandles.has(handle) ? "evicted" : cause);
+  record.capture?.revoke();
+  liveSessions.delete(ownerKey);
+  record.approvalGrants.clear();
+  retiringSessionHandles.add(handle);
+  // Native runtime artifacts remain process-owned until its child exits.
+  const cleanupPromise: Promise<void> = Promise.resolve()
+    .then(() => exitedWithin(handle))
+    .then(async (exited) => {
+      if (exited) {
+        await record.cleanup?.();
+        return;
+      }
+      cliBackendLog.warn("cli live session exit unconfirmed; its conversation may start a new process");
+      void handle
+        .waitForExit()
+        .then(() => record.cleanup?.())
+        .catch((error: unknown) => {
+          cliBackendLog.warn(`cli live session cleanup failed: ${String(error)}`);
+        });
+    })
+    .finally(() => {
+      retiringSessionHandles.delete(handle);
+      if (retiredSessionCleanup.get(ownerKey) === cleanupPromise) {
+        retiredSessionCleanup.delete(ownerKey);
+      }
+    });
+  record.cleanupPromise = cleanupPromise;
+  // A fresh prepared context must still join the retired owner after a timeout.
+  retiredSessionCleanup.set(ownerKey, cleanupPromise);
+  void cleanupPromise.catch((error: unknown) => {
+    cliBackendLog.warn(`cli live session cleanup failed: ${String(error)}`);
+  });
+}
 
 function buildCliLiveRegistryKey(owner: CliLiveSessionOwner): string {
   return `${owner.backendId}:${buildCliLiveOwnerKey(owner)}`;
@@ -184,7 +261,8 @@ export async function restartCliLiveSession(
     async () => {
       assertActive();
       await context.preparedBackend.closeLiveSession?.("restart");
-      await pendingCleanup;
+      // Its failure was logged where it happened.
+      await pendingCleanup?.catch(() => {});
     },
     "required",
   );
@@ -210,7 +288,11 @@ async function closeRecord(
   if (!record.cleanupPromise) {
     record.handle.close(reason);
   }
-  await (record.cleanupPromise ?? record.handle.waitForExit());
+  if (!record.cleanupPromise && !(await exitedWithin(record.handle))) {
+    // It never reported its end: retire it so the conversation is not held.
+    retireRecord(record, "unspecified");
+  }
+  await record.cleanupPromise?.catch(() => {});
 }
 
 function retainCleanup(context: PreparedCliRunContext, record: CliLiveSessionRecord): void {
@@ -393,6 +475,7 @@ export function createCliLiveSessionCapability(params: {
       ensureCliLiveSessionCapacity(params.context);
       const cleanup = params.claimResources?.();
       const record: CliLiveSessionRecord = {
+        ownerKey,
         handle,
         owner: params.context.preparedBackend,
         approvalGrants: new Set(),
@@ -438,26 +521,7 @@ export function createCliLiveSessionCapability(params: {
       if (record?.handle !== handle) {
         return;
       }
-      rememberEndCause(ownerKey, evictedHandles.has(handle) ? "evicted" : (cause ?? "unspecified"));
-      record.capture?.revoke();
-      liveSessions.delete(ownerKey);
-      record.approvalGrants.clear();
-      retiringSessionHandles.add(handle);
-      // Native runtime artifacts remain process-owned until its child exits.
-      record.cleanupPromise = Promise.resolve()
-        .then(() => handle.waitForExit())
-        .then(() => record.cleanup?.())
-        .then(() => {
-          retiringSessionHandles.delete(handle);
-          if (retiredSessionCleanup.get(ownerKey) === record.cleanupPromise) {
-            retiredSessionCleanup.delete(ownerKey);
-          }
-        });
-      // A fresh prepared context must still join the retired owner after a timeout.
-      retiredSessionCleanup.set(ownerKey, record.cleanupPromise);
-      void record.cleanupPromise.catch((error: unknown) => {
-        cliBackendLog.warn(`cli live session cleanup failed: ${String(error)}`);
-      });
+      retireRecord(record, cause ?? "unspecified");
     },
   });
 }

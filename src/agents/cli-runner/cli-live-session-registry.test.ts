@@ -5,6 +5,7 @@ import type {
   CliBackendLiveSessionHandle,
 } from "../../plugins/cli-backend.types.js";
 import type { InputProvenance } from "../../sessions/input-provenance.js";
+import { drainGlobalSingletonLifecycleState } from "../../shared/global-singleton.js";
 import { formatSkillsForPromptCore } from "../../skills/loading/skill-contract.js";
 import { materializeSkill } from "../../skills/loading/skill-materializer.js";
 import type { SkillSnapshot } from "../../skills/types.js";
@@ -23,6 +24,7 @@ import {
   hasCliLiveSession,
   PERSON_TURN_LIVE_SESSION_IDLE_MS,
   restartCliLiveSession,
+  RETIRED_CLI_PROCESS_EXIT_WAIT_MS,
 } from "./cli-live-session-registry.js";
 import { settlePreparedCliRun } from "./cli-run-settlement.js";
 import { buildCliLiveSessionFingerprint } from "./live-session-fingerprint.js";
@@ -472,6 +474,55 @@ describe("generic plugin-owned live session registry", () => {
       }
     },
   );
+
+  it("retires every live process when the Gateway restarts in place", async () => {
+    // The restart replaces the loopback MCP runtime a warm child was started with.
+    const owner = await createOwner();
+    owner.register();
+    await drainGlobalSingletonLifecycleState("restart");
+    expect(owner.close).toHaveBeenCalledWith("restart");
+    expect(owner.capability.current()).toBeUndefined();
+    const next = await createOwner({ sessionId: owner.sessionId });
+    await vi.waitFor(() => next.register());
+    expect(next.capability.current()).toBe(next.session);
+  });
+
+  it("holds a conversation only for the exit wait when its retired process never exits", async () => {
+    const cleanup = vi.fn(async () => {});
+    const original = await createOwner({ deferExit: true, cleanup });
+    original.register();
+    const next = await createOwner({ sessionId: original.sessionId });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let settled = false;
+      const restarting = next.capability.restart().then(() => {
+        settled = true;
+      });
+      await vi.advanceTimersByTimeAsync(RETIRED_CLI_PROCESS_EXIT_WAIT_MS - 1);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await restarting;
+    } finally {
+      vi.useRealTimers();
+    }
+    next.register();
+    expect(next.capability.current()).toBe(next.session);
+    // Its process-owned resources are cleaned once it does exit.
+    expect(cleanup).not.toHaveBeenCalled();
+    original.exited.resolve();
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledOnce());
+  });
+
+  it("does not hold a conversation whose retired process failed to report its exit", async () => {
+    const original = await createOwner({ deferExit: true });
+    original.register();
+    original.capability.remove(original.session);
+    original.exited.reject(new Error("synthetic exit failure"));
+    const next = await createOwner({ sessionId: original.sessionId });
+    await vi.waitFor(() => next.register());
+    expect(next.capability.current()).toBe(next.session);
+    await expect(next.capability.restart()).resolves.toBeUndefined();
+  });
 
   it("joins natural retirement that starts while restart is awaiting the previous owner", async () => {
     const held = createDeferred();
