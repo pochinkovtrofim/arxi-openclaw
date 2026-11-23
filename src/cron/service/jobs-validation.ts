@@ -146,6 +146,15 @@ export function assertTriggerSupport(
 }
 
 export function assertSuspendWakeSupport(job: Pick<CronJob, "schedule" | "suspendWake">) {
+  // A batched job wakes the host in its next batch slot, so it needs a time.
+  if (
+    job.suspendWake === "batched" &&
+    job.schedule.kind !== "at" &&
+    job.schedule.kind !== "every" &&
+    job.schedule.kind !== "cron"
+  ) {
+    throw new Error('cron suspendWake "batched" requires an at, every or cron schedule');
+  }
   // A one-shot or event job that cannot wake the host would be a silently late
   // reminder; only a recurring cadence has a next tick to catch up on.
   if (

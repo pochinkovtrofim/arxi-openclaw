@@ -173,6 +173,7 @@ describe("cron protocol validators", () => {
     expectCases(validateCronAddParams, true, [
       add({ suspendWake: "never" }),
       add({ suspendWake: "always" }),
+      add({ suspendWake: "batched" }),
     ]);
     expectCases(validateCronAddParams, false, [add({ suspendWake: "sometimes" })]);
     expectCases(validateCronUpdateParams, true, [update({ suspendWake: "never" })]);

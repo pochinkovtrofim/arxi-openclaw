@@ -11,7 +11,7 @@ export type CronAgentScope = {
  * suspend wake deadline; the job still runs once at the first scheduler pass
  * after any other wake. Omitted means "always".
  */
-type CronSuspendWake = "always" | "never";
+type CronSuspendWake = "always" | "never" | "batched";
 /** Invalid config-backed cron job captured for quarantine instead of runtime load. */
 export type QuarantinedCronConfigJob = {
   sourceIndex: number;

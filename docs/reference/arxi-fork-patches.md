@@ -123,8 +123,9 @@ or runtime layers merely because they existed in the previous history.
   receipts and resume kick the actor instead of clamping a timer. Run
   finalization still suspends consumed receipts in the worker transaction.
 - Suspend wake: the host deadline reads
-  `nextWakeAtMs(state, { suspendWakeOnly })`; `scheduledAutomation` admission
-  is set in `run-queue.ts`.
+  `nextWakeAtMs(state, { suspendWakeOnly })` and the batched one
+  `nextWakeAtMs(state, { batchedOnly })` (reported as `batchedAtMs`);
+  `scheduledAutomation` admission is set in `run-queue.ts`.
 - `gateway.suspend.status` no longer waits up to 15 s for draining writes
   (upstream's own wait); it still closes idle agent databases on `ready`.
   Upstream dropped incognito agent handles and the eviction option.

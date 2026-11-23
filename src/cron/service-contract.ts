@@ -26,7 +26,13 @@ import type { CronJob, CronPayload } from "./types.js";
 type CronWakeResult = { ok: true } | { ok: false; reason?: "unwakeable-session-key" };
 
 export type CronSuspendWakeSnapshot =
-  | { complete: true; nextWakeAtMs: number | null }
+  | {
+      complete: true;
+      /** The earliest exact wake obligation. */
+      nextWakeAtMs: number | null;
+      /** The earliest due run of a "batched" job: the host wakes for it in its next batch slot. */
+      batchedWakeAtMs?: number;
+    }
   | { complete: false };
 
 /** Result shape for direct/queued cron runs. */

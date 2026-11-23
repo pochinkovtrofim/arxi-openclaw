@@ -589,6 +589,7 @@ describe("normalizeCronJobPatch", () => {
 
   it("normalizes suspendWake without inventing a create-time default", () => {
     expect(createAgent({ suspendWake: " NEVER " }).suspendWake).toBe("never");
+    expect(createAgent({ suspendWake: "batched" }).suspendWake).toBe("batched");
     expect(createAgent({ suspendWake: "sometimes" })).not.toHaveProperty("suspendWake");
     expect(createAgent()).not.toHaveProperty("suspendWake");
     expect(normalizePatch({ suspendWake: "always" })).toEqual({ suspendWake: "always" });

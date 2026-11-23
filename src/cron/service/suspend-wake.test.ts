@@ -1,5 +1,6 @@
 // A suspendWake "never" cadence stays on the in-process timer, leaves the host
-// wake deadline, keeps due managed-Flow work as a wake, and catches up once.
+// wake deadline, keeps due managed-Flow work as a wake, and catches up once; a
+// "batched" one is reported as its own deadline for the host's batch slot.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRuntimeTaskFlow } from "../../plugins/runtime/runtime-taskflow.js";
 import { runOpenClawStateWriteTransaction } from "../../state/openclaw-state-db.js";
@@ -113,6 +114,40 @@ describe("cron suspend wake policy", () => {
       expect(service.getSuspendWakeSnapshot()).toEqual({
         complete: true,
         nextWakeAtMs: clock.now + 6 * HOUR_MS,
+      });
+    } finally {
+      service.stop();
+    }
+  });
+
+  it("reports a batched job's due run apart from the exact wake", async () => {
+    const { storePath } = await makeStorePath();
+    const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
+    await writeCronStoreSnapshot({
+      storePath,
+      jobs: [
+        watchJob({ now: clock.now, nextRunAtMs: clock.now + EVERY_MS, suspendWake: "batched" }),
+        watchJob({
+          now: clock.now,
+          nextRunAtMs: clock.now + 2 * EVERY_MS,
+          id: "look",
+          suspendWake: "batched",
+        }),
+        watchJob({
+          now: clock.now,
+          nextRunAtMs: clock.now + EVERY_MS,
+          id: "condition",
+          suspendWake: "never",
+        }),
+        watchJob({ now: clock.now, nextRunAtMs: clock.now + 6 * HOUR_MS, id: "reminder" }),
+      ],
+    });
+    const service = await startedService(storePath, clock);
+    try {
+      expect(service.getSuspendWakeSnapshot()).toEqual({
+        complete: true,
+        nextWakeAtMs: clock.now + 6 * HOUR_MS,
+        batchedWakeAtMs: clock.now + EVERY_MS,
       });
     } finally {
       service.stop();
@@ -320,6 +355,34 @@ describe("cron suspend wake policy", () => {
       expect(service.getSuspendWakeSnapshot()).toEqual({ complete: true, nextWakeAtMs: due });
     } finally {
       service.stop();
+    }
+  });
+
+  it("keeps a batched cadence on the timer and runs an overdue one once after resume", async () => {
+    const { storePath } = await makeStorePath();
+    const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
+    await writeCronStoreSnapshot({
+      storePath,
+      jobs: [
+        watchJob({ now: clock.now, nextRunAtMs: clock.now + EVERY_MS, suspendWake: "batched" }),
+      ],
+    });
+    const { state, run } = await startedState(storePath, clock);
+    try {
+      pauseScheduling(state);
+      expect(nextWakeAtMs(state)).toBe(clock.now + EVERY_MS);
+      expect(nextWakeAtMs(state, { suspendWakeOnly: true })).toBeUndefined();
+      expect(nextWakeAtMs(state, { batchedOnly: true })).toBe(clock.now + EVERY_MS);
+      // The host woke it half an hour later, in its batch slot.
+      clock.now += 30 * 60_000;
+      resumeScheduling(state);
+      await onTimer(state);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect((await loadCronStore(storePath)).jobs[0]?.state.nextRunAtMs).toBe(
+        clock.now + EVERY_MS,
+      );
+    } finally {
+      stop(state);
     }
   });
 

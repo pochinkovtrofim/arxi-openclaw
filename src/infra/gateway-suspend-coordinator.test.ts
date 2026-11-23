@@ -72,6 +72,26 @@ describe("gateway suspend coordinator", () => {
       status: "ready",
       wakeRequirement: { kind: "external-event-only" },
     });
+    if (externalOnly.status === "ready") {
+      expect(externalOnly.wakeRequirement).not.toHaveProperty("batchedAtMs");
+      expect(resumeGatewaySuspend(externalOnly.suspensionId)).toMatchObject({ ok: true });
+    }
+
+    const batchedOnly = prepareGatewaySuspend({
+      requestId: "request-batched-only",
+      pauseScheduling: vi.fn(),
+      resumeScheduling: vi.fn(),
+      inspect: inspectors(),
+      inspectWakeRequirement: () => ({
+        complete: true,
+        nextWakeAtMs: null,
+        batchedWakeAtMs: 1_700_000_000_000,
+      }),
+    });
+    expect(batchedOnly).toMatchObject({
+      status: "ready",
+      wakeRequirement: { kind: "external-event-only", batchedAtMs: 1_700_000_000_000 },
+    });
   });
 
   it("fails closed when the wake snapshot is incomplete", () => {

@@ -288,7 +288,7 @@ function normalizeWakeMode(raw: unknown) {
 
 function normalizeSuspendWake(raw: unknown) {
   const trimmed = normalizeOptionalLowercaseString(raw);
-  if (trimmed === "always" || trimmed === "never") {
+  if (trimmed === "always" || trimmed === "never" || trimmed === "batched") {
     return trimmed;
   }
   return undefined;

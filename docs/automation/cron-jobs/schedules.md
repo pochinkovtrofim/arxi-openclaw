@@ -84,6 +84,8 @@ A host that suspends an idle Gateway (for example a paused or stopped VM) asks `
 
 Set `suspendWake: "never"` on such a job to keep its cadence out of that deadline. The job still runs normally whenever the Gateway is awake; after a resume, an overdue `every` or `cron` job runs once at the first scheduler pass (one catch-up run, never a replay of every missed tick) and then continues on its cadence. Due managed-Flow work bound to a paced job (an exact reminder or an accepted obligation) remains a wake deadline even on a `"never"` job, so the host still wakes for it. The default `"always"` (or an omitted field) keeps today's behavior: the job's next run wakes the host. `"never"` is accepted only for `every` and `cron` schedules; a one-shot `at` job must keep `"always"`.
 
+`suspendWake: "batched"` is for a job that may run late but should not starve while the host sleeps, such as an agent's own recurring checks. Its next run is reported apart from the exact deadline (`batchedAtMs` in the wake requirement); the host wakes for it in its next batch slot, so one wake serves every batched job due by then, and the job then runs once and continues on its cadence while the Gateway is awake. Due managed-Flow work bound to a batched paced job stays an exact wake, as for `"never"`. `"batched"` is accepted for `at`, `every` and `cron` schedules.
+
 ### `/loop` chat shortcut
 
 In chat, the owner-only `/loop [interval] <prompt>` command creates a recurring agent-turn job bound to that conversation. Give an interval such as `5m` for fixed cadence, or omit it to let the loop self-pace between 1 minute and 1 hour with `next_check`. Use `/loop status` to list conversation-bound loops and `/loop stop [name]` to remove them.

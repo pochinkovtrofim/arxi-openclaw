@@ -197,7 +197,9 @@ Status returns `{"status":"running"}` when no suspension is held; querying a
 different active lease returns a conflict without exposing its identifiers.
 
 `wakeRequirement` is either the earliest enabled cron timestamp above or
-`{"kind":"external-event-only"}`. Every ready prepare or status result includes
+`{"kind":"external-event-only"}`. Either may carry `batchedAtMs`, the earliest
+due run of a `suspendWake: "batched"` job: the host wakes for it only in its own
+next batch slot, so one wake serves every batched job due by then. Every ready prepare or status result includes
 the same immutable wake requirement for that lease. A lifecycle snapshot that
 is not yet complete fails closed instead of allowing the host to sleep without
 an exact wake obligation.

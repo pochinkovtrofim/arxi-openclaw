@@ -43,7 +43,7 @@ const CRON_SCHEDULE_KINDS = ["at", "every", "cron", "stream", "event"] as const;
 // model-facing schema must not advertise them.
 const CRON_SCHEDULE_KINDS_TRIGGERS_DISABLED = ["at", "every", "cron"] as const;
 const CRON_WAKE_MODES = ["now", "next-heartbeat"] as const;
-const CRON_SUSPEND_WAKE_POLICIES = ["always", "never"] as const;
+const CRON_SUSPEND_WAKE_POLICIES = ["always", "never", "batched"] as const;
 const CRON_PAYLOAD_KINDS = ["systemEvent", "agentTurn", "script"] as const;
 const CRON_PAYLOAD_KINDS_TRIGGERS_DISABLED = ["systemEvent", "agentTurn"] as const;
 const CRON_DELIVERY_MODES = ["none", "announce", "webhook"] as const;
@@ -404,7 +404,7 @@ function buildCronToolSchema(options?: CronToolSchemaOptions): TSchema {
         wakeMode: optionalStringEnum(CRON_WAKE_MODES, { description: "Wake timing" }),
         suspendWake: optionalStringEnum(CRON_SUSPEND_WAKE_POLICIES, {
           description:
-            'Host wake while the Gateway is suspended: "always" (default) wakes it for this job; "never" skips the wake and runs the job at the first tick after the host wakes (every/cron only)',
+            'Host wake while the Gateway is suspended: "always" (default) wakes it for this job; "never" skips the wake and runs the job at the first tick after the host wakes (every/cron only); "batched" wakes it only in the host\'s next batch slot, together with other batched jobs',
         }),
         payload: createCronPayloadSchema({ triggersEnabled, management }),
         delivery: createCronDeliverySchema(),

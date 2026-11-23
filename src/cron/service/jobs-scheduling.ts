@@ -358,9 +358,12 @@ export function isTimeScheduledJob(job: Pick<CronJob, "schedule">): boolean {
   );
 }
 
-/** A job whose own cadence must not wake a suspended host; it runs at the first pass after any wake. */
+/**
+ * A job whose own cadence sets no exact host wake: "never" runs at the first pass after any wake,
+ * "batched" also wakes the host, but only in the host's next batch slot (see suspend snapshot).
+ */
 export function isSuspendWakeDeferredJob(job: Pick<CronJob, "suspendWake">): boolean {
-  return job.suspendWake === "never";
+  return job.suspendWake === "never" || job.suspendWake === "batched";
 }
 
 /** Computes the next run timestamp for enabled jobs across every/at/cron schedules. */
@@ -733,10 +736,13 @@ export function recomputeSingleJobForMaintenance(
   return changed;
 }
 
-/** Returns the next enabled wake timestamp from committed job rows. */
+/**
+ * Returns the next enabled wake timestamp from committed job rows: with suspendWakeOnly, of the
+ * jobs that wake a suspended host exactly; with batchedOnly, of the jobs it wakes in a batch slot.
+ */
 export function nextWakeAtMs(
   state: CronServiceState,
-  opts?: { suspendWakeOnly?: boolean },
+  opts?: { suspendWakeOnly?: boolean; batchedOnly?: boolean },
 ): number | undefined {
   let nextWake: number | undefined;
   for (const job of state.store?.jobs ?? []) {
@@ -747,7 +753,8 @@ export function nextWakeAtMs(
       hasScheduledNextRunAtMs(job.state.nextRunAtMs) &&
       // The scheduler still fires deferred jobs; only the host wake deadline
       // reported through suspension skips their cadence.
-      !(opts?.suspendWakeOnly && isSuspendWakeDeferredJob(job))
+      !(opts?.suspendWakeOnly && isSuspendWakeDeferredJob(job)) &&
+      (!opts?.batchedOnly || job.suspendWake === "batched")
     ) {
       nextWake = Math.min(nextWake ?? Infinity, job.state.nextRunAtMs);
     }
