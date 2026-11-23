@@ -24,6 +24,8 @@ export type AgentRunErrorIdentity = {
   providerRuntimeFailureKind?: string;
   providerErrorType?: string;
   httpStatus?: number;
+  /** When a subscription limit lifts, as epoch milliseconds, if the error knew it. */
+  resetAtMs?: number;
 };
 
 const TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/;
@@ -91,7 +93,18 @@ export function errorOrigin(error: unknown): string | undefined {
   return undefined;
 }
 
-function thrownFacts(value: unknown): { name?: string; code?: string; origin?: string } {
+function resetAtMs(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 8.64e15
+    ? value
+    : undefined;
+}
+
+function thrownFacts(value: unknown): {
+  name?: string;
+  code?: string;
+  origin?: string;
+  resetAtMs?: number;
+} {
   if (!(value instanceof Error)) {
     return {};
   }
@@ -100,6 +113,7 @@ function thrownFacts(value: unknown): { name?: string; code?: string; origin?: s
     name: token(value.name) ?? token(value.constructor?.name),
     code: token(typeof code === "number" ? String(code) : code),
     origin: errorOrigin(value),
+    resetAtMs: resetAtMs((value as { resetAtMs?: unknown }).resetAtMs),
   };
 }
 
@@ -129,6 +143,8 @@ export function describeAgentRunErrorIdentity(params: {
     providerRuntimeFailureKind: observation?.providerRuntimeFailureKind,
     providerErrorType: observation?.providerErrorType,
     httpStatus: observation?.httpStatus,
+    // A failover wrapper hides the usage-limit error one level down.
+    resetAtMs: thrown.resetAtMs ?? cause.resetAtMs,
   });
 }
 
@@ -148,6 +164,10 @@ export function normalizeAgentRunErrorIdentity(value: unknown): AgentRunErrorIde
   const status = source.httpStatus;
   if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599) {
     identity.httpStatus = status;
+  }
+  const reset = resetAtMs(source.resetAtMs);
+  if (reset) {
+    identity.resetAtMs = reset;
   }
   return Object.keys(identity).length > 0 ? identity : undefined;
 }

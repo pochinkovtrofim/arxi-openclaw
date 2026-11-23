@@ -73,6 +73,22 @@ describe("agent run error identity", () => {
     expect(normalizeAgentRunErrorIdentity("text")).toBeUndefined();
   });
 
+  it("keeps a reset time from the error or its cause, only as a safe integer", () => {
+    const cause = Object.assign(new Error("limit"), {
+      code: "subscription_limit",
+      resetAtMs: 1_800_000_000_000,
+    });
+    expect(describeAgentRunErrorIdentity({ error: new Error("wrapped", { cause }) })).toMatchObject(
+      { causeCode: "subscription_limit", resetAtMs: 1_800_000_000_000 },
+    );
+    for (const bad of [-1, 0, 1.5, Number.NaN, 9e15, "1800000000000"]) {
+      expect(normalizeAgentRunErrorIdentity({ code: "x", resetAtMs: bad })).toEqual({ code: "x" });
+    }
+    expect(normalizeAgentRunErrorIdentity({ resetAtMs: 1_800_000_000_000 })).toEqual({
+      resetAtMs: 1_800_000_000_000,
+    });
+  });
+
   it("reads the first frame outside dependencies", () => {
     const error = new Error("E");
     error.stack = "Error: E\n    at /x/node_modules/a.js:1:1\n    at C:\\app\\dist\\b.js:7:3";

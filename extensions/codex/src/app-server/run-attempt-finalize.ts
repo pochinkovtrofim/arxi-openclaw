@@ -222,7 +222,10 @@ export async function finalizeCodexAttempt(
         authProfileId: startupAuthProfileId,
         rateLimits: refreshedUsageLimitPromptError.rateLimitsForProfile,
       });
-      enrichedPromptError = new CodexUsageLimitPromptError(refreshedUsageLimitPromptError.message);
+      enrichedPromptError = new CodexUsageLimitPromptError(
+        refreshedUsageLimitPromptError.message,
+        refreshedUsageLimitPromptError.resetAtMs,
+      );
     } else if (
       enrichedPromptError instanceof CodexUsageLimitPromptError &&
       state.rateLimitsRevisionBeforeLastTurnStart !== undefined &&
