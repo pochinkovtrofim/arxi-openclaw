@@ -265,9 +265,10 @@ async function runRegisteredDreamingService(
         services = handle;
       },
     });
-    const settled = await Promise.allSettled(
-      [...starts.flatMap(({ mock }) => mock.results.map(({ value }) => value)), ...background],
-    );
+    const settled = await Promise.allSettled([
+      ...starts.flatMap(({ mock }) => mock.results.map(({ value }) => value)),
+      ...background,
+    ]);
     expect(settled.filter(({ status }) => status === "rejected")).toEqual([]);
     expect(logger.error).not.toHaveBeenCalled();
   } finally {
