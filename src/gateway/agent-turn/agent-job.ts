@@ -203,10 +203,17 @@ function mergeSnapshot(
   );
   const terminalDelivery = incoming.terminalDelivery ?? existing.terminalDelivery;
   const terminalReceipt = incoming.terminalReceipt ?? existing.terminalReceipt;
+  // What ended a failed run is known to its lifecycle; the RPC completion that
+  // closes it later knows only the status, so the identity outlives it.
+  const errorIdentity =
+    canonical.status === "ok"
+      ? undefined
+      : (canonical.errorIdentity ?? existing.errorIdentity ?? incoming.errorIdentity);
   // Terminal status precedence and producer reply evidence are independent;
   // a late sticky timeout must not erase the final reply (or vice versa).
   return {
     ...canonical,
+    errorIdentity,
     ...(terminalDelivery ? { terminalDelivery } : {}),
     ...(terminalReceipt ? { terminalReceipt } : {}),
     ...(terminalReply ? { terminalReply } : {}),
@@ -464,6 +471,12 @@ function parseDedupeObservation(
     timeoutPhase: payload?.timeoutPhase ?? resultMeta?.timeoutPhase,
     providerStarted: payload?.providerStarted ?? resultMeta?.providerStarted,
   });
+  // A run refused before it started has only this entry; its RPC error carries
+  // the identity (agentRunErrorShapeFromError).
+  const errorIdentity =
+    terminalOutcome.status === "ok"
+      ? undefined
+      : normalizeAgentRunErrorIdentity(asOptionalRecord(entry.error?.details)?.errorIdentity);
   return {
     state: "terminal",
     snapshot: {
@@ -471,6 +484,7 @@ function parseDedupeObservation(
       startedAt,
       endedAt,
       error: terminalOutcome.status === "ok" ? undefined : terminalOutcome.error,
+      ...(errorIdentity ? { errorIdentity } : {}),
       stopReason,
       livenessState,
       ...(payload?.yielded === true || resultMeta?.yielded === true ? { yielded: true } : {}),

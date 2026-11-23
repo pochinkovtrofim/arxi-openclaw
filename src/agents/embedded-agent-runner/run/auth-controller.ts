@@ -13,6 +13,7 @@ import {
   resolveSubscriptionAuthModeForProfiles,
 } from "../../auth-profiles.js";
 import { OAuthRefreshFailureError } from "../../auth-profiles/oauth-refresh-failure.js";
+import { resolveProfilesSubscriptionLimit } from "../../auth-profiles/usage-state.js";
 import { classifyFailoverReason } from "../../embedded-agent-helpers.js";
 import { FailoverError, resolveFailoverStatus } from "../../failover-error.js";
 import { shouldUseTransientCooldownProbeSlot } from "../../failover-policy.js";
@@ -467,6 +468,10 @@ export function createEmbeddedRunAuthController(params: {
     const messageForReason =
       failoverParams.message?.trim() ||
       (failoverParams.error ? formatErrorMessage(failoverParams.error).trim() : "");
+    // Every candidate's plan used up: the failure keeps the limit's name and reset.
+    const subscriptionLimit = failoverParams.allInCooldown
+      ? resolveProfilesSubscriptionLimit(params.authStore, params.profileCandidates, modelId)
+      : undefined;
     const code = failoverParams.error ? getFailoverErrorCode(failoverParams.error) : undefined;
     const reason = resolveAuthProfileFailoverReason({
       allInCooldown: failoverParams.allInCooldown,
@@ -506,6 +511,7 @@ export function createEmbeddedRunAuthController(params: {
         authMode,
         status: resolveFailoverStatus(reason, code),
         code,
+        ...subscriptionLimit,
         authProfileFailure: { allInCooldown: failoverParams.allInCooldown },
         cause: failoverParams.error,
       });
@@ -513,7 +519,7 @@ export function createEmbeddedRunAuthController(params: {
     if (failoverParams.error instanceof Error) {
       throw failoverParams.error;
     }
-    throw new Error(message);
+    throw Object.assign(new Error(message), subscriptionLimit);
   };
 
   const applyApiKeyInfo = async (

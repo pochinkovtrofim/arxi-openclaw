@@ -9,6 +9,7 @@ import {
   resetAuthProfileFailureState,
   getSoonestCooldownExpiry,
   isProfileInCooldown,
+  resolveProfilesSubscriptionLimit,
   resolveProfilesUnavailableReason,
   resolveProfileUnusableUntil,
   resolveProfileUnusableUntilForDisplay,
@@ -476,5 +477,64 @@ describe("auth profile usage state", () => {
       nowSpy.mockRestore();
     }
     expect(store.usageStats).toEqual({ primary: after });
+  });
+});
+
+describe("resolveProfilesSubscriptionLimit", () => {
+  const block = (
+    blockedUntil: number,
+    extra: Partial<ProfileUsageStats> = {},
+  ): ProfileUsageStats => ({
+    blockedUntil,
+    blockedReason: "subscription_limit",
+    blockedSource: "wham",
+    ...extra,
+  });
+  const store = (usageStats: Record<string, ProfileUsageStats>): AuthProfileStore => ({
+    version: 1,
+    profiles: Object.fromEntries(
+      Object.keys(usageStats).map((id) => [id, { type: "api_key", provider: "openai", key: "k" }]),
+    ),
+    usageStats,
+  });
+  const resolve = (usageStats: Record<string, ProfileUsageStats>, forModel?: string) =>
+    resolveProfilesSubscriptionLimit(store(usageStats), Object.keys(usageStats), forModel, now);
+
+  it("names the earliest reset when every profile's plan is used up", () => {
+    expect(resolve({ a: block(now + 7_200_000), b: block(now + 3_600_000) })).toEqual({
+      code: "subscription_limit",
+      resetAtMs: now + 3_600_000,
+    });
+  });
+
+  it("keeps the name through a transient cooldown beside the block", () => {
+    expect(resolve({ a: block(until + 1, cooldown("rate_limit")) })).toEqual({
+      code: "subscription_limit",
+      resetAtMs: until + 1,
+    });
+  });
+
+  it.each([
+    ["a transient rate limit", { a: cooldown("rate_limit") }],
+    ["an expired block", { a: block(now - 1, cooldown("rate_limit")) }],
+    [
+      "a disabled profile",
+      { a: block(until, { disabledUntil: until, disabledReason: "billing" }) },
+    ],
+    ["one profile cooled for another reason", { a: block(until), b: cooldown("rate_limit") }],
+    [
+      "a block for another model",
+      { a: block(until, { blockedModel: "other", blockedScope: "model" }) },
+    ],
+  ] as const)("is undefined for %s", (_name, usageStats) => {
+    expect(resolve({ ...usageStats }, "model")).toBeUndefined();
+  });
+
+  it("is undefined without profiles, or with a candidate that has none", () => {
+    expect(resolve({})).toBeUndefined();
+    const usageStats = { a: block(until) };
+    expect(resolveProfilesSubscriptionLimit(store(usageStats), ["a", undefined], "m", now)).toBe(
+      undefined,
+    );
   });
 });
