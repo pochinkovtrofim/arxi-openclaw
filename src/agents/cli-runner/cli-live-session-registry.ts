@@ -80,9 +80,17 @@ type CliLiveSessionRecord = {
 const liveSessions = resolveGlobalMap<string, CliLiveSessionRecord>(
   Symbol.for("openclaw.cliLiveSessions"),
   (sessions) => {
+    const errors: unknown[] = [];
     for (const record of [...sessions.values()]) {
-      record.handle.close("restart");
+      try {
+        record.handle.close("restart");
+      } catch (error) {
+        errors.push(error);
+      }
       retireRecord(record, "restart");
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, "Some CLI live sessions did not close on restart");
     }
   },
   "close-and-restart",

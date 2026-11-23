@@ -480,6 +480,8 @@ describe("generic plugin-owned live session registry", () => {
     const other = await createOwner();
     owner.register();
     other.register();
+    // A backend whose close does not report the end is retired all the same.
+    owner.close.mockImplementation(() => {});
     await drainGlobalSingletonLifecycleState("restart");
     expect(owner.close).toHaveBeenCalledWith("restart");
     expect(other.close).toHaveBeenCalledWith("restart");
@@ -487,6 +489,8 @@ describe("generic plugin-owned live session registry", () => {
     expect(other.capability.current()).toBeUndefined();
     // One conversation never has two processes: the next waits for the exit.
     const next = await createOwner({ sessionId: owner.sessionId });
+    expect(next.capability.current()).toBeUndefined();
+    expect(getCliLiveSessionStartReason(next.context)).toBe("restart");
     expect(() => next.register()).toThrow("cleanup has not settled");
     owner.exited.resolve();
     await vi.waitFor(() => next.register());
