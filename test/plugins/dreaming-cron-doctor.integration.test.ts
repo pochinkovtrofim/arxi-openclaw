@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import memoryCore from "../../extensions/memory-core/index.js";
+import { collectBackgroundTasks } from "../../extensions/memory-core/src/test-helpers.js";
 import {
   inspectCronJobsForDoctor,
   repairCronJobsForDoctor,
@@ -229,25 +230,26 @@ async function runRegisteredDreamingService(
 ) {
   const registry = createEmptyPluginRegistry();
   const starts: Array<{ mock: { results: Array<{ value: unknown }> } }> = [];
-  memoryCore.register(
-    createTestPluginApi({
-      id: "memory-core",
-      config,
-      logger,
-      runtime: createPluginRuntimeMock({ config: { current: () => config } }),
-      registerService(service) {
-        // Boot-path starts log failures instead of rejecting; observe them here.
-        starts.push(vi.spyOn(service, "start"));
-        registry.services.push({
-          pluginId: "memory-core",
-          origin: "bundled",
-          source: "memory-core/index.ts",
-          id: service.id,
-          service,
-        });
-      },
-    }),
-  );
+  const api = createTestPluginApi({
+    id: "memory-core",
+    config,
+    logger,
+    runtime: createPluginRuntimeMock({ config: { current: () => config } }),
+    registerService(service) {
+      // Boot-path starts log failures instead of rejecting; observe them here.
+      starts.push(vi.spyOn(service, "start"));
+      registry.services.push({
+        pluginId: "memory-core",
+        origin: "bundled",
+        source: "memory-core/index.ts",
+        id: service.id,
+        service,
+      });
+    },
+  });
+  // Service start leaves its cron reconcile in the background; the proof reads its outcome.
+  const background = collectBackgroundTasks(api.lifecycle);
+  memoryCore.register(api);
   if (!registry.services.some(({ id }) => id === "memory-core-dreaming")) {
     throw new Error("Memory Core did not register its dreaming service");
   }
@@ -263,9 +265,10 @@ async function runRegisteredDreamingService(
         services = handle;
       },
     });
-    const settled = await Promise.allSettled(
-      starts.flatMap(({ mock }) => mock.results.map(({ value }) => value)),
-    );
+    const settled = await Promise.allSettled([
+      ...starts.flatMap(({ mock }) => mock.results.map(({ value }) => value)),
+      ...background,
+    ]);
     expect(settled.filter(({ status }) => status === "rejected")).toEqual([]);
     expect(logger.error).not.toHaveBeenCalled();
   } finally {

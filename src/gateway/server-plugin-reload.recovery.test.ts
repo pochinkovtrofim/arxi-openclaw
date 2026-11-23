@@ -154,11 +154,12 @@ it("flushes failed candidate services before closing their shared resources", ()
 registerPluginRetainedWorkReloadTests(createRecoveryFixture);
 
 it.each(["commit", "rollback"] as const)(
-  "keeps service and lifecycle Cron getters current after %s",
+  "keeps service Cron getters current and expires lifecycle Cron handles after %s",
   async (outcome) => {
     let serviceGetter: OpenClawPluginServiceContext["getCron"];
     let hookGetter: PluginHookGatewayContext["getCron"];
     let hookSignal: PluginHookGatewayContext["abortSignal"];
+    let hookCron: ReturnType<NonNullable<PluginHookGatewayContext["getCron"]>>;
     const schedulers = ["first", "next"].map((name) => {
       const cron = new CronService({
         scheduler: createTestGatewayScheduler(),
@@ -195,6 +196,7 @@ it.each(["commit", "rollback"] as const)(
         });
         api.on("gateway_start", (_event, ctx) => {
           hookGetter = ctx.getCron;
+          hookCron = ctx.getCron?.();
           hookSignal = ctx.abortSignal;
         });
       },
@@ -206,14 +208,19 @@ it.each(["commit", "rollback"] as const)(
       await fixture.reload();
     }
     assert(serviceGetter && hookGetter);
-    expect(hookGetter()).toBe(first.cron);
+    // A hook's scheduler handle serves only that hook invocation (fork patch, #72):
+    // neither the getter nor a handle the hook kept reaches the scheduler afterwards.
+    const kept = hookCron;
+    assert(kept);
+    expect(() => hookGetter()).toThrow("no longer active");
+    await expect(Promise.resolve().then(() => kept.list())).rejects.toThrow("no longer active");
+    expect(first.list).not.toHaveBeenCalled();
     const stale = serviceGetter();
     assert(stale);
     await stale.list();
     expect(first.list).toHaveBeenCalledOnce();
 
     fixture.runtime.runtimeState.cronState.cron = next.cron;
-    expect(hookGetter()).toBe(next.cron);
     const current = serviceGetter();
     assert(current);
     await current.list();
