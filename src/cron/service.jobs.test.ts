@@ -321,7 +321,9 @@ describe("suspend wake policy", () => {
   const rejection = 'cron suspendWake "never" requires an every or cron schedule';
 
   it("stores batched on a one-shot and a recurring schedule", () => {
-    expect(createJob(fixtureState(), input({ suspendWake: "batched" })).suspendWake).toBe("batched");
+    expect(createJob(fixtureState(), input({ suspendWake: "batched" })).suspendWake).toBe(
+      "batched",
+    );
     expect(
       createJob(fixtureState(), input({ suspendWake: "batched", schedule: oneShot })).suspendWake,
     ).toBe("batched");

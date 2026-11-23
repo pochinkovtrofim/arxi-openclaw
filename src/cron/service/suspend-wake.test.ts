@@ -363,7 +363,9 @@ describe("cron suspend wake policy", () => {
     const clock = { now: Date.parse("2026-03-23T02:00:00.000Z") };
     await writeCronStoreSnapshot({
       storePath,
-      jobs: [watchJob({ now: clock.now, nextRunAtMs: clock.now + EVERY_MS, suspendWake: "batched" })],
+      jobs: [
+        watchJob({ now: clock.now, nextRunAtMs: clock.now + EVERY_MS, suspendWake: "batched" }),
+      ],
     });
     const { state, run } = await startedState(storePath, clock);
     try {
@@ -376,7 +378,9 @@ describe("cron suspend wake policy", () => {
       resumeScheduling(state);
       await onTimer(state);
       expect(run).toHaveBeenCalledTimes(1);
-      expect((await loadCronStore(storePath)).jobs[0]?.state.nextRunAtMs).toBe(clock.now + EVERY_MS);
+      expect((await loadCronStore(storePath)).jobs[0]?.state.nextRunAtMs).toBe(
+        clock.now + EVERY_MS,
+      );
     } finally {
       stop(state);
     }
