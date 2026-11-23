@@ -212,7 +212,7 @@ it.each(["commit", "rollback"] as const)(
     // neither the getter nor a handle the hook kept reaches the scheduler afterwards.
     assert(hookCron);
     expect(() => hookGetter()).toThrow("no longer active");
-    await expect(hookCron.list()).rejects.toThrow("no longer active");
+    await expect(Promise.resolve().then(() => hookCron.list())).rejects.toThrow("no longer active");
     expect(first.list).not.toHaveBeenCalled();
     const stale = serviceGetter();
     assert(stale);
