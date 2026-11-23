@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import memoryCore from "../../extensions/memory-core/index.js";
+import { collectBackgroundTasks } from "../../extensions/memory-core/src/test-helpers.js";
 import type { OpenClawConfig } from "../../src/config/types.openclaw.js";
 import { resolveCronJobEffectiveAgentId } from "../../src/cron/agent-id.js";
 import { CronService } from "../../src/cron/service.js";
@@ -37,25 +38,30 @@ afterEach(async () => {
 async function startDreaming(config: OpenClawConfig, getCronService: () => CronService) {
   const logger = createNoopLogger();
   const registry = createEmptyPluginRegistry();
-  memoryCore.register(
-    createTestPluginApi({
-      config,
-      logger,
-      runtime: createPluginRuntimeMock({ config: { current: () => config } }),
-      registerService(service) {
-        registry.services.push({
-          pluginId: "memory-core",
-          origin: "bundled",
-          source: "memory-core/index.ts",
-          id: service.id,
-          service,
-        });
-      },
-    }),
-  );
+  const api = createTestPluginApi({
+    config,
+    logger,
+    runtime: createPluginRuntimeMock({ config: { current: () => config } }),
+    registerService(service) {
+      registry.services.push({
+        pluginId: "memory-core",
+        origin: "bundled",
+        source: "memory-core/index.ts",
+        id: service.id,
+        service,
+      });
+    },
+  });
+  // Service start and reload leave their cron reconcile in the background.
+  const background = collectBackgroundTasks(api.lifecycle);
+  memoryCore.register(api);
   const handle = await startPluginServices({ scheduler, registry, config, getCronService });
   services.add(handle);
-  return { handle, logger };
+  const settle = async () => {
+    await Promise.allSettled(background);
+  };
+  await settle();
+  return { handle, logger, settle };
 }
 
 async function createScheduler(cronEnabled: boolean, owner?: string) {
@@ -102,11 +108,12 @@ it("creates one owned declaration after scheduling resumes and across service re
     },
   };
   let cron = await createScheduler(false, "qa");
-  const { handle, logger } = await startDreaming(config, () => cron);
+  const { handle, logger, settle } = await startDreaming(config, () => cron);
   expect(await cron.list({ includeDisabled: true })).toEqual([]);
 
   cron = await createScheduler(true, "qa");
   await handle.reload(config, new Set(["memory-core-dreaming"]));
+  await settle();
   const jobs = await cron.list({ includeDisabled: true });
   expect(jobs).toMatchObject([
     {
@@ -122,6 +129,7 @@ it("creates one owned declaration after scheduling resumes and across service re
   ]);
 
   await handle.reload(config, new Set(["memory-core-dreaming"]));
+  await settle();
   expect((await cron.list({ includeDisabled: true })).map((job) => job.id)).toEqual(
     jobs.map((job) => job.id),
   );

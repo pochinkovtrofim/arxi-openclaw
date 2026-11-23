@@ -159,6 +159,7 @@ it.each(["commit", "rollback"] as const)(
     let serviceGetter: OpenClawPluginServiceContext["getCron"];
     let hookGetter: PluginHookGatewayContext["getCron"];
     let hookSignal: PluginHookGatewayContext["abortSignal"];
+    let hookCron: ReturnType<NonNullable<PluginHookGatewayContext["getCron"]>>;
     const schedulers = ["first", "next"].map((name) => {
       const cron = new CronService({
         scheduler: createTestGatewayScheduler(),
@@ -195,6 +196,7 @@ it.each(["commit", "rollback"] as const)(
         });
         api.on("gateway_start", (_event, ctx) => {
           hookGetter = ctx.getCron;
+          hookCron = ctx.getCron?.();
           hookSignal = ctx.abortSignal;
         });
       },
@@ -206,14 +208,15 @@ it.each(["commit", "rollback"] as const)(
       await fixture.reload();
     }
     assert(serviceGetter && hookGetter);
-    expect(hookGetter()).toBe(first.cron);
+    // A hook's scheduler handle serves only that hook invocation (fork patch, #72).
+    expect(hookCron).toBeDefined();
+    expect(() => hookGetter?.()).toThrow("no longer active");
     const stale = serviceGetter();
     assert(stale);
     await stale.list();
     expect(first.list).toHaveBeenCalledOnce();
 
     fixture.runtime.runtimeState.cronState.cron = next.cron;
-    expect(hookGetter()).toBe(next.cron);
     const current = serviceGetter();
     assert(current);
     await current.list();
