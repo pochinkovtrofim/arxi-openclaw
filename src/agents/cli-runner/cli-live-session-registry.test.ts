@@ -5,6 +5,7 @@ import type {
   CliBackendLiveSessionHandle,
 } from "../../plugins/cli-backend.types.js";
 import type { InputProvenance } from "../../sessions/input-provenance.js";
+import { drainGlobalSingletonLifecycleState } from "../../shared/global-singleton.js";
 import { formatSkillsForPromptCore } from "../../skills/loading/skill-contract.js";
 import { materializeSkill } from "../../skills/loading/skill-materializer.js";
 import type { SkillSnapshot } from "../../skills/types.js";
@@ -472,6 +473,29 @@ describe("generic plugin-owned live session registry", () => {
       }
     },
   );
+
+  it("retires every live process when the Gateway restarts in place", async () => {
+    // The restart replaces the loopback MCP runtime a warm child was started with.
+    const owner = await createOwner({ deferExit: true });
+    const other = await createOwner();
+    owner.register();
+    other.register();
+    // A backend whose close does not report the end is retired all the same.
+    owner.close.mockImplementation(() => {});
+    await drainGlobalSingletonLifecycleState("restart");
+    expect(owner.close).toHaveBeenCalledWith("restart");
+    expect(other.close).toHaveBeenCalledWith("restart");
+    expect(owner.capability.current()).toBeUndefined();
+    expect(other.capability.current()).toBeUndefined();
+    // One conversation never has two processes: the next waits for the exit.
+    const next = await createOwner({ sessionId: owner.sessionId });
+    expect(next.capability.current()).toBeUndefined();
+    expect(getCliLiveSessionStartReason(next.context)).toBe("restart");
+    expect(() => next.register()).toThrow("cleanup has not settled");
+    owner.exited.resolve();
+    await vi.waitFor(() => next.register());
+    expect(next.capability.current()).toBe(next.session);
+  });
 
   it("joins natural retirement that starts while restart is awaiting the previous owner", async () => {
     const held = createDeferred();

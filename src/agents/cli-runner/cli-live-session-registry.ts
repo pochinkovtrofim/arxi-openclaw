@@ -6,6 +6,7 @@ import type {
   CliBackendLiveSessionHandle,
 } from "../../plugins/cli-backend.types.js";
 import { isSubagentSessionKey } from "../../sessions/session-key-utils.js";
+import { resolveGlobalMap } from "../../shared/global-singleton.js";
 import { runCliCleanup } from "./cleanup.js";
 import { createCliRunCurrentAssertion } from "./execution-target.js";
 import { createCliFailoverError } from "./exit-error.js";
@@ -55,6 +56,7 @@ type CliLiveSessionOwner = {
 };
 
 type CliLiveSessionRecord = {
+  ownerKey: string;
   handle: CliBackendLiveSessionHandle;
   owner: PreparedCliRunContext["preparedBackend"];
   approvalGrants: Set<string>;
@@ -69,7 +71,30 @@ type CliLiveSessionRecord = {
   };
 };
 
-const liveSessions = new Map<string, CliLiveSessionRecord>();
+// A Gateway restart in place keeps this process and its warm CLI children, but
+// replaces the loopback MCP runtime and bearers they were started with; the
+// fingerprint ignores the port and token, so a later turn would reuse a child
+// that can no longer reach its tools (2026-11-23 every run in the restarted
+// conversation hung). The restart and close lifecycles close and retire every
+// live process; its conversation starts a new one once the old one has exited.
+const liveSessions = resolveGlobalMap<string, CliLiveSessionRecord>(
+  Symbol.for("openclaw.cliLiveSessions"),
+  (sessions) => {
+    const errors: unknown[] = [];
+    for (const record of [...sessions.values()]) {
+      try {
+        record.handle.close("restart");
+      } catch (error) {
+        errors.push(error);
+      }
+      retireRecord(record, "restart");
+    }
+    if (errors.length > 0) {
+      throw new AggregateError(errors, "Some CLI live sessions did not close on restart");
+    }
+  },
+  "close-and-restart",
+);
 // Why each conversation's last process ended, and each live process's
 // fingerprint inputs: the next turn's start reason in the trace.
 const lastEndCause = new Map<string, CliBackendLiveSessionEndCause>();
@@ -115,6 +140,34 @@ export function getCliLiveSessionStartReason(
 }
 const retiredSessionCleanup = new Map<string, Promise<void>>();
 const retiringSessionHandles = new WeakSet<CliBackendLiveSessionHandle>();
+
+/** Takes a record out of the registry; its process-owned cleanup runs at exit. */
+function retireRecord(record: CliLiveSessionRecord, cause: CliBackendLiveSessionEndCause): void {
+  const { ownerKey, handle } = record;
+  if (liveSessions.get(ownerKey) !== record) {
+    return;
+  }
+  rememberEndCause(ownerKey, evictedHandles.has(handle) ? "evicted" : cause);
+  record.capture?.revoke();
+  liveSessions.delete(ownerKey);
+  record.approvalGrants.clear();
+  retiringSessionHandles.add(handle);
+  // Native runtime artifacts remain process-owned until its child exits.
+  record.cleanupPromise = Promise.resolve()
+    .then(() => handle.waitForExit())
+    .then(() => record.cleanup?.())
+    .then(() => {
+      retiringSessionHandles.delete(handle);
+      if (retiredSessionCleanup.get(ownerKey) === record.cleanupPromise) {
+        retiredSessionCleanup.delete(ownerKey);
+      }
+    });
+  // A fresh prepared context must still join the retired owner after a timeout.
+  retiredSessionCleanup.set(ownerKey, record.cleanupPromise);
+  void record.cleanupPromise.catch((error: unknown) => {
+    cliBackendLog.warn(`cli live session cleanup failed: ${String(error)}`);
+  });
+}
 
 function buildCliLiveRegistryKey(owner: CliLiveSessionOwner): string {
   return `${owner.backendId}:${buildCliLiveOwnerKey(owner)}`;
@@ -393,6 +446,7 @@ export function createCliLiveSessionCapability(params: {
       ensureCliLiveSessionCapacity(params.context);
       const cleanup = params.claimResources?.();
       const record: CliLiveSessionRecord = {
+        ownerKey,
         handle,
         owner: params.context.preparedBackend,
         approvalGrants: new Set(),
@@ -438,26 +492,7 @@ export function createCliLiveSessionCapability(params: {
       if (record?.handle !== handle) {
         return;
       }
-      rememberEndCause(ownerKey, evictedHandles.has(handle) ? "evicted" : (cause ?? "unspecified"));
-      record.capture?.revoke();
-      liveSessions.delete(ownerKey);
-      record.approvalGrants.clear();
-      retiringSessionHandles.add(handle);
-      // Native runtime artifacts remain process-owned until its child exits.
-      record.cleanupPromise = Promise.resolve()
-        .then(() => handle.waitForExit())
-        .then(() => record.cleanup?.())
-        .then(() => {
-          retiringSessionHandles.delete(handle);
-          if (retiredSessionCleanup.get(ownerKey) === record.cleanupPromise) {
-            retiredSessionCleanup.delete(ownerKey);
-          }
-        });
-      // A fresh prepared context must still join the retired owner after a timeout.
-      retiredSessionCleanup.set(ownerKey, record.cleanupPromise);
-      void record.cleanupPromise.catch((error: unknown) => {
-        cliBackendLog.warn(`cli live session cleanup failed: ${String(error)}`);
-      });
+      retireRecord(record, cause ?? "unspecified");
     },
   });
 }
