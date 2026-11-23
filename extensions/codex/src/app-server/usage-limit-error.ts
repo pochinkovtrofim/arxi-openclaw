@@ -14,6 +14,7 @@ import {
   rememberCodexRateLimitsRead,
 } from "./rate-limit-cache.js";
 import {
+  CODEX_USAGE_LIMIT_STATE_MISMATCH_MESSAGE,
   formatCodexUsageLimitErrorMessage,
   resolveCodexUsageLimitResetAtMs,
   shouldRefreshCodexRateLimitsForUsageLimitMessage,
@@ -30,12 +31,29 @@ type CodexUsageLimitErrorSource = {
 
 type CodexUsageLimitErrorResult = {
   message: string;
+  resetAtMs?: number;
   rateLimitsForProfile?: JsonValue;
 };
 
 // HTTP 429 alone is not subscription exhaustion and must not inherit its reset cooldown.
+// Its name and code are its identity for Ro's guest, which never reads the text:
+// `subscription_limit` means the Owner's own plan is used up and retrying cannot help.
+// A state mismatch (the limit was already lifted) is only a 429 and may be retried.
 export class CodexUsageLimitPromptError extends Error {
   readonly status = 429;
+  readonly code?: string;
+  readonly resetAtMs?: number;
+
+  constructor(message: string, resetAtMs?: number) {
+    super(message);
+    this.name = "CodexUsageLimitPromptError";
+    if (!message.startsWith(CODEX_USAGE_LIMIT_STATE_MISMATCH_MESSAGE)) {
+      this.code = "subscription_limit";
+      if (resetAtMs !== undefined) {
+        this.resetAtMs = resetAtMs;
+      }
+    }
+  }
 }
 
 export function resolveCodexPromptError(
@@ -43,7 +61,10 @@ export function resolveCodexPromptError(
 ): string | Error | undefined {
   const usageLimitMessage = formatCodexUsageLimitErrorMessage(source);
   if (usageLimitMessage) {
-    return new CodexUsageLimitPromptError(usageLimitMessage);
+    return new CodexUsageLimitPromptError(
+      usageLimitMessage,
+      resolveCodexUsageLimitResetAtMs(source.rateLimits),
+    );
   }
   // Native retry exhaustion is not a permanent model/configuration failure.
   // Preserve the provider facts before terminal projection drops the native envelope.
@@ -125,7 +146,10 @@ export async function resolveCodexTurnStartError(params: {
   );
   const usageLimit = await refreshCodexUsageLimitError({ ...params, source });
   if (usageLimit) {
-    return { ...usageLimit, promptError: new CodexUsageLimitPromptError(usageLimit.message) };
+    return {
+      ...usageLimit,
+      promptError: new CodexUsageLimitPromptError(usageLimit.message, usageLimit.resetAtMs),
+    };
   }
   // Startup RPC errors carry the same provider facts as terminal notifications.
   // Normalize them before the generic runner loses the native error envelope.
@@ -169,9 +193,11 @@ async function refreshCodexUsageLimitError(params: {
         rateLimitsAuthoritative: true,
       }) ?? initialMessage)
     : initialMessage;
+  const resetAtMs = resolveCodexUsageLimitResetAtMs(rateLimits ?? params.source.rateLimits);
   return message
     ? {
         message,
+        ...(resetAtMs !== undefined ? { resetAtMs } : {}),
         ...(rateLimits || params.source.rateLimitsTrustedForProfile
           ? { rateLimitsForProfile: rateLimits || params.source.rateLimits }
           : {}),
