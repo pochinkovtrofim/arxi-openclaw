@@ -31,6 +31,21 @@ describe("Claude CLI deferred OpenClaw tools", () => {
     ]);
   });
 
+  it("keeps Claude Code's ToolSearch beside the native tools, so a deferred tool can load", () => {
+    const managed = (config: Record<string, unknown>) =>
+      buildAnthropicCliBackend().resolveManagedNativeTools?.({
+        config: { plugins: { entries: { anthropic: { config } } } },
+        agentId: "main",
+      });
+    expect(managed({ managedNativeTools: { default: ["Bash"] }, deferredTools: ["theme"] })).toEqual([
+      "Bash",
+      "ToolSearch",
+    ]);
+    expect(managed({ managedNativeTools: { default: ["Bash"] } })).toEqual(["Bash"]);
+    // A run that keeps no native tool keeps none: its deferred tools stay loaded instead.
+    expect(managed({ deferredTools: ["theme"] })).toEqual([]);
+  });
+
   it("accepts a list of names in the plugin config and refuses anything else", () => {
     const check = (deferredTools: unknown) =>
       validateJsonSchemaValue({

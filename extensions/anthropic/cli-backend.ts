@@ -96,6 +96,9 @@ const CLAUDE_MANAGED_NATIVE_TOOLS = [
   "WebSearch",
 ] as const;
 
+/** Claude Code's own loader for tools kept behind its tool search. */
+const CLAUDE_TOOL_SEARCH = "ToolSearch";
+
 /** Operator selection under `plugins.entries.anthropic.config.managedNativeTools`. */
 function resolveClaudeManagedNativeTools(
   ctx: Parameters<NonNullable<CliBackendPlugin["resolveManagedNativeTools"]>>[0],
@@ -109,12 +112,17 @@ function resolveClaudeManagedNativeTools(
   const selected = Object.hasOwn(agents ?? {}, ctx.agentId)
     ? agents?.[ctx.agentId]
     : selection.default;
-  if (selected === "all") {
-    return [...CLAUDE_MANAGED_NATIVE_TOOLS];
-  }
-  return Array.isArray(selected)
-    ? CLAUDE_MANAGED_NATIVE_TOOLS.filter((name) => selected.includes(name))
-    : [];
+  const kept: readonly string[] =
+    selected === "all"
+      ? [...CLAUDE_MANAGED_NATIVE_TOOLS]
+      : Array.isArray(selected)
+        ? CLAUDE_MANAGED_NATIVE_TOOLS.filter((name) => selected.includes(name))
+        : [];
+  // Deferred OpenClaw tools load only through Claude Code's ToolSearch, which an
+  // explicit --tools list otherwise denies, switching tool search off.
+  return kept.length > 0 && resolveClaudeDeferredMcpTools(ctx).length > 0
+    ? [...kept, CLAUDE_TOOL_SEARCH]
+    : kept;
 }
 
 /** Operator selection under `plugins.entries.anthropic.config.deferredTools`. */
