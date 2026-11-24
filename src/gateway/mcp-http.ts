@@ -392,6 +392,9 @@ async function startMcpLoopbackServer(
                   tools: scopedTools.tools,
                   toolSchema: scopedTools.toolSchema,
                   ...(serverInstructions ? { serverInstructions } : {}),
+                  ...(requestContext.deferredTools
+                    ? { deferredTools: requestContext.deferredTools }
+                    : {}),
                   hookContext: {
                     agentId: scopedTools.agentId,
                     config: cfg,

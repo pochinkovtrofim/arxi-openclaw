@@ -84,6 +84,12 @@ export type McpLoopbackRequestContext = {
   toolsAllow?: string[];
   /** Host-minted search exclusion; independent of coding-tool authority in toolsAllow. */
   webSearchDisabled?: true;
+  /**
+   * Tool names (exact, or a prefix ending in `*`) that `tools/list` marks as
+   * loaded on demand for Claude Code's tool search. Presentation only: grants
+   * no tool and hides none, and tools/call is unchanged.
+   */
+  deferredTools?: string[];
   /** Canonical observed native authority; null awaits this turn's initialization. */
   nativeCronCreatorToolAllowlist?: string[] | null;
   /**

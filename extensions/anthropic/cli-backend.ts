@@ -117,6 +117,17 @@ function resolveClaudeManagedNativeTools(
     : [];
 }
 
+/** Operator selection under `plugins.entries.anthropic.config.deferredTools`. */
+function resolveClaudeDeferredMcpTools(
+  ctx: Parameters<NonNullable<CliBackendPlugin["resolveDeferredMcpTools"]>>[0],
+): readonly string[] {
+  const pluginConfig = ctx.config?.plugins?.entries?.anthropic?.config;
+  const selection = isRecord(pluginConfig) ? pluginConfig.deferredTools : undefined;
+  return Array.isArray(selection)
+    ? selection.filter((name): name is string => typeof name === "string" && name.trim() !== "")
+    : [];
+}
+
 const CLAUDE_CLI_MODEL_ENV = [
   "CLAUDE_CODE_SUBAGENT_MODEL",
   "CLAUDE_CODE_WORKFLOW_SUBAGENT_MODEL",
@@ -294,6 +305,7 @@ export function buildAnthropicCliBackend(
       appendClaudeCliToolNamingGuidance(systemPrompt, openClawMcpToolNames),
     projectNativeToolAuthority: projectClaudeNativeToolAuthority,
     resolveManagedNativeTools: resolveClaudeManagedNativeTools,
+    resolveDeferredMcpTools: resolveClaudeDeferredMcpTools,
     nativeDelegationTools: CLAUDE_DELEGATION_NATIVE_TOOLS,
     sideQuestionToolMode: "disabled",
     ownsNativeCompaction: true,

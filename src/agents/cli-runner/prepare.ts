@@ -706,6 +706,10 @@ async function prepareCliRunContextWithinReadFence(
           runtimePolicyAgentId: params.runtimePolicySessionKey ? policyAgentId : undefined,
           modelProvider,
           modelId,
+          deferredTools: backendResolved.resolveDeferredMcpTools?.({
+            config: runConfig,
+            agentId: sessionAgentId,
+          }),
         })
       : undefined;
   markStage("mcp-grant-context");
