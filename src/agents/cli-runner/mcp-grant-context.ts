@@ -163,6 +163,7 @@ export function buildCliMcpGrantContext(params: {
   modelProvider: string;
   modelId: string;
   toolsAllow?: string[];
+  deferredTools?: readonly string[];
 }): McpLoopbackRequestContext {
   const sessionKey = resolveCliMcpSessionKey(params.run, params.config, params.agentId);
   const runtimePolicySessionKey = normalizeOptionalString(params.run.runtimePolicySessionKey);
@@ -234,6 +235,8 @@ export function buildCliMcpGrantContext(params: {
     // loopback server enforces it on tools/list and tools/call.
     ...(params.toolsAllow ? { toolsAllow: params.toolsAllow } : {}),
     ...(params.run.toolOverrides?.webSearch === false ? { webSearchDisabled: true as const } : {}),
+    // Presentation only: which listed tools the CLI loads on demand.
+    ...(params.deferredTools?.length ? { deferredTools: [...params.deferredTools] } : {}),
     // Same enforcement point for the fallback delegation gate, so an
     // unrestricted run keeps its exact prior grant shape.
     ...(delegationCapability ? { delegationCapability } : {}),

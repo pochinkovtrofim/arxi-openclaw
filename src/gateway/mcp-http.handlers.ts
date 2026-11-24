@@ -94,6 +94,31 @@ async function fitLoopbackImages(
   );
 }
 
+// Claude Code reads this MCP `_meta` key per tool: false keeps the tool behind
+// its tool search even though the server entry loads everything up front.
+const CLAUDE_ALWAYS_LOAD_META = "anthropic/alwaysLoad";
+
+function matchesDeferredTool(name: string, patterns: readonly string[]): boolean {
+  return patterns.some((pattern) =>
+    pattern.endsWith("*") ? name.startsWith(pattern.slice(0, -1)) : name === pattern,
+  );
+}
+
+/** Marks the operator's deferred tools; the listed set and its schemas are unchanged. */
+export function markDeferredTools(
+  toolSchema: McpToolSchemaEntry[],
+  deferredTools: readonly string[] | undefined,
+): Array<McpToolSchemaEntry & { _meta?: Record<string, unknown> }> {
+  if (!deferredTools?.length) {
+    return toolSchema;
+  }
+  return toolSchema.map((tool) =>
+    matchesDeferredTool(tool.name, deferredTools)
+      ? { ...tool, _meta: { [CLAUDE_ALWAYS_LOAD_META]: false } }
+      : tool,
+  );
+}
+
 /** Handles one MCP loopback JSON-RPC message and returns a response or notification null. */
 export async function handleMcpJsonRpc(params: {
   message: JsonRpcRequest;
@@ -101,6 +126,8 @@ export async function handleMcpJsonRpc(params: {
   toolSchema: McpToolSchemaEntry[];
   /** Upstream guidance for bridged configured MCP servers, sent on initialize. */
   serverInstructions?: string;
+  /** Listed tools Claude Code loads on demand (exact names, or prefixes ending in `*`). */
+  deferredTools?: readonly string[];
   hookContext?: HookContext;
   signal?: AbortSignal;
   /** Revalidate short-lived client authority immediately before side effects. */
@@ -139,7 +166,7 @@ export async function handleMcpJsonRpc(params: {
     case "notifications/cancelled":
       return null;
     case "tools/list":
-      return jsonRpcResult(id, { tools: params.toolSchema });
+      return jsonRpcResult(id, { tools: markDeferredTools(params.toolSchema, params.deferredTools) });
     case "tools/call": {
       const requestedToolName =
         typeof methodParams?.name === "string" ? methodParams.name.trim() : "";

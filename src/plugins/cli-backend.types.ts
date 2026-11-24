@@ -566,6 +566,13 @@ type CliBackendPluginBase = {
     agentId: string;
   }) => readonly string[];
   /**
+   * Operator-selected OpenClaw tool names (exact, or a prefix ending in `*`)
+   * that the CLI loads only on demand through its own tool search. The loopback
+   * server marks them in `tools/list`; they stay callable, and the grant still
+   * decides which tools are listed at all. Unset keeps every tool loaded.
+   */
+  resolveDeferredMcpTools?: (ctx: { config?: OpenClawConfig; agentId: string }) => readonly string[];
+  /**
    * Native tools that hand work to descendant agents, such as Claude Code's
    * `Agent`. Kept ones are named in the run's delegation guidance.
    */

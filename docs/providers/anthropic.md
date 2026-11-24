@@ -1179,3 +1179,11 @@ orchestration, and its file, shell, and web tools) with
 `default` sets the list or `"all"`, and `agents.<id>` replaces it for one agent.
 Restricted, delegated, workspace-only, and explicitly capped runs keep no native
 tools. See [CLI backends](/gateway/cli-backends#keeping-claude-codes-own-tools-on-managed-turns).
+
+Large, rarely used OpenClaw tools can stay out of every request:
+`plugins.entries.anthropic.config.deferredTools` lists tool names, or prefixes
+ending in `*`, that Claude Code keeps behind its tool search (`ToolSearch`) and
+loads only when a task needs one. Their schemas then stop counting toward the
+cached prompt prefix. Claude Code's own `ToolSearch` loads them, so it joins the
+run's native tools; a run that keeps no native tools (see `managedNativeTools`)
+lists every tool loaded. Off by default; needs Claude Code 2.1.285 or later.

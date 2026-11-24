@@ -32,6 +32,7 @@ export type ResolvedCliBackend = Pick<
   | "toolAvailabilityEnforcement"
   | "projectNativeToolAuthority"
   | "resolveManagedNativeTools"
+  | "resolveDeferredMcpTools"
   | "nativeDelegationTools"
   | "nativeToolMode"
   | "hostOwnedTools"
@@ -262,6 +263,7 @@ export function resolveCliBackendConfig(
     toolAvailabilityEnforcement: backend.toolAvailabilityEnforcement,
     projectNativeToolAuthority: backend.projectNativeToolAuthority,
     resolveManagedNativeTools: backend.resolveManagedNativeTools,
+    resolveDeferredMcpTools: backend.resolveDeferredMcpTools,
     nativeDelegationTools: backend.nativeDelegationTools,
     nativeToolMode: backend.nativeToolMode,
     hostOwnedTools: backend.hostOwnedTools,

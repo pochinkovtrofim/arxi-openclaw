@@ -706,6 +706,14 @@ async function prepareCliRunContextWithinReadFence(
           runtimePolicyAgentId: params.runtimePolicySessionKey ? policyAgentId : undefined,
           modelProvider,
           modelId,
+          // Only a run that keeps the CLI's own ToolSearch can load a deferred
+          // tool; every other run lists all of them loaded.
+          deferredTools: params.cliToolAvailability?.native.includes("ToolSearch")
+            ? backendResolved.resolveDeferredMcpTools?.({
+                config: runConfig,
+                agentId: sessionAgentId,
+              })
+            : undefined,
         })
       : undefined;
   markStage("mcp-grant-context");

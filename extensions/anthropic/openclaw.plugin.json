@@ -416,6 +416,11 @@
           "sonnet": { "type": "string", "pattern": "^claude-" }
         }
       },
+      "deferredTools": {
+        "type": "array",
+        "uniqueItems": true,
+        "items": { "type": "string", "minLength": 1 }
+      },
       "managedNativeTools": {
         "type": "object",
         "additionalProperties": false,
@@ -455,6 +460,10 @@
     "sessionCatalog.enabled": {
       "label": "Discover Claude Code Sessions",
       "help": "List native Claude Code sessions in the sidebar from this Gateway and eligible paired nodes."
+    },
+    "deferredTools": {
+      "label": "OpenClaw Tools Loaded on Demand",
+      "help": "Off by default. OpenClaw tool names, or prefixes ending in *, that Claude Code keeps behind its tool search on claude-cli turns instead of sending their schemas with every request. They stay callable once Claude loads them. Takes effect only on runs that keep managed native tools, which then also keep Claude Code's ToolSearch. Suits large, rarely used tools; needs Claude Code 2.1.285 or later."
     },
     "managedNativeTools": {
       "label": "Claude Code Native Tools on Managed Turns",
