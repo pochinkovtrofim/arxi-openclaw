@@ -1184,4 +1184,6 @@ Large, rarely used OpenClaw tools can stay out of every request:
 `plugins.entries.anthropic.config.deferredTools` lists tool names, or prefixes
 ending in `*`, that Claude Code keeps behind its tool search (`ToolSearch`) and
 loads only when a task needs one. Their schemas then stop counting toward the
-cached prompt prefix. Off by default; needs Claude Code 2.1.285 or later.
+cached prompt prefix. Claude Code's own `ToolSearch` loads them, so it joins the
+run's native tools; a run that keeps no native tools (see `managedNativeTools`)
+lists every tool loaded. Off by default; needs Claude Code 2.1.285 or later.

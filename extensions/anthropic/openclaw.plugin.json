@@ -463,7 +463,7 @@
     },
     "deferredTools": {
       "label": "OpenClaw Tools Loaded on Demand",
-      "help": "Off by default. OpenClaw tool names, or prefixes ending in *, that Claude Code keeps behind its tool search on claude-cli turns instead of sending their schemas with every request. They stay callable once Claude loads them. Suits large, rarely used tools; needs Claude Code 2.1.285 or later."
+      "help": "Off by default. OpenClaw tool names, or prefixes ending in *, that Claude Code keeps behind its tool search on claude-cli turns instead of sending their schemas with every request. They stay callable once Claude loads them. Takes effect only on runs that keep managed native tools, which then also keep Claude Code's ToolSearch. Suits large, rarely used tools; needs Claude Code 2.1.285 or later."
     },
     "managedNativeTools": {
       "label": "Claude Code Native Tools on Managed Turns",
