@@ -11,6 +11,7 @@ import { wrapToolWithBeforeToolCallHook } from "../../agent-tools.before-tool-ca
 import { filterLocalModelLeanTools } from "../../local-model-lean.js";
 import { recordAgentCleanupFailure } from "../../run-cleanup-timeout.js";
 import { normalizeAgentRuntimeTools } from "../../runtime-plan/tools.js";
+import { resolveToolHookRequesterIdentity } from "../../tool-hook-requester.js";
 import { createRuntimeToolMatcher } from "../../tool-policy-match.js";
 import { replaceWithEffectiveToolAllowlist } from "../../tool-policy.js";
 import { filterRuntimeCompatibleTools } from "../../tool-schema-projection.js";
@@ -126,6 +127,10 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
       });
     },
   });
+  // senderId is only set from the verified inbound sender (sessionCtx.SenderId
+  // or the triggering run's sender on follow-ups). Cron/subagent/heartbeat runs
+  // leave it unset, so requester-scoped MCP stays fail-closed for those paths.
+  const requester = resolveToolHookRequesterIdentity(params.attempt);
   const bundleMcpAcquisition = bundleMcpEnabled
     ? await acquireSessionMcpRuntime({
         ...mcpConfig,
@@ -133,14 +138,11 @@ export async function prepareEmbeddedAttemptBundleTools(params: {
         sessionKey: params.attempt.sessionKey,
         agentId: params.setup.sessionAgentId,
         agentDir: params.agentDir,
-        // senderId is only set from the verified inbound sender (sessionCtx.SenderId
-        // or the triggering run's sender on follow-ups). Cron/subagent/heartbeat runs
-        // leave it unset, so requester-scoped MCP stays fail-closed for those paths.
-        requesterSenderId: params.attempt.senderId,
+        requesterSenderId: requester.senderId,
         agentAccountId: params.attempt.agentAccountId,
         messageChannel: params.attempt.messageChannel ?? params.attempt.messageProvider,
-        chatType: params.attempt.chatType,
-        conversationId: params.attempt.chatId ?? params.attempt.groupId ?? params.attempt.messageTo,
+        chatType: requester.chatType,
+        conversationId: requester.conversationId,
         runtimeGeneration: params.attempt.lifecycleGeneration,
         traceId: params.attempt.diagnosticTrace?.traceId,
       })
