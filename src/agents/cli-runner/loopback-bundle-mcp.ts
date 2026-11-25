@@ -13,8 +13,10 @@ import {
   applyEmbeddedAttemptToolsAllow,
   shouldCreateBundleMcpRuntimeForAttempt,
 } from "../embedded-agent-runner/run/attempt-tool-construction-plan.js";
+import { resolveToolHookRequesterIdentity } from "../tool-hook-requester.js";
 import type { AnyAgentTool } from "../tools/common.js";
 import { cliBackendLog } from "./log.js";
+import { cliRunToolHookRequesterSource } from "./mcp-grant-context.js";
 import type { resolveCliNativeMcpPolicy } from "./prepare-mcp.js";
 import type { RunCliAgentParams } from "./types.js";
 
@@ -85,6 +87,13 @@ export async function prepareCliLoopbackBundleMcp(params: {
   if (!enabled) {
     return undefined;
   }
+  // A connection carries the turn's conversation and verified sender, the same
+  // ones its tool hooks see: a server that binds authority to the conversation
+  // (an approved email, say) must get the call from the chat that approved it.
+  // Completions and automations have no sender and stay background. The run's
+  // generation and trace stay out, so a session's turns share one warm runtime;
+  // only a server that needs a sender lists differently on a senderless turn.
+  const requester = resolveToolHookRequesterIdentity(cliRunToolHookRequesterSource(run));
   let materialized: BundleMcpToolRuntime;
   try {
     const acquisition = await acquireSessionMcpRuntime({
@@ -93,11 +102,11 @@ export async function prepareCliLoopbackBundleMcp(params: {
       sessionKey: run.sessionKey,
       agentId: params.agentId,
       agentDir: params.agentDir,
-      // The catalog must not depend on which turn asks for it. Requester-scoped
-      // servers need a verified sender, which completions and automations lack.
-      requesterSenderId: undefined,
+      requesterSenderId: requester.senderId,
       agentAccountId: run.agentAccountId,
       messageChannel: run.messageChannel ?? run.messageProvider,
+      chatType: requester.chatType,
+      conversationId: requester.conversationId,
     });
     materialized = await materializeBundleMcpToolsForRun({
       ...acquisition,

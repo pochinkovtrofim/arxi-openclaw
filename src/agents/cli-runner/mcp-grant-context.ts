@@ -11,7 +11,7 @@ import {
 import type { DelegationCapability } from "../delegation-capability.js";
 import { SESSION_PERMISSION_BY_EXEC_MODE } from "../session-permission-exec-mode.js";
 import { resolveStoredSessionPermissionPolicy } from "../tool-fs-policy.js";
-import { buildToolHookRequester } from "../tool-hook-requester.js";
+import { buildToolHookRequester, type ToolHookRequesterSource } from "../tool-hook-requester.js";
 import { buildCliRunOrigin } from "./prompt-hook-context.js";
 import type { RunCliAgentParams } from "./types.js";
 
@@ -141,6 +141,39 @@ function buildCliMcpChannelContext(
   };
 }
 
+/**
+ * The run facts a CLI turn's tool hook requester and its bundle MCP acquisition
+ * (loopback-bundle-mcp.ts) are both built from, so the hook and the MCP call
+ * name the same conversation and sender.
+ */
+export function cliRunToolHookRequesterSource(
+  run: Pick<
+    RunCliAgentParams,
+    | "chatId"
+    | "groupId"
+    | "currentChannelId"
+    | "chatType"
+    | "senderId"
+    | "senderIsOwner"
+    | "agentAccountId"
+    | "messageChannel"
+    | "messageProvider"
+  >,
+): ToolHookRequesterSource {
+  return {
+    chatId: run.chatId,
+    groupId: run.groupId,
+    // currentChannelId is the reply target an embedded attempt calls messageTo.
+    messageTo: normalizeOptionalString(run.currentChannelId),
+    chatType: run.chatType,
+    senderId: run.senderId,
+    senderIsOwner: run.senderIsOwner,
+    agentAccountId: run.agentAccountId,
+    messageChannel: run.messageChannel,
+    messageProvider: run.messageProvider,
+  };
+}
+
 function resolveCliMcpSessionKey(
   run: Pick<RunCliAgentParams, "sessionKey">,
   config: OpenClawConfig,
@@ -189,18 +222,7 @@ export function buildCliMcpGrantContext(params: {
     params.run.messageChannel ?? params.run.messageProvider,
   );
   const currentChannelId = normalizeOptionalString(params.run.currentChannelId);
-  // currentChannelId is the reply target an embedded attempt calls messageTo.
-  const requester = buildToolHookRequester({
-    chatId: params.run.chatId,
-    groupId: params.run.groupId,
-    messageTo: currentChannelId,
-    chatType: params.run.chatType,
-    senderId: params.run.senderId,
-    senderIsOwner: params.run.senderIsOwner,
-    agentAccountId: params.run.agentAccountId,
-    messageChannel: params.run.messageChannel,
-    messageProvider: params.run.messageProvider,
-  });
+  const requester = buildToolHookRequester(cliRunToolHookRequesterSource(params.run));
   const runOrigin = buildCliRunOrigin(params.run);
   const grantedToolsAllow = params.run.cliToolAvailability?.openClaw ?? params.toolsAllow;
   const delegationCapability = readCliMcpDelegationCapability(params.run);
