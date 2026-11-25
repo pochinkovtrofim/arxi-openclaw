@@ -194,6 +194,29 @@ describe("rendered skills diagnostics", () => {
     expect(reportSkills(systemPrompt).entries.map(({ name }) => name)).toEqual([]);
   });
 
+  it("ends the workspace files at the builder's Tooling section", () => {
+    const systemPrompt = buildAgentSystemPrompt({
+      workspaceDir: "/workspace",
+      toolNames: ["read"],
+      skillsPrompt: catalog,
+      contextFiles: [{ path: "/workspace/AGENTS.md", content: "## Tooling\nmine" }],
+    });
+    const report = buildSystemPromptReport({
+      source: "run",
+      generatedAt: 0,
+      bootstrapMaxChars: 20_000,
+      systemPrompt,
+      injectedWorkspaceFiles: [],
+      skillsPrompt: catalog,
+      tools: [],
+    });
+    const files = systemPrompt.indexOf("\n# Project Context\n");
+    const tooling = systemPrompt.lastIndexOf("\n## Tooling\nTools policy-filtered.");
+    expect(files).toBeGreaterThan(0);
+    expect(report.systemPrompt.projectContextChars).toBe(tooling - files);
+    expect(report.skills.promptChars).toBe(catalog.length);
+  });
+
   it("finds the rendered catalog after provider Project Context guidance", () => {
     const systemPrompt = buildAgentSystemPrompt({
       workspaceDir: "/workspace",

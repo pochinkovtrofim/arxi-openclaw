@@ -84,6 +84,12 @@ export function buildSystemPromptToolLines(params: SystemPromptToolListParams): 
   });
 }
 
+/** The first lines of the builder's own Tooling section. */
+export const TOOLING_SECTION_OPENING = [
+  "## Tooling",
+  "Tools policy-filtered. Names case-sensitive; call exact.",
+] as const;
+
 /** Tool availability and setup guidance share the admitted prompt surface. */
 export function buildSystemPromptToolingSection(params: {
   includeToolGuidance: boolean;
@@ -103,8 +109,7 @@ export function buildSystemPromptToolingSection(params: {
   return [
     ...(includeToolGuidance
       ? [
-          "## Tooling",
-          "Tools policy-filtered. Names case-sensitive; call exact.",
+          ...TOOLING_SECTION_OPENING,
           toolLines.length > 0
             ? toolLines.join("\n")
             : buildOpenClawToolFallbackText({

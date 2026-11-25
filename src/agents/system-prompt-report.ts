@@ -12,6 +12,7 @@ import { sha256Hex } from "@openclaw/normalization-core/node-crypto";
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
 import { pruneMapToMaxSize } from "../infra/map-size.js";
 import type { BootstrapInjectionStat } from "./bootstrap-budget.types.js";
+import { TOOLING_SECTION_OPENING } from "./system-prompt-tool-list.js";
 type PromptReportTool = { name: string; parameters: unknown; description?: string; label?: string };
 
 type ToolReportEntry = SessionSystemPromptReport["tools"]["entries"][number];
@@ -94,14 +95,28 @@ function buildToolsEntries(
   });
 }
 
+const PROJECT_CONTEXT_START = "\n# Project Context\n";
+
+// Arxi renders the workspace files at the head of the suffix below the cache
+// boundary (system-prompt.ts), so that boundary no longer ends them. The
+// builder's own Tooling section is the first thing after them, and it is
+// rendered whenever Skills is; a file's own headings come before it.
+function renderedProjectContextEnd(prompt: string, start: number): number {
+  const tooling = prompt.lastIndexOf(`\n${TOOLING_SECTION_OPENING.join("\n")}\n`);
+  return tooling > start ? tooling : -1;
+}
+
 function measureRenderedProjectContextChars(systemPrompt: string): number {
   // Project Context ends before the run-scoped capability and catalog instructions.
-  const startMarker = "\n# Project Context\n";
-  const start = systemPrompt.indexOf(startMarker);
+  const start = systemPrompt.indexOf(PROJECT_CONTEXT_START);
   if (start === -1) {
     return 0;
   }
-  const end = systemPrompt.indexOf(SYSTEM_PROMPT_CACHE_BOUNDARY, start + startMarker.length);
+  const boundary = systemPrompt.indexOf(
+    SYSTEM_PROMPT_CACHE_BOUNDARY,
+    start + PROJECT_CONTEXT_START.length,
+  );
+  const end = boundary === -1 ? renderedProjectContextEnd(systemPrompt, start) : boundary;
   return (end === -1 ? systemPrompt.length : end) - start;
 }
 
@@ -112,7 +127,15 @@ function resolveRenderedSkillsPrompt(systemPrompt: string, skillsPrompt: string)
   }
   // The renderer places the catalog after this boundary. Workspace examples and
   // provider headings in the stable prefix are not the rendered Skills section.
-  const prompt = splitSystemPromptCacheBoundary(systemPrompt)?.dynamicSuffix ?? systemPrompt;
+  const suffix = splitSystemPromptCacheBoundary(systemPrompt)?.dynamicSuffix ?? systemPrompt;
+  // Nor is a workspace file's own Skills heading in the suffix: with the files
+  // there, the rendered section stands after them.
+  const files = suffix.indexOf(PROJECT_CONTEXT_START);
+  const filesEnd = files === -1 ? 0 : renderedProjectContextEnd(suffix, files);
+  if (filesEnd === -1) {
+    return "";
+  }
+  const prompt = suffix.slice(filesEnd);
   for (const heading of prompt.matchAll(/(?:^|\n)## Skills\n/g)) {
     const sectionStart = heading.index + heading[0].length;
     const catalogStart = prompt.indexOf(catalog, sectionStart);
