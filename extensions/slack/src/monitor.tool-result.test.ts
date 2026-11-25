@@ -36,10 +36,20 @@ import type { SlackMessageEvent } from "./types.js";
 const mediaFetchMock = vi.hoisted(() =>
   vi.fn<typeof import("./monitor/media.runtime.js").fetchWithRuntimeDispatcher>(),
 );
-vi.mock("./monitor/media.runtime.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./monitor/media.runtime.js")>()),
-  fetchWithRuntimeDispatcher: mediaFetchMock,
-}));
+vi.mock("./monitor/media.runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./monitor/media.runtime.js")>();
+  return {
+    ...actual,
+    fetchWithRuntimeDispatcher: mediaFetchMock,
+    // The download resolves the host before it fetches. A fixed public address
+    // keeps these tests off real DNS, which a build without a network lacks.
+    saveRemoteMedia: (options: Parameters<typeof actual.saveRemoteMedia>[0]) =>
+      actual.saveRemoteMedia({
+        ...options,
+        lookupFn: async () => [{ address: "93.184.216.34", family: 4 }],
+      }),
+  };
+});
 const { monitorSlackProvider } = await import("./monitor/provider.js");
 const slackTestState = getSlackTestState();
 const { sendMock, replyMock, reactMock, reactionAddMock, upsertPairingRequestMock } =

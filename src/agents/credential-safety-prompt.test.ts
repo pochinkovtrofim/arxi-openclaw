@@ -1,7 +1,33 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildCredentialSafetyPrompt } from "./credential-safety-prompt.js";
 
 describe("buildCredentialSafetyPrompt", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("lets Ro's owner send keys in their chat and still keeps them out of visible text", () => {
+    vi.stubEnv("ARXI_CHANNEL_TARGET", "owner");
+    for (const input of [
+      { controlToolsAvailable: false },
+      { controlToolsAvailable: true },
+      undefined,
+    ]) {
+      const prompt = buildCredentialSafetyPrompt(input);
+      expect(prompt).toContain("ordinary input");
+      expect(prompt).toContain("Never echo it");
+      expect(prompt).toContain("Never place or suggest credentials/secrets in commands");
+      expect(prompt).not.toMatch(
+        /Never request|never ask users|masked credential entry|Never collect/,
+      );
+    }
+  });
+
+  it("keeps the strict lines for Ro's group runtime", () => {
+    vi.stubEnv("ARXI_CHANNEL_TARGET", "group");
+    expect(buildCredentialSafetyPrompt({ controlToolsAvailable: true })).toContain(
+      "Never request or echo credentials/secrets",
+    );
+  });
+
   it.each([
     { name: "unavailable controls", input: { controlToolsAvailable: false }, terminalSetup: true },
     { name: "available controls", input: { controlToolsAvailable: true }, terminalSetup: false },

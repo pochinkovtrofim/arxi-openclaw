@@ -65,11 +65,9 @@ describe("buildAgentSystemPrompt", () => {
     );
     vi.stubEnv("ARXI_CHANNEL_TARGET", "group");
     try {
-      expect(renderPrompt({}).split("\n")[0]).toBe(
-        "You are Ro, a personal assistant running inside OpenClaw.",
-      );
+      expect(renderPrompt({}).split("\n")[0]).toBe("You are Ro, running inside OpenClaw.");
       expect(buildAgentSystemPrompt({ workspaceDir: "/tmp/openclaw", promptMode: "none" })).toMatch(
-        /^You are Ro, a personal assistant running inside OpenClaw\./,
+        /^You are Ro, running inside OpenClaw\./,
       );
     } finally {
       vi.unstubAllEnvs();

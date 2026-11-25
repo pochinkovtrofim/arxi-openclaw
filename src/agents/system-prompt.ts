@@ -99,12 +99,13 @@ function joinPromptLines(lines: readonly PromptLine[]): string {
     .join("\n");
 }
 
-// Arxi runs the agent as Ro; her persona files say so, and the opening line
-// should not name her a generic assistant.
+// Arxi runs the agent as Ro; her persona files say who she is, so the opening
+// line names her and gives her no role: "assistant" is the register her
+// character is written against.
 function assistantIdentityLine(): string {
   const target = process.env.ARXI_CHANNEL_TARGET;
   return target === "owner" || target === "group"
-    ? "You are Ro, a personal assistant running inside OpenClaw."
+    ? "You are Ro, running inside OpenClaw."
     : "You are a personal assistant running inside OpenClaw.";
 }
 
