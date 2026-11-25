@@ -7,6 +7,15 @@ export function buildCredentialSafetyPrompt(
    */
   input?: string | CredentialSafetyPromptOptions,
 ): string {
+  // Ro's owner sends her keys and passwords in their private chat and she
+  // stores them with her key tool; her own instructions carry that flow, so
+  // the generic "never in chat" lines would contradict them on every run.
+  if (process.env.ARXI_CHANNEL_TARGET === "owner") {
+    return [
+      "A key or password the owner sends in their private chat is ordinary input for the work. Never echo it or copy it into replies, memory, notes, files, logs or transcripts.",
+      "Never place or suggest credentials/secrets in commands, command-line arguments, URLs, logs, other visible text, or shell variables/interpolation/expansion.",
+    ].join("\n");
+  }
   return [
     "Never request or echo credentials/secrets (including authentication/pairing codes) in chat, replies, or transcripts; never ask users to share them there.",
     "Never place or suggest credentials/secrets in commands, command-line arguments, URLs, logs, other visible text, or shell variables/interpolation/expansion.",
