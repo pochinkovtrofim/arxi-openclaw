@@ -6,12 +6,18 @@ describe("buildCredentialSafetyPrompt", () => {
 
   it("lets Ro's owner send keys in their chat and still keeps them out of visible text", () => {
     vi.stubEnv("ARXI_CHANNEL_TARGET", "owner");
-    for (const input of [{ controlToolsAvailable: false }, { controlToolsAvailable: true }, undefined]) {
+    for (const input of [
+      { controlToolsAvailable: false },
+      { controlToolsAvailable: true },
+      undefined,
+    ]) {
       const prompt = buildCredentialSafetyPrompt(input);
       expect(prompt).toContain("ordinary input");
       expect(prompt).toContain("Never echo it");
       expect(prompt).toContain("Never place or suggest credentials/secrets in commands");
-      expect(prompt).not.toMatch(/Never request|never ask users|masked credential entry|Never collect/);
+      expect(prompt).not.toMatch(
+        /Never request|never ask users|masked credential entry|Never collect/,
+      );
     }
   });
 
