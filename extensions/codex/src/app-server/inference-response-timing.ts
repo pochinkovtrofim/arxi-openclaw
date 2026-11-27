@@ -66,6 +66,12 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
   let responseId: string | undefined;
   let firstOutputAt: number | undefined;
   let finished = false;
+  // An output event counts from the moment its type is known, not when its data ends.
+  const announce = (type: string) => {
+    if (!finished && !PREAMBLE.has(type) && !TERMINAL.has(type) && type !== "error") {
+      firstOutputAt ??= now();
+    }
+  };
   const event = (type: string | undefined, data: () => string | undefined) => {
     if (finished || !type) {
       return;
@@ -127,6 +133,7 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
           data = [];
         } else if (text.startsWith("event:")) {
           eventType = text.slice(6).trim();
+          announce(eventType);
         } else if (text.startsWith("data:")) {
           // Only the events whose id is read keep their data; an output delta does not.
           if (

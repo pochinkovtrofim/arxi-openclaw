@@ -97,13 +97,14 @@ describe("CodexAppServerEventProjector usage projection", () => {
         traceFlags: "01",
       },
     });
-    let clock = 1_000;
-    const relay = createCodexResponseTimingObserver(1_000, () => clock);
-    clock = 1_040;
+    const base = Date.now();
+    let clock = base;
+    const relay = createCodexResponseTimingObserver(base, () => clock);
+    clock = base + 40;
     relay.frame(Buffer.from('{"type":"response.created","response":{"id":"response-timed"}}'));
-    clock = 1_900;
+    clock = base + 900;
     relay.frame(Buffer.from('{"type":"response.output_item.added","item":{}}'));
-    clock = 4_200;
+    clock = base + 3_200;
     relay.frame(Buffer.from('{"type":"response.completed","response":{"id":"response-timed"}}'));
 
     try {
