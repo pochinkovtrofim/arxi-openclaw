@@ -733,19 +733,21 @@ export async function resolveGatewayScopedTools(
       builtComputer: openClawTools.find((tool) => tool.name === "computer"),
       finalizeTools,
     }),
-    // Only the MCP owner knows which tools survived its grant and schema gates.
-    captureFinalCronCreatorTools: cronCreatorToolAllowlistCaptureRef
-      ? (callableToolNames: ReadonlySet<string>) =>
-          captureFinalEffectiveCronCreatorToolAllowlist(
-            cronCreatorToolAllowlist,
-            cronCreatorToolAllowlistCaptureRef,
-            inheritableTools.filter((tool) => callableToolNames.has(tool.name.trim())),
-            (tool) => getPluginToolMeta(tool),
-            {
-              ...nativeCapture,
-              canonicalToolNames: nativeCreatorTools.map((tool) => tool.name),
-            },
-          )
-      : undefined,
+    // Spawned sessions and created Automations inherit only the grant's callable tools.
+    captureFinalCallableTools: (callableToolNames: ReadonlySet<string>) => {
+      const callable = inheritableTools.filter((tool) => callableToolNames.has(tool.name.trim()));
+      if (shouldInheritEffectiveToolAllowlist) {
+        replaceWithEffectiveToolAllowlist(inheritedToolAllowlist, callable);
+      }
+      if (cronCreatorToolAllowlistCaptureRef) {
+        captureFinalEffectiveCronCreatorToolAllowlist(
+          cronCreatorToolAllowlist,
+          cronCreatorToolAllowlistCaptureRef,
+          callable,
+          (tool) => getPluginToolMeta(tool),
+          { ...nativeCapture, canonicalToolNames: nativeCreatorTools.map((tool) => tool.name) },
+        );
+      }
+    },
   };
 }

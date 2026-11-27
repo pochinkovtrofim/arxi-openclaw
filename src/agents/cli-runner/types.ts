@@ -163,6 +163,11 @@ export type RunCliAgentParams = {
   bashElevated?: ExecElevatedDefaults;
   /** Runtime tool allow-list. CLI harnesses need a backend-owned exact translation. */
   toolsAllow?: string[];
+  /**
+   * A scheduled run's cap, enforced when a tool is called while the run lists the
+   * uncapped surface, so capped and uncapped runs share one prompt prefix.
+   */
+  executionToolsAllow?: string[];
   skillLibraryAuthoring?: import("../../skills/library/authoring.js").SkillLibraryAuthoringCapability;
   /** Server-authored origin for fresh automation mutations from this CLI run. */
   cronCreatorCallerOrigin?: CronScheduledToolCallerOrigin;

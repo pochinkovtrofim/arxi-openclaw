@@ -1,5 +1,9 @@
 import type { ResolvedCliBackend } from "../cli-backends.js";
 import { prepareConversationCapabilityProfile } from "../conversation-capability-profile.js";
+import {
+  isCoreCodingSurfaceToolName,
+  listCoreToolFactoryDescriptors,
+} from "../core-tool-factory-descriptors.js";
 import { applyEmbeddedAttemptToolsAllow } from "../embedded-agent-runner/run/attempt-tool-construction-plan.js";
 import { resolveExecConfigState } from "../exec-defaults.js";
 import { resolveEffectiveToolFsWorkspaceOnly } from "../tool-fs-policy.js";
@@ -20,6 +24,7 @@ export async function resolveCliRuntimeToolPolicy(input: {
   canEnforceExactToolAvailability: boolean;
   projectNativeToolAuthority?: ResolvedCliBackend["projectNativeToolAuthority"];
   resolveManagedNativeTools?: ResolvedCliBackend["resolveManagedNativeTools"];
+  capabilityFreeNativeTools?: ResolvedCliBackend["capabilityFreeNativeTools"];
   sideQuestionToolMode?: ResolvedCliBackend["sideQuestionToolMode"];
   isSideQuestion: boolean;
   skipsTurnPreparation: boolean;
@@ -31,31 +36,42 @@ export async function resolveCliRuntimeToolPolicy(input: {
   let { params } = input;
   let runtimeToolsAllowPolicy: string[] | undefined;
   let managedNativeTools: string[] = [];
+  // A scheduled cap that names no shell or file tool lists the run's uncapped surface
+  // and is enforced when a tool is called, so Owner Automations share Ro's prompt prefix.
+  let executionToolsAllow: string[] | undefined;
+  const applyExactToolsAllow = (toolsAllow: string[]) => {
+    runtimeToolsAllowPolicy = [...toolsAllow];
+    const fallbackOpenClawTools = expandToolGroups(toolsAllow);
+    if (fallbackOpenClawTools.includes("write") && !fallbackOpenClawTools.includes("apply_patch")) {
+      fallbackOpenClawTools.push("apply_patch");
+    }
+    params = {
+      ...params,
+      toolsAllow: undefined,
+      cliToolAvailability: {
+        native: [],
+        // Preserve the prior normalized fallback for modes without a catalog;
+        // catalog-backed paths replace it with exact names below.
+        openClaw: fallbackOpenClawTools,
+      },
+    };
+  };
   if (params.toolsAllow !== undefined) {
     if (params.cliToolAvailability !== undefined) {
       throw new Error(`CLI backend ${input.backendId} received conflicting runtime tool policies`);
     }
     if (params.toolsAllow.some((toolName) => normalizeToolPolicyName(toolName) === "*")) {
       params = { ...params, toolsAllow: undefined };
+    } else if (
+      params.scheduledToolPolicy !== undefined &&
+      params.disableTools !== true &&
+      input.capabilityFreeNativeTools !== undefined &&
+      !capAllowsCodingSurface(params.toolsAllow)
+    ) {
+      executionToolsAllow = [...params.toolsAllow];
+      params = { ...params, toolsAllow: undefined };
     } else {
-      runtimeToolsAllowPolicy = [...params.toolsAllow];
-      const fallbackOpenClawTools = expandToolGroups(params.toolsAllow);
-      if (
-        fallbackOpenClawTools.includes("write") &&
-        !fallbackOpenClawTools.includes("apply_patch")
-      ) {
-        fallbackOpenClawTools.push("apply_patch");
-      }
-      params = {
-        ...params,
-        toolsAllow: undefined,
-        cliToolAvailability: {
-          native: [],
-          // Preserve the prior normalized fallback for modes without a catalog;
-          // catalog-backed paths replace it with exact names below.
-          openClaw: fallbackOpenClawTools,
-        },
-      };
+      applyExactToolsAllow(params.toolsAllow);
     }
   }
   if (
@@ -99,7 +115,7 @@ export async function resolveCliRuntimeToolPolicy(input: {
     params.controlOperation !== "compact" &&
     !(input.isSideQuestion && input.sideQuestionToolMode === "disabled") &&
     resolveEffectiveToolFsWorkspaceOnly({ cfg: params.config, agentId: input.policyAgentId });
-  const ordinaryClaudeMediation =
+  let ordinaryClaudeMediation =
     input.backendId === "claude-cli" &&
     input.bundleMcp &&
     input.canEnforceExactToolAvailability &&
@@ -114,6 +130,20 @@ export async function resolveCliRuntimeToolPolicy(input: {
       agentId: input.policyAgentId,
       sessionKey: input.policySessionKey,
     }).host !== "node";
+  if (
+    executionToolsAllow !== undefined &&
+    (!ordinaryClaudeMediation ||
+      params.trustedInternalHandoff ||
+      senderRestricted ||
+      delegatedExecution ||
+      workspaceOnly)
+  ) {
+    // Only an ordinary mediated turn lists the uncapped surface; every other run
+    // keeps the exact cap it always had.
+    applyExactToolsAllow(executionToolsAllow);
+    executionToolsAllow = undefined;
+    ordinaryClaudeMediation = false;
+  }
   if (
     (params.trustedInternalHandoff ||
       senderRestricted ||
@@ -166,7 +196,22 @@ export async function resolveCliRuntimeToolPolicy(input: {
       cliToolAvailability: { native: managedNativeTools, openClaw: exactWorkspaceTools ?? [] },
     };
   }
+  if (executionToolsAllow !== undefined) {
+    if (params.cliToolAvailability === undefined) {
+      throw new Error(`CLI backend ${input.backendId} cannot enforce this run's tool cap`);
+    }
+    params = { ...params, executionToolsAllow };
+  }
   return { params, runtimeToolsAllowPolicy, managedNativeTools };
+}
+
+const CODING_SURFACE_TOOLS = listCoreToolFactoryDescriptors()
+  .map(({ name }) => ({ name }))
+  .filter(({ name }) => isCoreCodingSurfaceToolName(name));
+
+/** Shell and file tools run as OpenClaw's own implementations under a cap, never natively. */
+function capAllowsCodingSurface(toolsAllow: string[]): boolean {
+  return applyEmbeddedAttemptToolsAllow(CODING_SURFACE_TOOLS, toolsAllow).length > 0;
 }
 /**
  * Bootstrap routing needs the run's final file access: a native file-capable

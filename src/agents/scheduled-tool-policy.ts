@@ -22,6 +22,11 @@ export type ScheduledToolPolicyContext = (
   mcpToolBindings?: readonly CronScheduledMcpToolBinding[];
 };
 
+/** Refusal for a listed tool outside a scheduled run's cap, written for the model. */
+export function formatToolNotAllowedInAutomation(toolName: string): string {
+  return `${toolName || "This tool"} is not allowed in this Automation: it may call only the tools it was created with. Continue with those.`;
+}
+
 /** Keeps hook and join-intro event turns scoped to their current cron-runner job. */
 export function resolveSelfRemoveOnlyJobId(params: {
   trigger?: string;

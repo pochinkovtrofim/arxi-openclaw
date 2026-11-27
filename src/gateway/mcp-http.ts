@@ -359,7 +359,8 @@ async function startMcpLoopbackServer(
           const responses: object[] = [];
           const serverInstructions = resolveBundleMcpServerInstructions(
             boundClientGrant?.bundledTools,
-            new Set(scopedTools.toolSchema.map((entry) => entry.name)),
+            // Presentation follows what tools/list shows, like an uncapped run's.
+            new Set(scopedTools.listedToolSchema.map((entry) => entry.name)),
           );
           for (const [messageIndex, message] of messages.entries()) {
             if (!isJsonRpcRequest(message)) {
@@ -391,6 +392,7 @@ async function startMcpLoopbackServer(
                   message,
                   tools: scopedTools.tools,
                   toolSchema: scopedTools.toolSchema,
+                  listedToolSchema: scopedTools.listedToolSchema,
                   ...(serverInstructions ? { serverInstructions } : {}),
                   ...(requestContext.deferredTools
                     ? { deferredTools: requestContext.deferredTools }

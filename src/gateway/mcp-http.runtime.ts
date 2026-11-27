@@ -61,6 +61,8 @@ type CachedScopedTools = {
   workspaceDir: string | undefined;
   tools: McpLoopbackTool[];
   toolSchema: McpToolSchemaEntry[];
+  /** What `tools/list` shows; wider than `toolSchema` only for an execution-time cap. */
+  listedToolSchema: McpToolSchemaEntry[];
   sessionFacts: ReturnType<typeof captureMcpCatalogSessionFacts>;
   /**
    * The same catalog with only the computer tool re-created for a prepared paired-node
@@ -181,6 +183,16 @@ function resolveMediatedNativeTools(
   );
 }
 
+/** The cap the catalog is built for: the listed surface when it is wider than the callable one. */
+function resolveConstructionToolsAllow(
+  context: McpLoopbackScopeParams["context"],
+  mode: LoopbackToolsAllowMode,
+): string[] | undefined {
+  return mode === "exact" && context.toolsAllow !== undefined && context.listedToolsAllow
+    ? context.listedToolsAllow
+    : context.toolsAllow;
+}
+
 async function resolveNodeExecScope(
   params: CapturedMcpLoopbackScope,
   mode: LoopbackToolsAllowMode,
@@ -190,7 +202,8 @@ async function resolveNodeExecScope(
     !toolPolicyRestrictsTools(pickSandboxToolPolicy(params.context.conversationToolPolicy)) &&
     params.context.nodeExecAllowed === true &&
     !params.defaultMediatedToolNames?.length &&
-    resolveMediatedNativeTools(params.context.toolsAllow, mode).size === 0;
+    resolveMediatedNativeTools(resolveConstructionToolsAllow(params.context, mode), mode).size ===
+      0;
   if (!shouldResolveExec) {
     return params;
   }
@@ -205,7 +218,7 @@ function isComputerAllowedByMcpScope(
   params: McpLoopbackScopeParams,
   mode: LoopbackToolsAllowMode,
 ): boolean {
-  const { toolsAllow } = params.context;
+  const toolsAllow = resolveConstructionToolsAllow(params.context, mode);
   if (mode === "exact") {
     return (
       toolsAllow === undefined ||
@@ -350,7 +363,10 @@ async function constructMcpLoopbackTools(
   params.assertCurrent();
   // Retain the row identity so construction cannot publish facts from before an awaited read.
   const sessionFacts = captureMcpCatalogSessionFacts(params);
-  const { toolsAllow, webSearchDisabled, ...context } = params.context;
+  const { toolsAllow, listedToolsAllow, webSearchDisabled, ...context } = params.context;
+  // A listed surface wider than the callable one is built as that surface, so it
+  // matches the uncapped run's catalog; only toolsAllow decides what is callable.
+  const constructionToolsAllow = resolveConstructionToolsAllow(params.context, mode);
   const excludeToolNames = new Set(NATIVE_TOOL_EXCLUDE);
   if (webSearchDisabled) {
     excludeToolNames.add("web_search");
@@ -362,7 +378,7 @@ async function constructMcpLoopbackTools(
     (context.trustedInternalHandoff ||
       toolPolicyRestrictsTools(pickSandboxToolPolicy(context.conversationToolPolicy)))
       ? new Set(NATIVE_TOOL_EXCLUDE)
-      : resolveMediatedNativeTools(toolsAllow, mode);
+      : resolveMediatedNativeTools(constructionToolsAllow, mode);
   for (const toolName of params.defaultMediatedToolNames ?? []) {
     const name = normalizeToolPolicyName(toolName);
     if (!NATIVE_TOOL_EXCLUDE.has(name)) {
@@ -409,14 +425,19 @@ async function constructMcpLoopbackTools(
     mode === "exact"
       ? applyGrantToolsAllow(candidates, toolsAllow)
       : applyPolicyToolsAllow(candidates, toolsAllow);
+  const listAllowed = (candidates: typeof scoped.tools, callable: McpLoopbackTool[]) =>
+    mode === "exact" && toolsAllow !== undefined && listedToolsAllow !== undefined
+      ? buildMcpToolSchema(applyGrantToolsAllow(candidates, listedToolsAllow))
+      : buildMcpToolSchema(callable);
   const tools = applyAllow(scoped.tools);
   const toolSchema = buildMcpToolSchema(tools);
-  scoped.captureFinalCronCreatorTools?.(new Set(toolSchema.map((tool) => tool.name)));
+  scoped.captureFinalCallableTools?.(new Set(toolSchema.map((tool) => tool.name)));
   const catalog: CachedScopedTools = {
     agentId: scoped.agentId,
     workspaceDir: scoped.workspaceDir,
     tools,
     toolSchema,
+    listedToolSchema: listAllowed(scoped.tools, tools),
     sessionFacts,
   };
   const { rebuildWithPairedComputerUse } = scoped;
@@ -427,7 +448,12 @@ async function constructMcpLoopbackTools(
         return undefined;
       }
       const rebuiltTools = applyAllow(rebuilt);
-      return { ...catalog, tools: rebuiltTools, toolSchema: buildMcpToolSchema(rebuiltTools) };
+      return {
+        ...catalog,
+        tools: rebuiltTools,
+        toolSchema: buildMcpToolSchema(rebuiltTools),
+        listedToolSchema: listAllowed(rebuilt, rebuiltTools),
+      };
     };
   }
   return catalog;

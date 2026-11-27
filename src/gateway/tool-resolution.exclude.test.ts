@@ -465,6 +465,26 @@ describe("resolveGatewayScopedTools excludeToolNames", () => {
     ]);
   });
 
+  it("lets spawned sessions and created Automations inherit only the callable tools", async () => {
+    createTools.mockReturnValueOnce(
+      ["read", "sessions_spawn", "automations", "message"].map(makeTool),
+    );
+    const result = await resolveTools({
+      cfg: { tools: { allow: ["read", "sessions_spawn", "automations", "message"] } },
+      senderIsOwner: true,
+    });
+    expect(readCreateToolsArgs().inheritedToolAllowlist).toContain("read");
+
+    // A grant that lists more than it may call reports what stayed callable.
+    result.captureFinalCallableTools?.(new Set(["sessions_spawn", "automations", "message"]));
+
+    expect(readCreateToolsArgs().inheritedToolAllowlist).toEqual([
+      "sessions_spawn",
+      "automations",
+      "message",
+    ]);
+  });
+
   it("narrows report-only loopback tools to their status actions", async () => {
     const execute = vi.fn(async () => ({ content: [], details: {} }));
     createTools.mockReturnValueOnce([{ ...makeTool("cron"), execute }]);

@@ -314,6 +314,7 @@ export function buildAnthropicCliBackend(
     projectNativeToolAuthority: projectClaudeNativeToolAuthority,
     resolveManagedNativeTools: resolveClaudeManagedNativeTools,
     resolveDeferredMcpTools: resolveClaudeDeferredMcpTools,
+    capabilityFreeNativeTools: [CLAUDE_TOOL_SEARCH],
     nativeDelegationTools: CLAUDE_DELEGATION_NATIVE_TOOLS,
     sideQuestionToolMode: "disabled",
     ownsNativeCompaction: true,
