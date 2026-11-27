@@ -13,6 +13,7 @@ import { createCliFailoverError } from "./exit-error.js";
 import {
   buildCliLiveSessionFingerprint,
   buildCliLiveSessionFingerprintParts,
+  changedCliLiveSessionAuthorityPart,
   changedCliLiveSessionFingerprintPart,
   type CliLiveSessionFingerprintPartLabel,
   type CliLiveSessionFingerprintParts,
@@ -307,6 +308,47 @@ export function acceptsCliLiveSession(context: PreparedCliRunContext): boolean {
   );
 }
 
+/**
+ * A day summary is a silent turn sent to the warm process the person's last turn left:
+ * that process keeps the system prompt and tools it started with, so the summary reads
+ * the conversation from the prompt cache whatever its own rebuilt inputs say. They are
+ * rebuilt under the summary's system admission, which shapes tools and prompt unlike the
+ * person's turn, and never matched (every background summary was refused, 2026-11-18 to
+ * 27). So the summary adopts the warm process's inputs when it runs with the same
+ * account, credential, model and workspace; its tool calls still go through its own MCP
+ * grant, which `activate` transfers to the process.
+ */
+function adoptWarmDaySummaryInputs(params: {
+  context: PreparedCliRunContext;
+  ownerKey: string;
+  requiredGeneration: string | undefined;
+  fingerprint: string;
+  fingerprintParts: CliLiveSessionFingerprintParts;
+}): { fingerprint: string; fingerprintParts: CliLiveSessionFingerprintParts } {
+  const built = { fingerprint: params.fingerprint, fingerprintParts: params.fingerprintParts };
+  if (params.context.params.controlOperation !== "day-summary" || !params.requiredGeneration) {
+    return built;
+  }
+  const handle = liveSessions.get(params.ownerKey)?.handle;
+  const warmParts = handle ? handleFingerprintParts.get(handle) : undefined;
+  if (
+    !handle ||
+    !warmParts ||
+    handle.generation !== params.requiredGeneration ||
+    handle.fingerprint === params.fingerprint
+  ) {
+    return built;
+  }
+  const authority = changedCliLiveSessionAuthorityPart(warmParts, params.fingerprintParts);
+  if (authority) {
+    cliBackendLog.info(`cli day summary refused the warm process: changed=${authority}`);
+    return built;
+  }
+  const rebuilt = changedCliLiveSessionFingerprintPart(warmParts, params.fingerprintParts);
+  cliBackendLog.info(`cli day summary adopted the warm process: rebuilt=${rebuilt}`);
+  return { fingerprint: handle.fingerprint, fingerprintParts: warmParts };
+}
+
 /** Creates host-owned lifecycle authority without exposing owner keys or bearer material. */
 export function createCliLiveSessionCapability(params: {
   context: PreparedCliRunContext;
@@ -326,8 +368,13 @@ export function createCliLiveSessionCapability(params: {
     argv0: params.argv0,
     env: params.env,
   };
-  const fingerprint = buildCliLiveSessionFingerprint(fingerprintInput);
-  const fingerprintParts = buildCliLiveSessionFingerprintParts(fingerprintInput);
+  const { fingerprint, fingerprintParts } = adoptWarmDaySummaryInputs({
+    context: params.context,
+    ownerKey,
+    requiredGeneration: params.requiredGeneration,
+    fingerprint: buildCliLiveSessionFingerprint(fingerprintInput),
+    fingerprintParts: buildCliLiveSessionFingerprintParts(fingerprintInput),
+  });
   const grant = params.context.preparedBackend.mcpClientGrantCapture;
   if (Boolean(grant) !== Boolean(params.captureKey)) {
     throw new Error("CLI live process and current turn disagree about MCP capture ownership.");

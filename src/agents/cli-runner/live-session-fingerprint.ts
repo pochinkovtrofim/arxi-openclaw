@@ -65,6 +65,32 @@ export function changedCliLiveSessionFingerprintPart(
   return "unknown";
 }
 
+// Whose account, credential and model a process runs with, and where. A warm process
+// differing in any of these serves no other turn, however silent.
+const AUTHORITY_PART_KEYS = [
+  "argv0",
+  "workspaceDirHash",
+  "cwdHash",
+  "provider",
+  "model",
+  "agentAccountId",
+  "authProfileIdHash",
+  "authEpochHash",
+  "credentialFingerprint",
+] as const satisfies readonly (keyof typeof FINGERPRINT_PART_LABELS)[];
+
+/**
+ * The trace label of the first account, credential, model or workspace input two
+ * processes differ in; undefined when they run with the same authority.
+ */
+export function changedCliLiveSessionAuthorityPart(
+  previous: CliLiveSessionFingerprintParts,
+  next: CliLiveSessionFingerprintParts,
+): CliLiveSessionFingerprintPartLabel | undefined {
+  const key = AUTHORITY_PART_KEYS.find((part) => previous[part] !== next[part]);
+  return key ? FINGERPRINT_PART_LABELS[key] : undefined;
+}
+
 /** Whether the skills input is the only one that differs. */
 export function onlyCliLiveSessionSkillsChanged(
   previous: CliLiveSessionFingerprintParts,
