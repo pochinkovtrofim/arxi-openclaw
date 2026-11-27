@@ -171,7 +171,9 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
 function readType(json: string): string | undefined {
   try {
     const value: unknown = JSON.parse(json);
-    return value && typeof value === "object" && typeof (value as { type?: unknown }).type === "string"
+    return value &&
+      typeof value === "object" &&
+      typeof (value as { type?: unknown }).type === "string"
       ? (value as { type: string }).type
       : undefined;
   } catch {

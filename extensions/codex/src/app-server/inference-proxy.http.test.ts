@@ -461,7 +461,8 @@ describe("inference HTTP transport ownership", () => {
   it("times a streamed response by its id while relaying the stream unchanged", async () => {
     const created =
       'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_relay"}}\n\n';
-    const delta = 'event: response.output_text.delta\ndata: {"type":"response.output_text.delta"}\n\n';
+    const delta =
+      'event: response.output_text.delta\ndata: {"type":"response.output_text.delta"}\n\n';
     const completed =
       'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_relay"}}\n\n';
     handle = (req, res) => {

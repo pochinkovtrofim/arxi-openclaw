@@ -35,13 +35,13 @@ import {
   rejectBusyUpgrade,
   relayHeaders,
 } from "./inference-proxy-http.js";
+import { createCodexResponseTimingObserver } from "./inference-response-timing.js";
 import {
   createUploadAdmission,
   MAX_BODY_BYTES,
   MAX_PENDING_REQUESTS,
   MAX_UPLOADS,
 } from "./inference-upload.js";
-import { createCodexResponseTimingObserver } from "./inference-response-timing.js";
 import { createCodexUpstreamTransport } from "./inference-upstream.js";
 import type { CodexResponsesOAuth } from "./responses-oauth.js";
 import { codexWebSocketDataToBuffer } from "./websocket-data.js";
