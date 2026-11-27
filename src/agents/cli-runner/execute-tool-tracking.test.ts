@@ -190,3 +190,32 @@ describe("CLI conversation delivery evidence", () => {
     },
   );
 });
+
+describe("CLI loopback tool outcomes", () => {
+  it("keep only the HTTP status of a thrown tool error, for the failed call's diagnostics", () => {
+    const tracking = createTracking();
+    const args = { url: "https://example.com/walled" };
+    tracking.handleCliToolUseStart({
+      toolCallId: "fetch-1",
+      name: "mcp__openclaw__web_fetch",
+      kind: "mcp_tool_use",
+      args,
+    });
+    const capture = markMcpLoopbackToolCallStarted({ captureKey: "deadline-test", toolName: "web_fetch", args });
+    if (!capture) {
+      throw new Error("expected captured web_fetch call");
+    }
+    updateMcpLoopbackToolCallCapture(capture, { toolName: "web_fetch", args });
+    const refused = Object.assign(new Error("Web fetch refused by the site (403)"), { status: 403 });
+    recordMcpLoopbackToolCallResult({
+      captureHandle: capture,
+      toolName: "web_fetch",
+      args,
+      outcome: "failed",
+      result: refused,
+    });
+    markMcpLoopbackToolCallFinished(capture);
+    expect(tracking.resolveCliLoopbackTerminalOutcome("fetch-1")).toEqual({ outcome: "failed", errorCode: "403" });
+    tracking.finalizeCapture(() => {});
+  });
+});

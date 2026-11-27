@@ -20,12 +20,40 @@ type DynamicToolDiagnosticContext = {
   trace?: DiagnosticTraceContext | undefined;
 };
 
-// A fixed per-tool vocabulary, never error prose: anything else is dropped, not truncated.
-const CONTENT_FREE_TOOL_ERROR_CODE = /^[a-z_]{1,64}$/u;
+// A fixed per-tool vocabulary or an HTTP status, never error prose: anything
+// else is dropped, not truncated.
+const CONTENT_FREE_TOOL_ERROR_CODE = /^(?:[a-z_]{1,64}|[1-5]\d\d)$/u;
 
 /** Returns a tool's failure code only when it is a content-free identifier. */
 export function readDynamicToolErrorCode(value: unknown): string | undefined {
   return typeof value === "string" && CONTENT_FREE_TOOL_ERROR_CODE.test(value) ? value : undefined;
+}
+
+/**
+ * A thrown tool error's code: its own identifier, else the HTTP status it
+ * carries, as the embedded runtime records it. Without the status, a refused
+ * Google ref (409) and a site refusing a fetch (403) were one undifferentiated
+ * codex_dynamic_tool_error.
+ */
+export function readThrownDynamicToolErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") {
+    return undefined;
+  }
+  try {
+    const code = readDynamicToolErrorCode(Object.getOwnPropertyDescriptor(error, "code")?.value);
+    if (code) {
+      return code;
+    }
+    for (const key of ["status", "statusCode"]) {
+      const status: unknown = Object.getOwnPropertyDescriptor(error, key)?.value;
+      if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599) {
+        return String(status);
+      }
+    }
+  } catch {
+    // Hostile reflection leaves the failure without a code, never without its terminal.
+  }
+  return undefined;
 }
 
 function diagnosticToolIdentity(params: DynamicToolDiagnosticContext) {

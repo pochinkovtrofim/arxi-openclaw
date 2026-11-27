@@ -26,7 +26,7 @@ vi.mock("../../web-fetch/runtime.js", () => ({
 vi.mock("./web-tool-runtime-context.js", () => ({
   resolveWebToolRuntimeContext: resolveWebToolRuntimeContextMock,
 }));
-import { createWebFetchTool } from "./web-fetch.js";
+import { createWebFetchTool, webFetchHttpError } from "./web-fetch.js";
 
 const WEB_FETCH_SPILL_MAX_CHARS = 2_000_000;
 
@@ -823,10 +823,60 @@ describe("web_fetch extraction fallbacks", () => {
     });
 
     expect(message).toContain("Web fetch failed (404):");
+    expect(message).not.toContain("refused by the site");
     expect(message).toMatch(/<<<EXTERNAL_UNTRUSTED_CONTENT id="[a-f0-9]{16}">>>/);
     expect(message).toContain("Not Found");
     expect(message).not.toContain("<html");
     expect(message.length).toBeLessThan(5_000);
+  });
+
+  it("says a site refused an automated fetch and what to do next", async () => {
+    const wall = "<html><body><h1>Just a moment...</h1>" + "x".repeat(5_000) + "</body></html>";
+    installMockFetch(
+      (input: RequestInfo | URL) =>
+        Promise.resolve(errorHtmlResponse(wall, 403, resolveRequestUrl(input), "text/html")) as Promise<Response>,
+    );
+    const tool = createFetchTool({ firecrawl: { enabled: false } });
+    const error = await tool?.execute?.("call", { url: "https://example.com/walled" }).then(
+      () => undefined,
+      (caught: unknown) => caught as Error & { status?: unknown },
+    );
+    expect(error?.message).toContain("Web fetch refused by the site (403)");
+    expect(error?.message).toMatch(/fetching it again will not help.*not a network failure.*browser tool.*web_search/su);
+    expect(error?.message.length).toBeLessThan(1_200);
+    // The status is the code diagnostics record for the failed call.
+    expect(error?.status).toBe(403);
+    // LinkedIn answers 999, which no Response can carry and diagnostics would not take.
+    const linkedIn = webFetchHttpError(999, "");
+    expect(linkedIn.message).toMatch(/refused by the site \(999\).*browser tool/su);
+    expect((linkedIn as { status?: unknown }).status).toBeUndefined();
+  });
+
+  it("tells a rate limit to wait instead of fetching again", async () => {
+    installMockFetch(
+      (input: RequestInfo | URL) =>
+        Promise.resolve(errorHtmlResponse("slow down", 429, resolveRequestUrl(input), "text/plain")) as Promise<Response>,
+    );
+    const tool = createFetchTool({ firecrawl: { enabled: false } });
+    const message = await captureToolErrorMessage({ tool, url: "https://example.com/busy" });
+    expect(message).toMatch(/refused by the site \(429\): it is limiting requests.*Do not fetch this site again in this turn/su);
+  });
+
+  it("says the network proxy, not the site, refused or failed the connection", async () => {
+    for (const [status, expected] of [
+      [403, /proxy refused to connect to it \(proxy status 403\).*web_search/su],
+      [502, /proxy failed to connect to it \(proxy status 502\).*Try once more later/su],
+    ] as const) {
+      installMockFetch(() =>
+        Promise.reject(
+          new TypeError("fetch failed", {
+            cause: new Error(`Proxy response (${status}) !== 200 when HTTP Tunneling`),
+          }),
+        ),
+      );
+      const tool = createFetchTool({ firecrawl: { enabled: false } });
+      expect(await captureToolErrorMessage({ tool, url: "https://example.com/tunnel" })).toMatch(expected);
+    }
   });
 
   it("strips HTML errors when content-type is missing", async () => {
