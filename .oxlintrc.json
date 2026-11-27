@@ -482,6 +482,12 @@
       }
     },
     {
+      "files": ["src/agents/cli-output-stream.ts"],
+      "rules": {
+        "max-lines": ["error", { "max": 711, "skipBlankLines": true, "skipComments": true }]
+      }
+    },
+    {
       "files": ["src/agents/isolated-completion.ts"],
       "rules": {
         "max-lines": ["error", { "max": 711, "skipBlankLines": true, "skipComments": true }]

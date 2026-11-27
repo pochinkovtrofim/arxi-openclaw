@@ -342,6 +342,10 @@ export function createCliJsonlStreamingParser(params: CliJsonlStreamingParserOpt
     if (observeClaudeStep && !isClaudeSubagentRecord(parsed)) {
       observeClaudeStep(parsed);
     }
+    // The plan's limits are the account's, so a subagent's report counts too.
+    if (claudeStreamJson && parsed.type === "rate_limit_event") {
+      params.onRateLimitInfo?.(parsed.rate_limit_info);
+    }
     if (
       claudeStreamJson &&
       parsed.type === "system" &&
