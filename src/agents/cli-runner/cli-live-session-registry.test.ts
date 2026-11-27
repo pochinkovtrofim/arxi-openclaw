@@ -50,6 +50,7 @@ async function createOwner(
     continuesConversation?: boolean;
     sessionKey?: string;
     inputProvenance?: InputProvenance;
+    controlOperation?: "day-summary";
   } = {},
 ) {
   const index = ++nextOwnerId;
@@ -75,6 +76,7 @@ async function createOwner(
     context.params.trigger = options.trigger;
   }
   context.params.continuesConversation = options.continuesConversation;
+  context.params.controlOperation = options.controlOperation;
   if (options.inputProvenance) {
     context.params.inputProvenance = options.inputProvenance;
   }
@@ -555,6 +557,56 @@ describe("generic plugin-owned live session registry", () => {
     });
     expect(original.close).not.toHaveBeenCalled();
     expect(original.capability.current()).toBe(original.session);
+  });
+
+  it("lets a day summary adopt the warm person process it continues when only turn inputs differ", async () => {
+    const original = await createOwner({
+      generation: "warm-person-process",
+      systemPrompt: "Policy built for the person's turn.",
+      authProfileId: "owner-subscription",
+      capture: { token: "warm-process-token", key: "warm-process-key" },
+    });
+    original.register();
+    const rebuilt = {
+      sessionId: original.sessionId,
+      requiredGeneration: original.session.generation,
+      systemPrompt: "Policy rebuilt under the summary's system admission.",
+      controlOperation: "day-summary" as const,
+    };
+
+    const summary = await createOwner({
+      ...rebuilt,
+      authProfileId: "owner-subscription",
+      capture: { token: "summary-grant-token", key: "summary-key" },
+    });
+    expect(summary.capability.fingerprint).toBe(original.session.fingerprint);
+    expect(summary.capability.current()).toBe(original.session);
+    expect(getCliLiveSessionStartReason(summary.context)).toBe("reused");
+    // The summary's own grant takes over the process's bearer before any tool call.
+    summary.capability.activate(original.session);
+    expect(summary.grant?.adoptProcessToken).toHaveBeenCalledWith("warm-process-token");
+    expect(summary.beginCapture).toHaveBeenCalledWith("warm-process-key");
+
+    // Another account or credential never borrows the process, silent or not.
+    const otherAccount = await createOwner({
+      ...rebuilt,
+      authProfileId: "someone-else",
+      capture: { token: "other-grant-token", key: "other-key" },
+    });
+    expect(() => otherAccount.capability.current()).toThrow(
+      expect.objectContaining({ reason: "session_expired", code: "cli_live_session_changed" }),
+    );
+    // A turn that is not the silent summary still needs the exact inputs.
+    const ordinary = await createOwner({
+      ...rebuilt,
+      controlOperation: undefined,
+      authProfileId: "owner-subscription",
+      capture: { token: "ordinary-grant-token", key: "ordinary-key" },
+    });
+    expect(() => ordinary.capability.current()).toThrow(
+      expect.objectContaining({ reason: "session_expired", code: "cli_live_session_changed" }),
+    );
+    expect(original.close).not.toHaveBeenCalled();
   });
 
   it.each([
