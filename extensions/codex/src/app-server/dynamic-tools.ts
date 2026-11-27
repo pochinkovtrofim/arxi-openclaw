@@ -70,7 +70,10 @@ import {
   type CodexToolDescriptor,
 } from "./dynamic-tool-catalog.js";
 import { convertToolContents, enforceWholeSkillResult } from "./dynamic-tool-content.js";
-import { readDynamicToolErrorCode } from "./dynamic-tool-diagnostics.js";
+import {
+  readDynamicToolErrorCode,
+  readThrownDynamicToolErrorCode,
+} from "./dynamic-tool-diagnostics.js";
 import {
   type CodexDynamicToolHookContextBase,
   projectCodexExecutableDynamicToolSurface,
@@ -719,7 +722,7 @@ export function createCodexDynamicToolBridge(params: {
             executionBoundary.executionPrevented ||
             (isReplaySafeToolInstance(toolEntry.tool) &&
               isReplaySafeToolCall(toolName, executedArgs));
-          const errorCode = readDynamicToolErrorCode(asOptionalRecord(error)?.code);
+          const errorCode = readThrownDynamicToolErrorCode(error);
           return {
             contentItems: [{ type: "inputText", text: errorMessage }],
             success: false,

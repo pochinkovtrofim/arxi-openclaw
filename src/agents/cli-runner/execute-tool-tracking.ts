@@ -5,6 +5,7 @@ import {
   type McpLoopbackToolCallStart,
   waitForMcpLoopbackToolCallCaptureIdle,
 } from "../../gateway/mcp-http.loopback-runtime.js";
+import { diagnosticHttpStatusCode } from "../../infra/diagnostic-error-metadata.js";
 import { shouldUseInternalSourceReplySink } from "../../infra/outbound/internal-source-reply.js";
 import {
   normalizeAcceptedSessionSpawnResult,
@@ -432,10 +433,15 @@ export function createCliToolTracking(context: PreparedCliRunContext) {
         inFlightPreparedMessagingCalls.delete(call);
       },
       onToolCallResult: (call) => {
+        // Only the content-free status of a thrown error is kept, not the error.
+        const errorCode =
+          call.outcome !== "blocked" && call.outcome !== "completed" && call.result instanceof Error
+            ? diagnosticHttpStatusCode(call.result)
+            : undefined;
         const terminalOutcome: Deadline.CliToolTerminalOutcome =
           call.outcome === "blocked"
             ? { outcome: call.outcome, deniedReason: call.deniedReason }
-            : { outcome: call.outcome };
+            : { outcome: call.outcome, ...(errorCode ? { errorCode } : {}) };
         const correlated = call.correlationId
           ? cliLoopbackCalls.find((candidate) => candidate.boundToolCallId === call.correlationId)
           : undefined;

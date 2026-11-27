@@ -5,7 +5,10 @@ import {
   type DiagnosticEventPayload,
 } from "openclaw/plugin-sdk/diagnostic-runtime";
 import { describe, expect, it } from "vitest";
-import { createCodexDynamicToolDiagnostics } from "./dynamic-tool-diagnostics.js";
+import {
+  createCodexDynamicToolDiagnostics,
+  readThrownDynamicToolErrorCode,
+} from "./dynamic-tool-diagnostics.js";
 
 async function captureToolEvents(emit: () => void): Promise<DiagnosticEventPayload[]> {
   const events: DiagnosticEventPayload[] = [];
@@ -57,5 +60,33 @@ describe("Codex dynamic tool diagnostics", () => {
 
     expect(events).toHaveLength(1);
     expect(Object.hasOwn(events[0] ?? {}, "execClass")).toBe(false);
+  });
+
+  it("records the HTTP status a thrown tool error carries, as the embedded runtime does", async () => {
+    const refused = Object.assign(new Error("source unavailable or changed"), { statusCode: 409 });
+    expect(readThrownDynamicToolErrorCode(refused)).toBe("409");
+    expect(readThrownDynamicToolErrorCode(Object.assign(new Error("x"), { status: 403 }))).toBe(
+      "403",
+    );
+    expect(
+      readThrownDynamicToolErrorCode(
+        Object.assign(new Error("x"), { code: "follow_limit", status: 429 }),
+      ),
+    ).toBe("follow_limit");
+    for (const opaque of [
+      new Error("Web fetch failed"),
+      Object.assign(new Error("x"), { status: 999 }),
+      "text",
+    ]) {
+      expect(readThrownDynamicToolErrorCode(opaque)).toBeUndefined();
+    }
+    const events = await captureToolEvents(() =>
+      createCodexDynamicToolDiagnostics({ call: call("ro_google_observation", {}) }).error(
+        19,
+        "failed",
+        readThrownDynamicToolErrorCode(refused),
+      ),
+    );
+    expect(events[0]).toMatchObject({ type: "tool.execution.error", errorCode: "409" });
   });
 });

@@ -351,6 +351,9 @@ export function createCliEventHandlers(params: {
       return;
     }
     const trustedFailure = trustedOutcome !== undefined && trustedOutcome.outcome !== "completed";
+    // The HTTP status a thrown error carried, as the embedded runtime records it.
+    const errorCode =
+      trustedOutcome && "errorCode" in trustedOutcome ? trustedOutcome.errorCode : undefined;
     emitTrustedDiagnosticEvent(
       trustedOutcome?.outcome === "blocked"
         ? {
@@ -369,6 +372,7 @@ export function createCliEventHandlers(params: {
                   : event.incomplete && (!trustedOutcome || useEnclosingTerminalReason)
                     ? "cli_tool_incomplete"
                     : "cli_tool",
+              ...(errorCode ? { errorCode } : {}),
               terminalReason,
             }
           : { type: "tool.execution.completed", ...diagnosticBase },
