@@ -96,7 +96,10 @@ describe("Codex response timing at the relay", () => {
     observer.frame(Buffer.from('{"type":"response.reasoning_summary_text.delta","delta":"x"}'));
     now = 900;
     observer.frame(Buffer.from('{"type":"response.completed","response":{"id":"resp_6"}}'));
-    expect(takeCodexResponseTiming("resp_6", 900)).toEqual({ durationMs: 900, timeToFirstByteMs: 700 });
+    expect(takeCodexResponseTiming("resp_6", 900)).toEqual({
+      durationMs: 900,
+      timeToFirstByteMs: 700,
+    });
   });
 
   it("records nothing for an error event or a stream without a response id", () => {

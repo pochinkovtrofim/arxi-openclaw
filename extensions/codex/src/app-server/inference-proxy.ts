@@ -329,8 +329,8 @@ export async function createCodexInferenceProxy(params: {
         if (!guarded.response.body) {
           res.end();
         } else {
-          const body = timedResponseBody(guarded.response, guarded.response.body, path, arrivedAt);
-          await body.pipeTo(Writable.toWeb(res), { signal: upload.signal });
+          const out = timedResponseBody(guarded.response, guarded.response.body, path, arrivedAt);
+          await out.pipeTo(Writable.toWeb(res), { signal: upload.signal });
         }
       } catch (error) {
         // Errors can contain headers, bodies, or the private URL: never log/reflect them.

@@ -21,7 +21,8 @@ const timings = new Map<string, CodexResponseTiming & { recordedAt: number }>();
 
 // Only these event families are the model's output; lifecycle, metadata and rate-limit
 // events (response.created, response.metadata, codex.*, responsesapi.*) are not.
-const OUTPUT = /^response\.(output_|reasoning|content_part\.|function_call_arguments\.|custom_tool_call_input\.|refusal\.)/;
+const OUTPUT =
+  /^response\.(output_|reasoning|content_part\.|function_call_arguments\.|custom_tool_call_input\.|refusal\.)/;
 const TERMINAL = new Set(["response.completed", "response.failed", "response.incomplete"]);
 const LEADING_TYPE = /^\s*\{\s*"type"\s*:\s*"([a-z0-9_.]{1,80})"/;
 
@@ -60,7 +61,8 @@ export function resetCodexResponseTimingsForTest(): void {
 
 /**
  * Observes the response events of one request that native Codex sent at
- * `startedAt`, its arrival at the relay, so admission waits count. Call `event` for every event before relaying it, so the timing is
+ * `startedAt`, its arrival at the relay, so admission waits count. Feed every
+ * event through `frame` or `stream` before relaying it, so the timing is
  * recorded before native can report the completion.
  */
 export function observeCodexResponse(startedAt: number, now = Date.now) {
@@ -152,7 +154,7 @@ export function observeCodexResponse(startedAt: number, now = Date.now) {
           if (!finished) {
             pending += decoder.decode(chunk, { stream: true });
             // Resume the search where the last chunk ended: a long line costs one pass.
-            for (let newline = pending.indexOf("\n", searched); newline >= 0; ) {
+            for (let newline = pending.indexOf("\n", searched); newline >= 0;) {
               line(pending.slice(0, newline).replace(/\r$/, ""));
               pending = pending.slice(newline + 1);
               newline = finished ? -1 : pending.indexOf("\n");
