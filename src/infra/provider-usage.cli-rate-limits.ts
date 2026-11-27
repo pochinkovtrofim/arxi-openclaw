@@ -55,14 +55,18 @@ const reported = () =>
 // six hours, after the program reported a limit, and kept for the gateway's
 // life like the windows; unknown until the first answer.
 type CliPlan = { label?: string; checkedAt?: number; pending?: Promise<void> };
-type CliPlanProbe = () => Promise<string | undefined>;
+// The program's answer: a plan (or none) when it said so; undefined when it
+// did not answer (a timeout, a kill, no status), which keeps what was known.
+type CliPlanProbe = () => Promise<{ label?: string } | undefined>;
 const PLAN_KEY = Symbol.for("openclaw.providerUsage.cliPlan");
 const PLAN_CHECK_MS = 6 * 60 * 60 * 1000;
-const PLAN_PROBE_TIMEOUT_MS = 10_000;
+// A cold start on a busy VM can outlast the probe: ask again soon.
+const PLAN_RETRY_MS = 10 * 60 * 1000;
+const PLAN_PROBE_TIMEOUT_MS = 15_000;
 const cliPlan = () => resolveGlobalSingleton(PLAN_KEY, (): CliPlan => ({}));
 let planProbe: CliPlanProbe = probeClaudePlan;
 
-async function probeClaudePlan(): Promise<string | undefined> {
+async function probeClaudePlan(): Promise<{ label?: string } | undefined> {
   const result = await runUtf8CommandWithTimeout(["claude", "auth", "status", "--json"], {
     timeoutMs: PLAN_PROBE_TIMEOUT_MS,
     maxOutputBytes: 64 * 1024,
@@ -70,18 +74,24 @@ async function probeClaudePlan(): Promise<string | undefined> {
     terminateOnOutputLimit: true,
     killProcessTree: true,
   });
-  if (result.termination !== "exit" || result.code !== 0) {
+  // Signed out, the program exits 1 and still prints its status.
+  if (result.termination !== "exit" || (result.code !== 0 && result.code !== 1)) {
     return undefined;
   }
   const status: unknown = JSON.parse(result.stdout);
-  // Only a Claude account sign-in has a plan; an API key has none.
-  if (!isRecord(status) || status.loggedIn !== true || status.authMethod !== "claude.ai") {
+  if (!isRecord(status) || typeof status.loggedIn !== "boolean") {
     return undefined;
   }
-  const plan = typeof status.subscriptionType === "string" ? status.subscriptionType.trim() : "";
+  // Only a Claude account sign-in has a plan; an API key has none.
+  const plan =
+    status.loggedIn &&
+    status.authMethod === "claude.ai" &&
+    typeof status.subscriptionType === "string"
+      ? status.subscriptionType.trim()
+      : "";
   return /^[a-z][a-z0-9_]{0,31}$/i.test(plan)
-    ? plan.charAt(0).toUpperCase() + plan.slice(1)
-    : undefined;
+    ? { label: plan.charAt(0).toUpperCase() + plan.slice(1) }
+    : {};
 }
 
 function refreshCliPlan(provider: UsageProviderId, now: number): void {
@@ -94,13 +104,19 @@ function refreshCliPlan(provider: UsageProviderId, now: number): void {
     return;
   }
   plan.checkedAt = now;
+  const unanswered = () => {
+    // The plan stays as last known, and the next report asks again soon.
+    plan.checkedAt = now - PLAN_CHECK_MS + PLAN_RETRY_MS;
+  };
   plan.pending = planProbe()
-    .then((label) => {
-      plan.label = label;
+    .then((answer) => {
+      if (answer) {
+        plan.label = answer.label;
+      } else {
+        unanswered();
+      }
     })
-    .catch(() => {
-      // The plan stays as last known; the next check asks again.
-    })
+    .catch(unanswered)
     .finally(() => {
       plan.pending = undefined;
     });
@@ -218,7 +234,7 @@ export function readCliRateLimitRejection(
 }
 
 // Tests never ask a real program unless they pass a probe of their own.
-export function resetCliRateLimitsForTest(probe: CliPlanProbe = async () => undefined): void {
+export function resetCliRateLimitsForTest(probe: CliPlanProbe = async () => ({})): void {
   reported().clear();
   const plan = cliPlan();
   delete plan.label;

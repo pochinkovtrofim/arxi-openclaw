@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   readCliRateLimitRejection,
   readCliRateLimitSnapshot,
@@ -13,11 +13,15 @@ const resetSeconds = Math.floor(now / 1000) + 3600;
 describe("provider-usage.cli-rate-limits", () => {
   // No test asks a real program for its plan.
   beforeEach(() => resetCliRateLimitsForTest());
-  afterEach(() => resetCliRateLimitsForTest());
+  afterEach(() => {
+    vi.useRealTimers();
+    resetCliRateLimitsForTest();
+  });
 
   it("names the plan the program reports for its sign-in, asking it at most every six hours", async () => {
+    vi.useFakeTimers({ now });
     let asked = 0;
-    let answer: string | undefined = "Max";
+    let answer: { label?: string } | undefined = { label: "Max" };
     resetCliRateLimitsForTest(async () => {
       asked++;
       return answer;
@@ -37,7 +41,7 @@ describe("provider-usage.cli-rate-limits", () => {
       windows: [{ label: "Week", usedPercent: 50, resetAt: resetSeconds * 1000 }],
       plan: "Max",
     });
-    answer = "Pro";
+    answer = { label: "Pro" };
     recordCliRateLimitInfo("anthropic", week);
     await settleCliPlanForTest();
     expect(asked).toBe(1);
@@ -45,10 +49,33 @@ describe("provider-usage.cli-rate-limits", () => {
     // Another provider's report never asks.
     recordCliRateLimitInfo("openai", week);
     expect(asked).toBe(1);
+    // Six hours on, a program that does not answer keeps the plan and is asked again ten minutes later.
+    answer = undefined;
+    vi.setSystemTime(now + 6 * 3_600_000);
+    recordCliRateLimitInfo("anthropic", week);
+    await settleCliPlanForTest();
+    expect(asked).toBe(2);
+    expect(readCliRateLimitSnapshot("anthropic", now)?.plan).toBe("Max");
+    answer = { label: "Pro" };
+    vi.setSystemTime(now + 6 * 3_600_000 + 9 * 60_000);
+    recordCliRateLimitInfo("anthropic", week);
+    await settleCliPlanForTest();
+    expect(asked).toBe(2);
+    vi.setSystemTime(now + 6 * 3_600_000 + 10 * 60_000);
+    recordCliRateLimitInfo("anthropic", week);
+    await settleCliPlanForTest();
+    expect(asked).toBe(3);
+    expect(readCliRateLimitSnapshot("anthropic", now)?.plan).toBe("Pro");
+    // A sign-in without a plan clears it.
+    answer = {};
+    vi.setSystemTime(now + 12 * 3_600_000 + 10 * 60_000);
+    recordCliRateLimitInfo("anthropic", week);
+    await settleCliPlanForTest();
+    expect(readCliRateLimitSnapshot("anthropic", now)).not.toHaveProperty("plan");
   });
 
   it("leaves the plan unset while the program names none", async () => {
-    resetCliRateLimitsForTest(async () => undefined);
+    resetCliRateLimitsForTest(async () => ({}));
     recordCliRateLimitInfo("anthropic", {
       status: "allowed",
       rateLimitType: "seven_day",
