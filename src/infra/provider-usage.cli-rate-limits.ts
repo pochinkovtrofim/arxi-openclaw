@@ -1,4 +1,5 @@
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { runUtf8CommandWithTimeout } from "../process/exec.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { clampPercent, providerUsageLabel } from "./provider-usage.shared.js";
 import type {
@@ -48,6 +49,63 @@ const reported = () =>
     () => new Map<UsageProviderId, Map<string, ReportedWindow>>(),
   );
 
+// The plan the program signed in with ("Max", "Pro"), asked of the program
+// itself with `claude auth status --json`: OpenClaw never reads its login.
+// Ro's host yields her own work later on a larger plan. Asked at most every
+// six hours, after the program reported a limit, and kept for the gateway's
+// life like the windows; unknown until the first answer.
+type CliPlan = { label?: string; checkedAt?: number; pending?: Promise<void> };
+type CliPlanProbe = () => Promise<string | undefined>;
+const PLAN_KEY = Symbol.for("openclaw.providerUsage.cliPlan");
+const PLAN_CHECK_MS = 6 * 60 * 60 * 1000;
+const PLAN_PROBE_TIMEOUT_MS = 10_000;
+const cliPlan = () => resolveGlobalSingleton(PLAN_KEY, (): CliPlan => ({}));
+let planProbe: CliPlanProbe = probeClaudePlan;
+
+async function probeClaudePlan(): Promise<string | undefined> {
+  const result = await runUtf8CommandWithTimeout(["claude", "auth", "status", "--json"], {
+    timeoutMs: PLAN_PROBE_TIMEOUT_MS,
+    maxOutputBytes: 64 * 1024,
+    maxCombinedOutputBytes: 64 * 1024,
+    terminateOnOutputLimit: true,
+    killProcessTree: true,
+  });
+  if (result.termination !== "exit" || result.code !== 0) {
+    return undefined;
+  }
+  const status: unknown = JSON.parse(result.stdout);
+  // Only a Claude account sign-in has a plan; an API key has none.
+  if (!isRecord(status) || status.loggedIn !== true || status.authMethod !== "claude.ai") {
+    return undefined;
+  }
+  const plan = typeof status.subscriptionType === "string" ? status.subscriptionType.trim() : "";
+  return /^[a-z][a-z0-9_]{0,31}$/i.test(plan)
+    ? plan.charAt(0).toUpperCase() + plan.slice(1)
+    : undefined;
+}
+
+function refreshCliPlan(provider: UsageProviderId, now: number): void {
+  const plan = cliPlan();
+  if (
+    provider !== "anthropic" ||
+    plan.pending ||
+    (plan.checkedAt !== undefined && now - plan.checkedAt < PLAN_CHECK_MS)
+  ) {
+    return;
+  }
+  plan.checkedAt = now;
+  plan.pending = planProbe()
+    .then((label) => {
+      plan.label = label;
+    })
+    .catch(() => {
+      // The plan stays as last known; the next check asks again.
+    })
+    .finally(() => {
+      plan.pending = undefined;
+    });
+}
+
 function readFinite(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
@@ -63,6 +121,7 @@ export function recordCliRateLimitInfo(provider: UsageProviderId, info: unknown)
   if (!isRecord(info) || typeof info.rateLimitType !== "string") {
     return;
   }
+  refreshCliPlan(provider, Date.now());
   const label = WINDOW_LABELS[info.rateLimitType];
   const status = info.status;
   if (!label || (status !== "allowed" && status !== "allowed_warning" && status !== "rejected")) {
@@ -130,7 +189,13 @@ export function readCliRateLimitSnapshot(
   if (windows.length === 0) {
     return undefined;
   }
-  return { provider, displayName: providerUsageLabel(provider) ?? provider, windows };
+  const plan = provider === "anthropic" ? cliPlan().label : undefined;
+  return {
+    provider,
+    displayName: providerUsageLabel(provider) ?? provider,
+    windows,
+    ...(plan ? { plan } : {}),
+  };
 }
 
 /**
@@ -152,6 +217,16 @@ export function readCliRateLimitRejection(
     : {};
 }
 
-export function resetCliRateLimitsForTest(): void {
+// Tests never ask a real program unless they pass a probe of their own.
+export function resetCliRateLimitsForTest(probe: CliPlanProbe = async () => undefined): void {
   reported().clear();
+  const plan = cliPlan();
+  delete plan.label;
+  delete plan.checkedAt;
+  delete plan.pending;
+  planProbe = probe;
+}
+
+export async function settleCliPlanForTest(): Promise<void> {
+  await cliPlan().pending;
 }

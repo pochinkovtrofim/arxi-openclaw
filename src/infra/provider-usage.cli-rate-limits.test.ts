@@ -1,16 +1,63 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   readCliRateLimitRejection,
   readCliRateLimitSnapshot,
   recordCliRateLimitInfo,
   resetCliRateLimitsForTest,
+  settleCliPlanForTest,
 } from "./provider-usage.cli-rate-limits.js";
 
 const now = 1_787_000_000_000;
 const resetSeconds = Math.floor(now / 1000) + 3600;
 
 describe("provider-usage.cli-rate-limits", () => {
+  // No test asks a real program for its plan.
+  beforeEach(() => resetCliRateLimitsForTest());
   afterEach(() => resetCliRateLimitsForTest());
+
+  it("names the plan the program reports for its sign-in, asking it at most every six hours", async () => {
+    let asked = 0;
+    let answer: string | undefined = "Max";
+    resetCliRateLimitsForTest(async () => {
+      asked++;
+      return answer;
+    });
+    const week = {
+      status: "allowed",
+      rateLimitType: "seven_day",
+      utilization: 0.5,
+      resetsAt: resetSeconds,
+    };
+    expect(readCliRateLimitSnapshot("anthropic", now)).toBeUndefined();
+    recordCliRateLimitInfo("anthropic", week);
+    await settleCliPlanForTest();
+    expect(readCliRateLimitSnapshot("anthropic", now)).toEqual({
+      provider: "anthropic",
+      displayName: "Claude",
+      windows: [{ label: "Week", usedPercent: 50, resetAt: resetSeconds * 1000 }],
+      plan: "Max",
+    });
+    answer = "Pro";
+    recordCliRateLimitInfo("anthropic", week);
+    await settleCliPlanForTest();
+    expect(asked).toBe(1);
+    expect(readCliRateLimitSnapshot("anthropic", now)?.plan).toBe("Max");
+    // Another provider's report never asks.
+    recordCliRateLimitInfo("openai", week);
+    expect(asked).toBe(1);
+  });
+
+  it("leaves the plan unset while the program names none", async () => {
+    resetCliRateLimitsForTest(async () => undefined);
+    recordCliRateLimitInfo("anthropic", {
+      status: "allowed",
+      rateLimitType: "seven_day",
+      utilization: 0.2,
+      resetsAt: resetSeconds,
+    });
+    await settleCliPlanForTest();
+    expect(readCliRateLimitSnapshot("anthropic", now)).not.toHaveProperty("plan");
+  });
 
   it("reports each window the program named, as the usage endpoint labels them", () => {
     recordCliRateLimitInfo("anthropic", {
