@@ -17,6 +17,16 @@ const mocks = vi.hoisted(() => ({
   install: vi.fn(),
   prepare: vi.fn(),
   inference: vi.fn(),
+  runtimeBuild: { value: 10_809 },
+}));
+// The media recipes are verified on llama.cpp b10809. The fork pins a newer
+// build, which keeps local media unavailable until the recipes are verified on
+// it; the setup transaction itself is exercised on the verified runtime.
+vi.mock("./llama-server-assets.js", async (original) => ({
+  ...(await original<typeof import("./llama-server-assets.js")>()),
+  get LLAMA_SERVER_BUILD() {
+    return mocks.runtimeBuild.value;
+  },
 }));
 vi.mock("./hardware.js", async (original) => ({
   ...(await original<typeof import("./hardware.js")>()),
@@ -68,6 +78,7 @@ function context(consent = true): ProviderAuthContext {
 
 beforeEach(async () => {
   vi.resetAllMocks();
+  mocks.runtimeBuild.value = 10_809;
   root = dirs.make("llama-media-setup-");
   preset = path.join(root, "candidate.ini");
   vi.stubEnv("OPENCLAW_STATE_DIR", root);
@@ -264,6 +275,28 @@ describe("registered local media setup transaction", () => {
       );
     },
   );
+
+  it("keeps the pinned unverified runtime from downloading, preparing or changing configuration", async () => {
+    const { LLAMA_SERVER_BUILD } = await vi.importActual<typeof import("./llama-server-assets.js")>(
+      "./llama-server-assets.js",
+    );
+    mocks.runtimeBuild.value = LLAMA_SERVER_BUILD;
+    const ctx = context();
+    const before = structuredClone(ctx.config);
+    expect(await setup(ctx)).toEqual({ profiles: [] });
+    expect(ctx.prompter.note).toHaveBeenCalledWith(
+      expect.stringContaining(
+        `requires verified llama.cpp build 10809; available build is ${LLAMA_SERVER_BUILD}`,
+      ),
+      "Local media unavailable",
+    );
+    expect(ctx.prompter.confirm).not.toHaveBeenCalled();
+    expect(mocks.ensureModel.mock.calls.every(([arg]) => arg.download === false)).toBe(true);
+    expect(mocks.install).not.toHaveBeenCalled();
+    expect(mocks.prepare).not.toHaveBeenCalled();
+    expect(mocks.inference).not.toHaveBeenCalled();
+    expect(ctx.config).toEqual(before);
+  });
 
   it("declining consent neither downloads nor prepares or changes configuration", async () => {
     const ctx = context(false);
