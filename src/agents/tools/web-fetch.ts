@@ -467,15 +467,13 @@ export function webFetchHttpError(status: number, detail: string): Error {
 const PROXY_TUNNEL_STATUS = /Proxy response \((\d{3})\) !== 200 when HTTP Tunneling/u;
 
 function proxyTunnelStatus(error: unknown): number | undefined {
-  let text = "";
   try {
     // Undici nests the proxy's answer in the fetch failure's causes.
-    text = formatErrorMessage(error);
+    const match = PROXY_TUNNEL_STATUS.exec(formatErrorMessage(error));
+    return match ? Number(match[1]) : undefined;
   } catch {
     return undefined;
   }
-  const match = PROXY_TUNNEL_STATUS.exec(text);
-  return match ? Number(match[1]) : undefined;
 }
 
 /** The configured proxy, not the site, ended the request: say which, and what to try. */
