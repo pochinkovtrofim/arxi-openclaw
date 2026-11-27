@@ -12,6 +12,7 @@ import {
   resolveImageSanitizationLimits,
 } from "../agents/image-sanitization.js";
 import { copyInternalToolResultState } from "../agents/runtime/internal-hooks.js";
+import { formatToolNotAllowedInAutomation } from "../agents/scheduled-tool-policy.js";
 import { sanitizeContentBlocksImages } from "../agents/tool-images.js";
 import {
   formatToolExecutionErrorMessage,
@@ -124,6 +125,8 @@ export async function handleMcpJsonRpc(params: {
   message: JsonRpcRequest;
   tools: McpLoopbackTool[];
   toolSchema: McpToolSchemaEntry[];
+  /** What tools/list shows when it is wider than the callable `toolSchema`. */
+  listedToolSchema?: McpToolSchemaEntry[];
   /** Upstream guidance for bridged configured MCP servers, sent on initialize. */
   serverInstructions?: string;
   /** Listed tools Claude Code loads on demand (exact names, or prefixes ending in `*`). */
@@ -166,7 +169,12 @@ export async function handleMcpJsonRpc(params: {
     case "notifications/cancelled":
       return null;
     case "tools/list":
-      return jsonRpcResult(id, { tools: markDeferredTools(params.toolSchema, params.deferredTools) });
+      return jsonRpcResult(id, {
+        tools: markDeferredTools(
+          params.listedToolSchema ?? params.toolSchema,
+          params.deferredTools,
+        ),
+      });
     case "tools/call": {
       const requestedToolName =
         typeof methodParams?.name === "string" ? methodParams.name.trim() : "";
@@ -189,7 +197,11 @@ export async function handleMcpJsonRpc(params: {
           ? params.tools.find((candidate) => readMcpLoopbackToolName(candidate) === toolName)
           : undefined;
       if (!tool) {
-        return toolError(`Tool not available: ${toolName || "unknown"}`);
+        return toolError(
+          params.listedToolSchema?.some((entry) => entry.name === toolName)
+            ? formatToolNotAllowedInAutomation(toolName)
+            : `Tool not available: ${toolName || "unknown"}`,
+        );
       }
       const toolCallId = `mcp-${crypto.randomUUID()}`;
       const startedAt = Date.now();

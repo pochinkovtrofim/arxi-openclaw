@@ -146,6 +146,8 @@ export function prepareCliMcpGrant(
     hostOwnedTools?: readonly string[];
     nativeAuthorityAllowed: boolean;
     projectNativeToolAuthority: ResolvedCliBackend["projectNativeToolAuthority"];
+    /** The uncapped surface a run with an execution-time cap lists. */
+    listedTools?: readonly string[];
   },
 ) {
   const exclusiveTools = run.cliToolAvailability !== undefined || options.promptBuildRestrictsTools;
@@ -166,6 +168,7 @@ export function prepareCliMcpGrant(
       toolsAllow,
       Boolean(projectNativeToolAuthority),
       run,
+      toolsAllow !== undefined ? options.listedTools : undefined,
     ),
   };
 }

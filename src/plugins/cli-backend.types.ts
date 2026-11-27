@@ -571,7 +571,16 @@ type CliBackendPluginBase = {
    * server marks them in `tools/list`; they stay callable, and the grant still
    * decides which tools are listed at all. Unset keeps every tool loaded.
    */
-  resolveDeferredMcpTools?: (ctx: { config?: OpenClawConfig; agentId: string }) => readonly string[];
+  resolveDeferredMcpTools?: (ctx: {
+    config?: OpenClawConfig;
+    agentId: string;
+  }) => readonly string[];
+  /**
+   * Native tools that confer no capability of their own, such as Claude Code's
+   * `ToolSearch`, which only loads listed tools. A scheduled run whose cap lists
+   * the uncapped surface may call these and no other native tool.
+   */
+  capabilityFreeNativeTools?: readonly string[];
   /**
    * Native tools that hand work to descendant agents, such as Claude Code's
    * `Agent`. Kept ones are named in the run's delegation guidance.

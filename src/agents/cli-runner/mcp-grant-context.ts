@@ -31,6 +31,7 @@ export function finalizeCliMcpGrant(
     | "toolAuthorityFingerprint"
     | "replyOperation"
   > = {},
+  listedToolsAllow?: readonly string[],
 ) {
   if (!context) {
     return undefined;
@@ -44,6 +45,9 @@ export function finalizeCliMcpGrant(
     context: {
       ...context,
       ...(toolsAllow !== undefined ? { toolsAllow: [...toolsAllow] } : {}),
+      ...(toolsAllow !== undefined && listedToolsAllow !== undefined
+        ? { listedToolsAllow: [...listedToolsAllow] }
+        : {}),
       // Only parent-observed native startup can fill this pending authority.
       ...(nativeAuthorityPending ? { nativeCronCreatorToolAllowlist: null } : {}),
     },

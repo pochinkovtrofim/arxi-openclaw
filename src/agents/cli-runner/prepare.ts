@@ -40,6 +40,7 @@ import type {
   CliBackendPromptContext,
 } from "../../plugins/cli-backend.types.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
+import { getPluginToolMeta } from "../../plugins/tool-metadata.js";
 import {
   LEGACY_IMPLICIT_AGENT_ID,
   isSubagentSessionKey,
@@ -334,6 +335,7 @@ async function prepareCliRunContextWithinReadFence(
     canEnforceExactToolAvailability,
     projectNativeToolAuthority: backendResolved.projectNativeToolAuthority,
     resolveManagedNativeTools: backendResolved.resolveManagedNativeTools,
+    capabilityFreeNativeTools: backendResolved.capabilityFreeNativeTools,
     sideQuestionToolMode: backendResolved.sideQuestionToolMode,
     isSideQuestion,
     skipsTurnPreparation,
@@ -815,6 +817,24 @@ async function prepareCliRunContextWithinReadFence(
       ),
     };
   }
+  // A scheduled cap enforced at execution lists the uncapped surface and calls only
+  // the cap's tools, matched with the same policy semantics a materialized cap uses.
+  const listedOpenClawTools =
+    params.executionToolsAllow !== undefined ? params.cliToolAvailability?.openClaw : undefined;
+  if (params.executionToolsAllow !== undefined && params.cliToolAvailability) {
+    const listed = new Set(params.cliToolAvailability.openClaw);
+    params = {
+      ...params,
+      cliToolAvailability: {
+        native: params.cliToolAvailability.native,
+        openClaw: applyEmbeddedAttemptToolsAllow(
+          hookFilteredProjectedTools.filter((tool) => listed.has(tool.name)),
+          params.executionToolsAllow,
+          { toolMeta: (tool) => getPluginToolMeta(tool) },
+        ).map((tool) => tool.name),
+      },
+    };
+  }
   const projectedTools = applyEmbeddedAttemptToolsAllow(
     hookFilteredProjectedTools,
     params.cliToolAvailability?.openClaw,
@@ -934,6 +954,7 @@ async function prepareCliRunContextWithinReadFence(
     hostOwnedTools,
     nativeAuthorityAllowed: !skipsTurnPreparation && !nodeClaudePlacement,
     projectNativeToolAuthority: backendResolved.projectNativeToolAuthority,
+    listedTools: listedOpenClawTools,
   });
   const toolBoundExtraSystemPromptHash = params.cliToolAvailability
     ? hashCliSessionText(
@@ -1045,7 +1066,11 @@ async function prepareCliRunContextWithinReadFence(
                           "Native runtime reported an invalid tool list; start a fresh session.",
                         );
                       }
-                      const selected = params.cliToolAvailability?.native;
+                      // Listed but refused natives confer no authority on jobs this run creates.
+                      const selected =
+                        params.executionToolsAllow !== undefined
+                          ? (backendResolved.capabilityFreeNativeTools ?? [])
+                          : params.cliToolAvailability?.native;
                       const capabilities = projectNativeToolAuthority(
                         selected ? tools.filter((name) => selected.includes(name)) : tools,
                       );
@@ -1576,9 +1601,13 @@ async function prepareCliRunContextWithinReadFence(
         isNewSession:
           !reusableCliSessionId?.trim() || reusableCliSession.mode === "reuse-with-drift",
         thinkLevel: params.thinkLevel,
-        nativeDelegationTools: keptManagedNativeTools(managedNativeTools, params).filter((name) =>
-          backendResolved.nativeDelegationTools?.includes(name),
-        ),
+        // A scheduled cap refuses delegation, so its run is not told to delegate.
+        nativeDelegationTools:
+          params.executionToolsAllow === undefined
+            ? keptManagedNativeTools(managedNativeTools, params).filter((name) =>
+                backendResolved.nativeDelegationTools?.includes(name),
+              )
+            : [],
         runtimeContextFragments: params.runtimeContextFragments,
         // Caller-owned memory cannot grant access to persisted interrupted inputs.
         sessionTarget: params.isolatedCompletion ? undefined : cliHistoryWriter?.target,

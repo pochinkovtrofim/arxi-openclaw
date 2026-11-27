@@ -3484,6 +3484,70 @@ describe("prepareCliRunContext", () => {
     },
   );
 
+  it("lists an uncapped run's surface for a scheduled cap and grants only the cap", async () => {
+    const projectedToolNames = ["message", "browser", "ro_life", "ro_chat", "cron"];
+    const mintMcpLoopbackClientGrant = vi.fn(createTestMcpLoopbackClientGrant);
+    const resolveExecutionArgs = vi.fn((context: { baseArgs: readonly string[] }) => [
+      ...context.baseArgs,
+    ]);
+    setRawCliBackendForPrepareTest({
+      id: "claude-cli",
+      pluginId: "anthropic",
+      bundleMcp: true,
+      bundleMcpMode: "claude-config-file",
+      nativeToolMode: "selectable",
+      toolAvailabilityEnforcement: "execution-args",
+      resolveExecutionArgs,
+      resolveManagedNativeTools: () => ["Agent", "Bash", "ToolSearch"],
+      resolveDeferredMcpTools: () => ["ro_*"],
+      capabilityFreeNativeTools: ["ToolSearch"],
+      config: createJsonlStdinBackendConfig("claude"),
+    });
+    setCliRunnerPrepareTestDeps({
+      getActiveMcpLoopbackRuntime: vi.fn(createLoopbackRuntime),
+      mintMcpLoopbackClientGrant,
+      resolveMcpLoopbackPolicyTools: vi.fn(() => ({
+        agentId: "main",
+        tools: projectedToolNames.map((name) => ({ name })),
+      })),
+      resolveMcpLoopbackScopedTools: vi.fn(() => ({
+        agentId: "main",
+        tools: projectedToolNames.map((name) => ({ name })),
+      })),
+    });
+    const run = { provider: "claude-cli", sessionKey: "agent:main:cron:job" };
+
+    const uncapped = await fixture.prepare(run);
+    await uncapped.preparedBackend.cleanup?.();
+    const capped = await fixture.prepare({
+      ...run,
+      toolsAllow: ["message", "ro_life"],
+      scheduledToolPolicy: {
+        version: 1,
+        mode: "account",
+        ownerSessionKey: "agent:main:main",
+        ownerAccountId: "default",
+        ownerOrigin: { kind: "local" },
+      },
+    });
+    await capped.preparedBackend.cleanup?.();
+
+    const [uncappedGrant, cappedGrant] = mintMcpLoopbackClientGrant.mock.calls.map(
+      ([grant]) => grant.context,
+    );
+    expect(uncappedGrant?.toolsAllow).toEqual(projectedToolNames);
+    expect(cappedGrant?.listedToolsAllow).toEqual(uncappedGrant?.toolsAllow);
+    expect(cappedGrant?.toolsAllow).toEqual(["message", "ro_life"]);
+    expect(cappedGrant?.deferredTools).toEqual(uncappedGrant?.deferredTools);
+    expect(cappedGrant?.deferredTools).toEqual(["ro_*"]);
+    expect(capped.params.cliToolAvailability).toEqual({
+      native: uncapped.params.cliToolAvailability?.native,
+      openClaw: ["message", "ro_life"],
+    });
+    expect(capped.params.cliToolAvailability?.native).toEqual(["Agent", "Bash", "ToolSearch"]);
+    expect(capped.params.executionToolsAllow).toEqual(["message", "ro_life"]);
+  });
+
   it("fails closed when a prompt hook restricts an always-on CLI backend", async () => {
     const hookRunner = {
       hasHooks: vi.fn((hookName: string) => hookName === "before_prompt_build"),

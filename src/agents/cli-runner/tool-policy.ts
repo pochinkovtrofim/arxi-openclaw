@@ -1,4 +1,7 @@
+import type { ResolvedCliBackend } from "../cli-backends.js";
+import { formatToolNotAllowedInAutomation } from "../scheduled-tool-policy.js";
 import { normalizeToolPolicyName } from "../tool-policy.js";
+import type { RunCliAgentParams } from "./types.js";
 
 /** Transport prefix CLI harnesses use for loopback OpenClaw MCP tool names. */
 const OPENCLAW_MCP_TOOL_PREFIX = "mcp__openclaw__";
@@ -28,4 +31,25 @@ export function resolveCliRuntimeToolsAllow(toolsAllow?: string[]): string[] | u
   return toolsAllow.some((toolName) => normalizeToolPolicyName(toolName) === "*")
     ? undefined
     : toolsAllow;
+}
+
+/**
+ * A run listing its uncapped surface calls only its scheduled cap's tools plus the
+ * backend's capability-free natives; returns the model-readable refusal otherwise.
+ */
+export function refuseOutsideExecutionCap(
+  run: Pick<RunCliAgentParams, "executionToolsAllow" | "cliToolAvailability">,
+  backend: Pick<ResolvedCliBackend, "capabilityFreeNativeTools">,
+  toolName: string,
+): string | undefined {
+  if (run.executionToolsAllow === undefined) {
+    return undefined;
+  }
+  const openClawToolName = stripOpenClawMcpToolPrefix(toolName);
+  const callable =
+    openClawToolName !== toolName
+      ? run.cliToolAvailability?.openClaw.includes(openClawToolName)
+      : backend.capabilityFreeNativeTools?.includes(toolName) &&
+        run.cliToolAvailability?.native.includes(toolName);
+  return callable ? undefined : formatToolNotAllowedInAutomation(openClawToolName);
 }
