@@ -35,6 +35,7 @@ import {
   rejectBusyUpgrade,
   relayHeaders,
 } from "./inference-proxy-http.js";
+import { observeCodexResponse, timedResponseBody } from "./inference-response-timing.js";
 import {
   createUploadAdmission,
   MAX_BODY_BYTES,
@@ -238,6 +239,7 @@ export async function createCodexInferenceProxy(params: {
     // Native creates a fresh HTTP transport per inference. Closing this response
     // avoids retaining uncharged keepalive sockets after resident admission ends.
     res.setHeader("Connection", "close");
+    const arrivedAt = Date.now();
     const controller = new AbortController();
     const signal = AbortSignal.any([lifetime.signal, controller.signal]);
     const deadlineAtMs = Date.now() + REQUEST_TIMEOUT_MS;
@@ -327,7 +329,8 @@ export async function createCodexInferenceProxy(params: {
         if (!guarded.response.body) {
           res.end();
         } else {
-          await guarded.response.body.pipeTo(Writable.toWeb(res), { signal: upload.signal });
+          const out = timedResponseBody(guarded.response, guarded.response.body, path, arrivedAt);
+          await out.pipeTo(Writable.toWeb(res), { signal: upload.signal });
         }
       } catch (error) {
         // Errors can contain headers, bodies, or the private URL: never log/reflect them.
@@ -559,6 +562,7 @@ export async function createCodexInferenceProxy(params: {
               accepted.once("close", close);
               let releaseFrame = () => {};
               let settleFrame = () => {};
+              let timing: ReturnType<typeof observeCodexResponse> | undefined;
               const idle = (reclaimable = true) => {
                 framePending = false;
                 idleConnections.delete(close);
@@ -621,6 +625,7 @@ export async function createCodexInferenceProxy(params: {
                   return;
                 }
                 framePending = true;
+                timing = path === "/responses" ? observeCodexResponse(Date.now()) : undefined;
                 upstreamTransport.count("websocket");
                 clearTimeout(idleTimer);
                 idleConnections.delete(close);
@@ -674,6 +679,7 @@ export async function createCodexInferenceProxy(params: {
                   close();
                   return;
                 }
+                timing?.frame(codexWebSocketDataToBuffer(data), binary);
                 // Upload completion does not prove response quiescence. Only a
                 // delivered terminal event makes this retained transport reclaimable.
                 const terminal = !binary && isTerminalResponse(codexWebSocketDataToBuffer(data));
