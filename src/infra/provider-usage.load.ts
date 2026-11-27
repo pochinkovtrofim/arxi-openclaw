@@ -10,6 +10,7 @@ import { formatErrorMessage } from "./errors.js";
 import { resolveFetch } from "./fetch.js";
 import { resolveProxyFetchFromEnv } from "./net/proxy-fetch.js";
 import { type ProviderAuth, resolveProviderAuths } from "./provider-usage.auth.js";
+import { readCliRateLimitSnapshot } from "./provider-usage.cli-rate-limits.js";
 import {
   PROVIDER_USAGE_TIMEOUT_MS,
   ignoredErrors,
@@ -107,7 +108,9 @@ export async function loadProviderUsageSummary(
             return failureSnapshot(provider, message.trim() || "Auth failed");
           }
           if (!auth) {
-            return undefined;
+            // Without a login of OpenClaw's own, a CLI that signs in itself may
+            // still have reported its plan's limits.
+            return readCliRateLimitSnapshot(provider, now);
           }
           const snapshot = await resolveProviderUsageSnapshotWithPlugin({
             provider: auth.hookProvider ?? auth.provider,

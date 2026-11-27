@@ -8,6 +8,10 @@ import {
   resolveEventSessionKeyForPolicy,
   resolveEventSessionRoutingPolicy,
 } from "../../infra/event-session-routing.js";
+import {
+  readCliRateLimitRejection,
+  recordCliRateLimitInfo,
+} from "../../infra/provider-usage.cli-rate-limits.js";
 import { createModelCallStreamProgressReporter } from "../../logging/diagnostic-model-stream-progress.js";
 import { beginDiagnosticBackendActivity } from "../../logging/diagnostic-run-activity.js";
 import type { CliBackendConfig } from "../../plugins/cli-backend.types.js";
@@ -17,10 +21,11 @@ import type { RunExit } from "../../process/supervisor/types.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { runWithAgentToolSourceExecutionScope } from "../agent-tool-source-execution-guard.js";
 import type { CliOutput, CliTerminalInterruption } from "../cli-output-contracts.js";
+import { isClaudeStreamJsonDialect } from "../cli-output-records.js";
 import { transformCliResultText } from "../cli-output-results.js";
 import { createCliJsonlStreamingParser } from "../cli-output-stream.js";
 import { parseCliOutput } from "../cli-output.js";
-import type { FailoverError } from "../failover-error.js";
+import { FailoverError, isFailoverError } from "../failover-error.js";
 import { CLI_PARTIAL_OUTPUT_REJECTED_ERROR_CODE } from "../failover/error.js";
 import { ownerPreambleText } from "../owner-preamble-text.js";
 import type { CliExecuteDeps } from "./execute-deps.js";
@@ -51,7 +56,57 @@ type ExecuteCliProcessOptions = {
   onPhase?: (phase: "send" | "resolve" | "cleanup") => void;
 };
 
-export async function executeCliProcess(params: {
+type ExecuteCliProcessParams = Parameters<typeof executeCliProcessOnce>[0];
+
+export async function executeCliProcess(params: ExecuteCliProcessParams): Promise<CliOutput> {
+  try {
+    return await executeCliProcessOnce(params);
+  } catch (error) {
+    throw claudeSubscriptionLimitError(error, params) ?? error;
+  }
+}
+
+// A Claude run that failed while the program reports a window of the plan as
+// used up failed for that limit, whatever its text says: waiting for the reset
+// or another model is the only way on. Its code and reset are the identity
+// Ro's host acts on (agent-run-error-identity.ts), as for Codex.
+export function claudeSubscriptionLimitError(
+  error: unknown,
+  params: Pick<ExecuteCliProcessParams, "backend"> & {
+    nodePlacement?: ExecuteCliProcessParams["nodePlacement"];
+    context: { backendResolved: { id: string } };
+  },
+): FailoverError | undefined {
+  const providerId = params.context.backendResolved.id;
+  if (
+    params.nodePlacement ||
+    !isFailoverError(error) ||
+    error.code === "subscription_limit" ||
+    !isClaudeStreamJsonDialect({ backend: params.backend, providerId })
+  ) {
+    return undefined;
+  }
+  const rejection = readCliRateLimitRejection("anthropic");
+  if (!rejection) {
+    return undefined;
+  }
+  return new FailoverError(error.message, {
+    reason: "rate_limit",
+    provider: error.provider,
+    model: error.model,
+    profileId: error.profileId,
+    authMode: error.authMode,
+    sessionId: error.sessionId,
+    lane: error.lane,
+    status: 429,
+    code: "subscription_limit",
+    rawError: error.rawError,
+    ...(rejection.resetAtMs !== undefined ? { resetAtMs: rejection.resetAtMs } : {}),
+    cause: error,
+  });
+}
+
+async function executeCliProcessOnce(params: {
   context: PreparedCliRunContext;
   assertCurrent: SessionSourceAssertion;
   backend: CliBackendConfig;
@@ -176,6 +231,10 @@ export async function executeCliProcess(params: {
         onAssistantMessage: params.diagnostics?.observeAssistantMessage,
         onStep: params.diagnostics?.observeStep,
         onUsage: params.diagnostics?.observeUsage,
+        // A paired node's program runs on that node's own login, not this plan.
+        onRateLimitInfo: params.nodePlacement
+          ? undefined
+          : (info) => recordCliRateLimitInfo("anthropic", info),
         onAttributedSubagentProgress: (parentToolUseId) => {
           if (!params.events.isActiveForegroundAgentTool(parentToolUseId)) {
             return;
