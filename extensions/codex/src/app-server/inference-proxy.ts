@@ -331,7 +331,9 @@ export async function createCodexInferenceProxy(params: {
           res.end();
         } else {
           const timing =
-            path === "/responses" && guarded.response.ok
+            path === "/responses" &&
+            guarded.response.ok &&
+            guarded.response.headers.get("content-type")?.startsWith("text/event-stream")
               ? createCodexResponseTimingObserver(arrivedAt).stream()
               : undefined;
           await (timing ? guarded.response.body.pipeThrough(timing) : guarded.response.body).pipeTo(
