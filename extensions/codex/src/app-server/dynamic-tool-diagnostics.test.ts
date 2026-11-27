@@ -65,11 +65,19 @@ describe("Codex dynamic tool diagnostics", () => {
   it("records the HTTP status a thrown tool error carries, as the embedded runtime does", async () => {
     const refused = Object.assign(new Error("source unavailable or changed"), { statusCode: 409 });
     expect(readThrownDynamicToolErrorCode(refused)).toBe("409");
-    expect(readThrownDynamicToolErrorCode(Object.assign(new Error("x"), { status: 403 }))).toBe("403");
-    expect(readThrownDynamicToolErrorCode(Object.assign(new Error("x"), { code: "follow_limit", status: 429 }))).toBe(
-      "follow_limit",
+    expect(readThrownDynamicToolErrorCode(Object.assign(new Error("x"), { status: 403 }))).toBe(
+      "403",
     );
-    for (const opaque of [new Error("Web fetch failed"), Object.assign(new Error("x"), { status: 999 }), "text"]) {
+    expect(
+      readThrownDynamicToolErrorCode(
+        Object.assign(new Error("x"), { code: "follow_limit", status: 429 }),
+      ),
+    ).toBe("follow_limit");
+    for (const opaque of [
+      new Error("Web fetch failed"),
+      Object.assign(new Error("x"), { status: 999 }),
+      "text",
+    ]) {
       expect(readThrownDynamicToolErrorCode(opaque)).toBeUndefined();
     }
     const events = await captureToolEvents(() =>

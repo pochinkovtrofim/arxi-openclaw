@@ -201,12 +201,18 @@ describe("CLI loopback tool outcomes", () => {
       kind: "mcp_tool_use",
       args,
     });
-    const capture = markMcpLoopbackToolCallStarted({ captureKey: "deadline-test", toolName: "web_fetch", args });
+    const capture = markMcpLoopbackToolCallStarted({
+      captureKey: "deadline-test",
+      toolName: "web_fetch",
+      args,
+    });
     if (!capture) {
       throw new Error("expected captured web_fetch call");
     }
     updateMcpLoopbackToolCallCapture(capture, { toolName: "web_fetch", args });
-    const refused = Object.assign(new Error("Web fetch refused by the site (403)"), { status: 403 });
+    const refused = Object.assign(new Error("Web fetch refused by the site (403)"), {
+      status: 403,
+    });
     recordMcpLoopbackToolCallResult({
       captureHandle: capture,
       toolName: "web_fetch",
@@ -215,7 +221,10 @@ describe("CLI loopback tool outcomes", () => {
       result: refused,
     });
     markMcpLoopbackToolCallFinished(capture);
-    expect(tracking.resolveCliLoopbackTerminalOutcome("fetch-1")).toEqual({ outcome: "failed", errorCode: "403" });
+    expect(tracking.resolveCliLoopbackTerminalOutcome("fetch-1")).toEqual({
+      outcome: "failed",
+      errorCode: "403",
+    });
     tracking.finalizeCapture(() => {});
   });
 });

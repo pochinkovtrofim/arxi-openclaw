@@ -46,7 +46,12 @@ export function readThrownDynamicToolErrorCode(error: unknown): string | undefin
     }
     for (const key of ["status", "statusCode"]) {
       const status: unknown = Object.getOwnPropertyDescriptor(error, key)?.value;
-      if (typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599) {
+      if (
+        typeof status === "number" &&
+        Number.isInteger(status) &&
+        status >= 100 &&
+        status <= 599
+      ) {
         return String(status);
       }
     }

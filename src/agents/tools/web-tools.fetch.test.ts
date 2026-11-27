@@ -834,7 +834,9 @@ describe("web_fetch extraction fallbacks", () => {
     const wall = "<html><body><h1>Just a moment...</h1>" + "x".repeat(5_000) + "</body></html>";
     installMockFetch(
       (input: RequestInfo | URL) =>
-        Promise.resolve(errorHtmlResponse(wall, 403, resolveRequestUrl(input), "text/html")) as Promise<Response>,
+        Promise.resolve(
+          errorHtmlResponse(wall, 403, resolveRequestUrl(input), "text/html"),
+        ) as Promise<Response>,
     );
     const tool = createFetchTool({ firecrawl: { enabled: false } });
     const error = await tool?.execute?.("call", { url: "https://example.com/walled" }).then(
@@ -842,7 +844,9 @@ describe("web_fetch extraction fallbacks", () => {
       (caught: unknown) => caught as Error & { status?: unknown },
     );
     expect(error?.message).toContain("Web fetch refused by the site (403)");
-    expect(error?.message).toMatch(/fetching it again will not help.*not a network failure.*browser tool.*web_search/su);
+    expect(error?.message).toMatch(
+      /fetching it again will not help.*not a network failure.*browser tool.*web_search/su,
+    );
     expect(error?.message.length).toBeLessThan(1_200);
     // The status is the code diagnostics record for the failed call.
     expect(error?.status).toBe(403);
@@ -855,11 +859,15 @@ describe("web_fetch extraction fallbacks", () => {
   it("tells a rate limit to wait instead of fetching again", async () => {
     installMockFetch(
       (input: RequestInfo | URL) =>
-        Promise.resolve(errorHtmlResponse("slow down", 429, resolveRequestUrl(input), "text/plain")) as Promise<Response>,
+        Promise.resolve(
+          errorHtmlResponse("slow down", 429, resolveRequestUrl(input), "text/plain"),
+        ) as Promise<Response>,
     );
     const tool = createFetchTool({ firecrawl: { enabled: false } });
     const message = await captureToolErrorMessage({ tool, url: "https://example.com/busy" });
-    expect(message).toMatch(/refused by the site \(429\): it is limiting requests.*Do not fetch this site again in this turn/su);
+    expect(message).toMatch(
+      /refused by the site \(429\): it is limiting requests.*Do not fetch this site again in this turn/su,
+    );
   });
 
   it("says the network proxy, not the site, refused or failed the connection", async () => {
@@ -875,7 +883,9 @@ describe("web_fetch extraction fallbacks", () => {
         ),
       );
       const tool = createFetchTool({ firecrawl: { enabled: false } });
-      expect(await captureToolErrorMessage({ tool, url: "https://example.com/tunnel" })).toMatch(expected);
+      expect(await captureToolErrorMessage({ tool, url: "https://example.com/tunnel" })).toMatch(
+        expected,
+      );
     }
   });
 

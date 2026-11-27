@@ -459,7 +459,11 @@ export function webFetchHttpError(status: number, detail: string): Error {
         );
   // Diagnostics record a valid HTTP status as the error code; 999 is not one.
   if (status >= 100 && status <= 599) {
-    Object.defineProperty(error, "status", { value: status, enumerable: false, configurable: true });
+    Object.defineProperty(error, "status", {
+      value: status,
+      enumerable: false,
+      configurable: true,
+    });
   }
   return error;
 }

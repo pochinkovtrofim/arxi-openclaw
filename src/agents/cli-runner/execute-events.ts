@@ -352,7 +352,8 @@ export function createCliEventHandlers(params: {
     }
     const trustedFailure = trustedOutcome !== undefined && trustedOutcome.outcome !== "completed";
     // The HTTP status a thrown error carried, as the embedded runtime records it.
-    const errorCode = trustedOutcome && "errorCode" in trustedOutcome ? trustedOutcome.errorCode : undefined;
+    const errorCode =
+      trustedOutcome && "errorCode" in trustedOutcome ? trustedOutcome.errorCode : undefined;
     emitTrustedDiagnosticEvent(
       trustedOutcome?.outcome === "blocked"
         ? {
