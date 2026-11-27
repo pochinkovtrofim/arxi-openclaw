@@ -60,10 +60,10 @@ export function resetCodexResponseTimingsForTest(): void {
 
 /**
  * Observes the response events of one request that native Codex sent at
- * `startedAt`. Call `event` for every event before relaying it, so the timing is
+ * `startedAt`, its arrival at the relay, so admission waits count. Call `event` for every event before relaying it, so the timing is
  * recorded before native can report the completion.
  */
-export function createCodexResponseTimingObserver(startedAt: number, now = Date.now) {
+export function observeCodexResponse(startedAt: number, now = Date.now) {
   let responseId: string | undefined;
   let firstOutputAt: number | undefined;
   let finished = false;
@@ -108,9 +108,9 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
     }
   };
   return {
-    /** One WebSocket text frame: exactly one JSON event. */
-    frame(bytes: Buffer): void {
-      if (finished) {
+    /** One WebSocket frame: a text frame is exactly one JSON event. */
+    frame(bytes: Buffer, binary = false): void {
+      if (finished || binary) {
         return;
       }
       const head = bytes.subarray(0, 256).toString("utf8");
@@ -152,11 +152,10 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
           if (!finished) {
             pending += decoder.decode(chunk, { stream: true });
             // Resume the search where the last chunk ended: a long line costs one pass.
-            let newline = pending.indexOf("\n", searched);
-            while (newline >= 0 && !finished) {
+            for (let newline = pending.indexOf("\n", searched); newline >= 0; ) {
               line(pending.slice(0, newline).replace(/\r$/, ""));
               pending = pending.slice(newline + 1);
-              newline = pending.indexOf("\n");
+              newline = finished ? -1 : pending.indexOf("\n");
             }
             searched = pending.length;
             if (finished || pending.length > MAX_BODY_BYTES) {
@@ -199,4 +198,18 @@ function readResponseId(json: string | undefined): string | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** The upstream body to relay, timed when it is a successful Responses event stream. */
+export function timedResponseBody(
+  response: Response,
+  body: ReadableStream<Uint8Array>,
+  path: string,
+  arrivedAt: number,
+): ReadableStream<Uint8Array> {
+  return path === "/responses" &&
+    response.ok &&
+    response.headers.get("content-type")?.startsWith("text/event-stream")
+    ? body.pipeThrough(observeCodexResponse(arrivedAt).stream())
+    : body;
 }

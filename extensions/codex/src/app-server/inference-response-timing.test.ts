@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  createCodexResponseTimingObserver,
+  observeCodexResponse,
   resetCodexResponseTimingsForTest,
   takeCodexResponseTiming,
 } from "./inference-response-timing.js";
@@ -28,7 +28,7 @@ async function relay(
 describe("Codex response timing at the relay", () => {
   it("times a server-sent response split across chunks and passes every byte through", async () => {
     const clock = { now: 0 };
-    const observer = createCodexResponseTimingObserver(100, () => clock.now);
+    const observer = observeCodexResponse(100, () => clock.now);
     const body = [
       'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_1","instructions":"secret"}}\n\n',
       'event: response.in_progress\ndata: {"type":"response.in_progress"}\n\n',
@@ -56,7 +56,7 @@ describe("Codex response timing at the relay", () => {
 
   it("reads the event type from data when the stream names none", async () => {
     const clock = { now: 0 };
-    const observer = createCodexResponseTimingObserver(0, () => clock.now);
+    const observer = observeCodexResponse(0, () => clock.now);
     await relay(
       observer.stream(),
       [
@@ -74,7 +74,7 @@ describe("Codex response timing at the relay", () => {
 
   it("times WebSocket frames and records a response with no output without a first-byte time", () => {
     let now = 5;
-    const observer = createCodexResponseTimingObserver(0, () => now);
+    const observer = observeCodexResponse(0, () => now);
     observer.frame(Buffer.from('{"type":"response.created","response":{"id":"resp_3"}}'));
     now = 50;
     observer.frame(Buffer.from('{"type":"response.incomplete","response":{"id":"resp_3"}}'));
@@ -83,7 +83,7 @@ describe("Codex response timing at the relay", () => {
 
   it("does not count metadata or rate-limit frames as the model's first output", () => {
     let now = 0;
-    const observer = createCodexResponseTimingObserver(0, () => now);
+    const observer = observeCodexResponse(0, () => now);
     now = 20;
     observer.frame(Buffer.from('{"type":"response.created","response":{"id":"resp_6"}}'));
     now = 40;
@@ -100,26 +100,26 @@ describe("Codex response timing at the relay", () => {
   });
 
   it("records nothing for an error event or a stream without a response id", () => {
-    const failed = createCodexResponseTimingObserver(0, () => 10);
+    const failed = observeCodexResponse(0, () => 10);
     failed.frame(Buffer.from('{"type":"response.created","response":{"id":"resp_4"}}'));
     failed.frame(Buffer.from('{"type":"error","error":{}}'));
     failed.frame(Buffer.from('{"type":"response.completed","response":{"id":"resp_4"}}'));
     expect(takeCodexResponseTiming("resp_4", 10)).toBeUndefined();
 
-    const anonymous = createCodexResponseTimingObserver(0, () => 10);
+    const anonymous = observeCodexResponse(0, () => 10);
     anonymous.frame(Buffer.from('{"type":"response.completed","response":{}}'));
     expect(takeCodexResponseTiming("", 10)).toBeUndefined();
   });
 
   it("forgets a timing nobody claims after ten minutes", () => {
-    const observer = createCodexResponseTimingObserver(0, () => 1_000);
+    const observer = observeCodexResponse(0, () => 1_000);
     observer.frame(Buffer.from('{"type":"response.completed","response":{"id":"resp_5"}}'));
     expect(takeCodexResponseTiming("resp_5", 1_000 + 10 * 60_000)).toBeUndefined();
   });
 
   it("keeps a bounded number of unclaimed timings", () => {
     for (let index = 0; index < 600; index++) {
-      createCodexResponseTimingObserver(0, () => 1).frame(
+      observeCodexResponse(0, () => 1).frame(
         Buffer.from(`{"type":"response.completed","response":{"id":"resp_b${index}"}}`),
       );
     }

@@ -23,7 +23,7 @@ import {
   vi,
   type DiagnosticEventPayload,
 } from "./event-projector.test-harness.js";
-import { createCodexResponseTimingObserver } from "./inference-response-timing.js";
+import { observeCodexResponse } from "./inference-response-timing.js";
 
 registerCodexEventProjectorTestLifecycle();
 
@@ -99,7 +99,7 @@ describe("CodexAppServerEventProjector usage projection", () => {
     });
     const base = Date.now();
     let clock = base;
-    const relay = createCodexResponseTimingObserver(base, () => clock);
+    const relay = observeCodexResponse(base, () => clock);
     clock = base + 40;
     relay.frame(Buffer.from('{"type":"response.created","response":{"id":"response-timed"}}'));
     clock = base + 900;
