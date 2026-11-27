@@ -23,6 +23,7 @@ import {
   vi,
   type DiagnosticEventPayload,
 } from "./event-projector.test-harness.js";
+import { createCodexResponseTimingObserver } from "./inference-response-timing.js";
 
 registerCodexEventProjectorTestLifecycle();
 
@@ -77,6 +78,47 @@ describe("CodexAppServerEventProjector usage projection", () => {
       ]);
       expect(events[0]).not.toHaveProperty("durationMs");
       expect(JSON.stringify(events)).not.toContain("owner message");
+    } finally {
+      stop();
+    }
+  });
+
+  it("carries the relay's request timing on the completion of the same response", async () => {
+    const events: DiagnosticEventPayload[] = [];
+    const stop = onInternalDiagnosticEvent((event) => {
+      if (event.type === "model.call.completed" && event.observationUnit === "request") {
+        events.push(event);
+      }
+    });
+    const projector = await createProjector(undefined, {
+      modelCallTrace: {
+        traceId: "4bf92f3577b34da6a3ce929d0e0e4736",
+        spanId: "00f067aa0ba902b7",
+        traceFlags: "01",
+      },
+    });
+    let clock = 1_000;
+    const relay = createCodexResponseTimingObserver(1_000, () => clock);
+    clock = 1_040;
+    relay.frame(Buffer.from('{"type":"response.created","response":{"id":"response-timed"}}'));
+    clock = 1_900;
+    relay.frame(Buffer.from('{"type":"response.output_item.added","item":{}}'));
+    clock = 4_200;
+    relay.frame(Buffer.from('{"type":"response.completed","response":{"id":"response-timed"}}'));
+
+    try {
+      await projector.handleNotification(
+        forCurrentTurn("rawResponse/completed", { responseId: "response-timed", usage: {} }),
+      );
+      await flushDiagnosticEvents();
+
+      expect(events).toEqual([
+        expect.objectContaining({
+          callId: "response-timed",
+          durationMs: 3_200,
+          timeToFirstByteMs: 900,
+        }),
+      ]);
     } finally {
       stop();
     }

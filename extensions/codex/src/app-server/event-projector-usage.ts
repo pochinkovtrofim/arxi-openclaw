@@ -12,6 +12,7 @@ import {
   asSafeIntegerInRange,
   readStringField as readString,
 } from "openclaw/plugin-sdk/string-coerce-runtime";
+import { takeCodexResponseTiming } from "./inference-response-timing.js";
 import { isJsonObject, type JsonObject } from "./protocol.js";
 
 function readTokenCount(record: JsonObject, key: string): number | undefined {
@@ -175,7 +176,8 @@ function emitCodexRequestCompletion(
     provider: context.provider,
     model: context.model,
     observationUnit: "request",
-    // The upstream notification provides completion time, not request duration.
+    // The notification carries no timing; the relay measured this response.
+    ...takeCodexResponseTiming(responseId),
     ...(context.trace
       ? { trace: freezeDiagnosticTraceContext(createChildDiagnosticTraceContext(context.trace)) }
       : {}),

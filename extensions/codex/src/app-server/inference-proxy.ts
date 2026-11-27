@@ -41,6 +41,7 @@ import {
   MAX_PENDING_REQUESTS,
   MAX_UPLOADS,
 } from "./inference-upload.js";
+import { createCodexResponseTimingObserver } from "./inference-response-timing.js";
 import { createCodexUpstreamTransport } from "./inference-upstream.js";
 import type { CodexResponsesOAuth } from "./responses-oauth.js";
 import { codexWebSocketDataToBuffer } from "./websocket-data.js";
@@ -238,6 +239,8 @@ export async function createCodexInferenceProxy(params: {
     // Native creates a fresh HTTP transport per inference. Closing this response
     // avoids retaining uncharged keepalive sockets after resident admission ends.
     res.setHeader("Connection", "close");
+    // Native's request began when it reached the relay: admission waits count.
+    const arrivedAt = Date.now();
     const controller = new AbortController();
     const signal = AbortSignal.any([lifetime.signal, controller.signal]);
     const deadlineAtMs = Date.now() + REQUEST_TIMEOUT_MS;
@@ -327,7 +330,14 @@ export async function createCodexInferenceProxy(params: {
         if (!guarded.response.body) {
           res.end();
         } else {
-          await guarded.response.body.pipeTo(Writable.toWeb(res), { signal: upload.signal });
+          const timing =
+            path === "/responses" && guarded.response.ok
+              ? createCodexResponseTimingObserver(arrivedAt).stream()
+              : undefined;
+          await (timing ? guarded.response.body.pipeThrough(timing) : guarded.response.body).pipeTo(
+            Writable.toWeb(res),
+            { signal: upload.signal },
+          );
         }
       } catch (error) {
         // Errors can contain headers, bodies, or the private URL: never log/reflect them.
@@ -559,6 +569,7 @@ export async function createCodexInferenceProxy(params: {
               accepted.once("close", close);
               let releaseFrame = () => {};
               let settleFrame = () => {};
+              let timing: ReturnType<typeof createCodexResponseTimingObserver> | undefined;
               const idle = (reclaimable = true) => {
                 framePending = false;
                 idleConnections.delete(close);
@@ -621,6 +632,8 @@ export async function createCodexInferenceProxy(params: {
                   return;
                 }
                 framePending = true;
+                const frameArrivedAt = Date.now();
+                timing = undefined;
                 upstreamTransport.count("websocket");
                 clearTimeout(idleTimer);
                 idleConnections.delete(close);
@@ -653,6 +666,9 @@ export async function createCodexInferenceProxy(params: {
                       releaseModel();
                     };
                     frame.signal.throwIfAborted();
+                    if (path === "/responses") {
+                      timing = createCodexResponseTimingObserver(frameArrivedAt);
+                    }
                     await forward(frame);
                   } catch (error) {
                     prepared?.release();
@@ -667,16 +683,20 @@ export async function createCodexInferenceProxy(params: {
               });
               accepted.once("close", () => releaseFrame());
               remote!.on("message", (data: RawData, binary: boolean) => {
+                const bytes = codexWebSocketDataToBuffer(data);
                 if (
                   accepted.readyState !== WebSocket.OPEN ||
-                  accepted.bufferedAmount + codexWebSocketDataToBuffer(data).length > MAX_BODY_BYTES
+                  accepted.bufferedAmount + bytes.length > MAX_BODY_BYTES
                 ) {
                   close();
                   return;
                 }
+                if (!binary) {
+                  timing?.frame(bytes);
+                }
                 // Upload completion does not prove response quiescence. Only a
                 // delivered terminal event makes this retained transport reclaimable.
-                const terminal = !binary && isTerminalResponse(codexWebSocketDataToBuffer(data));
+                const terminal = !binary && isTerminalResponse(bytes);
                 const releaseCompletedFrame = terminal ? settleFrame : undefined;
                 accepted.send(data, { binary }, (error) => {
                   if (error) {

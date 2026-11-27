@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CODEX_INFERENCE_GENERATION_KEY } from "./inference-context.js";
 import { createCodexInferenceModelBinding } from "./inference-dispatch.js";
 import { createCodexInferenceProxy, type CodexInferenceProxy } from "./inference-proxy.js";
+import { takeCodexResponseTiming } from "./inference-response-timing.js";
 import { codexNativeSubagentMonitorRuntime } from "./native-subagent-monitor.js";
 import {
   createClient,
@@ -455,6 +456,33 @@ describe("inference HTTP transport ownership", () => {
     expect((await completed).every((body) => body.includes("synthetic completed"))).toBe(true);
     await Promise.all([...requests.map(({ closed }) => closed), waitForUpstreamClose()]);
     expect(requests.every(({ req }) => req.socket?.closed)).toBe(true);
+  });
+
+  it("times a streamed response by its id while relaying the stream unchanged", async () => {
+    const created =
+      'event: response.created\ndata: {"type":"response.created","response":{"id":"resp_relay"}}\n\n';
+    const delta = 'event: response.output_text.delta\ndata: {"type":"response.output_text.delta"}\n\n';
+    const completed =
+      'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_relay"}}\n\n';
+    handle = (req, res) => {
+      void readBody(req).then(() => {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(created);
+        setTimeout(() => res.write(delta), 40);
+        setTimeout(() => res.end(completed), 80);
+      });
+    };
+    const startedAt = Date.now();
+    const upload = post();
+    const body = (await readBody(await upload.response)).toString();
+    const elapsed = Date.now() - startedAt;
+    expect(body).toBe(created + delta + completed);
+    const timing = takeCodexResponseTiming("resp_relay");
+    expect(timing?.durationMs).toBeGreaterThanOrEqual(80);
+    expect(timing?.durationMs).toBeLessThanOrEqual(elapsed);
+    expect(timing?.timeToFirstByteMs).toBeGreaterThanOrEqual(40);
+    expect(timing?.timeToFirstByteMs).toBeLessThan(timing!.durationMs);
+    await Promise.all([upload.closed, waitForUpstreamClose()]);
   });
 
   it("aborts the upstream SSE stream when the client disconnects mid-response", async () => {
