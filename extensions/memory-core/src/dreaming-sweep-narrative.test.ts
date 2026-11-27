@@ -121,7 +121,9 @@ async function createSweep(
   setRuntimeConfigSnapshot(config);
   const narratives: CompletionInput[] = [];
   const complete = vi.fn(async (input: CompletionInput) => {
-    if (!input.extraSystemPrompt?.includes("You are keeping a dream diary")) {
+    // Recognize the diary request by what it asks for, not by the diary voice,
+    // which Ro's grounded reflection prompt replaces.
+    if (!input.message.startsWith("Write a dream diary entry from these memory fragments")) {
       // Deliberately use the real append-only promotion fallback, not a fabricated plan.
       return { text: "" };
     }

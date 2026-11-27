@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { LlamaCppHardware } from "./hardware.js";
 import {
   LLAMA_CPP_MEDIA_RECIPES,
@@ -6,7 +6,22 @@ import {
   resolveLlamaCppMediaArtifact,
 } from "./media-catalog.js";
 
+const runtimeBuild = vi.hoisted(() => ({ value: 10_809 }));
+// The recipes are verified on llama.cpp b10809. The fork pins a newer build,
+// which keeps local media unavailable until the recipes are verified on it; the
+// budget cases run on the verified runtime.
+vi.mock("./llama-server-assets.js", async (original) => ({
+  ...(await original<typeof import("./llama-server-assets.js")>()),
+  get LLAMA_SERVER_BUILD() {
+    return runtimeBuild.value;
+  },
+}));
+
 const GIB = 1024 ** 3;
+
+beforeEach(() => {
+  runtimeBuild.value = 10_809;
+});
 
 function hardware(overrides: Partial<LlamaCppHardware> = {}): LlamaCppHardware {
   return {
@@ -98,6 +113,19 @@ describe("managed local media catalog", () => {
       requiredDiskBytes: initial.vision.projector.expectedSize,
     });
     expect(recommendLlamaCppMedia(host, { artifactSha256 }).kind).toBe("unavailable");
+  });
+
+  it("keeps local media unavailable on the pinned runtime the recipes were not verified on", async () => {
+    const { LLAMA_SERVER_BUILD } = await vi.importActual<typeof import("./llama-server-assets.js")>(
+      "./llama-server-assets.js",
+    );
+    runtimeBuild.value = LLAMA_SERVER_BUILD;
+    expect(recommendLlamaCppMedia(hardware())).toMatchObject({
+      kind: "unavailable",
+      reason: expect.stringContaining(
+        `requires verified llama.cpp build 10809; available build is ${LLAMA_SERVER_BUILD}`,
+      ),
+    });
   });
 
   it("does not guess when runtime free space is unknown", () => {

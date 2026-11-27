@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { AgentHarnessAttemptParamsV2 } from "openclaw/plugin-sdk/agent-harness-runtime";
+import {
+  buildCredentialSafetyPrompt,
+  type AgentHarnessAttemptParamsV2,
+} from "openclaw/plugin-sdk/agent-harness-runtime";
 import {
   createMockPluginRegistry,
   initializeGlobalHookRunner,
@@ -379,7 +382,8 @@ describe("Agents API agent workspace instructions", () => {
     expect(instructions).toContain("## UI Presentation");
     expect(instructions).toContain("## Skill Workshop");
     expect(instructions).toContain("## Delegation");
-    expect(instructions).toContain("Use or store credentials the user supplies as requested");
+    expect(instructions).toContain(buildCredentialSafetyPrompt({ controlToolsAvailable: true }));
+    expect(instructions).toContain("Never request or echo credentials/secrets");
     expect(instructions).toContain("Fixture Git co-authors: Example <example@example.test>.");
     expect(instructions).toContain("Extra fixture instructions");
   });
