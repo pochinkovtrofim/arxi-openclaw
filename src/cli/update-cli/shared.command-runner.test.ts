@@ -37,6 +37,8 @@ vi.mock("../../process/exec.js", async (importOriginal) => ({
   runCommandWithTimeout,
   runCommandBuffered,
 }));
+// Host installs: the runner's own container must not pick the refusal reason.
+vi.mock("../../infra/container-environment.js", () => ({ isContainerEnvironment: () => false }));
 
 const successfulCommandResult = {
   stdout: "",
@@ -184,7 +186,7 @@ describe("update CLI shared helpers", () => {
         await expect(owner).rejects.toBeInstanceOf(UpdatePreMutationError);
         await expect(owner).rejects.toMatchObject({
           name: "UpdatePreMutationError",
-          reason: expect.stringMatching(/^(unmanaged-package-install|container-image-install)$/),
+          reason: "unmanaged-package-install",
           failureFacts: [
             {
               check: "installation-inspection",

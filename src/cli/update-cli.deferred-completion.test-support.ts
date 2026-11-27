@@ -55,6 +55,8 @@ vi.mock("../runtime.js", async (importOriginal) => ({
 vi.mock("../infra/update-runner-git.js", () => ({
   updateGitCheckout: vi.fn(),
 }));
+// A host install: the runner's own container must not decide service repair or advice.
+vi.mock("../infra/container-environment.js", () => ({ isContainerEnvironment: () => false }));
 // Runtime publication has its own fixture; this suite owns deferred completion and config writes.
 vi.mock("./update-cli/update-command-runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./update-cli/update-command-runtime.js")>()),
