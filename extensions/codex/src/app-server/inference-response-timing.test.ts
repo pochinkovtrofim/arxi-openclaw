@@ -81,6 +81,24 @@ describe("Codex response timing at the relay", () => {
     expect(takeCodexResponseTiming("resp_3", 50)).toEqual({ durationMs: 50 });
   });
 
+  it("does not count metadata or rate-limit frames as the model's first output", () => {
+    let now = 0;
+    const observer = createCodexResponseTimingObserver(0, () => now);
+    now = 20;
+    observer.frame(Buffer.from('{"type":"response.created","response":{"id":"resp_6"}}'));
+    now = 40;
+    observer.frame(Buffer.from('{"type":"codex.response.metadata","headers":{}}'));
+    now = 60;
+    observer.frame(Buffer.from('{"type":"codex.rate_limits","rate_limits":{}}'));
+    now = 80;
+    observer.frame(Buffer.from('{"type":"response.metadata","metadata":{}}'));
+    now = 700;
+    observer.frame(Buffer.from('{"type":"response.reasoning_summary_text.delta","delta":"x"}'));
+    now = 900;
+    observer.frame(Buffer.from('{"type":"response.completed","response":{"id":"resp_6"}}'));
+    expect(takeCodexResponseTiming("resp_6", 900)).toEqual({ durationMs: 900, timeToFirstByteMs: 700 });
+  });
+
   it("records nothing for an error event or a stream without a response id", () => {
     const failed = createCodexResponseTimingObserver(0, () => 10);
     failed.frame(Buffer.from('{"type":"response.created","response":{"id":"resp_4"}}'));

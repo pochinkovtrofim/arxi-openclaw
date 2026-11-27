@@ -19,8 +19,9 @@ const MAX_TIMINGS = 512;
 const TIMING_TTL_MS = 10 * 60_000;
 const timings = new Map<string, CodexResponseTiming & { recordedAt: number }>();
 
-// Lifecycle events native Codex gets before the model produces anything.
-const PREAMBLE = new Set(["response.created", "response.in_progress", "response.queued"]);
+// Only these event families are the model's output; lifecycle, metadata and rate-limit
+// events (response.created, response.metadata, codex.*, responsesapi.*) are not.
+const OUTPUT = /^response\.(output_|reasoning|content_part\.|function_call_arguments\.|custom_tool_call_input\.|refusal\.)/;
 const TERMINAL = new Set(["response.completed", "response.failed", "response.incomplete"]);
 const LEADING_TYPE = /^\s*\{\s*"type"\s*:\s*"([a-z0-9_.]{1,80})"/;
 
@@ -68,7 +69,7 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
   let finished = false;
   // An output event counts from the moment its type is known, not when its data ends.
   const announce = (type: string) => {
-    if (!finished && !PREAMBLE.has(type) && !TERMINAL.has(type) && type !== "error") {
+    if (!finished && OUTPUT.test(type)) {
       firstOutputAt ??= now();
     }
   };
@@ -102,7 +103,7 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
       finished = true;
       return;
     }
-    if (!PREAMBLE.has(type)) {
+    if (OUTPUT.test(type)) {
       firstOutputAt ??= at;
     }
   };
@@ -121,6 +122,7 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
     stream(): TransformStream<Uint8Array, Uint8Array> {
       const decoder = new TextDecoder();
       let pending = "";
+      let searched = 0;
       let eventType: string | undefined;
       let data: string[] = [];
       const line = (text: string) => {
@@ -135,11 +137,11 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
           eventType = text.slice(6).trim();
           announce(eventType);
         } else if (text.startsWith("data:")) {
-          // Only the events whose id is read keep their data; an output delta does not.
+          // Only an event whose id may still be read keeps its data; an output delta does not.
           if (
             eventType === undefined ||
-            eventType === "response.created" ||
-            TERMINAL.has(eventType)
+            (responseId === undefined &&
+              (eventType === "response.created" || TERMINAL.has(eventType)))
           ) {
             data.push(text.slice(5).trimStart());
           }
@@ -149,12 +151,14 @@ export function createCodexResponseTimingObserver(startedAt: number, now = Date.
         transform(chunk, controller) {
           if (!finished) {
             pending += decoder.decode(chunk, { stream: true });
-            let newline = pending.indexOf("\n");
+            // Resume the search where the last chunk ended: a long line costs one pass.
+            let newline = pending.indexOf("\n", searched);
             while (newline >= 0 && !finished) {
               line(pending.slice(0, newline).replace(/\r$/, ""));
               pending = pending.slice(newline + 1);
               newline = pending.indexOf("\n");
             }
+            searched = pending.length;
             if (finished || pending.length > MAX_BODY_BYTES) {
               finished = true;
               pending = "";
