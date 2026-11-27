@@ -120,7 +120,7 @@ it.each([false, true])(
           return {
             agentId: "main",
             workspaceDir: "/tmp/library-workspace",
-            captureFinalCronCreatorTools: undefined,
+            captureFinalCallableTools: undefined,
             tools: capability
               ? [
                   createLibrarySkillWorkshopTool(capability),

@@ -82,6 +82,12 @@ export type McpLoopbackRequestContext = {
    * hard enforcement. Unset keeps the full session-scoped surface.
    */
   toolsAllow?: string[];
+  /**
+   * Exact names `tools/list` shows when the run lists a wider surface than it may
+   * call (a scheduled cap enforced at execution). Presentation only: tools/call
+   * still accepts only `toolsAllow`. Unset lists exactly the callable tools.
+   */
+  listedToolsAllow?: string[];
   /** Host-minted search exclusion; independent of coding-tool authority in toolsAllow. */
   webSearchDisabled?: true;
   /**

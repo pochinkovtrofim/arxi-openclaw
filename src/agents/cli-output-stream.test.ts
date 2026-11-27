@@ -123,6 +123,29 @@ describe("createCliJsonlStreamingParser", () => {
     expect(inits).toBe(1);
   });
 
+  it("hands Claude's rate limit reports on, a subagent's too, and only Claude's", () => {
+    const info = { status: "allowed", rateLimitType: "five_hour", resetsAt: 1787034600 };
+    const reports: unknown[] = [];
+    const parser = createClaudeParser({ onRateLimitInfo: (value) => reports.push(value) });
+    finishFrames(
+      parser,
+      { type: "rate_limit_event", rate_limit_info: info },
+      { type: "rate_limit_event", rate_limit_info: info, parent_tool_use_id: "toolu_1" },
+      result("done"),
+    );
+    expect(reports).toEqual([info, info]);
+    const others: unknown[] = [];
+    finishFrames(
+      createParser({
+        backend: { command: "local-cli", output: "jsonl" },
+        onRateLimitInfo: (value) => others.push(value),
+      }),
+      { type: "rate_limit_event", rate_limit_info: info },
+      result("done"),
+    );
+    expect(others).toEqual([]);
+  });
+
   it("normalizes usage while incrementally streaming CLI JSONL", () => {
     const parser = createParser();
     finishFrames(

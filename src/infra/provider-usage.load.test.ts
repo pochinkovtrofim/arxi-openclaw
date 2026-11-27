@@ -9,6 +9,10 @@ import {
   getProviderUsageSnapshotWithPluginMock,
   resetProviderUsageSnapshotWithPluginMock,
 } from "./provider-usage-plugin-runtime.test-mocks.js";
+import {
+  recordCliRateLimitInfo,
+  resetCliRateLimitsForTest,
+} from "./provider-usage.cli-rate-limits.js";
 import { loadProviderUsageSummary } from "./provider-usage.load.js";
 import { ignoredErrors } from "./provider-usage.shared.js";
 import { loadUsageWithAuth, usageNow } from "./provider-usage.test-support.js";
@@ -337,5 +341,49 @@ describe("provider-usage.load", () => {
     } finally {
       vi.stubGlobal("fetch", previousFetch);
     }
+  });
+});
+
+describe("provider-usage.load without a login of OpenClaw's own", () => {
+  beforeEach(() => {
+    resetProviderUsageSnapshotWithPluginMock();
+    resetCliRateLimitsForTest();
+  });
+  afterEach(() => resetCliRateLimitsForTest());
+
+  it("reports the limits a signed-in CLI reported for the provider", async () => {
+    const resetsAt = Math.floor(usageNow / 1000) + 3600;
+    recordCliRateLimitInfo("anthropic", {
+      status: "allowed_warning",
+      rateLimitType: "seven_day",
+      utilization: 0.72,
+      resetsAt,
+    });
+    const result = await loadProviderUsageSummary({
+      providers: ["anthropic"],
+      config: {},
+      env: {},
+      now: usageNow,
+      fetch: vi.fn(async () => new Response("{}")),
+    });
+    expect(result.providers).toEqual([
+      {
+        provider: "anthropic",
+        displayName: "Claude",
+        windows: [{ label: "Week", usedPercent: 72, resetAt: resetsAt * 1000 }],
+      },
+    ]);
+    expect(resolveProviderUsageSnapshotWithPluginMock).not.toHaveBeenCalled();
+  });
+
+  it("omits the provider while the CLI has reported nothing", async () => {
+    const result = await loadProviderUsageSummary({
+      providers: ["anthropic"],
+      config: {},
+      env: {},
+      now: usageNow,
+      fetch: vi.fn(async () => new Response("{}")),
+    });
+    expect(result.providers).toEqual([]);
   });
 });

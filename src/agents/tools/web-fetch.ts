@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { formatErrorMessage } from "@openclaw/normalization-core/error-coercion";
 import {
   asPositiveFiniteNumber,
   resolveIntegerOption,
@@ -88,6 +89,8 @@ const WEB_FETCH_PROGRESS_THRESHOLD_MS = 5_000;
 const WEB_FETCH_PROGRESS_TEXT = "Fetching page content...";
 const DEFAULT_ERROR_MAX_CHARS = 4_000;
 const DEFAULT_ERROR_MAX_BYTES = 64_000;
+// A refusal page is a bot wall or a short API note; the model needs only a glimpse.
+const REFUSAL_DETAIL_MAX_CHARS = 300;
 const WEB_FETCH_SPILL_MAX_CHARS = 2_000_000;
 // Titles and warnings are display metadata: 256 chars each is ample. Their
 // shared wrapped allowance leaves at least half of maxChars for page content.
@@ -434,6 +437,56 @@ function normalizeProviderFinalUrl(value: unknown): string | undefined {
   return url && (url.protocol === "http:" || url.protocol === "https:")
     ? url.toString()
     : undefined;
+}
+
+// Statuses a site answers when it will not serve an automated fetch: bot walls
+// and missing sign-in (401, 403), rate limits (429), legal blocks (451) and
+// LinkedIn's 999. Most failed fetches are these. Said as a generic failure,
+// the model fetched the same site again instead of changing course.
+const SITE_REFUSAL_STATUSES = new Set([401, 403, 429, 451, 999]);
+
+/** An HTTP failure that says what to do next and carries its status for diagnostics. */
+export function webFetchHttpError(status: number, detail: string): Error {
+  const glimpse = detail ? ` The site answered: ${detail}` : "";
+  const error = !SITE_REFUSAL_STATUSES.has(status)
+    ? new Error(`Web fetch failed (${status}): ${detail}`)
+    : status === 429
+      ? new Error(
+          `Web fetch refused by the site (429): it is limiting requests. This is not a network failure. Do not fetch this site again in this turn; use web_search for the same facts, or try the site later.${glimpse}`,
+        )
+      : new Error(
+          `Web fetch refused by the site (${status}): it does not serve pages to automated fetches, so fetching it again will not help. This is not a network failure. Open the page with a browser tool if one is available, or find the same facts with web_search.${glimpse}`,
+        );
+  // Diagnostics record a valid HTTP status as the error code; 999 is not one.
+  if (status >= 100 && status <= 599) {
+    Object.defineProperty(error, "status", {
+      value: status,
+      enumerable: false,
+      configurable: true,
+    });
+  }
+  return error;
+}
+
+const PROXY_TUNNEL_STATUS = /Proxy response \((\d{3})\) !== 200 when HTTP Tunneling/u;
+
+function proxyTunnelStatus(error: unknown): number | undefined {
+  try {
+    // Undici nests the proxy's answer in the fetch failure's causes.
+    const match = PROXY_TUNNEL_STATUS.exec(formatErrorMessage(error));
+    return match ? Number(match[1]) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The configured proxy, not the site, ended the request: say which, and what to try. */
+function webFetchProxyError(status: number): Error {
+  return new Error(
+    status === 403
+      ? "Web fetch could not open this site: the network proxy refused to connect to it (proxy status 403). The address may be wrong or not allowed from here. Check the address, or find the page with web_search."
+      : `Web fetch could not reach this site: the network proxy failed to connect to it (proxy status ${status}). Its name may not resolve right now, or the site is down. Try once more later, or find the same facts with web_search.`,
+  );
 }
 
 function throwIfFetchAborted(signal: AbortSignal | undefined): void {
@@ -846,7 +899,8 @@ async function fetchWebPayload(params: WebFetchRuntimeParams): Promise<Record<st
     if (payload) {
       return payload;
     }
-    throw error;
+    const proxyStatus = proxyTunnelStatus(error);
+    throw proxyStatus === undefined ? error : webFetchProxyError(proxyStatus);
   }
 
   try {
@@ -862,8 +916,11 @@ async function fetchWebPayload(params: WebFetchRuntimeParams): Promise<Record<st
         detail: rawDetailResult.text,
         contentType: res.headers.get("content-type"),
       });
-      const wrappedDetail = wrapWebFetchContent(detail || res.statusText, DEFAULT_ERROR_MAX_CHARS);
-      throw new Error(`Web fetch failed (${res.status}): ${wrappedDetail.text}`);
+      const wrappedDetail = wrapWebFetchContent(
+        detail || res.statusText,
+        SITE_REFUSAL_STATUSES.has(res.status) ? REFUSAL_DETAIL_MAX_CHARS : DEFAULT_ERROR_MAX_CHARS,
+      );
+      throw webFetchHttpError(res.status, wrappedDetail.text);
     }
 
     const contentType = res.headers.get("content-type") ?? "application/octet-stream";

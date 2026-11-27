@@ -183,6 +183,8 @@ export type CliJsonlStreamingParserOptions = {
   onSystemInit?: () => void;
   onAssistantMessage?: (message: unknown) => void;
   onUsage?: (usage: CliUsage, terminal: boolean) => void;
+  /** Claude's `rate_limit_info`: its plan's limit for one window, as the program reports it. */
+  onRateLimitInfo?: (info: unknown) => void;
   /** API-step boundaries of the main agent, for per-request timing. */
   onStep?: (event: CliStepEvent) => void;
   /** Semantic subagent work for an active parent Agent call. Not a parent-lane event. */

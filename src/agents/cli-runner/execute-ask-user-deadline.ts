@@ -3,7 +3,10 @@ import { registerListener } from "../../shared/listeners.js";
 import { resolveQuestionTimeoutMs } from "../tools/ask-user-tool-normalization.js";
 
 type McpTerminalOutcome = Loopback.McpLoopbackToolCallTerminalOutcome;
-export type CliToolTerminalOutcome = McpTerminalOutcome | { outcome: "completed" };
+// errorCode: the HTTP status a thrown tool error carried, content-free.
+export type CliToolTerminalOutcome = (McpTerminalOutcome | { outcome: "completed" }) & {
+  errorCode?: string;
+};
 export type CliLoopbackCall = {
   admitted: Loopback.McpLoopbackToolCallStart;
   current: Loopback.McpLoopbackToolCallStart;

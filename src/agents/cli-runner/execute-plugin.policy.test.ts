@@ -302,6 +302,43 @@ describe("plugin-owned CLI native tool policy", () => {
     });
   });
 
+  it("lets a scheduled cap run only its tools while the run lists the uncapped surface", async () => {
+    const hook = vi.fn(async () => undefined);
+    installBeforeToolCallHook(hook);
+    const { context } = await createExecution({ nativeTools: ["Agent", "Bash", "ToolSearch"] });
+    context.params.executionToolsAllow = ["message"];
+    context.params.cliToolAvailability = {
+      native: ["Agent", "Bash", "ToolSearch"],
+      openClaw: ["message"],
+    };
+    context.backendResolved.capabilityFreeNativeTools = ["ToolSearch"];
+    const decisions: Record<string, CliBackendToolPermissionResult> = {};
+
+    await runPlugin(context, async function* (execution) {
+      decisions.Bash = await requestNativeTool(execution, "Bash");
+      decisions.Agent = await requestNativeTool(execution, "Agent", { prompt: "go" });
+      decisions.browser = await requestNativeTool(execution, "mcp__openclaw__browser", {});
+      decisions.ToolSearch = await requestNativeTool(execution, "ToolSearch", {
+        query: "select:x",
+      });
+      yield SUCCESS_RESULT;
+    });
+
+    for (const [toolName, label] of [
+      ["Bash", "Bash"],
+      ["Agent", "Agent"],
+      ["browser", "browser"],
+    ] as const) {
+      expect(decisions[toolName]).toEqual({
+        behavior: "deny",
+        message: `${label} is not allowed in this Automation: it may call only the tools it was created with. Continue with those.`,
+      });
+    }
+    expect(decisions.ToolSearch).toEqual(expect.objectContaining({ behavior: "allow" }));
+    // Refused calls never reach tool policy; only ToolSearch did.
+    expect(hook).toHaveBeenCalledTimes(1);
+  });
+
   it("rejects conflicting native and canonical paths before invoking policy", async () => {
     const hook = vi.fn(async () => undefined);
     installBeforeToolCallHook(hook, ["read"]);

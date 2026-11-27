@@ -155,6 +155,50 @@ describe("resolveMcpLoopbackScopedTools", () => {
   );
 });
 
+describe("a grant that lists more than it may call", () => {
+  it("builds and lists the uncapped grant's catalog while only the cap stays callable", async () => {
+    const listed = ["memory_search", "read", "exec", "memory_get", "message", "cron"];
+    const captureFinalCallableTools = vi.fn();
+    resolveGatewayScopedTools.mockReturnValue({
+      ...scopedToolFixture(listed),
+      captureFinalCallableTools,
+    });
+    const cache = new McpLoopbackToolCache();
+
+    const uncapped = await cache.resolve(
+      scopeParams({ toolsAllow: listed, nodeExecAllowed: true }),
+    );
+    const uncappedConstruction = resolveGatewayScopedTools.mock.calls.at(-1)?.[0];
+    const capped = await cache.resolve(
+      scopeParams({
+        toolsAllow: ["memory_search", "message"],
+        listedToolsAllow: listed,
+        nodeExecAllowed: true,
+      }),
+    );
+    const cappedConstruction = resolveGatewayScopedTools.mock.calls.at(-1)?.[0];
+
+    expect(capped.listedToolSchema).toEqual(uncapped.toolSchema);
+    expect(capped.tools.map((tool) => tool.name)).toEqual(["memory_search", "message"]);
+    expect(capped.toolSchema.map((tool) => tool.name)).toEqual(["memory_search", "message"]);
+    for (const option of ["mediatedToolNames", "excludeToolNames", "includeNodeExecTool"]) {
+      expect(cappedConstruction?.[option], option).toEqual(uncappedConstruction?.[option]);
+    }
+    // Automations this run creates take the callable tools only.
+    expect(captureFinalCallableTools).toHaveBeenLastCalledWith(
+      new Set(["memory_search", "message"]),
+    );
+  });
+
+  it("lists exactly the callable tools when no wider surface is granted", async () => {
+    const scoped = await new McpLoopbackToolCache().resolve(
+      scopeParams({ toolsAllow: ["memory_search"] }),
+    );
+
+    expect(scoped.listedToolSchema).toEqual(scoped.toolSchema);
+  });
+});
+
 describe("McpLoopbackToolCache", () => {
   it("does not let a source-less cached list hide a later admitted writer", async () => {
     const cache = new McpLoopbackToolCache();
