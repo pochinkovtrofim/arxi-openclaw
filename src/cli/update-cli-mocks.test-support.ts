@@ -92,6 +92,8 @@ vi.mock("../daemon/service-process-membership.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../daemon/service-process-membership.js")>()),
   inspectServiceProcessMembershipSync: vi.fn(() => "outside"),
 }));
+// A host install: the runner's own container must not decide service repair or advice.
+vi.mock("../infra/container-environment.js", () => ({ isContainerEnvironment: () => false }));
 
 vi.mock("./update-cli/update-command-plugin-preflight.js", () => ({
   preflightConfiguredNpmPluginTargets: pluginAvailabilityPreflight,
@@ -661,9 +663,7 @@ vi.mock("./daemon-cli/restart-health.js", async (importOriginal) => {
 });
 
 // Mock doctor (heavy module; should not run in unit tests)
-vi.mock("../commands/doctor.js", () => ({
-  doctorCommand: vi.fn(),
-}));
+vi.mock("../commands/doctor.js", () => ({ doctorCommand: vi.fn() }));
 vi.mock("../commands/doctor-completion.js", () => ({
   checkShellCompletionStatus: (...args: unknown[]) => checkShellCompletionStatus(...args),
   ensureCompletionCacheExists: (...args: unknown[]) => ensureCompletionCacheExists(...args),
