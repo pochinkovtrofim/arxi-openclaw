@@ -286,6 +286,40 @@ describe("CronService one-shot lifecycle", () => {
     }
   });
 
+  it("keeps a failed one-shot that opted out of failure alerts quiet", async () => {
+    const { cron, deps, cleanup } = await fixture({
+      removable: true,
+      runIsolatedAgentJob: vi.fn(async () => ({
+        status: "error" as const,
+        error: "invalid automation configuration",
+      })),
+    });
+    try {
+      const at = new Date(1).toISOString();
+      const quiet = await cron.add(
+        isolatedJob({ name: "quiet", schedule: { kind: "at", at }, failureAlert: false }),
+      );
+      await cron.run(quiet.id, "force");
+      expect(cron.getJob(quiet.id)).toMatchObject({
+        enabled: false,
+        state: {
+          lastRunStatus: "error",
+          autoDisabled: { reason: "consecutive-failures", consecutiveErrors: 1 },
+        },
+      });
+      expect(deps.enqueueSystemEvent).not.toHaveBeenCalled();
+      expect(deps.requestHeartbeat).not.toHaveBeenCalled();
+
+      const plain = await cron.add(isolatedJob({ name: "plain", schedule: { kind: "at", at } }));
+      await cron.run(plain.id, "force");
+      expect(drainSystemEventEntries(sessionKey()).map((event) => event.text)).toEqual([
+        expect.stringContaining('"plain" was auto-disabled'),
+      ]);
+    } finally {
+      await cleanup();
+    }
+  });
+
   it("retries disabled one-shot main wakes without leaving failed-attempt system events", async () => {
     resetSystemEventsForTest();
     let now = atMs;
