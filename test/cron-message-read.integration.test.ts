@@ -240,9 +240,15 @@ describe("scheduled message actions", () => {
     await resetPreparedModelRuntimeSnapshotsForTest();
     closeOpenClawStateDatabaseForTest();
   });
+  // Imports alone leave the first journey's lazy loads to its own budget: the first Gateway
+  // start, the cron handlers and the CLI run. On a loaded check host they took 50 of its 60
+  // seconds, and the timed-out journey's late cleanup then closed the next scenario's
+  // Gateway runs and state database. So one whole journey, asserted like any, runs first
+  // under its own hook budget.
+  beforeAll(() => runJourney(scenarios[0]));
   const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 
-  it.each(scenarios)("$title", { timeout: 60_000 }, async (scenario) => {
+  const runJourney = async (scenario: ScheduledMessageScenario) => {
     const { runtime, action, disableBeforeResponse, creator = "trusted" } = scenario;
     const nativeCreator = creator === "native";
     // Local creator turns use the default account identity, independent of provider defaults.
@@ -1019,5 +1025,7 @@ describe("scheduled message actions", () => {
       () => vi.unstubAllGlobals(),
       () => vi.unstubAllEnvs(),
     );
-  });
+  };
+
+  it.each(scenarios)("$title", { timeout: 60_000 }, runJourney);
 });

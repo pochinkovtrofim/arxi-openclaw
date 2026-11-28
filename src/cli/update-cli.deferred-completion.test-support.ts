@@ -57,6 +57,33 @@ vi.mock("../infra/update-runner-git.js", () => ({
 }));
 // A host install: the runner's own container must not decide service repair or advice.
 vi.mock("../infra/container-environment.js", () => ({ isContainerEnvironment: () => false }));
+// A host whose Gateway service manager cannot be reached, so failure recovery observes the
+// fixture's absent Gateway. The runner's own systemctl must not decide it: where systemctl
+// answers that no unit is installed, the manager counts as reachable and the temp HOME's
+// non-default install refuses recovery before readiness is observed.
+vi.mock("../daemon/service.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../daemon/service.js")>();
+  const unreachable = async (): Promise<never> => {
+    throw new Error("Gateway service manager is unavailable in this fixture.");
+  };
+  return {
+    ...actual,
+    resolveGatewayService: (): import("../daemon/service-types.js").GatewayService => ({
+      label: "systemd",
+      loadedText: "enabled",
+      notLoadedText: "disabled",
+      stage: unreachable,
+      install: unreachable,
+      uninstall: unreachable,
+      start: unreachable,
+      stop: unreachable,
+      restart: unreachable,
+      isLoaded: unreachable,
+      readCommand: unreachable,
+      readRuntime: unreachable,
+    }),
+  };
+});
 // Runtime publication has its own fixture; this suite owns deferred completion and config writes.
 vi.mock("./update-cli/update-command-runtime.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./update-cli/update-command-runtime.js")>()),
