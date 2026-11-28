@@ -499,7 +499,7 @@ describe("CronService failure repair", () => {
     },
     {
       name: "alerts disabled",
-      notices: 1,
+      notices: 0,
       owner: undefined,
       delivery: createTelegramDelivery(),
       failureAlert: false as const,
