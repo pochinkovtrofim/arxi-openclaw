@@ -267,8 +267,10 @@ export function applyJobResult(
         atMs: result.endedAt,
         consecutiveErrors: job.state.consecutiveErrors ?? 0,
         terminalOneShot: true,
-        // Cooldown and incident suppression remain the alert owner's decision.
-        notify: failureNotification === "unavailable" && !opts.replay,
+        // Cooldown and incident suppression remain the alert owner's decision. A job
+        // that opted out of failure alerts finished its only run: the disabled row is
+        // its owner's to reconcile, and a re-enable would rerun a past occurrence.
+        notify: failureNotification === "unavailable" && !opts.replay && job.failureAlert !== false,
         deferredNotifications: opts.deferredNotifications,
       });
     }
